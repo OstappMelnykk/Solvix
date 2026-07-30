@@ -62,6 +62,7 @@ node_modules/
 dist/
 tmp/
 out-tsc/
+bazel-out/
 .angular/
 .angular/cache/
 npm-debug.log*
@@ -80,6 +81,14 @@ package-lock.json.bak
 .env.local
 .env.*.local
 
+# Angular CLI misc
+.sass-cache/
+connect.lock
+libpeerconnection.log
+testem.log
+typings/
+.history/*
+
 ## ============================
 ## JetBrains IDEs (Rider / WebStorm) — shared format
 ## ============================
@@ -88,6 +97,16 @@ package-lock.json.bak
 *.ipr
 *.iws
 out/
+
+## ============================
+## Other editors
+## ============================
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
 
 ## ============================
 ## VS Code
