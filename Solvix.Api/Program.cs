@@ -1,9 +1,15 @@
+using Solvix.Contracts.Facades;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddScoped<IMeshBuilderFacade, Solvix.MeshBuilder.MeshBuilderFacade>();
+builder.Services.AddScoped<ISolverFacade, Solvix.Solver.SolverFacade>();
+builder.Services.AddScoped<Solvix.Bridge.Bridge>();
 
 var app = builder.Build();
 
