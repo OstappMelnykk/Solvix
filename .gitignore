@@ -1,0 +1,114 @@
+## ============================
+## .NET / C# / Visual Studio / Rider
+## ============================
+bin/
+obj/
+out/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+*.pidb
+*.svclog
+*.log
+
+# Visual Studio
+.vs/
+*.VC.db
+*.VC.VC.opendb
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.nupkg
+*.snupkg
+
+# Rider (JetBrains) — also covers WebStorm if opened in same solution dir
+.idea/
+*.sln.iml
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+# ASP.NET Core secrets (never commit real secrets)
+appsettings.*.local.json
+secrets.json
+
+## ============================
+## Angular / Node / WebStorm
+## ============================
+node_modules/
+dist/
+tmp/
+out-tsc/
+.angular/
+.angular/cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+package-lock.json.bak
+
+# Compiled output
+/dist
+/tmp
+
+# Runtime / env
+.env
+.env.local
+.env.*.local
+
+## ============================
+## JetBrains IDEs (Rider / WebStorm) — shared format
+## ============================
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+## ============================
+## VS Code
+## ============================
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+## ============================
+## Docker
+## ============================
+docker-compose.override.yml
+.dockerignore
+**/Dockerfile.local
+
+## ============================
+## OS-specific
+## ============================
+.DS_Store
+Thumbs.db
+Desktop.ini
