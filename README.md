@@ -4,6 +4,7 @@
 
 - **Backend:** .NET 8 (C#)
 - **Frontend:** Angular 18
+- **Database:** PostgreSQL
 
 ## Backend
 
@@ -13,6 +14,7 @@ The backend is split into 5 .NET projects, following Dependency Inversion (Ports
 - **`Solvix.Solver`** — the FEM solver, exposed behind a facade. Depends only on `Contracts`.
 - **`Solvix.MeshBuilder`** — mesh construction and local refinement logic, exposed behind a facade. Depends only on `Contracts`.
 - **`Solvix.Bridge`** — relay between `Solver` and `MeshBuilder`. Routes calls/events both ways (via `Contracts` interfaces, e.g. pub/sub for one side proactively pushing to the other) and can hold cross-cutting logic (validation, mapping, etc.) if the two sides' data models diverge. Never references `Solver`/`MeshBuilder` directly.
+- **`Solvix.Data`** — persistence (EF Core + PostgreSQL). Implements storage interfaces declared in `Contracts` (projects/meshes, solve results). Depends only on `Contracts` — `Solver` and `MeshBuilder` never touch the database directly; `Api` orchestrates saving/loading.
 - **`Solvix.Api`** — the composition root: the only project that references everything. Wires up DI at startup and exposes HTTP/SignalR endpoints to the Angular frontend (`solvix-web`).
 
 ```
@@ -20,7 +22,8 @@ Solvix.Contracts   ← (nothing)
 Solvix.Solver      ← Contracts
 Solvix.MeshBuilder ← Contracts
 Solvix.Bridge      ← Contracts
-Solvix.Api         ← Contracts, Solver, MeshBuilder, Bridge
+Solvix.Data        ← Contracts
+Solvix.Api         ← Contracts, Solver, MeshBuilder, Bridge, Data
 ```
 
 ### Tests

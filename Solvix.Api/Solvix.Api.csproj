@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Solvix.Solver\Solvix.Solver.csproj" />
     <ProjectReference Include="..\Solvix.MeshBuilder\Solvix.MeshBuilder.csproj" />
     <ProjectReference Include="..\Solvix.Bridge\Solvix.Bridge.csproj" />
+    <ProjectReference Include="..\Solvix.Data\Solvix.Data.csproj" />
   </ItemGroup>
 
 </Project>
