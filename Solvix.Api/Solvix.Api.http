@@ -1,0 +1,6 @@
+@Solvix.Api_HostAddress = http://localhost:5168
+
+GET {{Solvix.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
