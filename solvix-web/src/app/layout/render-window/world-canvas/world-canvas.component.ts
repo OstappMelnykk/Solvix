@@ -1,22 +1,31 @@
-import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnDestroy, ViewChild, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ActiveWorldService } from '../../../state/active-world.service';
+
+const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 
 @Component({
-  selector: 'app-viewport',
+  selector: 'app-world-canvas',
   standalone: true,
   imports: [],
-  templateUrl: './viewport.component.html',
-  styleUrl: './viewport.component.scss'
+  templateUrl: './world-canvas.component.html',
+  styleUrl: './world-canvas.component.scss'
 })
-export class ViewportComponent implements AfterViewInit, OnDestroy {
+export class WorldCanvasComponent implements AfterViewInit, OnDestroy {
+  @Input({ required: true }) worldIndex!: number;
+  // Not owned by this world - the same geometry/material instance is shared
+  // by every world in the session, so they all draw the same object.
+  @Input({ required: true }) geometry!: THREE.BufferGeometry;
+  @Input({ required: true }) material!: THREE.Material;
+
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
+  private readonly state = inject(ActiveWorldService);
 
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private controls!: OrbitControls;
-  private cube!: THREE.Mesh;
   private frameId = 0;
   private lastWidth = 0;
   private lastHeight = 0;
@@ -42,6 +51,10 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     this.renderer?.dispose();
   }
 
+  private isActive(): boolean {
+    return this.state.activeWorldIndex() === this.worldIndex;
+  }
+
   private initScene(): void {
     const canvas = this.canvasRef.nativeElement;
     const { clientWidth: width, clientHeight: height } = canvas.parentElement!;
@@ -52,7 +65,7 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
     this.scene.background = new THREE.Color(0x1e1f22);
 
     this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
-    this.camera.position.set(3, 3, 3);
+    this.camera.position.set(...DEFAULT_CAMERA_POSITION);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setSize(width, height);
@@ -60,11 +73,10 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.05 / 3;
 
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0x3574f0 });
-    this.cube = new THREE.Mesh(geometry, material);
-    this.scene.add(this.cube);
+    const mesh = new THREE.Mesh(this.geometry, this.material);
+    this.scene.add(mesh);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
@@ -77,8 +89,14 @@ export class ViewportComponent implements AfterViewInit, OnDestroy {
   private animate = (): void => {
     this.frameId = requestAnimationFrame(this.animate);
     this.checkResize();
+
+    const active = this.isActive();
+    this.controls.enabled = active;
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+
+    if (active) {
+      this.renderer.render(this.scene, this.camera);
+    }
   };
 
   private checkResize(): void {

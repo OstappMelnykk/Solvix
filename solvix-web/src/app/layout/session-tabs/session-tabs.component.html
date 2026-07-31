@@ -1,3 +1,7 @@
-<div class="tab tab--active">Session 1</div>
-<div class="tab">Session 2</div>
-<div class="tab tab--new">+</div>
+<div
+  *ngFor="let session of sessions.sessions()"
+  class="tab"
+  [class.tab--active]="sessions.activeSessionId() === session.id"
+  (click)="sessions.selectSession(session.id)"
+>{{ session.name }}</div>
+<div class="tab tab--new" (click)="sessions.createSession()">+</div>

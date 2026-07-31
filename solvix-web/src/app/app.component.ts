@@ -1,35 +1,30 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
+import { NgFor } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
-import { SplitComponent, SplitAreaComponent } from 'angular-split';
 import { SessionTabsComponent } from './layout/session-tabs/session-tabs.component';
-import { ViewportComponent } from './layout/viewport/viewport.component';
-import { ViewportToolbarComponent } from './layout/viewport-toolbar/viewport-toolbar.component';
-import { StatusBarComponent } from './layout/status-bar/status-bar.component';
-import { PropertiesPanelComponent } from './layout/properties-panel/properties-panel.component';
-import { WorldsPanelComponent } from './layout/worlds-panel/worlds-panel.component';
+import { SessionComponent } from './layout/session/session.component';
+import { ToolbarPanelComponent } from './layout/toolbar-panel/toolbar-panel.component';
+import { FooterComponent } from './layout/footer/footer.component';
+import { SessionsService } from './state/sessions.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [
+    NgFor,
     RouterOutlet,
-    SplitComponent,
-    SplitAreaComponent,
     SessionTabsComponent,
-    ViewportComponent,
-    ViewportToolbarComponent,
-    StatusBarComponent,
-    PropertiesPanelComponent,
-    WorldsPanelComponent
+    SessionComponent,
+    ToolbarPanelComponent,
+    FooterComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
 export class AppComponent {
+  readonly sessions = inject(SessionsService);
+
   title = 'solvix-web';
   appWidth = window.innerWidth;
   appHeight = window.innerHeight;
-  viewportInitialWidth = Math.round(window.screen.width * 0.8);
-  propertiesMinWidth = Math.round(window.screen.width * 0.2);
-  propertiesMaxWidth = Math.round(window.screen.width * 0.4);
 }

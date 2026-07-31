@@ -2,12 +2,12 @@ import { Component } from '@angular/core';
 import { NgFor } from '@angular/common';
 
 @Component({
-  selector: 'app-viewport-toolbar',
+  selector: 'app-toolbar-panel',
   standalone: true,
   imports: [NgFor],
-  templateUrl: './viewport-toolbar.component.html',
-  styleUrl: './viewport-toolbar.component.scss'
+  templateUrl: './toolbar-panel.component.html',
+  styleUrl: './toolbar-panel.component.scss'
 })
-export class ViewportToolbarComponent {
+export class ToolbarPanelComponent {
   readonly icons = [0, 1, 2, 3, 4];
 }

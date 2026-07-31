@@ -2,22 +2,17 @@
   <app-session-tabs class="app-layout__session-tabs" />
 
   <div class="app-layout__body-row">
-    <app-viewport-toolbar class="app-layout__viewport-toolbar" />
+    <app-toolbar-panel class="app-layout__toolbar-panel" />
 
-    <as-split class="app-layout__body" unit="pixel" [gutterSize]="9.5">
-      <as-split-area [size]="viewportInitialWidth">
-        <div class="app-layout__viewport-pane">
-          <app-worlds-panel class="app-layout__worlds" />
-          <app-viewport class="app-layout__viewport" />
-        </div>
-      </as-split-area>
-      <as-split-area [size]="propertiesMinWidth" [minSize]="propertiesMinWidth" [maxSize]="propertiesMaxWidth">
-        <app-properties-panel class="app-layout__properties" />
-      </as-split-area>
-    </as-split>
+    <app-session
+      *ngFor="let session of sessions.sessions()"
+      class="app-layout__session"
+      [sessionId]="session.id"
+      [hidden]="sessions.activeSessionId() !== session.id"
+    />
   </div>
 
-  <app-status-bar class="app-layout__status-bar" />
+  <app-footer class="app-layout__footer" />
 
   <router-outlet />
 </div>
