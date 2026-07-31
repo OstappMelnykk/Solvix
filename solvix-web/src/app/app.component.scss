@@ -1,0 +1,53 @@
+.app-layout {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "session-tabs"
+    "body"
+    "status-bar";
+  gap: 9.5px;
+  padding: 9.5px;
+  background: #1e1f22;
+
+  &__session-tabs {
+    grid-area: session-tabs;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    margin-bottom: 13px;
+  }
+
+  &__body {
+    grid-area: body;
+    overflow: hidden;
+  }
+
+  &__status-bar {
+    grid-area: status-bar;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  &__viewport-pane {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: 1px solid #393b40;
+  }
+
+  &__viewport {
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__properties {
+    height: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+}

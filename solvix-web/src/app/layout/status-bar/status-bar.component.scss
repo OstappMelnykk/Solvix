@@ -1,0 +1,13 @@
+:host {
+  display: flex;
+  gap: 20px;
+  background: #2b2d30;
+  color: #6f737a;
+  font-family: sans-serif;
+  font-size: 12px;
+  padding: 5px 12px;
+
+  .coords {
+    margin-left: auto;
+  }
+}

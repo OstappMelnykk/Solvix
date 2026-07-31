@@ -1,0 +1,33 @@
+:host {
+  display: block;
+  background: #2b2d30;
+  color: #dfe1e5;
+  font-family: sans-serif;
+  padding: 10px;
+}
+
+h4 {
+  margin: 16px 0 8px;
+
+  &:first-child {
+    margin-top: 0;
+  }
+}
+
+.tool {
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}

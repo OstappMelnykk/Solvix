@@ -1,1 +1,19 @@
-<router-outlet />
+<div class="app-layout" [style.width.px]="appWidth" [style.height.px]="appHeight">
+  <app-session-tabs class="app-layout__session-tabs" />
+
+  <as-split class="app-layout__body" unit="pixel" [gutterSize]="9.5">
+    <as-split-area [size]="viewportInitialWidth">
+      <div class="app-layout__viewport-pane">
+        <app-worlds-panel class="app-layout__worlds" />
+        <app-viewport class="app-layout__viewport" />
+      </div>
+    </as-split-area>
+    <as-split-area [size]="propertiesMinWidth" [minSize]="propertiesMinWidth" [maxSize]="propertiesMaxWidth">
+      <app-properties-panel class="app-layout__properties" />
+    </as-split-area>
+  </as-split>
+
+  <app-status-bar class="app-layout__status-bar" />
+
+  <router-outlet />
+</div>
