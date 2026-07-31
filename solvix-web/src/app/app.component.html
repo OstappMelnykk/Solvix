@@ -1,1 +1,18 @@
-<router-outlet />
+<div class="app-layout" [style.width.px]="appWidth" [style.height.px]="appHeight">
+  <app-session-tabs class="app-layout__session-tabs" />
+
+  <div class="app-layout__body-row">
+    <app-toolbar-panel class="app-layout__toolbar-panel" />
+
+    <app-session
+      *ngFor="let session of sessions.sessions()"
+      class="app-layout__session"
+      [sessionId]="session.id"
+      [hidden]="sessions.activeSessionId() !== session.id"
+    />
+  </div>
+
+  <app-footer class="app-layout__footer" />
+
+  <router-outlet />
+</div>

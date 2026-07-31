@@ -1,0 +1,11 @@
+<app-world-tabs class="render-window__world-tabs" />
+
+<div class="render-window__canvases">
+  <app-world-canvas
+    *ngFor="let world of worlds; let i = index"
+    [worldIndex]="i"
+    [geometry]="representations.getRepresentation(i)"
+    [material]="material"
+    [hidden]="state.activeWorldIndex() !== i"
+  />
+</div>

@@ -1,0 +1,38 @@
+.app-layout {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "session-tabs"
+    "body-row"
+    "footer";
+  gap: 9.5px;
+  padding: 9.5px;
+  background: #1e1f22;
+
+  &__session-tabs {
+    grid-area: session-tabs;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    margin-bottom: 13px;
+  }
+
+  &__body-row {
+    grid-area: body-row;
+    display: flex;
+    gap: 1px;
+    overflow: hidden;
+  }
+
+  &__footer {
+    grid-area: footer;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  &__session {
+    flex: 1;
+    overflow: hidden;
+  }
+}

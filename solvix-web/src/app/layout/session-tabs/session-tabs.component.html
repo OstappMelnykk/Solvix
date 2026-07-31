@@ -1,0 +1,7 @@
+<div
+  *ngFor="let session of sessions.sessions()"
+  class="tab"
+  [class.tab--active]="sessions.activeSessionId() === session.id"
+  (click)="sessions.selectSession(session.id)"
+>{{ session.name }}</div>
+<div class="tab tab--new" (click)="sessions.createSession()">+</div>

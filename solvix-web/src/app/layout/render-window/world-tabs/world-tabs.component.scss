@@ -1,0 +1,47 @@
+:host {
+  display: flex;
+  background: #2b2d30;
+}
+
+.world {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 18px;
+  color: #6f737a;
+  font-family: sans-serif;
+  cursor: pointer;
+  border-right: 1px solid #1e1f22;
+  border-bottom: 3px solid transparent;
+
+  &--active {
+    background: #393b40;
+    color: #dfe1e5;
+    border-bottom-color: #3574f0;
+  }
+}
+
+.name {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4e5157;
+}
+
+.world--active .dot {
+  background: #3574f0;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
