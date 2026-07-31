@@ -3,7 +3,7 @@
   grid-template-rows: auto 1fr auto;
   grid-template-areas:
     "session-tabs"
-    "body"
+    "body-row"
     "status-bar";
   gap: 9.5px;
   padding: 9.5px;
@@ -17,8 +17,15 @@
     margin-bottom: 13px;
   }
 
+  &__body-row {
+    grid-area: body-row;
+    display: flex;
+    gap: 1px;
+    overflow: hidden;
+  }
+
   &__body {
-    grid-area: body;
+    flex: 1;
     overflow: hidden;
   }
 

@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 import { SplitComponent, SplitAreaComponent } from 'angular-split';
 import { SessionTabsComponent } from './layout/session-tabs/session-tabs.component';
 import { ViewportComponent } from './layout/viewport/viewport.component';
+import { ViewportToolbarComponent } from './layout/viewport-toolbar/viewport-toolbar.component';
 import { StatusBarComponent } from './layout/status-bar/status-bar.component';
 import { PropertiesPanelComponent } from './layout/properties-panel/properties-panel.component';
 import { WorldsPanelComponent } from './layout/worlds-panel/worlds-panel.component';
@@ -16,6 +17,7 @@ import { WorldsPanelComponent } from './layout/worlds-panel/worlds-panel.compone
     SplitAreaComponent,
     SessionTabsComponent,
     ViewportComponent,
+    ViewportToolbarComponent,
     StatusBarComponent,
     PropertiesPanelComponent,
     WorldsPanelComponent
