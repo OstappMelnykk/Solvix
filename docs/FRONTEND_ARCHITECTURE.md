@@ -41,7 +41,7 @@ AppComponent                     (1, завжди)
 Список сесій (`Session[]` = `{id, name}`) + `activeSessionId: number | null`. `createSession()` додає сесію і одразу робить активною — необмежена кількість. `closeSession(id)` видаляє сесію зі списку; якщо закривалась активна — обирає сусідню (індекс `min(closingIndex, remaining.length - 1)`), а якщо сесій не лишилось — `activeSessionId` стає `null`. `id` не перевикористовується (`nextId` лише зростає) — навмисно, бо очистка `KeyedStore`-мап у нижчих сервісах іде через `effect()` асинхронно, і перевикористаний id міг би на мить дочитати чужі старі дані. Нічого не знає про World'и чи модель — це нижче.
 
 ### `state/active-world.service.ts` — `ActiveWorldService`
-`KeyedStore<sessionId, Signal<worldIndex>>`. Який World-таб (Ideal/Real/Solver) відкритий — **окремий запис на кожну сесію**, лениво створюваний при першому зверненні. Це дає "сесія 1 на Solver, сесія 2 на Ideal" одночасно.
+`KeyedStore<sessionId, Signal<worldIndex>>`. Який World-таб (Ideal/Real/Solver) відкритий — **окремий запис на кожну сесію**, лениво створюваний при першому зверненні. Це дає "сесія 1 на Solver, сесія 2 на Ideal" одночасно. `currentWorldIndex` — `computed`, що сам читає `SessionsService.activeSessionId()` і резолвить `activeWorldIndex(sessionId)` для активної сесії, повертаючи `null`, якщо сесій нема; `selectCurrentWorld(index)` — те саме для запису. Єдине джерело цього null-safe резолву — `RenderWindowComponent`, `WorldTabsComponent`, `SettingsPanelComponent` читають саме `currentWorldIndex`, а не кожен переозначає його по-своєму (раніше так і було — та сама логіка була продубльована в усіх трьох, і `RenderWindowComponent`/`WorldTabsComponent` позначали "нема сесії" через `-1`, а `SettingsPanelComponent` — через `null`).
 
 ### `state/shared-model.service.ts` — `SharedModelService`
 `KeyedStore<sessionId, THREE.Object3D>`. Модель кожної сесії — окремий об'єкт у мапі. Початкову модель сервіс **не хардкодить сам** — приймає через інжектований `INITIAL_MODEL_FACTORY` (`InjectionToken` з дефолтним провайдером-плейсхолдером, `THREE.Mesh` з кубом). Підмінити, з чого стартує сесія, можна, переозначивши цей токен де завгодно в конфігурації застосунку — сам сервіс міняти не треба.
@@ -58,6 +58,9 @@ interface WorldRepresentation {
 ```
 `WorldData` — поки порожній тип-заглушка (`interface WorldData {}`) — форма не визначена, це "шов" для майбутньої логіки. `notifyModification(sessionId, worldIndex, data)` — заглушка для запису; **зараз нічого в коді її не викликає**. `getRepresentation` наразі ігнорує `worldIndex` при виборі `object` — усі 3 World'и бачать одну й ту саму модель, лише `data` теоретично різна (і поки завжди `null`).
 
+### `state/world-camera-memory.service.ts` — `WorldCameraMemoryService`
+`KeyedStore<sessionId, KeyedStore<worldIndex, CameraState>>` (вкладено, та сама форма, що й `WorldRepresentationService`). Пам'ятає кут камери (`camera.position`/`controls.target`) для кожної пари (сесія, World). Раніше цей стан жив **усередині** `WorldCanvasComponent` — свій приватний `KeyedStore` і свій `effect()`-очищувач на кожен із 3 інстансів компонента (4-та копія того самого патерну "лениво створюваний, per-session стан з чисткою по `pruneTo`", що й у трьох інших `root`-сервісах, але не поряд із ними, і без юніт-тесту — компонентний `effect()` вимагав повного `TestBed.createComponent()` + WebGL, щоб перевірити). Винесено в root-сервіс, щоб очистка була консистентна й тестована так само, як у решти трьох. `WorldCanvasComponent` отримав `@Input worldIndex` — раніше йому це було не потрібно (він і так один на весь World), а тепер це ключ у сервіс, яким він себе ідентифікує серед трьох.
+
 ### `state/render-settings-split.service.ts` — `RenderSettingsSplitService`
 Не пов'язаний із сесіями — ширина панелі налаштувань (`%`), спільна UI-складова. `<as-split unit="percent">`, а не `pixel`: перше монтування `<as-split>` з пиксельними розмірами рахувало layout через сигнальний `effect()`, що резолвився на тик пізніше, ніж перший рендер — коротка "стрибка" розміру. Percent-режим CSS grid (`fr`-одиниці) вирішує це миттєво, без JS-математики проти виміряної ширини контейнера.
 
@@ -68,13 +71,13 @@ interface WorldRepresentation {
 
 ## `WorldCanvasComponent` (×3) — що спільне, що "на сесію"
 
-| Належить World'у (створюється раз, ніколи не скидається) | Належить парі (World, сесія) — зберігається в `KeyedStore` всередині |
+| Належить World'у (створюється раз, ніколи не скидається) | Належить парі (World, сесія) — зберігається в `WorldCameraMemoryService` |
 |---|---|
 | `THREE.Scene`, `WebGLRenderer`, `PerspectiveCamera`, `OrbitControls` — самі об'єкти | Кут камери: `camera.position`/`controls.target` — значення всередині цих об'єктів |
 | Сам факт рендер-циклу (`animate()`, `checkResize()`) | Клонований `Object3D` у сцені (модель сесії) |
 
 ### `@Input`
-`sessionId` (яка сесія зараз активна), `representation: WorldRepresentation` (об'єкт + дані від `WorldRepresentationService`), `active` (чи це обраний World-таб активної сесії — керує `OrbitControls.enabled` і чи взагалі викликається `renderer.render()`).
+`sessionId` (яка сесія зараз активна), `worldIndex` (який із 3 інстансів це — ключ у `WorldCameraMemoryService`), `representation: WorldRepresentation` (об'єкт + дані від `WorldRepresentationService`), `active` (чи це обраний World-таб активної сесії — керує `OrbitControls.enabled` і чи взагалі викликається `renderer.render()`).
 
 ### `updateModel()` — чому клон, а не оригінал
 `WorldRepresentationService` віддає **той самий** `Object3D` усім 3 World'ам однієї сесії. У Three.js вузол сцени може належати лише одній `Scene` водночас — якщо додати оригінал напряму в усі 3 сцени, кожен наступний `scene.add()` **краде** його з попередньої (виграє останній у черзі `*ngFor`, зазвичай Solver). Тому кожен канвас додає у свою сцену `representation.object.clone()` — геометрія/матеріал лишаються спільними посиланнями всередині клону (дешево), але вузол сцени свій.
@@ -82,7 +85,7 @@ interface WorldRepresentation {
 Після кожної зміни моделі викликається `renderer.compile(scene, camera)` — прогріває шейдер GPU **заздалегідь**, поки World може бути ще прихований. Без цього перша компіляція шейдера (кожна сесія має свій, щойно створений `THREE.Material`) відбувалась синхронно саме в момент показу канваса — коротка біла спалахна непрошейдженої геометрії.
 
 ### `updateSession()` — камера як пам'ять сесії
-При зміні `sessionId`: зберігає поточну позицію/target камери під ключем сесії, яку покидаємо (`cameraStateBySession.set`), і відновлює збережений (або дефолтний `[3,3,3]`, якщо World у цій сесії ще не відкривали) стан для нової сесії. `enableDamping` вимикається на один `update()` і вмикається назад — обнуляє залишкову інерцію обертання, щоб стара сесія не "довершувала" рух у новій.
+При зміні `sessionId`: зберігає поточну позицію/target камери під ключем (сесія, яку покидаємо, `worldIndex`) через `WorldCameraMemoryService.set`, і відновлює збережений (або дефолтний `[3,3,3]`, якщо World у цій сесії ще не відкривали) стан для нової сесії. `enableDamping` вимикається на один `update()` і вмикається назад — обнуляє залишкову інерцію обертання, щоб стара сесія не "довершувала" рух у новій.
 
 ### `ngOnChanges` — фікс блимання при перемиканні
 Усі 3 канваси щокадру синхронізують `Scene`/камеру **у фоні**, незалежно від `[hidden]` (`updateModel()`/`updateSession()` викликаються в `animate()` завжди). Але `renderer.render()` — лише коли `active`. Коли `[hidden]` знімається, пікселі на екрані — це те, що намальовано **минулого разу**, коли канвас був активний (можливо, інша сесія). `ngOnChanges` ловить момент, коли `active` стає `true`, і **синхронно** викликає `updateModel()` + `updateSession()` + `renderer.render()` одразу, не чекаючи наступного `requestAnimationFrame`-тіку.
@@ -114,8 +117,10 @@ classDiagram
 
     class ActiveWorldService {
         -KeyedStore~sessionId, Signal~worldIndex~~ indexBySession
+        +Signal~number~ currentWorldIndex
         +activeWorldIndex(sessionId) Signal~number~
         +selectWorld(sessionId, index)
+        +selectCurrentWorld(index)
     }
 
     class SharedModelService {
@@ -139,15 +144,21 @@ classDiagram
         +selectWorld(index)
     }
 
+    class WorldCameraMemoryService {
+        -KeyedStore~sessionId, KeyedStore~worldIndex, CameraState~~ stateBySession
+        +get(sessionId, worldIndex) CameraState
+        +set(sessionId, worldIndex, state)
+    }
+
     class WorldCanvasComponent {
         +number sessionId
+        +number worldIndex
         +WorldRepresentation representation
         +boolean active
         -Scene scene
         -WebGLRenderer renderer
         -PerspectiveCamera camera
         -OrbitControls controls
-        -KeyedStore~sessionId, CameraState~ cameraStateBySession
         -updateModel()
         -updateSession()
         -animate()
@@ -162,17 +173,19 @@ classDiagram
     ActiveWorldService --> KeyedStore : uses
     SharedModelService --> KeyedStore : uses
     WorldRepresentationService --> KeyedStore : uses (nested)
-    WorldCanvasComponent --> KeyedStore : uses (camera)
+    WorldCameraMemoryService --> KeyedStore : uses (nested)
+    WorldCanvasComponent ..> WorldCameraMemoryService : inject
     RenderWindowComponent "1" *-- "1" WorldTabsComponent : contains
     RenderWindowComponent "1" *-- "3" WorldCanvasComponent : owns permanently
     RenderWindowComponent ..> SessionsService : inject
     RenderWindowComponent ..> ActiveWorldService : inject
     RenderWindowComponent ..> WorldRepresentationService : inject
-    WorldTabsComponent ..> SessionsService : inject
     WorldTabsComponent ..> ActiveWorldService : inject
     SettingsPanelComponent ..> SessionsService : inject
     SettingsPanelComponent ..> ActiveWorldService : inject
     WorldRepresentationService ..> SharedModelService : inject
+    ActiveWorldService ..> SessionsService : inject
+    WorldCameraMemoryService ..> SessionsService : inject
 ```
 
 ---
@@ -203,6 +216,5 @@ classDiagram
 
 ## Відомий технічний борг
 
-- **Камера в `WorldCanvasComponent` (`cameraStateBySession`) чиститься окремим `effect()` у самому компоненті** — той самий патерн, що й у трьох `root`-сервісах, але без спільного тесту (компонентні `effect()`-и складніше тестувати ізольовано за межами `TestBed.createComponent`).
 - **`WorldRepresentationService.notifyModification` не має жодного викликача** — увесь механізм `WorldData` зараз неактивний, `data` завжди `null`.
 - **`getRepresentation` ігнорує `worldIndex`** — "кожен World представляє модель по-своєму" поки що не реалізовано, усі 3 World'и бачать ідентичний `object`.
