@@ -32,8 +32,6 @@ export class AppComponent {
   readonly sessions = inject(SessionsService);
 
   title = 'solvix-web';
-  appWidth = window.innerWidth;
-  appHeight = window.innerHeight;
 
   onDragEnd(event: SplitGutterInteractionEvent): void {
     const settingsWidth = event.sizes[1];

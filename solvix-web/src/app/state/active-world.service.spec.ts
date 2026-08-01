@@ -35,4 +35,27 @@ describe('ActiveWorldService', () => {
     // recreate it at the default (0), not still read the old value (2).
     expect(activeWorld.activeWorldIndex(sessionId)()).toBe(0);
   });
+
+  it('currentWorldIndex is null when no session is active', () => {
+    const sessionId = sessions.sessions()[0].id;
+    sessions.closeSession(sessionId);
+
+    expect(activeWorld.currentWorldIndex()).toBeNull();
+  });
+
+  it('currentWorldIndex tracks whichever session is active', () => {
+    const sessionId = sessions.sessions()[0].id;
+    activeWorld.selectWorld(sessionId, 2);
+
+    expect(activeWorld.currentWorldIndex()).toBe(2);
+  });
+
+  it('selectCurrentWorld updates the active session and is a no-op with none active', () => {
+    const sessionId = sessions.sessions()[0].id;
+    activeWorld.selectCurrentWorld(1);
+    expect(activeWorld.activeWorldIndex(sessionId)()).toBe(1);
+
+    sessions.closeSession(sessionId);
+    expect(() => activeWorld.selectCurrentWorld(2)).not.toThrow();
+  });
 });

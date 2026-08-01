@@ -1,16 +1,10 @@
-import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, effect, inject } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldRepresentation } from '../../../state/world-representation.service';
-import { KeyedStore } from '../../../state/keyed-store';
-import { SessionsService } from '../../../state/sessions.service';
+import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
-
-interface CameraState {
-  position: THREE.Vector3;
-  target: THREE.Vector3;
-}
 
 // One of exactly 3 instances for the whole app - one per World (Ideal/Real/
 // Solver). Its Scene/Camera/Renderer/OrbitControls are NOT recreated per
@@ -44,6 +38,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // session. Drives OrbitControls interactivity and whether this canvas
   // actually renders - the other 2 keep simulating but stay unrendered.
   @Input({ required: true }) active!: boolean;
+  // Which of the 3 fixed World slots this instance is - the key this
+  // component uses into WorldCameraMemoryService, alongside sessionId, so
+  // its saved camera angles don't collide with the other 2 Worlds'.
+  @Input({ required: true }) worldIndex!: number;
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
@@ -61,7 +59,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // canvas its own independent placement.
   private currentModel: THREE.Object3D | null = null;
   private lastModel: THREE.Object3D | null = null;
-  private cameraStateBySession = new KeyedStore<number, CameraState>();
+  private readonly cameraMemory = inject(WorldCameraMemoryService);
   private lastSessionId: number | null = null;
   private sceneReady = false;
   private frameId = 0;
@@ -69,15 +67,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
   private onContextRestored = () => this.checkResize();
-
-  constructor() {
-    const sessions = inject(SessionsService);
-    // Drop a session's saved camera angle once it's actually closed -
-    // otherwise this store grows forever, once per World instance (×3).
-    effect(() => {
-      this.cameraStateBySession.pruneTo(sessions.sessions().map(session => session.id));
-    });
-  }
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -172,14 +161,14 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
     if (this.lastSessionId !== null) {
-      this.cameraStateBySession.set(this.lastSessionId, {
+      this.cameraMemory.set(this.lastSessionId, this.worldIndex, {
         position: this.camera.position.clone(),
         target: this.controls.target.clone()
       });
     }
     this.lastSessionId = this.sessionId;
 
-    const saved = this.cameraStateBySession.get(this.sessionId);
+    const saved = this.cameraMemory.get(this.sessionId, this.worldIndex);
     if (saved) {
       this.camera.position.copy(saved.position);
       this.controls.target.copy(saved.target);
