@@ -10,7 +10,9 @@ import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 // App-level, single instance - not one per session. Its 3 WorldCanvasComponent
 // children are the only 3 WebGL contexts the app ever creates; switching
 // sessions just changes which session's model they draw (see
-// WorldRepresentationService), not which canvases exist.
+// WorldRepresentationService), not which canvases exist. Stays mounted (see
+// AppComponent's [hidden], not *ngIf) even when there are zero sessions
+// open - the 3 canvases just show nothing until a session exists again.
 @Component({
   selector: 'app-render-window',
   standalone: true,
@@ -24,9 +26,16 @@ export class RenderWindowComponent {
   private readonly representations = inject(WorldRepresentationService);
   readonly worlds = WORLDS_CONFIG;
 
-  readonly activeWorldIndex = computed(() => this.activeWorld.activeWorldIndex(this.sessions.activeSessionId())());
+  // -1 when there's no active session - never matches a real worldIndex, so
+  // every WorldCanvasComponent ends up [hidden] and inactive, same as if a
+  // World were simply never selected.
+  readonly activeWorldIndex = computed(() => {
+    const sessionId = this.sessions.activeSessionId();
+    return sessionId === null ? -1 : this.activeWorld.activeWorldIndex(sessionId)();
+  });
 
-  getRepresentation(worldIndex: number): WorldRepresentation {
-    return this.representations.getRepresentation(this.sessions.activeSessionId(), worldIndex);
+  getRepresentation(worldIndex: number): WorldRepresentation | null {
+    const sessionId = this.sessions.activeSessionId();
+    return sessionId === null ? null : this.representations.getRepresentation(sessionId, worldIndex);
   }
 }

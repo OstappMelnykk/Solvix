@@ -2,7 +2,7 @@
 
 Опис структури `solvix-web`: хто з ким вкладений, хто чим володіє, і де живе стан.
 
-Статус: реалізовано в `fix/shared-world-canvases`.
+Статус: реалізовано в `fix/shared-world-canvases`, закриття сесій — у `feature/close-session`.
 
 ---
 
@@ -38,7 +38,7 @@ AppComponent                     (1, завжди)
 Спільний хелпер: лінива мапа "є значення за ключем — віддай, нема — створи дефолт і збережи" (`getOrCreate`), плюс звичайні `get`/`set`/`delete`. Виник тому, що цей патерн був буквально скопійований у 4 місцях (`ActiveWorldService`, `SharedModelService`, `WorldRepresentationService`, камера в `WorldCanvasComponent`) — тепер він написаний один раз.
 
 ### `state/sessions.service.ts` — `SessionsService`
-Список сесій (`Session[]` = `{id, name}`) + `activeSessionId`. `createSession()` додає сесію і одразу робить активною — необмежена кількість. Нічого не знає про World'и чи модель — це нижче.
+Список сесій (`Session[]` = `{id, name}`) + `activeSessionId: number | null`. `createSession()` додає сесію і одразу робить активною — необмежена кількість. `closeSession(id)` видаляє сесію зі списку; якщо закривалась активна — обирає сусідню (індекс `min(closingIndex, remaining.length - 1)`), а якщо сесій не лишилось — `activeSessionId` стає `null`. `id` не перевикористовується (`nextId` лише зростає) — навмисно, бо очистка `KeyedStore`-мап у нижчих сервісах іде через `effect()` асинхронно, і перевикористаний id міг би на мить дочитати чужі старі дані. Нічого не знає про World'и чи модель — це нижче.
 
 ### `state/active-world.service.ts` — `ActiveWorldService`
 `KeyedStore<sessionId, Signal<worldIndex>>`. Який World-таб (Ideal/Real/Solver) відкритий — **окремий запис на кожну сесію**, лениво створюваний при першому зверненні. Це дає "сесія 1 на Solver, сесія 2 на Ideal" одночасно.
@@ -177,6 +177,18 @@ classDiagram
 
 ---
 
+## Закриття сесії: очистка й порожній стан
+
+`SessionTabsComponent` має хрестик на кожній вкладці (навіть коли вона одна) — `closeSession(id)` викликає `SessionsService.closeSession(id)` напряму, без обмежень на мінімальну кількість сесій. Сесій може лишитись 0.
+
+**Очистка стану.** `ActiveWorldService`, `SharedModelService`, `WorldRepresentationService` кожен має в конструкторі `effect()`, що реагує на `sessions.sessions()` і викликає `KeyedStore.pruneTo(...)` — запис закритої сесії видаляється з мапи автоматично, без явного виклику при закритті. `SharedModelService` додатково звільняє GPU-ресурси моделі (`.dispose()` на geometry/material кожного `THREE.Mesh` у дереві) перед видаленням запису. Перевірено тестами (`active-world.service.spec.ts`, `shared-model.service.spec.ts`, `world-representation.service.spec.ts`) — включно з тим, що дані **іншої**, відкритої сесії при цьому не чіпаються.
+
+**Порожній стан (0 сесій).** `AppComponent` рахує `sessions.activeSessionId() === null` і ставить `[hidden]` на `<app-render-window>` і `<app-settings-panel>`, показуючи замість них `.app-layout__empty`-плейсхолдер. `[hidden]`, а не `*ngIf` — компоненти й далі живі (той самий принцип, що й для World-канвасів), просто не видимі. Обидва компоненти мають `:host([hidden]) { display: none; }` у своєму SCSS — без цього правила `[hidden]` не спрацьовує, бо власний `:host { display: ...; }` компонента переважує дефолтне UA-правило браузера для `[hidden]`.
+
+`RenderWindowComponent.activeWorldIndex` і `WorldTabsComponent.activeWorldIndex` при `activeSessionId() === null` повертають сентинел `-1`, який не збігається з жодним реальним індексом World'у (0/1/2) — усі 3 `WorldCanvasComponent` лишаються неактивними, нічого не намагається рендерити неіснуючу сесію.
+
+---
+
 ## Ключові принципи
 
 1. **Рівно 3 WebGL-контексти за весь час роботи застосунку**, незалежно від кількості сесій.
@@ -191,7 +203,6 @@ classDiagram
 
 ## Відомий технічний борг
 
-- **Немає закриття сесії** — `KeyedStore` має `.delete()`, але ніхто його не викликає; мапи (`ActiveWorldService`, `SharedModelService`, `WorldRepresentationService`, камера в кожному `WorldCanvasComponent`) ростуть назавжди.
-- **`SharedModelService` не звільняє GPU-пам'ять** старих моделей (`.dispose()` на геометрії/матеріалі ніде не викликається) — актуально стане разом із закриттям сесій.
+- **Камера в `WorldCanvasComponent` (`cameraStateBySession`) чиститься окремим `effect()` у самому компоненті** — той самий патерн, що й у трьох `root`-сервісах, але без спільного тесту (компонентні `effect()`-и складніше тестувати ізольовано за межами `TestBed.createComponent`).
 - **`WorldRepresentationService.notifyModification` не має жодного викликача** — увесь механізм `WorldData` зараз неактивний, `data` завжди `null`.
 - **`getRepresentation` ігнорує `worldIndex`** — "кожен World представляє модель по-своєму" поки що не реалізовано, усі 3 World'и бачать ідентичний `object`.

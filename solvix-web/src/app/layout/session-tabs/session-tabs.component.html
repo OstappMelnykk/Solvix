@@ -5,10 +5,6 @@
   (click)="sessions.selectSession(session.id)"
 >
   <span class="tab__name">{{ session.name }}</span>
-  <span
-    *ngIf="sessions.sessions().length > 1"
-    class="tab__close"
-    (click)="closeSession($event, session.id)"
-  >&times;</span>
+  <span class="tab__close" (click)="closeSession($event, session.id)">&times;</span>
 </div>
 <div class="tab tab--new" (click)="sessions.createSession()">+</div>

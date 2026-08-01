@@ -23,12 +23,22 @@ describe('SessionsService', () => {
     expect(service.activeSessionId()).toBe(service.sessions()[1].id);
   });
 
-  it('cannot close the only remaining session', () => {
+  it('closing the only remaining session leaves zero sessions and no active id', () => {
     const onlyId = service.sessions()[0].id;
     service.closeSession(onlyId);
 
+    expect(service.sessions().length).toBe(0);
+    expect(service.activeSessionId()).toBeNull();
+  });
+
+  it('createSession after closing down to zero works again', () => {
+    service.closeSession(service.sessions()[0].id);
+    expect(service.sessions().length).toBe(0);
+
+    service.createSession();
+
     expect(service.sessions().length).toBe(1);
-    expect(service.activeSessionId()).toBe(onlyId);
+    expect(service.activeSessionId()).toBe(service.sessions()[0].id);
   });
 
   it('closing a non-active session leaves the active one untouched', () => {
@@ -46,9 +56,9 @@ describe('SessionsService', () => {
   it('closing the active middle session activates the one that took its place', () => {
     const first = service.sessions()[0].id;
     service.createSession();
-    const middle = service.activeSessionId();
+    const middle = service.sessions()[1].id;
     service.createSession();
-    const last = service.activeSessionId();
+    const last = service.sessions()[2].id;
     service.selectSession(middle);
 
     service.closeSession(middle);
@@ -60,9 +70,9 @@ describe('SessionsService', () => {
   it('closing the active last (rightmost) session activates the new last one', () => {
     const first = service.sessions()[0].id;
     service.createSession();
-    const middle = service.activeSessionId();
+    const middle = service.sessions()[1].id;
     service.createSession();
-    const last = service.activeSessionId();
+    const last = service.sessions()[2].id;
 
     service.closeSession(last);
 
@@ -73,7 +83,7 @@ describe('SessionsService', () => {
   it('closing the active first (leftmost) session activates the one that shifted into its place', () => {
     const first = service.sessions()[0].id;
     service.createSession();
-    const second = service.activeSessionId();
+    const second = service.sessions()[1].id;
     service.selectSession(first);
 
     service.closeSession(first);

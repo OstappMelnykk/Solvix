@@ -16,9 +16,12 @@ export interface Session {
 export class SessionsService {
   private nextId = 1;
   private readonly _sessions = signal<Session[]>([this.createSessionEntry()]);
-  private readonly _activeSessionId = signal(this._sessions()[0].id);
+  private readonly _activeSessionId = signal<number | null>(this._sessions()[0].id);
 
   readonly sessions = this._sessions.asReadonly();
+  // null means no session is open - RenderWindowComponent/SettingsPanelComponent
+  // show an empty state instead (see AppComponent) rather than assuming one
+  // always exists.
   readonly activeSessionId = this._activeSessionId.asReadonly();
 
   createSession(): void {
@@ -31,14 +34,10 @@ export class SessionsService {
     this._activeSessionId.set(id);
   }
 
-  // Always keeps at least one session open - the rest of the app assumes
-  // there's always an active session, so closing the last one is a no-op
-  // rather than leaving that invariant broken.
+  // Any session can be closed, including the last one - the rest of the
+  // app is built to tolerate zero open sessions (see activeSessionId).
   closeSession(id: number): void {
     const sessions = this._sessions();
-    if (sessions.length <= 1) {
-      return;
-    }
     const closingIndex = sessions.findIndex(session => session.id === id);
     if (closingIndex === -1) {
       return;
@@ -47,10 +46,15 @@ export class SessionsService {
     const remaining = sessions.filter(session => session.id !== id);
     this._sessions.set(remaining);
 
-    if (this._activeSessionId() === id) {
-      const nextIndex = Math.min(closingIndex, remaining.length - 1);
-      this._activeSessionId.set(remaining[nextIndex].id);
+    if (this._activeSessionId() !== id) {
+      return;
     }
+    if (remaining.length === 0) {
+      this._activeSessionId.set(null);
+      return;
+    }
+    const nextIndex = Math.min(closingIndex, remaining.length - 1);
+    this._activeSessionId.set(remaining[nextIndex].id);
   }
 
   private createSessionEntry(): Session {
