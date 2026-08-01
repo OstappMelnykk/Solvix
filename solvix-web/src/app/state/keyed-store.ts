@@ -22,4 +22,8 @@ export class KeyedStore<K, V> {
   set(key: K, value: V): void {
     this.map.set(key, value);
   }
+
+  delete(key: K): void {
+    this.map.delete(key);
+  }
 }

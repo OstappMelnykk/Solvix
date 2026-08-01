@@ -2,94 +2,90 @@
 
 Опис структури `solvix-web`: хто з ким вкладений, хто чим володіє, і де живе стан.
 
-Статус: реалізовано в `feature/cad-editor-ui`.
+Статус: реалізовано в `fix/shared-world-canvases`.
 
 ---
 
 ## Ієрархія вкладеності (хто кого містить)
 
 ```
-AppComponent                        — загальне вікно застосунку
-├── SessionTabsComponent             — секція сесійних вкладок (керує SessionsService)
-├── ToolbarPanelComponent            — набір іконок-інструментів
-└── SessionComponent  (× N, одна на сесію)   — ізольований DI-скоуп однієї сесії
-    ├── RenderWindowComponent        — головне вікно для 3D виводу цієї сесії
-    │   ├── WorldTabsComponent        — секція вкладок World'ів
-    │   └── WorldCanvasComponent (×3) — власний 3D вивід кожного World'у
-    └── SettingsPanelComponent       — блок з налаштуваннями цієї сесії
-
-FooterComponent                     — міні-футер з інфою (сиблінг SessionComponent, поза ним)
+AppComponent                     (1, завжди)
+├── SessionTabsComponent          — читає SessionsService напряму
+├── ToolbarPanelComponent         — статичний, без стану
+├── as-split (unit="percent")
+│   ├── RenderWindowComponent     (1, завжди)
+│   │   ├── WorldTabsComponent    (1)
+│   │   └── WorldCanvasComponent  (× 3, назавжди — Ideal/Real/Solver)
+│   └── SettingsPanelComponent    (1, завжди)
+└── FooterComponent
 ```
 
-`RenderWindowComponent` — єдиний, хто фізично містить `WorldTabsComponent` і список `WorldCanvasComponent`: вкладки World'ів і сам 3D-вивід — це дві частини одного вікна, а не окремі сиблінги на рівні `AppComponent`.
-
-`SessionComponent` фізично містить і `RenderWindowComponent`, і `SettingsPanelComponent` (в одному `<as-split>`, самостійно керує пропорціями свого лейауту) — не тому, що це один UI-регіон (вони в різних панелях), а тому що `SettingsPanelComponent` має залежати від активного World цієї сесії, а це можливо лише якщо він сидить у тому самому DI-піддереві.
-
-`AppComponent` рендерить `*ngFor` по всіх сесіях з `SessionsService`, по одному `SessionComponent` на сесію, і перемикає видиму через `[hidden]` — так само, як `RenderWindowComponent` перемикає World'и. Неактивна сесія не знищується (стан не втрачається), але й не рендериться в фоні — див. "Пауза неактивних сесій" нижче.
-
-Кількість `WorldCanvasComponent` = довжина `WORLDS_CONFIG`. Кількість `SessionComponent` = довжина `SessionsService.sessions()` — необмежена, сесії створюються кнопкою "+" у `SessionTabsComponent`.
+Ключове: **жоден із цих компонентів не створюється "на сесію"**. Скільки б сесій не було відкрито — дерево компонентів однакове. Сесії існують лише як **дані** в сервісах, не як частини компонентного дерева.
 
 ---
 
-## Ізоляція сесій (DI-скоуп, не конфіг)
+## Чому саме так: обмежена кількість WebGL-контекстів
 
-Кожна сесія має власні: активний World, спільну модель і представлення кожного World'у. Це не глобальний стан — `SessionComponent` оголошує ці сервіси у своєму `providers`:
+Перша версія цієї архітектури створювала окремий `WorldCanvasComponent` (і окремий WebGL-контекст) на кожну пару (сесія, World) — N сесій × 3 World'и = 3N живих контекстів, що ніколи не звільнялись (закриття сесії й досі не реалізоване). Браузери мають жорсткий ліміт одночасних WebGL-контекстів (~8-16) — після кількох сесій нові канваси переставали отримувати контекст узагалі.
 
+Рішення: **World — фіксований, спільний на весь застосунок "слот для малювання"**, не щось, що належить сесії. Існує рівно 3 `WorldCanvasComponent` (за довжиною `WORLDS_CONFIG`), створені один раз при старті й ніколи не знищувані. Перемикання сесій **не створює й не знищує жодного канваса** — лише міняє, що́ ці 3 канваси показують.
+
+---
+
+## Сервіси стану — усі `root`-scoped, ключовані по `sessionId` (і, де треба, `worldIndex`)
+
+### `state/keyed-store.ts` — `KeyedStore<K, V>`
+Спільний хелпер: лінива мапа "є значення за ключем — віддай, нема — створи дефолт і збережи" (`getOrCreate`), плюс звичайні `get`/`set`/`delete`. Виник тому, що цей патерн був буквально скопійований у 4 місцях (`ActiveWorldService`, `SharedModelService`, `WorldRepresentationService`, камера в `WorldCanvasComponent`) — тепер він написаний один раз.
+
+### `state/sessions.service.ts` — `SessionsService`
+Список сесій (`Session[]` = `{id, name}`) + `activeSessionId`. `createSession()` додає сесію і одразу робить активною — необмежена кількість. Нічого не знає про World'и чи модель — це нижче.
+
+### `state/active-world.service.ts` — `ActiveWorldService`
+`KeyedStore<sessionId, Signal<worldIndex>>`. Який World-таб (Ideal/Real/Solver) відкритий — **окремий запис на кожну сесію**, лениво створюваний при першому зверненні. Це дає "сесія 1 на Solver, сесія 2 на Ideal" одночасно.
+
+### `state/shared-model.service.ts` — `SharedModelService`
+`KeyedStore<sessionId, THREE.Object3D>`. Модель кожної сесії — окремий об'єкт у мапі. Початкову модель сервіс **не хардкодить сам** — приймає через інжектований `INITIAL_MODEL_FACTORY` (`InjectionToken` з дефолтним провайдером-плейсхолдером, `THREE.Mesh` з кубом). Підмінити, з чого стартує сесія, можна, переозначивши цей токен де завгодно в конфігурації застосунку — сам сервіс міняти не треба.
+
+`Object3D`, не `BufferGeometry`: модель має нести і геометрію, і матеріал разом (і згодом стати `Group` із багатьох гексаедрів), а не бути голою формою без стилю.
+
+### `state/world-representation.service.ts` — `WorldRepresentationService`
+`KeyedStore<sessionId, KeyedStore<worldIndex, WorldData>>` (вкладено). `getRepresentation(sessionId, worldIndex)` повертає:
 ```ts
-providers: [ActiveWorldService, SharedModelService, WorldRepresentationService]
+interface WorldRepresentation {
+  readonly object: THREE.Object3D;   // спільна модель сесії (з SharedModelService)
+  readonly data: WorldData | null;   // власні дані ЦЬОГО World'у про представлення
+}
 ```
+`WorldData` — поки порожній тип-заглушка (`interface WorldData {}`) — форма не визначена, це "шов" для майбутньої логіки. `notifyModification(sessionId, worldIndex, data)` — заглушка для запису; **зараз нічого в коді її не викликає**. `getRepresentation` наразі ігнорує `worldIndex` при виборі `object` — усі 3 World'и бачать одну й ту саму модель, лише `data` теоретично різна (і поки завжди `null`).
 
-Angular створює для кожного інстансу `<app-session>` окремий injector-піддерево з власними, новими інстансами цих трьох сервісів. Усе, що всередині `SessionComponent` (тобто `RenderWindowComponent`, `WorldTabsComponent`, кожен `WorldCanvasComponent`) інжектить ці сервіси через `inject()`, отримує саме інстанс своєї сесії — Angular резолвить найближчий provider вгору по дереву компонентів.
+### `state/render-settings-split.service.ts` — `RenderSettingsSplitService`
+Не пов'язаний із сесіями — ширина панелі налаштувань (`%`), спільна UI-складова. `<as-split unit="percent">`, а не `pixel`: перше монтування `<as-split>` з пиксельними розмірами рахувало layout через сигнальний `effect()`, що резолвився на тик пізніше, ніж перший рендер — коротка "стрибка" розміру. Percent-режим CSS grid (`fr`-одиниці) вирішує це миттєво, без JS-математики проти виміряної ширини контейнера.
 
-Наслідок: `ActiveWorldService`/`SharedModelService`/`WorldRepresentationService` більше **не** `providedIn: 'root'` — навмисно. Без сесії над ними в дереві їх узагалі не можна заінжектити (DI-помилка) — це enforced-гарантія, що такого стану "нізвідки" не існує.
-
-```
-Session A                          Session B
-├─ ActiveWorldService (instance A)  ├─ ActiveWorldService (instance B)
-├─ SharedModelService (instance A)  ├─ SharedModelService (instance B)
-└─ WorldRepresentationService (A)   └─ WorldRepresentationService (B)
-```
-
-Нова сесія = нові World'и, новий активний World (скидається на 0), нова спільна модель. Стара сесія цього не бачить і на неї не впливає — ізоляція абсолютна, на рівні інжектора, а не домовленості в коді.
-
-### Унікальний ідентифікатор "яке World зараз відкрите"
-
-`SettingsPanelComponent` має показувати налаштування саме того World'у, який зараз відкритий, у саме тій сесії, якій він належить. Це — пара `(sessionId, worldIndex)`:
-
-- `sessionId` — не з DI, а явний `@Input({ required: true })`, який `SessionComponent` прокидує вниз (`[sessionId]="sessionId"`), бо компонент не може сам знати, до якої сесії належить.
-- `worldIndex` — `activeWorld.activeWorldIndex()`, де `activeWorld = inject(ActiveWorldService)` — а оскільки `SettingsPanelComponent` сидить усередині DI-скоупу `SessionComponent`, це завжди `ActiveWorldService` саме цієї сесії, не чужої.
-
-Разом `(sessionId, activeWorld.activeWorldIndex())` однозначно ідентифікують, чиї налаштування показані — навіть коли одночасно існує N сесій × 3 World'и.
-
-### Що НЕ ізольовано per-session: ширина панелей
-
-`SessionComponent` містить власний `<as-split>` (бо `RenderWindowComponent` і `SettingsPanelComponent` мають бути в одному DI-піддереві), але ширина панелі — це UI-шар, не дані сесії. Якщо просто прив'язати `[size]` до локального поля `SessionComponent`, кожна сесія тримає власний стан перетягування ґутера — і при перемиканні між сесіями ширина "стрибає". Тому вона винесена в root-scoped `RenderSettingsSplitService` (`state/render-settings-split.service.ts`): усі `<as-split>` усіх сесій читають і пишуть той самий сигнал (`settingsWidth`) через `(dragEnd)`. Перетягнув ґутер в одній сесії — бачиш той самий розмір у решті.
-
-Область render-window власної ширини **не має** — вона `<as-split-area size="*">`, тобто займає весь залишок. Причина не стилістична: `angular-split` у `unit="pixel"`-режимі вимагає, щоб рівно одна область була `'*'`. Раніше обидві area мали фіксовані пікселі, пораховані від `window.screen.width` (фізичний екран), тоді як реальний контейнер спліту має ширину **вікна браузера** — вони майже ніколи не збігаються, через що `angular-split` кидав `"Pixel mode must have exactly one * area"` і лейаут блимав при перемиканні сесій (кожна сесія — окремий інстанс `<as-split>`, і кожен намагався звести те, що не сходиться).
-
-### Пауза неактивних сесій
-
-"Усі World'и живі одночасно" стосується лише World'ів **у межах відкритої сесії** — між сесіями цього немає. `SessionComponent.isActive` (`computed`, порівнює `SessionsService.activeSessionId()` зі своїм `sessionId`) прокидується вниз як `@Input sessionActive` через `RenderWindowComponent` у кожен `WorldCanvasComponent`.
-
-`WorldCanvasComponent` реалізує `OnChanges`: коли `sessionActive` стає `false`, він реально викликає `cancelAnimationFrame` і зупиняє цикл — не просто пропускає `render()`, а перестає викликати навіть `controls.update()`/`checkResize()`. Коли `sessionActive` знову стає `true`, цикл рестартує з того самого стану (сцена/камера не перестворюються, `[hidden]` — не `*ngIf`). Це навмисний компроміс: без цього кожна відкрита сесія назавжди тримала 3 живі `requestAnimationFrame`-цикли, витрачаючи CPU на сесії, які ніхто не бачить.
-
-На паузі також обнуляється залишкове гальмування камери (`OrbitControls.enableDamping` вимикається на один `update()`, одразу вмикається назад) — інакше, якщо користувач саме крутив камеру в момент переходу, рух "заморожувався" мідамп-декею і при поверненні на сесію продовжував довершуватись, що виглядало як мимовільне обертання.
+### `config/app-settings.ts`
+Загальний файл налаштувань застосунку (не лише про World'и, хоч зараз там тільки `WORLDS_CONFIG`) — місце для інших конфігів, коли з'являться.
 
 ---
 
-## Логічна модель (хто чим володіє)
+## `WorldCanvasComponent` (×3) — що спільне, що "на сесію"
 
-```
-кожна Session (їх довільна кількість, максимально ізольовані одна від одної)
-  → володіє → Worlds[3]              (ActiveWorldService — хто з них активний, свій на сесію)
-  → пам'ятає → спільну модель         (SharedModelService — своя на сесію)
+| Належить World'у (створюється раз, ніколи не скидається) | Належить парі (World, сесія) — зберігається в `KeyedStore` всередині |
+|---|---|
+| `THREE.Scene`, `WebGLRenderer`, `PerspectiveCamera`, `OrbitControls` — самі об'єкти | Кут камери: `camera.position`/`controls.target` — значення всередині цих об'єктів |
+| Сам факт рендер-циклу (`animate()`, `checkResize()`) | Клонований `Object3D` у сцені (модель сесії) |
 
-кожен World
-  → має власний 3D вивід              (WorldCanvasComponent: своя Scene/Renderer/Camera/Controls)
-  → представляє спільну модель по-своєму (WorldRepresentationService, своя на сесію)
-```
+### `@Input`
+`sessionId` (яка сесія зараз активна), `representation: WorldRepresentation` (об'єкт + дані від `WorldRepresentationService`), `active` (чи це обраний World-таб активної сесії — керує `OrbitControls.enabled` і чи взагалі викликається `renderer.render()`).
 
-`SessionsService` (root-scoped) знає лише список сесій `{id, name}` і яка активна — сам вміст сесії (World'и, модель) він не зберігає, це навмисно винесено в per-session DI-скоуп вище.
+### `updateModel()` — чому клон, а не оригінал
+`WorldRepresentationService` віддає **той самий** `Object3D` усім 3 World'ам однієї сесії. У Three.js вузол сцени може належати лише одній `Scene` водночас — якщо додати оригінал напряму в усі 3 сцени, кожен наступний `scene.add()` **краде** його з попередньої (виграє останній у черзі `*ngFor`, зазвичай Solver). Тому кожен канвас додає у свою сцену `representation.object.clone()` — геометрія/матеріал лишаються спільними посиланнями всередині клону (дешево), але вузол сцени свій.
+
+Після кожної зміни моделі викликається `renderer.compile(scene, camera)` — прогріває шейдер GPU **заздалегідь**, поки World може бути ще прихований. Без цього перша компіляція шейдера (кожна сесія має свій, щойно створений `THREE.Material`) відбувалась синхронно саме в момент показу канваса — коротка біла спалахна непрошейдженої геометрії.
+
+### `updateSession()` — камера як пам'ять сесії
+При зміні `sessionId`: зберігає поточну позицію/target камери під ключем сесії, яку покидаємо (`cameraStateBySession.set`), і відновлює збережений (або дефолтний `[3,3,3]`, якщо World у цій сесії ще не відкривали) стан для нової сесії. `enableDamping` вимикається на один `update()` і вмикається назад — обнуляє залишкову інерцію обертання, щоб стара сесія не "довершувала" рух у новій.
+
+### `ngOnChanges` — фікс блимання при перемиканні
+Усі 3 канваси щокадру синхронізують `Scene`/камеру **у фоні**, незалежно від `[hidden]` (`updateModel()`/`updateSession()` викликаються в `animate()` завжди). Але `renderer.render()` — лише коли `active`. Коли `[hidden]` знімається, пікселі на екрані — це те, що намальовано **минулого разу**, коли канвас був активний (можливо, інша сесія). `ngOnChanges` ловить момент, коли `active` стає `true`, і **синхронно** викликає `updateModel()` + `updateSession()` + `renderer.render()` одразу, не чекаючи наступного `requestAnimationFrame`-тіку.
 
 ---
 
@@ -103,134 +99,99 @@ classDiagram
     }
 
     class SessionsService {
-        -Signal~Session[]~ _sessions
-        -Signal~number~ _activeSessionId
         +Signal~Session[]~ sessions
         +Signal~number~ activeSessionId
         +createSession()
-        +selectSession(id: number)
+        +selectSession(id)
     }
 
-    class WorldConfig {
-        +string name
+    class KeyedStore~K, V~ {
+        +getOrCreate(key, create) V
+        +get(key) V
+        +set(key, value)
+        +delete(key)
     }
 
     class ActiveWorldService {
-        -Signal~number~ _activeWorldIndex
-        +Signal~number~ activeWorldIndex
-        +selectWorld(index: number)
+        -KeyedStore~sessionId, Signal~worldIndex~~ indexBySession
+        +activeWorldIndex(sessionId) Signal~number~
+        +selectWorld(sessionId, index)
     }
 
     class SharedModelService {
-        -BufferGeometry model
-        +getModel() BufferGeometry
+        -KeyedStore~sessionId, Object3D~ modelBySession
+        +getModel(sessionId) Object3D
     }
 
     class WorldRepresentationService {
-        +getRepresentation(worldIndex) BufferGeometry
-        +notifyModification(worldIndex)
-    }
-
-    class SessionComponent {
-        <<providers: ActiveWorldService, SharedModelService, WorldRepresentationService>>
-        +number sessionId
+        -KeyedStore~sessionId, KeyedStore~worldIndex, WorldData~~ dataBySession
+        +getRepresentation(sessionId, worldIndex) WorldRepresentation
+        +notifyModification(sessionId, worldIndex, data)
     }
 
     class RenderWindowComponent {
-        +boolean sessionActive
-        +ActiveWorldService activeWorld
-        +WorldRepresentationService representations
-        +WorldConfig[] worlds
-        +Material material
+        +Signal~number~ activeWorldIndex
+        +getRepresentation(worldIndex) WorldRepresentation
     }
 
     class WorldTabsComponent {
-        +ActiveWorldService activeWorld
-        +WorldConfig[] worlds
+        +Signal~number~ activeWorldIndex
+        +selectWorld(index)
     }
 
     class WorldCanvasComponent {
-        +number worldIndex
-        +BufferGeometry geometry
-        +Material material
-        +boolean sessionActive
+        +number sessionId
+        +WorldRepresentation representation
+        +boolean active
         -Scene scene
         -WebGLRenderer renderer
         -PerspectiveCamera camera
         -OrbitControls controls
-        -initScene()
+        -KeyedStore~sessionId, CameraState~ cameraStateBySession
+        -updateModel()
+        -updateSession()
         -animate()
-        -isActive() bool
-        -ngOnChanges()
     }
 
     class SettingsPanelComponent {
-        +number sessionId
-        +ActiveWorldService activeWorld
+        +Signal~number~ sessionId
+        +Signal~number~ worldIndex
     }
 
     SessionsService "1" *-- "many" Session : tracks
-    SessionComponent "1" *-- "1" RenderWindowComponent : contains
-    SessionComponent "1" *-- "1" SettingsPanelComponent : contains, passes sessionId
-    SessionComponent ..> ActiveWorldService : provides + scopes
-    SessionComponent ..> SharedModelService : provides + scopes
-    SessionComponent ..> WorldRepresentationService : provides + scopes
+    ActiveWorldService --> KeyedStore : uses
+    SharedModelService --> KeyedStore : uses
+    WorldRepresentationService --> KeyedStore : uses (nested)
+    WorldCanvasComponent --> KeyedStore : uses (camera)
     RenderWindowComponent "1" *-- "1" WorldTabsComponent : contains
-    RenderWindowComponent "1" *-- "many" WorldCanvasComponent : creates and owns
+    RenderWindowComponent "1" *-- "3" WorldCanvasComponent : owns permanently
+    RenderWindowComponent ..> SessionsService : inject
     RenderWindowComponent ..> ActiveWorldService : inject
     RenderWindowComponent ..> WorldRepresentationService : inject
+    WorldTabsComponent ..> SessionsService : inject
     WorldTabsComponent ..> ActiveWorldService : inject
-    WorldCanvasComponent ..> ActiveWorldService : inject
-    SettingsPanelComponent ..> ActiveWorldService : inject (same session scope)
+    SettingsPanelComponent ..> SessionsService : inject
+    SettingsPanelComponent ..> ActiveWorldService : inject
     WorldRepresentationService ..> SharedModelService : inject
-    RenderWindowComponent ..> WorldConfig : reads
-    WorldTabsComponent ..> WorldConfig : reads
 ```
-
----
-
-## Шари
-
-### `state/sessions.service.ts` — `SessionsService`
-Root-scoped, єдиний на застосунок. Список сесій (`Session[]`) + який `activeSessionId`. `createSession()` додає нову сесію і одразу робить її активною — сесій можна створити скільки завгодно.
-
-### `layout/session/session.component.ts` — `SessionComponent`
-Межа ізоляції. Не має власного шаблону-логіки, окрім `providers` — саме цей масив створює нову, окрему копію `ActiveWorldService`/`SharedModelService`/`WorldRepresentationService` для кожної сесії. Містить один `RenderWindowComponent`.
-
-### `config/worlds.config.ts`
-Список World'ів (`{ name: string }[]`), спільний шаблон для кожної сесії. Кількість World'ів у сесії = довжина цього масиву.
-
-### `state/active-world.service.ts` — `ActiveWorldService`
-Джерело правди про те, який World зараз активний **у межах однієї сесії**. Angular **signal** (`activeWorldIndex`) + метод `selectWorld(index)`. Інжектиться напряму всіма, кому потрібен цей стан (`WorldTabsComponent`, `RenderWindowComponent`, кожен `WorldCanvasComponent`) — без прокидування через `@Input`/`@Output` по дереву компонентів.
-
-### `state/shared-model.service.ts` — `SharedModelService`
-Єдина модель, над якою працюють усі World'и **однієї сесії**. Сервіс нічого не створює сам — початкову модель приймає через конструктор, а вирішує, що саме передати, `SessionComponent.providers` (`useFactory`). Що це за модель насправді (реальний тип/форма) — не визначено до появи бекенд-контракту; зараз кожна сесія отримує однаковий тимчасовий `THREE.BoxGeometry` через фабрику — підмінити джерело (інша форма на сесію, чи завантаження з бекенду) означає змінити один рядок фабрики, а не сам сервіс.
-
-### `state/world-representation.service.ts` — `WorldRepresentationService`
-Прошарок між `SharedModelService` і конкретним World'ом **у межах сесії**: кожен World представляє спільну модель по-своєму, і стан цього представлення зберігається десь окремо для кожного World'у. Як саме — навмисно не визначено; це "шов", у який пізніше підключиться логіка, керована бекендом. `notifyModification(worldIndex)` — заглушка для майбутнього мапінгу змін між World'ами.
-
-### `layout/render-window/render-window.component.ts` — `RenderWindowComponent`
-Головне вікно для 3D виводу. Власник **спільного матеріалу** (`THREE.Material`) — суто відображувальна властивість (колір/стиль), не частина питання спільної моделі. Містить `WorldTabsComponent` і рендерить `*ngFor` по `WORLDS_CONFIG`, створюючи по одному `WorldCanvasComponent` на кожен World, передаючи йому `geometry` (через `WorldRepresentationService`) і спільний `material`.
-
-### `layout/render-window/world-tabs/world-tabs.component.ts` — `WorldTabsComponent`
-Секція вкладок World'ів усередині `RenderWindowComponent`. Читає список World'ів з конфігу, клік по вкладці викликає `state.selectWorld(i)`.
-
-### `layout/render-window/world-canvas/world-canvas.component.ts` — `WorldCanvasComponent`
-Узагальнений, перевикористовуваний компонент — один на кожен World, і є його власним 3D виводом. Кожен інстанс повністю ізольований:
-- власний `<canvas>`
-- власна `THREE.Scene`
-- власний `THREE.WebGLRenderer`
-- власні `camera` + `OrbitControls`
-
-Отримує ззовні лише `geometry`/`material` — усе інше не ділиться ні з ким.
 
 ---
 
 ## Ключові принципи
 
-1. **Один об'єкт малювання, багато World'ів — у межах однієї сесії.** `Material` створюється один раз у `RenderWindowComponent`; `geometry` кожен World отримує через `WorldRepresentationService`, який поки що віддає всім World'ам сесії той самий `SharedModelService.getModel()` цієї сесії.
-2. **Сесії максимально ізольовані одна від одної.** Ізоляція — на рівні Angular DI (`SessionComponent.providers`), а не домовленості чи конфігу: нова сесія фізично отримує нові інстанси `ActiveWorldService`/`SharedModelService`/`WorldRepresentationService`.
-3. **Повна ізоляція вигляду між World'ами.** Camera/OrbitControls/Scene/Renderer — окремі на кожен World. Ніякого спільного стану камери.
-4. **Усі World'и відкритої сесії живі одночасно; неактивні сесії — на паузі.** У межах відкритої сесії цикл `requestAnimationFrame` кожного `WorldCanvasComponent` працює завжди — `controls.update()` щокадру, а `renderer.render()` лише для того, чий `worldIndex === activeWorldIndex`. Але для сесій, які зараз не відкриті, увесь цикл **зупинено** (`sessionActive` → `cancelAnimationFrame`) — вони не знищуються (стан лишається), але й не крутяться у фоні.
-5. **`[hidden]`, не `*ngIf`** — і для World'ів, і для сесій. Неактивні лише ховаються CSS'ом (`display: none`), компонент ніколи не знищується й не пересоздається, тому не втрачає стан.
-6. **Кількість World'ів — з конфігу; кількість сесій — необмежена.** Додати новий World = додати запис у `WORLDS_CONFIG`. Додати сесію = натиснути "+" у `SessionTabsComponent`, жодних змін коду не потрібно.
+1. **Рівно 3 WebGL-контексти за весь час роботи застосунку**, незалежно від кількості сесій.
+2. **Що ми малюємо визначає сесія; як ми малюємо визначає World.** Модель (`SharedModelService`) — за сесією. Camera/Renderer/Controls (`WorldCanvasComponent`) — за World'ом, спільні для всіх сесій.
+3. **Кут камери — своя пам'ять на пару (World, сесія)**, попри спільний канвас: зберігається в `KeyedStore` усередині кожного `WorldCanvasComponent`.
+4. **Який World-таб відкритий — пам'ять сесії** (`ActiveWorldService`, ключ — `sessionId`).
+5. **Ізоляція сесій — на рівні даних (`KeyedStore`, ключ `sessionId`), не DI-скоупу компонентів.** Попередня версія (per-session `SessionComponent.providers`) не масштабувалась через ліміт WebGL-контекстів.
+6. **`[hidden]`, не `*ngIf`** — неактивний World не знищується, `updateModel()`/`updateSession()` для нього все одно виконуються щокадру у фоні.
+7. **Кількість World'ів — з конфігу; кількість сесій — необмежена.** Додати World = запис у `WORLDS_CONFIG` (`config/app-settings.ts`) — це також додасть ще один постійний WebGL-контекст, свідомий компроміс. Додати сесію = "+" у `SessionTabsComponent`, без жодних нових WebGL-ресурсів.
+
+---
+
+## Відомий технічний борг
+
+- **Немає закриття сесії** — `KeyedStore` має `.delete()`, але ніхто його не викликає; мапи (`ActiveWorldService`, `SharedModelService`, `WorldRepresentationService`, камера в кожному `WorldCanvasComponent`) ростуть назавжди.
+- **`SharedModelService` не звільняє GPU-пам'ять** старих моделей (`.dispose()` на геометрії/матеріалі ніде не викликається) — актуально стане разом із закриттям сесій.
+- **`WorldRepresentationService.notifyModification` не має жодного викликача** — увесь механізм `WorldData` зараз неактивний, `data` завжди `null`.
+- **`getRepresentation` ігнорує `worldIndex`** — "кожен World представляє модель по-своєму" поки що не реалізовано, усі 3 World'и бачать ідентичний `object`.
