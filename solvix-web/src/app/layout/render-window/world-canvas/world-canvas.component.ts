@@ -2,6 +2,7 @@ import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, Simp
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldRepresentation } from '../../../state/world-representation.service';
+import { KeyedStore } from '../../../state/keyed-store';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 
@@ -56,7 +57,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // canvas its own independent placement.
   private currentModel: THREE.Object3D | null = null;
   private lastModel: THREE.Object3D | null = null;
-  private cameraStateBySession = new Map<number, CameraState>();
+  private cameraStateBySession = new KeyedStore<number, CameraState>();
   private lastSessionId: number | null = null;
   private sceneReady = false;
   private frameId = 0;

@@ -1,12 +1,25 @@
-import { Injectable } from '@angular/core';
+import { Injectable, InjectionToken, inject } from '@angular/core';
 import * as THREE from 'three';
+import { KeyedStore } from './keyed-store';
+
+export type ModelFactory = () => THREE.Object3D;
+
+// What a brand-new session's model starts out as. A token, not something
+// hardcoded inside SharedModelService - whoever composes the app can swap
+// it (provide a different INITIAL_MODEL_FACTORY in app.config.ts) without
+// touching this file at all. Default is a placeholder box; this is the
+// seam for eventually loading a real per-session dataset instead.
+export const INITIAL_MODEL_FACTORY = new InjectionToken<ModelFactory>('INITIAL_MODEL_FACTORY', {
+  providedIn: 'root',
+  factory: (): ModelFactory => () =>
+    new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3574f0 }))
+});
 
 // The one model every World represents for a given session. `THREE.Object3D`
 // is deliberately the most general Three.js "thing that goes into a scene"
 // type - not BufferGeometry, since a real model will eventually be a whole
 // group of hexahedra (their own geometry/material/position each), not a
-// single shape with one shared material. `createInitialModel` is a
-// placeholder, swap it to load a real per-session dataset later.
+// single shape with one shared material.
 //
 // Root-scoped and keyed by sessionId: there are only 3 WorldCanvasComponent
 // instances for the whole app (one per World, shared across sessions), so
@@ -15,17 +28,10 @@ import * as THREE from 'three';
 // canvases draw, without recreating any WebGL context.
 @Injectable({ providedIn: 'root' })
 export class SharedModelService {
-  private readonly modelBySession = new Map<number, THREE.Object3D>();
-
-  private readonly createInitialModel = () =>
-    new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3574f0 }));
+  private readonly createInitialModel = inject(INITIAL_MODEL_FACTORY);
+  private readonly modelBySession = new KeyedStore<number, THREE.Object3D>();
 
   getModel(sessionId: number): THREE.Object3D {
-    let model = this.modelBySession.get(sessionId);
-    if (!model) {
-      model = this.createInitialModel();
-      this.modelBySession.set(sessionId, model);
-    }
-    return model;
+    return this.modelBySession.getOrCreate(sessionId, this.createInitialModel);
   }
 }
