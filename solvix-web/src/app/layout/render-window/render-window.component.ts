@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
 import { WORLDS_CONFIG } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
@@ -26,13 +26,10 @@ export class RenderWindowComponent {
   private readonly representations = inject(WorldRepresentationService);
   readonly worlds = WORLDS_CONFIG;
 
-  // -1 when there's no active session - never matches a real worldIndex, so
-  // every WorldCanvasComponent ends up [hidden] and inactive, same as if a
-  // World were simply never selected.
-  readonly activeWorldIndex = computed(() => {
-    const sessionId = this.sessions.activeSessionId();
-    return sessionId === null ? -1 : this.activeWorld.activeWorldIndex(sessionId)();
-  });
+  // null when there's no active session - never matches a real worldIndex,
+  // so every WorldCanvasComponent ends up [hidden] and inactive, same as if
+  // a World were simply never selected.
+  readonly activeWorldIndex = this.activeWorld.currentWorldIndex;
 
   getRepresentation(worldIndex: number): WorldRepresentation | null {
     const sessionId = this.sessions.activeSessionId();

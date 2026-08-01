@@ -19,8 +19,5 @@ export class SettingsPanelComponent {
   private readonly activeWorld = inject(ActiveWorldService);
 
   readonly sessionId = computed(() => this.sessions.activeSessionId());
-  readonly worldIndex = computed(() => {
-    const sessionId = this.sessionId();
-    return sessionId === null ? null : this.activeWorld.activeWorldIndex(sessionId)();
-  });
+  readonly worldIndex = this.activeWorld.currentWorldIndex;
 }
