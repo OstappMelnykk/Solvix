@@ -1,6 +1,7 @@
-import { Injectable, InjectionToken, inject } from '@angular/core';
+import { Injectable, InjectionToken, effect, inject } from '@angular/core';
 import * as THREE from 'three';
 import { KeyedStore } from './keyed-store';
+import { SessionsService } from './sessions.service';
 
 export type ModelFactory = () => THREE.Object3D;
 
@@ -28,10 +29,34 @@ export const INITIAL_MODEL_FACTORY = new InjectionToken<ModelFactory>('INITIAL_M
 // canvases draw, without recreating any WebGL context.
 @Injectable({ providedIn: 'root' })
 export class SharedModelService {
+  private readonly sessions = inject(SessionsService);
   private readonly createInitialModel = inject(INITIAL_MODEL_FACTORY);
   private readonly modelBySession = new KeyedStore<number, THREE.Object3D>();
 
+  constructor() {
+    // Once a session actually closes, dispose its model's GPU resources
+    // (geometry/material) before dropping the reference - otherwise every
+    // closed session leaks VRAM forever.
+    effect(() => {
+      this.modelBySession.pruneTo(
+        this.sessions.sessions().map(session => session.id),
+        model => this.disposeModel(model)
+      );
+    });
+  }
+
   getModel(sessionId: number): THREE.Object3D {
     return this.modelBySession.getOrCreate(sessionId, this.createInitialModel);
+  }
+
+  private disposeModel(model: THREE.Object3D): void {
+    model.traverse(child => {
+      if (!(child instanceof THREE.Mesh)) {
+        return;
+      }
+      child.geometry.dispose();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach(material => material.dispose());
+    });
   }
 }

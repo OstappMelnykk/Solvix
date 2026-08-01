@@ -26,4 +26,20 @@ export class KeyedStore<K, V> {
   delete(key: K): void {
     this.map.delete(key);
   }
+
+  // Drops every entry whose key is NOT in `validKeys` - how consumers clean
+  // up after a session closes, without needing to know about "closing" as
+  // an event: they just re-assert "these are the sessions that still
+  // exist" whenever SessionsService.sessions() changes. `onRemove` runs
+  // before each entry is dropped, for callers that need to release
+  // something (e.g. dispose GPU resources) before losing the reference.
+  pruneTo(validKeys: Iterable<K>, onRemove?: (value: V, key: K) => void): void {
+    const valid = new Set(validKeys);
+    for (const [key, value] of this.map) {
+      if (!valid.has(key)) {
+        onRemove?.(value, key);
+        this.map.delete(key);
+      }
+    }
+  }
 }

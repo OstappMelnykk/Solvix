@@ -1,8 +1,9 @@
-import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, effect, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { KeyedStore } from '../../../state/keyed-store';
+import { SessionsService } from '../../../state/sessions.service';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 
@@ -65,6 +66,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
   private onContextRestored = () => this.checkResize();
+
+  constructor() {
+    const sessions = inject(SessionsService);
+    // Drop a session's saved camera angle once it's actually closed -
+    // otherwise this store grows forever, once per World instance (×3).
+    effect(() => {
+      this.cameraStateBySession.pruneTo(sessions.sessions().map(session => session.id));
+    });
+  }
 
   ngAfterViewInit(): void {
     this.initScene();

@@ -1,6 +1,7 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, effect, inject } from '@angular/core';
 import * as THREE from 'three';
 import { SharedModelService } from './shared-model.service';
+import { SessionsService } from './sessions.service';
 import { KeyedStore } from './keyed-store';
 
 // What a World keeps about its own representation of a session's shared
@@ -29,8 +30,16 @@ export interface WorldRepresentation {
 // mirroring how a session owns its Worlds and each World owns its own data.
 @Injectable({ providedIn: 'root' })
 export class WorldRepresentationService {
+  private readonly sessions = inject(SessionsService);
   private readonly shared = inject(SharedModelService);
   private readonly dataBySession = new KeyedStore<number, KeyedStore<number, WorldData>>();
+
+  constructor() {
+    // Drop a session's whole per-world data map once it's actually closed.
+    effect(() => {
+      this.dataBySession.pruneTo(this.sessions.sessions().map(session => session.id));
+    });
+  }
 
   // Placeholder: every world currently represents the model identically,
   // with no data of its own yet.
