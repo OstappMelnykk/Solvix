@@ -3,5 +3,8 @@
   class="tab"
   [class.tab--active]="sessions.activeSessionId() === session.id"
   (click)="sessions.selectSession(session.id)"
->{{ session.name }}</div>
+>
+  <span class="tab__name">{{ session.name }}</span>
+  <span class="tab__close" (click)="closeSession($event, session.id)">&times;</span>
+</div>
 <div class="tab tab--new" (click)="sessions.createSession()">+</div>

@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { NgIf } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { SplitComponent, SplitAreaComponent, SplitGutterInteractionEvent } from 'angular-split';
 import { SessionTabsComponent } from './layout/session-tabs/session-tabs.component';
@@ -7,11 +8,13 @@ import { SettingsPanelComponent } from './layout/settings-panel/settings-panel.c
 import { ToolbarPanelComponent } from './layout/toolbar-panel/toolbar-panel.component';
 import { FooterComponent } from './layout/footer/footer.component';
 import { RenderSettingsSplitService } from './state/render-settings-split.service';
+import { SessionsService } from './state/sessions.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [
+    NgIf,
     RouterOutlet,
     SplitComponent,
     SplitAreaComponent,
@@ -26,6 +29,7 @@ import { RenderSettingsSplitService } from './state/render-settings-split.servic
 })
 export class AppComponent {
   readonly split = inject(RenderSettingsSplitService);
+  readonly sessions = inject(SessionsService);
 
   title = 'solvix-web';
   appWidth = window.innerWidth;

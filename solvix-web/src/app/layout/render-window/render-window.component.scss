@@ -8,6 +8,10 @@
   border: 1px solid #393b40;
 }
 
+:host([hidden]) {
+  display: none;
+}
+
 .render-window__canvases {
   position: relative;
   flex: 1;

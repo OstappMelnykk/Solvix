@@ -1,8 +1,9 @@
-import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, effect, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { KeyedStore } from '../../../state/keyed-store';
+import { SessionsService } from '../../../state/sessions.service';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 
@@ -28,14 +29,17 @@ interface CameraState {
 })
 export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy {
   // Which session is currently active - drives both the model shown and
-  // which saved camera angle to restore.
-  @Input({ required: true }) sessionId!: number;
+  // which saved camera angle to restore. null when no session is open at
+  // all (the last one was just closed) - updateModel/updateSession simply
+  // do nothing in that case, leaving whatever was last shown frozen (fine,
+  // since the whole RenderWindowComponent is [hidden] in that state too).
+  @Input({ required: true }) sessionId!: number | null;
   // Not owned by this world - comes from whichever session is currently
   // active, so it changes as sessions switch. The whole representation
   // (object to render + this World's own data about it), not just the
   // Object3D, so `data` is actually reachable here instead of getting
-  // silently dropped one layer up.
-  @Input({ required: true }) representation!: WorldRepresentation;
+  // silently dropped one layer up. null alongside a null sessionId.
+  @Input({ required: true }) representation!: WorldRepresentation | null;
   // Whether this is the World tab currently selected for the active
   // session. Drives OrbitControls interactivity and whether this canvas
   // actually renders - the other 2 keep simulating but stay unrendered.
@@ -65,6 +69,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
   private onContextRestored = () => this.checkResize();
+
+  constructor() {
+    const sessions = inject(SessionsService);
+    // Drop a session's saved camera angle once it's actually closed -
+    // otherwise this store grows forever, once per World instance (×3).
+    effect(() => {
+      this.cameraStateBySession.pruneTo(sessions.sessions().map(session => session.id));
+    });
+  }
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -132,6 +145,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private updateModel(): void {
+    if (this.representation === null) {
+      return;
+    }
     const object = this.representation.object;
     if (this.lastModel === object) {
       return;
@@ -152,7 +168,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private updateSession(): void {
-    if (this.lastSessionId === this.sessionId) {
+    if (this.sessionId === null || this.lastSessionId === this.sessionId) {
       return;
     }
     if (this.lastSessionId !== null) {

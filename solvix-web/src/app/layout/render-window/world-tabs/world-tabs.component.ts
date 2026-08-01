@@ -16,9 +16,17 @@ export class WorldTabsComponent {
   private readonly activeWorld = inject(ActiveWorldService);
   readonly worlds = WORLDS_CONFIG;
 
-  readonly activeWorldIndex = computed(() => this.activeWorld.activeWorldIndex(this.sessions.activeSessionId())());
+  // -1 when there's no active session - never matches a tab's index.
+  readonly activeWorldIndex = computed(() => {
+    const sessionId = this.sessions.activeSessionId();
+    return sessionId === null ? -1 : this.activeWorld.activeWorldIndex(sessionId)();
+  });
 
   selectWorld(index: number): void {
-    this.activeWorld.selectWorld(this.sessions.activeSessionId(), index);
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.activeWorld.selectWorld(sessionId, index);
   }
 }

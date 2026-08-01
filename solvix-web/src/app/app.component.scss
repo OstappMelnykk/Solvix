@@ -40,6 +40,20 @@
     height: 100%;
   }
 
+  &__empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: 1px solid #393b40;
+    background: #1e1f22;
+    color: #6f737a;
+    font-family: sans-serif;
+    font-size: 13px;
+  }
+
   &__settings-panel {
     height: 100%;
     border-radius: 8px;

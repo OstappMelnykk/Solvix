@@ -6,6 +6,10 @@
   padding: 10px;
 }
 
+:host([hidden]) {
+  display: none;
+}
+
 .context {
   font-size: 11px;
   color: #6f737a;

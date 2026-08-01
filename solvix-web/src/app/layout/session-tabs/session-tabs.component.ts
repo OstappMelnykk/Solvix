@@ -11,4 +11,9 @@ import { SessionsService } from '../../state/sessions.service';
 })
 export class SessionTabsComponent {
   readonly sessions = inject(SessionsService);
+
+  closeSession(event: MouseEvent, id: number): void {
+    event.stopPropagation();
+    this.sessions.closeSession(id);
+  }
 }
