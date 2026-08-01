@@ -3,6 +3,11 @@
   background: #2b2d30;
 }
 
+.tabs {
+  display: flex;
+  flex: 1;
+}
+
 .tab {
   display: flex;
   align-items: center;
