@@ -2,25 +2,30 @@
 
 Опис структури `solvix-web`: хто з ким вкладений, хто чим володіє, і де живе стан.
 
-Статус: реалізовано в `fix/shared-world-canvases`, закриття сесій — у `feature/close-session`.
+Статус: реалізовано в `fix/shared-world-canvases`, закриття сесій — у `feature/close-session`, перемикання тулбару — у `feature/toolbar-views`.
 
 ---
 
 ## Ієрархія вкладеності (хто кого містить)
 
 ```
-AppComponent                     (1, завжди)
-├── SessionTabsComponent          — читає SessionsService напряму
-├── ToolbarPanelComponent         — статичний, без стану
-├── as-split (unit="percent")
-│   ├── RenderWindowComponent     (1, завжди)
-│   │   ├── WorldTabsComponent    (1)
-│   │   └── WorldCanvasComponent  (× 3, назавжди — Ideal/Real/Solver)
-│   └── SettingsPanelComponent    (1, завжди)
+AppComponent                          (1, завжди)
+├── SessionTabsComponent               — картка сесій, завжди в DOM (див. нижче)
+├── ToolbarPanelComponent               — клікає WorkspaceViewService.selectView(i)
+├── NgComponentOutlet(activeComponent)  — динамічно = WORKSPACE_VIEWS[activeView()]
+│   ├── [icon 0] CadWorkspaceComponent
+│   │   ├── as-split (unit="percent")
+│   │   │   ├── RenderWindowComponent   (1, поки CadWorkspaceComponent живий)
+│   │   │   │   ├── WorldTabsComponent  (1)
+│   │   │   │   └── WorldCanvasComponent (× 3 — Ideal/Real/Solver)
+│   │   │   └── SettingsPanelComponent  (1)
+│   └── [icon 1-4] WorkspacePlaceholderComponent — заглушка, поки без свого вмісту
 └── FooterComponent
 ```
 
-Ключове: **жоден із цих компонентів не створюється "на сесію"**. Скільки б сесій не було відкрито — дерево компонентів однакове. Сесії існують лише як **дані** в сервісах, не як частини компонентного дерева.
+Ключове: **жоден із цих компонентів не створюється "на сесію"**. Скільки б сесій не було відкрито — дерево компонентів під `CadWorkspaceComponent` однакове. Сесії існують лише як **дані** в сервісах, не як частини компонентного дерева.
+
+На відміну від цього, `CadWorkspaceComponent`/`WorkspacePlaceholderComponent` — **на toolbar-іконку**: `NgComponentOutlet` знищує попередній інстанс і створює новий при кожній зміні `activeView()`. Це нормально саме тому, що жоден із них не тримає дорогого WebGL-стану сам по собі (він у `WorldCanvasComponent`-ах, які живуть **не тут**, а всередині `RenderWindowComponent` — і той теж перестворюється разом з `CadWorkspaceComponent`, коли йдеш на іншу іконку і повертаєшся!). Тобто зараз рівно 3 WebGL-контексти живуть, лише поки активна іконка 0 — перехід на іншу іконку й назад **перестворює всі 3 канваси заново** (втрачається кут камери й скомпільовані шейдери, хоч дані сесій/моделі — ні, бо ті в root-сервісах). Задокументовано нижче як технічний борг.
 
 ---
 
@@ -64,8 +69,14 @@ interface WorldRepresentation {
 ### `state/render-settings-split.service.ts` — `RenderSettingsSplitService`
 Не пов'язаний із сесіями — ширина панелі налаштувань (`%`), спільна UI-складова. `<as-split unit="percent">`, а не `pixel`: перше монтування `<as-split>` з пиксельними розмірами рахувало layout через сигнальний `effect()`, що резолвився на тик пізніше, ніж перший рендер — коротка "стрибка" розміру. Percent-режим CSS grid (`fr`-одиниці) вирішує це миттєво, без JS-математики проти виміряної ширини контейнера.
 
+### `state/workspace-view.service.ts` — `WorkspaceViewService`
+Не пов'язаний із сесіями — root-scoped UI-chrome, як `RenderSettingsSplitService`. Тримає лише `activeView: Signal<number>` (яка toolbar-іконка обрана) і `selectView(index)`. **Нічого не знає про компоненти чи рендеринг** — чиста індекс-пам'ять, так само як `SessionsService` нічого не знає про World'и. Додатково — `isCadWorkspace = computed(() => activeView() === 0)`: єдине джерело "чи ми зараз на CAD-інструменті", яким користуються і `AppComponent` (нижче), і `SessionTabsComponent` (щоб не дублювати `=== 0` у двох місцях).
+
 ### `config/app-settings.ts`
 Загальний файл налаштувань застосунку (не лише про World'и, хоч зараз там тільки `WORLDS_CONFIG`) — місце для інших конфігів, коли з'являться.
+
+### `layout/workspace-views.ts` — `WORKSPACE_VIEWS: Type<unknown>[]`
+Реєстр "індекс toolbar-іконки → клас компонента, який рендерить для неї весь основний контент": `[CadWorkspaceComponent, WorkspacePlaceholderComponent, WorkspacePlaceholderComponent, WorkspacePlaceholderComponent, WorkspacePlaceholderComponent]`. Живе в `layout/`, **не** в `config/app-settings.ts` — `app-settings.ts` вже імпортується `RenderWindowComponent`-ом (через `WORLDS_CONFIG`), і якби цей реєстр компонентів жив там, вийшов би цикл імпортів: `app-settings.ts → CadWorkspaceComponent → RenderWindowComponent → app-settings.ts`. `ToolbarPanelComponent` рахує кількість іконок від `WORKSPACE_VIEWS.length`, щоб дві речі не розійшлись.
 
 ---
 
@@ -89,6 +100,33 @@ interface WorldRepresentation {
 
 ### `ngOnChanges` — фікс блимання при перемиканні
 Усі 3 канваси щокадру синхронізують `Scene`/камеру **у фоні**, незалежно від `[hidden]` (`updateModel()`/`updateSession()` викликаються в `animate()` завжди). Але `renderer.render()` — лише коли `active`. Коли `[hidden]` знімається, пікселі на екрані — це те, що намальовано **минулого разу**, коли канвас був активний (можливо, інша сесія). `ngOnChanges` ловить момент, коли `active` стає `true`, і **синхронно** викликає `updateModel()` + `updateSession()` + `renderer.render()` одразу, не чекаючи наступного `requestAnimationFrame`-тіку.
+
+---
+
+## Перемикання тулбару: `AppComponent` + `NgComponentOutlet`
+
+Клік по toolbar-іконці (`ToolbarPanelComponent`) міняє весь основний контент праворуч, не лише щось усередині нього. Замість `*ngIf`/`*ngSwitch`-ланцюжка з гілкою на кожен tool (яка розросталась би прямо в `AppComponent` і вимагала б знати про вміст кожного tool'у), використано реєстр компонентів:
+
+```ts
+// AppComponent
+readonly activeComponent = computed(() => WORKSPACE_VIEWS[this.workspace.activeView()]);
+```
+```html
+<ng-container [ngComponentOutlet]="activeComponent()" />
+```
+
+`NgComponentOutlet` бере **клас** компонента (не інстанс) і сам створює/знищує реальний інстанс при зміні значення — на відміну від `[hidden]` на World-канвасах, тут попередній інстанс **справді знищується** (`ngOnDestroy`), а новий створюється з нуля.
+
+### `CadWorkspaceComponent` (`layout/cad-workspace/`) — icon 0
+Увесь колишній inline-вміст іконки 0: `as-split` з `RenderWindowComponent` + `SettingsPanelComponent`, разом зі своїм `RenderSettingsSplitService`/`SessionsService`-inject і `onDragEnd`. Раніше жив прямо в `app.component.html`; тепер — окремий компонент, щоб `AppComponent` не мусив знати про CAD-специфічний вміст, так само як не знатиме про вміст будь-якого майбутнього tool'у.
+
+**Наслідок:** `RenderWindowComponent` (і всі 3 `WorldCanvasComponent` всередині) живе, лише поки активна іконка 0. Перехід на іншу іконку й назад **перестворює всі 3 WebGL-канваси заново** — втрачається кут камери й скомпільовані шейдери (хоч самі дані сесій/моделі — ні, вони в root-сервісах, не в компонентах). Див. технічний борг нижче.
+
+### `WorkspacePlaceholderComponent` (`layout/workspace-placeholder/`) — icons 1-4
+Заглушка "Розділ N — ще не реалізовано" для tool'ів без власного вмісту. Читає свій індекс **напряму з `WorkspaceViewService.activeView`**, без `@Input` — бо `NgComponentOutlet` рендерить лише один активний компонент за раз, нема потреби розрізняти "який я серед кількох" (на відміну від `WorldCanvasComponent.worldIndex`, де 3 інстанси існують одночасно).
+
+### `SessionTabsComponent` — картка сесій лише для icon 0
+Сесії — CAD-специфічне поняття, тому список вкладок має сенс лише при `workspace.isCadWorkspace()`. Але сам компонент **завжди в DOM**, не під `*ngIf`: список табів усередині ховається через `[class.tabs--hidden]` → `visibility: hidden` на CSS-рівні, а не `*ngIf`/`[hidden]`. Причина: `:host` не мав власної висоти — вона трималась виключно на висоті `.tab`-елементів. `[hidden]`/`*ngIf` прибрали б цей вміст із layout-потоку, і вся картка (фон + тінь + border-radius) схлопувалась би до 0px і візуально зникала, хоч DOM-вузол `<app-session-tabs>` і лишався. `visibility: hidden` ховає вміст **зберігаючи layout-box**, тому картка тримає природну висоту завжди.
 
 ---
 
@@ -218,3 +256,5 @@ classDiagram
 
 - **`WorldRepresentationService.notifyModification` не має жодного викликача** — увесь механізм `WorldData` зараз неактивний, `data` завжди `null`.
 - **`getRepresentation` ігнорує `worldIndex`** — "кожен World представляє модель по-своєму" поки що не реалізовано, усі 3 World'и бачать ідентичний `object`.
+- **Перехід на іншу toolbar-іконку й назад перестворює всі 3 WebGL-канваси** — `CadWorkspaceComponent` (а з ним `RenderWindowComponent` і 3 `WorldCanvasComponent`) живе, лише поки активна іконка 0; `NgComponentOutlet` знищує його при переході на іншу іконку. "Рівно 3 WebGL-контексти за весь час роботи застосунку" (принцип 1 нижче) тепер правильний лише за умови, що користувач не виходить з іконки 0 — кут камери й скомпільовані шейдери губляться при поверненні (дані сесій/моделі — ні, вони в root-сервісах). Не критично, поки інші іконки — просто заглушки без реального use case перемикання туди-сюди під час роботи з геометрією, але варто мати на увазі, якщо це стане реальним сценарієм.
+- **`WorkspacePlaceholderComponent` — тимчасова заглушка для 4 з 5 toolbar-іконок**, без визначеного вмісту чи призначення.

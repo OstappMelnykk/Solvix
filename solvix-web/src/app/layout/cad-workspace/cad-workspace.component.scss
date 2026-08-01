@@ -1,0 +1,34 @@
+:host {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.cad-workspace {
+  flex: 1;
+}
+
+.cad-workspace__render-window {
+  height: 100%;
+}
+
+.cad-workspace__empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid #393b40;
+  background: #1e1f22;
+  color: #6f737a;
+  font-family: sans-serif;
+  font-size: 13px;
+}
+
+.cad-workspace__settings-panel {
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}

@@ -1,0 +1,10 @@
+<as-split class="cad-workspace" unit="percent" [gutterSize]="9.5" (dragEnd)="onDragEnd($event)">
+  <as-split-area size="*">
+    <app-render-window class="cad-workspace__render-window" [hidden]="sessions.activeSessionId() === null" />
+    <div class="cad-workspace__empty" *ngIf="sessions.activeSessionId() === null">Немає відкритих сесій</div>
+  </as-split-area>
+  <as-split-area [size]="split.settingsWidth()" [minSize]="split.settingsMinWidth" [maxSize]="split.settingsMaxWidth">
+    <app-settings-panel class="cad-workspace__settings-panel" [hidden]="sessions.activeSessionId() === null" />
+    <div class="cad-workspace__empty" *ngIf="sessions.activeSessionId() === null"></div>
+  </as-split-area>
+</as-split>
