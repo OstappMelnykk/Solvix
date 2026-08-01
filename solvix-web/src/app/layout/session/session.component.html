@@ -1,8 +1,0 @@
-<as-split class="session__body" unit="pixel" [gutterSize]="9.5" (dragEnd)="onDragEnd($event)">
-  <as-split-area [size]="layout.renderWindowWidth()">
-    <app-render-window class="session__render-window" />
-  </as-split-area>
-  <as-split-area [size]="layout.settingsWidth()" [minSize]="layout.settingsMinWidth" [maxSize]="layout.settingsMaxWidth">
-    <app-settings-panel class="session__settings-panel" [sessionId]="sessionId" />
-  </as-split-area>
-</as-split>

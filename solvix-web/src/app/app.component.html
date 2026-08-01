@@ -4,12 +4,14 @@
   <div class="app-layout__body-row">
     <app-toolbar-panel class="app-layout__toolbar-panel" />
 
-    <app-session
-      *ngFor="let session of sessions.sessions()"
-      class="app-layout__session"
-      [sessionId]="session.id"
-      [hidden]="sessions.activeSessionId() !== session.id"
-    />
+    <as-split class="app-layout__body" unit="percent" [gutterSize]="9.5" (dragEnd)="onDragEnd($event)">
+      <as-split-area size="*">
+        <app-render-window class="app-layout__render-window" />
+      </as-split-area>
+      <as-split-area [size]="split.settingsWidth()" [minSize]="split.settingsMinWidth" [maxSize]="split.settingsMaxWidth">
+        <app-settings-panel class="app-layout__settings-panel" />
+      </as-split-area>
+    </as-split>
   </div>
 
   <app-footer class="app-layout__footer" />

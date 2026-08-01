@@ -25,7 +25,7 @@ FooterComponent                     — міні-футер з інфою (си�
 
 `SessionComponent` фізично містить і `RenderWindowComponent`, і `SettingsPanelComponent` (в одному `<as-split>`, самостійно керує пропорціями свого лейауту) — не тому, що це один UI-регіон (вони в різних панелях), а тому що `SettingsPanelComponent` має залежати від активного World цієї сесії, а це можливо лише якщо він сидить у тому самому DI-піддереві.
 
-`AppComponent` рендерить `*ngFor` по всіх сесіях з `SessionsService`, по одному `SessionComponent` на сесію, і перемикає видиму через `[hidden]` — так само, як `RenderWindowComponent` перемикає World'и. Неактивна сесія не знищується, а просто ховається CSS'ом: усі сесії "живі" одночасно.
+`AppComponent` рендерить `*ngFor` по всіх сесіях з `SessionsService`, по одному `SessionComponent` на сесію, і перемикає видиму через `[hidden]` — так само, як `RenderWindowComponent` перемикає World'и. Неактивна сесія не знищується (стан не втрачається), але й не рендериться в фоні — див. "Пауза неактивних сесій" нижче.
 
 Кількість `WorldCanvasComponent` = довжина `WORLDS_CONFIG`. Кількість `SessionComponent` = довжина `SessionsService.sessions()` — необмежена, сесії створюються кнопкою "+" у `SessionTabsComponent`.
 
@@ -63,7 +63,17 @@ Session A                          Session B
 
 ### Що НЕ ізольовано per-session: ширина панелей
 
-`SessionComponent` містить власний `<as-split>` (бо `RenderWindowComponent` і `SettingsPanelComponent` мають бути в одному DI-піддереві), але ширини панелей — це UI-шар, не дані сесії. Якщо просто прив'язати `[size]` до локального поля `SessionComponent`, кожна сесія тримає власний стан перетягування ґутера — і при перемиканні між сесіями ширина "стрибає". Тому ширини винесено в root-scoped `PanelLayoutService` (`state/panel-layout.service.ts`): усі `<as-split>` усіх сесій читають і пишуть ті самі два сигнали (`renderWindowWidth`, `settingsWidth`) через `(dragEnd)`. Перетягнув ґутер в одній сесії — бачиш той самий розмір у решті.
+`SessionComponent` містить власний `<as-split>` (бо `RenderWindowComponent` і `SettingsPanelComponent` мають бути в одному DI-піддереві), але ширина панелі — це UI-шар, не дані сесії. Якщо просто прив'язати `[size]` до локального поля `SessionComponent`, кожна сесія тримає власний стан перетягування ґутера — і при перемиканні між сесіями ширина "стрибає". Тому вона винесена в root-scoped `RenderSettingsSplitService` (`state/render-settings-split.service.ts`): усі `<as-split>` усіх сесій читають і пишуть той самий сигнал (`settingsWidth`) через `(dragEnd)`. Перетягнув ґутер в одній сесії — бачиш той самий розмір у решті.
+
+Область render-window власної ширини **не має** — вона `<as-split-area size="*">`, тобто займає весь залишок. Причина не стилістична: `angular-split` у `unit="pixel"`-режимі вимагає, щоб рівно одна область була `'*'`. Раніше обидві area мали фіксовані пікселі, пораховані від `window.screen.width` (фізичний екран), тоді як реальний контейнер спліту має ширину **вікна браузера** — вони майже ніколи не збігаються, через що `angular-split` кидав `"Pixel mode must have exactly one * area"` і лейаут блимав при перемиканні сесій (кожна сесія — окремий інстанс `<as-split>`, і кожен намагався звести те, що не сходиться).
+
+### Пауза неактивних сесій
+
+"Усі World'и живі одночасно" стосується лише World'ів **у межах відкритої сесії** — між сесіями цього немає. `SessionComponent.isActive` (`computed`, порівнює `SessionsService.activeSessionId()` зі своїм `sessionId`) прокидується вниз як `@Input sessionActive` через `RenderWindowComponent` у кожен `WorldCanvasComponent`.
+
+`WorldCanvasComponent` реалізує `OnChanges`: коли `sessionActive` стає `false`, він реально викликає `cancelAnimationFrame` і зупиняє цикл — не просто пропускає `render()`, а перестає викликати навіть `controls.update()`/`checkResize()`. Коли `sessionActive` знову стає `true`, цикл рестартує з того самого стану (сцена/камера не перестворюються, `[hidden]` — не `*ngIf`). Це навмисний компроміс: без цього кожна відкрита сесія назавжди тримала 3 живі `requestAnimationFrame`-цикли, витрачаючи CPU на сесії, які ніхто не бачить.
+
+На паузі також обнуляється залишкове гальмування камери (`OrbitControls.enableDamping` вимикається на один `update()`, одразу вмикається назад) — інакше, якщо користувач саме крутив камеру в момент переходу, рух "заморожувався" мідамп-декею і при поверненні на сесію продовжував довершуватись, що виглядало як мимовільне обертання.
 
 ---
 
@@ -127,14 +137,15 @@ classDiagram
     }
 
     class RenderWindowComponent {
-        +ActiveWorldService state
+        +boolean sessionActive
+        +ActiveWorldService activeWorld
         +WorldRepresentationService representations
         +WorldConfig[] worlds
         +Material material
     }
 
     class WorldTabsComponent {
-        +ActiveWorldService state
+        +ActiveWorldService activeWorld
         +WorldConfig[] worlds
     }
 
@@ -142,6 +153,7 @@ classDiagram
         +number worldIndex
         +BufferGeometry geometry
         +Material material
+        +boolean sessionActive
         -Scene scene
         -WebGLRenderer renderer
         -PerspectiveCamera camera
@@ -149,6 +161,7 @@ classDiagram
         -initScene()
         -animate()
         -isActive() bool
+        -ngOnChanges()
     }
 
     class SettingsPanelComponent {
@@ -191,7 +204,7 @@ Root-scoped, єдиний на застосунок. Список сесій (`S
 Джерело правди про те, який World зараз активний **у межах однієї сесії**. Angular **signal** (`activeWorldIndex`) + метод `selectWorld(index)`. Інжектиться напряму всіма, кому потрібен цей стан (`WorldTabsComponent`, `RenderWindowComponent`, кожен `WorldCanvasComponent`) — без прокидування через `@Input`/`@Output` по дереву компонентів.
 
 ### `state/shared-model.service.ts` — `SharedModelService`
-Єдина модель, над якою працюють усі World'и **однієї сесії**. Що це за модель насправді (реальний тип/форма) — не визначено до появи бекенд-контракту; зараз тимчасова заглушка (`THREE.BufferGeometry`).
+Єдина модель, над якою працюють усі World'и **однієї сесії**. Сервіс нічого не створює сам — початкову модель приймає через конструктор, а вирішує, що саме передати, `SessionComponent.providers` (`useFactory`). Що це за модель насправді (реальний тип/форма) — не визначено до появи бекенд-контракту; зараз кожна сесія отримує однаковий тимчасовий `THREE.BoxGeometry` через фабрику — підмінити джерело (інша форма на сесію, чи завантаження з бекенду) означає змінити один рядок фабрики, а не сам сервіс.
 
 ### `state/world-representation.service.ts` — `WorldRepresentationService`
 Прошарок між `SharedModelService` і конкретним World'ом **у межах сесії**: кожен World представляє спільну модель по-своєму, і стан цього представлення зберігається десь окремо для кожного World'у. Як саме — навмисно не визначено; це "шов", у який пізніше підключиться логіка, керована бекендом. `notifyModification(worldIndex)` — заглушка для майбутнього мапінгу змін між World'ами.
@@ -218,6 +231,6 @@ Root-scoped, єдиний на застосунок. Список сесій (`S
 1. **Один об'єкт малювання, багато World'ів — у межах однієї сесії.** `Material` створюється один раз у `RenderWindowComponent`; `geometry` кожен World отримує через `WorldRepresentationService`, який поки що віддає всім World'ам сесії той самий `SharedModelService.getModel()` цієї сесії.
 2. **Сесії максимально ізольовані одна від одної.** Ізоляція — на рівні Angular DI (`SessionComponent.providers`), а не домовленості чи конфігу: нова сесія фізично отримує нові інстанси `ActiveWorldService`/`SharedModelService`/`WorldRepresentationService`.
 3. **Повна ізоляція вигляду між World'ами.** Camera/OrbitControls/Scene/Renderer — окремі на кожен World. Ніякого спільного стану камери.
-4. **Всі World'и й усі сесії живі одночасно.** Цикл `requestAnimationFrame` у кожному `WorldCanvasComponent` працює завжди, незалежно від активності — `controls.update()` викликається щокадру для кожного. На екран (`renderer.render`) малюється лише той, чий `worldIndex === activeWorldIndex`. Неактивні сесії так само не знищуються, лише ховаються.
+4. **Усі World'и відкритої сесії живі одночасно; неактивні сесії — на паузі.** У межах відкритої сесії цикл `requestAnimationFrame` кожного `WorldCanvasComponent` працює завжди — `controls.update()` щокадру, а `renderer.render()` лише для того, чий `worldIndex === activeWorldIndex`. Але для сесій, які зараз не відкриті, увесь цикл **зупинено** (`sessionActive` → `cancelAnimationFrame`) — вони не знищуються (стан лишається), але й не крутяться у фоні.
 5. **`[hidden]`, не `*ngIf`** — і для World'ів, і для сесій. Неактивні лише ховаються CSS'ом (`display: none`), компонент ніколи не знищується й не пересоздається, тому не втрачає стан.
 6. **Кількість World'ів — з конфігу; кількість сесій — необмежена.** Додати новий World = додати запис у `WORLDS_CONFIG`. Додати сесію = натиснути "+" у `SessionTabsComponent`, жодних змін коду не потрібно.

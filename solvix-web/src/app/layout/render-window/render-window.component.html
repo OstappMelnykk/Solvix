@@ -3,9 +3,9 @@
 <div class="render-window__canvases">
   <app-world-canvas
     *ngFor="let world of worlds; let i = index"
-    [worldIndex]="i"
-    [geometry]="representations.getRepresentation(i)"
-    [material]="material"
-    [hidden]="state.activeWorldIndex() !== i"
+    [sessionId]="sessions.activeSessionId()"
+    [representation]="getRepresentation(i)"
+    [active]="activeWorldIndex() === i"
+    [hidden]="activeWorldIndex() !== i"
   />
 </div>
