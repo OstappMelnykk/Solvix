@@ -6,8 +6,8 @@ export interface Session {
 }
 
 // The list of open sessions and which one is active. Everything else about
-// a session (its Worlds, their active tab, the shared model they work on)
-// lives in a separate, per-session DI scope created by SessionComponent -
+// a session (its Worlds' active tab, the shared model they work on) is
+// keyed by sessionId in ActiveWorldService/SharedModelService instead -
 // this service only tracks which sessions exist, not their content.
 @Injectable({ providedIn: 'root' })
 export class SessionsService {

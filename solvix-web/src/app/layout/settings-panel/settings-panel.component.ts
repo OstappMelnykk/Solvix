@@ -1,11 +1,10 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { ActiveWorldService } from '../../state/active-world.service';
+import { SessionsService } from '../../state/sessions.service';
 
-// Lives inside SessionComponent's DI scope, so ActiveWorldService here is
-// always that session's own instance. Combined with sessionId (passed down
-// explicitly, since a component can't know its own session from context),
-// (sessionId, activeWorld.activeWorldIndex()) uniquely identifies which
-// World's settings this panel is currently showing.
+// (sessionId, worldIndex) together identify which World's settings this
+// panel shows - both are read directly from the currently active session,
+// since there's only one shared settings panel for the whole app now.
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
@@ -14,7 +13,9 @@ import { ActiveWorldService } from '../../state/active-world.service';
   styleUrl: './settings-panel.component.scss'
 })
 export class SettingsPanelComponent {
-  @Input({ required: true }) sessionId!: number;
+  private readonly sessions = inject(SessionsService);
+  private readonly activeWorld = inject(ActiveWorldService);
 
-  readonly activeWorld = inject(ActiveWorldService);
+  readonly sessionId = computed(() => this.sessions.activeSessionId());
+  readonly worldIndex = computed(() => this.activeWorld.activeWorldIndex(this.sessionId())());
 }

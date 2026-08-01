@@ -1,12 +1,16 @@
-import { Component, OnDestroy, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
-import * as THREE from 'three';
-import { WORLDS_CONFIG } from '../../config/worlds.config';
+import { WORLDS_CONFIG } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
-import { WorldRepresentationService } from '../../state/world-representation.service';
+import { WorldRepresentation, WorldRepresentationService } from '../../state/world-representation.service';
+import { SessionsService } from '../../state/sessions.service';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 
+// App-level, single instance - not one per session. Its 3 WorldCanvasComponent
+// children are the only 3 WebGL contexts the app ever creates; switching
+// sessions just changes which session's model they draw (see
+// WorldRepresentationService), not which canvases exist.
 @Component({
   selector: 'app-render-window',
   standalone: true,
@@ -14,16 +18,15 @@ import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
   templateUrl: './render-window.component.html',
   styleUrl: './render-window.component.scss'
 })
-export class RenderWindowComponent implements OnDestroy {
-  readonly state = inject(ActiveWorldService);
-  readonly representations = inject(WorldRepresentationService);
+export class RenderWindowComponent {
+  readonly sessions = inject(SessionsService);
+  private readonly activeWorld = inject(ActiveWorldService);
+  private readonly representations = inject(WorldRepresentationService);
   readonly worlds = WORLDS_CONFIG;
 
-  // Material stays shared - it's a display concern (color/style), not part
-  // of the shared-model question.
-  readonly material = new THREE.MeshStandardMaterial({ color: 0x3574f0 });
+  readonly activeWorldIndex = computed(() => this.activeWorld.activeWorldIndex(this.sessions.activeSessionId())());
 
-  ngOnDestroy(): void {
-    this.material.dispose();
+  getRepresentation(worldIndex: number): WorldRepresentation {
+    return this.representations.getRepresentation(this.sessions.activeSessionId(), worldIndex);
   }
 }

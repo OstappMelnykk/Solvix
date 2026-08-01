@@ -1,14 +1,24 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, WritableSignal, signal } from '@angular/core';
+import { KeyedStore } from './keyed-store';
 
-// Scoped per-session - see SessionComponent's `providers`. Not providedIn
-// root: an ActiveWorldService with no session above it should not exist.
-@Injectable()
+// Which World tab (Ideal/Real/Solver) is open - remembered per session, but
+// the service itself is root-scoped: there are only 3 WorldCanvasComponent
+// instances for the whole app (one per World), shared by every session, so
+// there's no per-session component subtree left to scope this to. Each
+// session gets its own entry in the store instead.
+@Injectable({ providedIn: 'root' })
 export class ActiveWorldService {
-  private readonly _activeWorldIndex = signal(0);
+  private readonly indexBySession = new KeyedStore<number, WritableSignal<number>>();
 
-  readonly activeWorldIndex = this._activeWorldIndex.asReadonly();
+  activeWorldIndex(sessionId: number) {
+    return this.entry(sessionId).asReadonly();
+  }
 
-  selectWorld(index: number): void {
-    this._activeWorldIndex.set(index);
+  selectWorld(sessionId: number, index: number): void {
+    this.entry(sessionId).set(index);
+  }
+
+  private entry(sessionId: number): WritableSignal<number> {
+    return this.indexBySession.getOrCreate(sessionId, () => signal(0));
   }
 }
