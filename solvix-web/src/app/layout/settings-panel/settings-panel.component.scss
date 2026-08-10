@@ -4,6 +4,7 @@
   color: #dfe1e5;
   font-family: sans-serif;
   padding: 10px;
+  overflow-y: auto;
 }
 
 :host([hidden]) {
@@ -40,4 +41,29 @@ h4 {
   font-size: 13px;
   padding: 3px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.tool--import {
+  display: block;
+}
+
+.import-status {
+  font-size: 11px;
+  color: #8a8f98;
+  margin: -2px 0 8px;
+}
+
+.import-status--warning {
+  color: #e2b93b;
+}
+
+.import-status--error {
+  color: #e05252;
+}
+
+.hint {
+  font-size: 11px;
+  color: #6f737a;
+  margin-bottom: 10px;
+  line-height: 1.4;
 }

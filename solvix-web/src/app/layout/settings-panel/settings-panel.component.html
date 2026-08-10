@@ -8,6 +8,25 @@
 <div class="tool">Validate</div>
 <div class="tool">Export</div>
 
+<h4>Import</h4>
+<ng-container *ngIf="isIdealWorld(); else importElsewhere">
+  <label class="tool tool--import">
+    Import model ({{ acceptedExtensions }})
+    <input type="file" [attr.accept]="acceptedExtensions" hidden (change)="onImportFile($event)" />
+  </label>
+  <ng-container *ngIf="getImportDisplayStatus() as status">
+    <div class="import-status" *ngIf="status.kind !== 'none'" [class.import-status--warning]="status.kind === 'not-watertight'" [class.import-status--error]="status.kind === 'error'">
+      <span *ngIf="status.kind === 'loading'">Завантаження…</span>
+      <span *ngIf="status.kind === 'success'">{{ status.fileName }} — watertight ✓</span>
+      <span *ngIf="status.kind === 'not-watertight'">{{ status.fileName }} — НЕ watertight (є діри в поверхні)</span>
+      <span *ngIf="status.kind === 'error'">Не вдалось завантажити файл</span>
+    </div>
+  </ng-container>
+</ng-container>
+<ng-template #importElsewhere>
+  <div class="hint">Доступно лише в Ideal World.</div>
+</ng-template>
+
 <h4>Properties</h4>
 <div class="row"><span>Id</span><span>—</span></div>
 <div class="row"><span>X, Y, Z</span><span>—</span></div>
