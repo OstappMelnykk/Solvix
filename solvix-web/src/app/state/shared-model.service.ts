@@ -8,12 +8,15 @@ export type ModelFactory = () => THREE.Object3D;
 // What a brand-new session's model starts out as. A token, not something
 // hardcoded inside SharedModelService - whoever composes the app can swap
 // it (provide a different INITIAL_MODEL_FACTORY in app.config.ts) without
-// touching this file at all. Default is a placeholder box; this is the
-// seam for eventually loading a real per-session dataset instead.
+// touching this file at all. Default is an empty group - a new session has
+// nothing placed yet (no real geometry pipeline writes into this model
+// currently; an earlier placeholder cube had nothing to do with any
+// session's actual data and was only ever a stand-in for "something is
+// here"). This is the seam for eventually loading a real per-session
+// dataset instead.
 export const INITIAL_MODEL_FACTORY = new InjectionToken<ModelFactory>('INITIAL_MODEL_FACTORY', {
   providedIn: 'root',
-  factory: (): ModelFactory => () =>
-    new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x3574f0 }))
+  factory: (): ModelFactory => () => new THREE.Group()
 });
 
 // The one model every World represents for a given session. `THREE.Object3D`

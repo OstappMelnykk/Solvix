@@ -5,6 +5,7 @@ import { WorldRepresentation } from '../../../state/world-representation.service
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
+const AXES_LENGTH = 50;
 
 // One of exactly 3 instances for the whole app - one per World (Ideal/Real/
 // Solver). Its Scene/Camera/Renderer/OrbitControls are NOT recreated per
@@ -42,6 +43,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // component uses into WorldCameraMemoryService, alongside sessionId, so
   // its saved camera angles don't collide with the other 2 Worlds'.
   @Input({ required: true }) worldIndex!: number;
+  // The session's imported reference geometry (ImportedGeometryService), if
+  // any - a visual guide only, not part of `representation`. Optional
+  // (defaults to null) since it's not core to what a World renders.
+  @Input() importedReference: THREE.Object3D | null = null;
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
@@ -59,6 +64,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // canvas its own independent placement.
   private currentModel: THREE.Object3D | null = null;
   private lastModel: THREE.Object3D | null = null;
+  // Same clone-not-original reasoning as `currentModel`/`lastModel`, for the
+  // imported reference overlay (also shared across all 3 canvases via
+  // ImportedGeometryService).
+  private currentImportedReference: THREE.Object3D | null = null;
+  private lastImportedReference: THREE.Object3D | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private lastSessionId: number | null = null;
   private sceneReady = false;
@@ -90,6 +100,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
     this.updateModel();
+    this.updateImportedReference();
     this.updateSession();
     this.renderer.render(this.scene, this.camera);
   }
@@ -99,6 +110,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    if (this.currentImportedReference) {
+      this.disposeImportedReferenceClone(this.currentImportedReference);
+    }
     this.controls?.dispose();
     this.renderer?.dispose();
   }
@@ -112,10 +126,16 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1e1f22);
 
-    this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
+    // far=100 clipped the model out of view once the user zoomed out enough
+    // for OrbitControls' camera distance to exceed it - easy to hit once the
+    // scene can hold arbitrarily large imported/scaled geometry. This makes
+    // the near:far ratio 100000:1, which would ordinarily risk z-fighting
+    // (depth-buffer precision is spread across the whole range) - logarithmicDepthBuffer
+    // on the renderer below is what actually keeps that safe, not the specific numbers here.
+    this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
     this.camera.position.set(...DEFAULT_CAMERA_POSITION);
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
 
@@ -124,6 +144,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.dampingFactor = 0.05 / 3;
 
     this.updateModel();
+    this.updateImportedReference();
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambientLight);
@@ -131,6 +152,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(5, 5, 5);
     this.scene.add(directionalLight);
+
+    // Standard THREE.js axis colors: X red, Y green, Z blue - a fixed scene
+    // fixture (not per-session/model), same lifetime as the lights above, so
+    // it needs no cleanup/disposal logic of its own either.
+    this.scene.add(new THREE.AxesHelper(AXES_LENGTH));
   }
 
   private updateModel(): void {
@@ -154,6 +180,55 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // exactly the moment this canvas becomes visible) and flash unshaded
     // (white) geometry for a frame.
     this.renderer.compile(this.scene, this.camera);
+  }
+
+  private updateImportedReference(): void {
+    const source = this.importedReference;
+    if (this.lastImportedReference === source) {
+      return;
+    }
+    this.lastImportedReference = source;
+
+    if (this.currentImportedReference) {
+      this.scene.remove(this.currentImportedReference);
+      this.disposeImportedReferenceClone(this.currentImportedReference);
+      this.currentImportedReference = null;
+    }
+
+    if (source === null) {
+      return;
+    }
+
+    const clone = source.clone();
+    // A visual guide for the imported reference, not the model being worked
+    // on - override materials so it never gets mistaken for the actual
+    // session model rendered in the same scene.
+    clone.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        child.material = new THREE.MeshBasicMaterial({
+          color: 0x39c5f2,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.5
+        });
+      }
+    });
+    this.currentImportedReference = clone;
+    this.scene.add(clone);
+    this.renderer.compile(this.scene, this.camera);
+  }
+
+  // Geometry is shared with the source object (ImportedGeometryService owns
+  // and disposes it) - only the material is unique to this clone (created
+  // above), so only that gets disposed here.
+  private disposeImportedReferenceClone(clone: THREE.Object3D): void {
+    clone.traverse(child => {
+      if (!(child instanceof THREE.Mesh)) {
+        return;
+      }
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach(material => material.dispose());
+    });
   }
 
   private updateSession(): void {
@@ -189,6 +264,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.frameId = requestAnimationFrame(this.animate);
     this.checkResize();
     this.updateModel();
+    this.updateImportedReference();
     this.updateSession();
 
     this.controls.enabled = this.active;

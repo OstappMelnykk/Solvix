@@ -29,6 +29,13 @@
 .cad-workspace__settings-panel {
   height: 100%;
   border-radius: 8px;
-  overflow: hidden;
+  // x stays clipped (keeps the rounded corners); y must NOT be hidden here -
+  // this class is applied directly on <app-settings-panel>'s host element
+  // (higher specificity than that component's own [_nghost-%COMP%] rule, see
+  // settings-panel.component.scss), so an `overflow: hidden` shorthand here
+  // would silently override that component's own overflow-y: auto and kill
+  // its internal scrolling regardless of what it sets on itself.
+  overflow-x: hidden;
+  overflow-y: auto;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
