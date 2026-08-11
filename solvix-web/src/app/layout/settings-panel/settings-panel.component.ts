@@ -1,6 +1,6 @@
 import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { NgIf } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { IDEAL_WORLD_INDEX } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
@@ -18,6 +18,13 @@ type ImportDisplayStatus =
   | { kind: 'not-watertight'; fileName: string }
   | { kind: 'none' };
 
+interface GeometryInfoEntry {
+  readonly label: string;
+  readonly value: string;
+}
+
+const AXIS_NAMES = ['X', 'Y', 'Z'] as const;
+
 // (sessionId, worldIndex) together identify which World's settings this
 // panel shows - both are read directly from the currently active session,
 // since there's only one shared settings panel for the whole app now. Both
@@ -26,7 +33,7 @@ type ImportDisplayStatus =
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [NgIf],
+  imports: [NgIf, NgFor],
   templateUrl: './settings-panel.component.html',
   styleUrl: './settings-panel.component.scss'
 })
@@ -259,5 +266,32 @@ export class SettingsPanelComponent {
       // needs an explicit rebuild here.
       this.referenceScale.refreshRuler(sessionId);
     }
+  }
+
+  // Full metadata dictionary for whatever's currently imported (ImportedGeometryService
+  // + ImportedReferenceScaleService) - a flat label/value list so the
+  // template just iterates it, rather than hand-writing one row per field.
+  // Empty (not shown) when nothing's imported for the active session.
+  getGeometryInfo(): GeometryInfoEntry[] {
+    const sessionId = this.sessionId();
+    const info = sessionId === null ? null : this.importedGeometry.get(sessionId);
+    if (!info || sessionId === null) {
+      return [];
+    }
+    const scale = this.referenceScale.getScale(sessionId);
+    return [
+      { label: 'Файл', value: info.fileName },
+      { label: 'Watertight', value: info.watertight ? 'так' : 'ні' },
+      { label: 'Мешів', value: String(info.meshCount) },
+      { label: 'Трикутників', value: info.triangleCount.toLocaleString('uk-UA') },
+      { label: 'Вершин', value: info.vertexCount.toLocaleString('uk-UA') },
+      { label: 'Розмір X (файл)', value: info.boundingSize.x.toFixed(3) },
+      { label: 'Розмір Y (файл)', value: info.boundingSize.y.toFixed(3) },
+      { label: 'Розмір Z (файл)', value: info.boundingSize.z.toFixed(3) },
+      { label: 'Найдовша вісь', value: AXIS_NAMES[info.longestAxis] },
+      { label: 'Найдовша сторона (файл)', value: info.longestLength.toFixed(3) },
+      { label: 'Поточний масштаб показу', value: scale !== null ? `×${scale.toFixed(3)}` : '—' },
+      { label: 'Показаний розмір (найдовша)', value: String(this.referenceScale.getDensity(sessionId)) }
+    ];
   }
 }

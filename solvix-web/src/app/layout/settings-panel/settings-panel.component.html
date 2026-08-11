@@ -64,6 +64,11 @@
     <span>Відстань рулетки</span>
     <input type="number" min="0" step="0.1" [value]="getRulerDistance()" (change)="onRulerDistanceChange($event)" />
   </label>
+
+  <ng-container *ngIf="getGeometryInfo() as info">
+    <h4 *ngIf="info.length > 0">Довідка про геометрію</h4>
+    <div class="row" *ngFor="let entry of info"><span>{{ entry.label }}</span><span>{{ entry.value }}</span></div>
+  </ng-container>
 </ng-container>
 
 <h4>Properties</h4>

@@ -5,11 +5,15 @@ import { SessionsService } from './sessions.service';
 import { isWatertight } from '../geometry/watertight-check';
 import { disposeObject3D } from '../geometry/dispose-object3d';
 import { recenterAtOrigin } from '../geometry/recenter-object3d';
+import { computeMeshStats } from '../geometry/mesh-stats';
 
 export interface ImportedGeometry {
   readonly object: THREE.Object3D;
   readonly fileName: string;
   readonly watertight: boolean;
+  readonly meshCount: number;
+  readonly triangleCount: number;
+  readonly vertexCount: number;
   // Bounding-box size in the object's own (unscaled) coordinates, plus which
   // axis is longest - general geometric metadata about the import (e.g. a
   // future voxelization feature would use this to derive its cube density
@@ -68,11 +72,15 @@ export class ImportedGeometryService {
     const longestAxis: 0 | 1 | 2 =
       boundingSize.x >= boundingSize.y && boundingSize.x >= boundingSize.z ? 0 : boundingSize.y >= boundingSize.z ? 1 : 2;
     const longestLength = [boundingSize.x, boundingSize.y, boundingSize.z][longestAxis];
+    const stats = computeMeshStats(object);
 
     this.bySession.set(sessionId, {
       object,
       fileName,
       watertight: isWatertight(object),
+      meshCount: stats.meshCount,
+      triangleCount: stats.triangleCount,
+      vertexCount: stats.vertexCount,
       boundingSize,
       longestAxis,
       longestLength,
