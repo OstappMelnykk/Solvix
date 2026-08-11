@@ -4,6 +4,7 @@ import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { isWatertight } from '../geometry/watertight-check';
 import { disposeObject3D } from '../geometry/dispose-object3d';
+import { recenterAtOrigin } from '../geometry/recenter-object3d';
 
 export interface ImportedGeometry {
   readonly object: THREE.Object3D;
@@ -16,10 +17,10 @@ export interface ImportedGeometry {
   readonly boundingSize: THREE.Vector3;
   readonly longestAxis: 0 | 1 | 2;
   readonly longestLength: number;
-  // The actual min/max, NOT assumed centered at the origin - an imported
-  // mesh's local origin can be anywhere (a corner, off to one side, etc.),
-  // so anything that needs to sit exactly where the object is has to read
-  // this, not just `boundingSize`.
+  // The actual min/max, AFTER `set()` has recentered `object` so this
+  // box's center is the origin - so min/max end up symmetric per axis
+  // (e.g. min.x = -0.5, max.x = 0.5 for a 1-unit-wide import), unlike
+  // `object`'s own original, unrecentered local geometry.
   readonly boundingBox: THREE.Box3;
 }
 
@@ -54,6 +55,14 @@ export class ImportedGeometryService {
     if (existing) {
       disposeObject3D(existing.object);
     }
+    // Recenter so the bounding box's center sits at the origin - imported
+    // files can have their geometry authored anywhere (off to one side, a
+    // corner at the origin, etc.), but every downstream consumer (the
+    // display-scale reference, dimension lines) needs a known, fixed
+    // position to work from rather than wherever the source file happened
+    // to place it.
+    recenterAtOrigin(object);
+
     const boundingBox = new THREE.Box3().setFromObject(object);
     const boundingSize = boundingBox.getSize(new THREE.Vector3());
     const longestAxis: 0 | 1 | 2 =

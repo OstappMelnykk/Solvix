@@ -7,6 +7,9 @@
     [worldIndex]="i"
     [representation]="getRepresentation(i)"
     [importedReference]="getImportedReference(i)"
+    [importedReferenceStyle]="getImportedReferenceStyle(i)"
+    [dimensionLines]="getDimensionLines(i)"
+    [ruler]="getRuler(i)"
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />

@@ -9,6 +9,14 @@ function closedBox(): THREE.Object3D {
   return group;
 }
 
+// A box authored off to one side, the way a real file's local origin
+// commonly isn't at its own geometric center.
+function offsetBox(): THREE.Object3D {
+  const group = closedBox();
+  group.position.set(10, 20, -5);
+  return group;
+}
+
 describe('ImportedGeometryService', () => {
   let sessions: SessionsService;
   let imported: ImportedGeometryService;
@@ -31,6 +39,17 @@ describe('ImportedGeometryService', () => {
     const entry = imported.get(sessionId);
     expect(entry?.fileName).toBe('model.glb');
     expect(entry?.watertight).toBe(true);
+  });
+
+  it('recenters an off-center import so its bounding box sits at the origin', () => {
+    const sessionId = sessions.sessions()[0].id;
+    imported.set(sessionId, offsetBox(), 'offset.glb');
+
+    const entry = imported.get(sessionId)!;
+    const center = entry.boundingBox.getCenter(new THREE.Vector3());
+    expect(center.x).toBeCloseTo(0, 5);
+    expect(center.y).toBeCloseTo(0, 5);
+    expect(center.z).toBeCloseTo(0, 5);
   });
 
   it('disposes the previous import when a new file replaces it', () => {

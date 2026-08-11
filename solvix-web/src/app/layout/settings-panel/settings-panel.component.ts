@@ -6,6 +6,8 @@ import { IDEAL_WORLD_INDEX } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
+import { ImportedReferenceDisplayService, ImportedReferenceMode } from '../../state/imported-reference-display.service';
+import { ImportedReferenceScaleService } from '../../state/imported-reference-scale.service';
 import { ModelImportService } from '../../geometry/model-import.service';
 import { disposeObject3D } from '../../geometry/dispose-object3d';
 
@@ -32,6 +34,8 @@ export class SettingsPanelComponent {
   private readonly sessions = inject(SessionsService);
   private readonly activeWorld = inject(ActiveWorldService);
   private readonly importedGeometry = inject(ImportedGeometryService);
+  private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
+  private readonly referenceScale = inject(ImportedReferenceScaleService);
   private readonly modelImport = inject(ModelImportService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -101,6 +105,7 @@ export class SettingsPanelComponent {
       return;
     }
     this.importedGeometry.set(sessionId, object, fileName);
+    this.referenceScale.refreshScaledReference(sessionId);
     if (this.sessionId() === sessionId) {
       this.transientStatus.set('idle');
     }
@@ -134,5 +139,125 @@ export class SettingsPanelComponent {
       return { kind: 'none' };
     }
     return info.watertight ? { kind: 'success', fileName: info.fileName } : { kind: 'not-watertight', fileName: info.fileName };
+  }
+
+  // How the imported reference geometry is currently drawn (ImportedReferenceDisplayService)
+  // - read fresh from the template each CD cycle, same pattern as
+  // getImportDisplayStatus above.
+  isReferenceVisible(): boolean {
+    const sessionId = this.sessionId();
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).visible;
+  }
+
+  getReferenceMode(): ImportedReferenceMode {
+    const sessionId = this.sessionId();
+    return sessionId === null ? 'solid' : this.referenceDisplay.getStyle(sessionId).mode;
+  }
+
+  getReferenceColorHex(): string {
+    const sessionId = this.sessionId();
+    const color = sessionId === null ? 0x39c5f2 : this.referenceDisplay.getStyle(sessionId).color;
+    return `#${color.toString(16).padStart(6, '0')}`;
+  }
+
+  getReferenceOpacityPercent(): number {
+    const sessionId = this.sessionId();
+    const opacity = sessionId === null ? 0.5 : this.referenceDisplay.getStyle(sessionId).opacity;
+    return Math.round(opacity * 100);
+  }
+
+  onReferenceVisibleChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setVisible(sessionId, (event.target as HTMLInputElement).checked);
+  }
+
+  onReferenceModeChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setMode(sessionId, (event.target as HTMLSelectElement).value as ImportedReferenceMode);
+  }
+
+  onReferenceColorChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const hex = (event.target as HTMLInputElement).value;
+    this.referenceDisplay.setColor(sessionId, parseInt(hex.slice(1), 16));
+  }
+
+  onReferenceOpacityChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.referenceDisplay.setOpacity(sessionId, percent / 100);
+  }
+
+  getReferenceDensity(): number {
+    const sessionId = this.sessionId();
+    return sessionId === null ? 0 : this.referenceScale.getDensity(sessionId);
+  }
+
+  onReferenceDensityChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value)) {
+      this.referenceScale.setDensity(sessionId, value);
+    }
+  }
+
+  isDimensionsVisible(): boolean {
+    const sessionId = this.sessionId();
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).dimensionsVisible;
+  }
+
+  onDimensionsVisibleChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setDimensionsVisible(sessionId, (event.target as HTMLInputElement).checked);
+  }
+
+  isRulerVisible(): boolean {
+    const sessionId = this.sessionId();
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).rulerVisible;
+  }
+
+  onRulerVisibleChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setRulerVisible(sessionId, (event.target as HTMLInputElement).checked);
+  }
+
+  getRulerDistance(): number {
+    const sessionId = this.sessionId();
+    return sessionId === null ? 0 : this.referenceDisplay.getStyle(sessionId).rulerDistance;
+  }
+
+  onRulerDistanceChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value)) {
+      this.referenceDisplay.setRulerDistance(sessionId, value);
+      // Distance alone doesn't go through setDensity, so the cached ruler
+      // needs an explicit rebuild here.
+      this.referenceScale.refreshRuler(sessionId);
+    }
   }
 }

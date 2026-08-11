@@ -27,6 +27,45 @@
   <div class="hint">Доступно лише в Ideal World.</div>
 </ng-template>
 
+<ng-container *ngIf="isIdealWorld()">
+  <h4>Вигляд геометрії</h4>
+  <label class="row">
+    <span>Показати</span>
+    <input type="checkbox" [checked]="isReferenceVisible()" (change)="onReferenceVisibleChange($event)" />
+  </label>
+  <label class="row">
+    <span>Розмір (найдовша сторона)</span>
+    <input type="number" min="1" max="90" [value]="getReferenceDensity()" (change)="onReferenceDensityChange($event)" />
+  </label>
+  <label class="row">
+    <span>Режим</span>
+    <select [value]="getReferenceMode()" (change)="onReferenceModeChange($event)">
+      <option value="solid">Суцільна</option>
+      <option value="wireframe">Wireframe</option>
+    </select>
+  </label>
+  <label class="row">
+    <span>Колір</span>
+    <input type="color" [value]="getReferenceColorHex()" (change)="onReferenceColorChange($event)" />
+  </label>
+  <label class="row">
+    <span>Прозорість</span>
+    <input type="range" min="0" max="100" [value]="getReferenceOpacityPercent()" (change)="onReferenceOpacityChange($event)" />
+  </label>
+  <label class="row">
+    <span>Розміри (лінії)</span>
+    <input type="checkbox" [checked]="isDimensionsVisible()" (change)="onDimensionsVisibleChange($event)" />
+  </label>
+  <label class="row">
+    <span>Рулетка</span>
+    <input type="checkbox" [checked]="isRulerVisible()" (change)="onRulerVisibleChange($event)" />
+  </label>
+  <label class="row">
+    <span>Відстань рулетки</span>
+    <input type="number" min="0" step="0.1" [value]="getRulerDistance()" (change)="onRulerDistanceChange($event)" />
+  </label>
+</ng-container>
+
 <h4>Properties</h4>
 <div class="row"><span>Id</span><span>—</span></div>
 <div class="row"><span>X, Y, Z</span><span>—</span></div>
