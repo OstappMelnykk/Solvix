@@ -72,7 +72,20 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private renderer!: THREE.WebGLRenderer;
   private scene!: THREE.Scene;
-  private camera!: THREE.PerspectiveCamera;
+  // Both cameras exist for the lifetime of this component (never recreated
+  // per toggle) - `camera` is whichever one is currently active, swapped by
+  // toggleCameraMode(). Belongs to this World instance, not the session
+  // (same category as the camera itself in the class doc comment above) -
+  // switching modes affects this World's canvas for whoever's looking at
+  // it, independent of which session is active.
+  private perspectiveCamera!: THREE.PerspectiveCamera;
+  private orthographicCamera!: THREE.OrthographicCamera;
+  private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  // Half the world-space height the orthographic camera shows at zoom=1 -
+  // recomputed whenever switching INTO orthographic (from the perspective
+  // camera's current distance-to-target, so the switch doesn't visibly
+  // jump), then only its aspect-dependent left/right get touched on resize.
+  private orthoHalfHeight = 5;
   private controls!: OrbitControls;
   // The rotate gizmo (3 draggable ring arcs, one per axis) shown on the
   // imported reference - Ideal-World-only in practice, since importedReference
@@ -184,8 +197,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // the near:far ratio 100000:1, which would ordinarily risk z-fighting
     // (depth-buffer precision is spread across the whole range) - logarithmicDepthBuffer
     // on the renderer below is what actually keeps that safe, not the specific numbers here.
-    this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
-    this.camera.position.set(...DEFAULT_CAMERA_POSITION);
+    this.perspectiveCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
+    this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    // Frustum bounds are placeholders here - updateCameraFrustum() (called
+    // below via checkResize's first pass, and again on every toggle/resize)
+    // sets the real left/right/top/bottom from orthoHalfHeight + aspect.
+    this.orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
+    this.orthographicCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    this.camera = this.perspectiveCamera;
+    this.updateCameraFrustum(width, height);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(width, height);
@@ -544,8 +564,81 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.lastWidth = width;
     this.lastHeight = height;
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    this.updateCameraFrustum(width, height);
     this.renderer.setSize(width, height);
+  }
+
+  // Keeps BOTH cameras' frustums matching the canvas's current aspect ratio,
+  // regardless of which one is active - so whichever camera toggleCameraMode()
+  // switches TO next is already correctly sized, not just the one currently
+  // in use.
+  private updateCameraFrustum(width: number, height: number): void {
+    const aspect = width / height;
+    this.perspectiveCamera.aspect = aspect;
+    this.perspectiveCamera.updateProjectionMatrix();
+
+    const halfHeight = this.orthoHalfHeight;
+    this.orthographicCamera.left = -halfHeight * aspect;
+    this.orthographicCamera.right = halfHeight * aspect;
+    this.orthographicCamera.top = halfHeight;
+    this.orthographicCamera.bottom = -halfHeight;
+    this.orthographicCamera.updateProjectionMatrix();
+  }
+
+  // Whichever camera is currently active - read by the template to label
+  // the toggle button.
+  getCameraMode(): 'perspective' | 'orthographic' {
+    return this.camera === this.orthographicCamera ? 'orthographic' : 'perspective';
+  }
+
+  // Swaps the active camera, carrying position/orientation across so the
+  // view doesn't jump - both OrbitControls.object and TransformControls.camera
+  // are plain reassignable properties (the latter is a reactive `defineProperty`
+  // that propagates the change to its own gizmo/plane internals), so neither
+  // control needs to be recreated.
+  toggleCameraMode(): void {
+    if (this.getCameraMode() === 'perspective') {
+      this.switchToOrthographic();
+    } else {
+      this.switchToPerspective();
+    }
+  }
+
+  private switchToOrthographic(): void {
+    const target = this.controls.target;
+    const distance = Math.max(0.01, this.perspectiveCamera.position.distanceTo(target));
+    const fovRad = THREE.MathUtils.degToRad(this.perspectiveCamera.fov);
+    // Half the vertical extent visible at that distance under the
+    // perspective camera's own FOV - matching it here is what keeps the
+    // apparent size of the scene the same at the moment of the switch.
+    this.orthoHalfHeight = distance * Math.tan(fovRad / 2);
+    this.orthographicCamera.position.copy(this.perspectiveCamera.position);
+    this.orthographicCamera.quaternion.copy(this.perspectiveCamera.quaternion);
+    this.orthographicCamera.zoom = 1;
+    this.updateCameraFrustum(this.lastWidth, this.lastHeight);
+    this.setActiveCamera(this.orthographicCamera);
+  }
+
+  private switchToPerspective(): void {
+    const target = this.controls.target;
+    const halfHeight = this.orthoHalfHeight / this.orthographicCamera.zoom;
+    const fovRad = THREE.MathUtils.degToRad(this.perspectiveCamera.fov);
+    const distance = halfHeight / Math.tan(fovRad / 2);
+    const offset = this.orthographicCamera.position.clone().sub(target);
+    // Degenerate only if the camera sits exactly on its own target (never
+    // happens in practice - OrbitControls keeps them apart - but falling
+    // back to the current view direction instead of a NaN-producing
+    // normalize() keeps this safe regardless).
+    const direction = offset.lengthSq() > 1e-8 ? offset.normalize() : new THREE.Vector3(0, 0, 1).applyQuaternion(this.orthographicCamera.quaternion);
+    this.perspectiveCamera.position.copy(target).addScaledVector(direction, distance);
+    this.perspectiveCamera.quaternion.copy(this.orthographicCamera.quaternion);
+    this.setActiveCamera(this.perspectiveCamera);
+  }
+
+  private setActiveCamera(camera: THREE.PerspectiveCamera | THREE.OrthographicCamera): void {
+    this.camera = camera;
+    this.controls.object = camera;
+    this.controls.update();
+    this.rotateGizmo.camera = camera;
   }
 }
