@@ -6,8 +6,10 @@ import { IDEAL_WORLD_INDEX } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
+import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
 import { ModelImportService } from '../../geometry/model-import.service';
 import { disposeObject3D } from '../../geometry/dispose-object3d';
+import { ImportedReferenceControlsComponent } from './imported-reference-controls/imported-reference-controls.component';
 
 type ImportDisplayStatus =
   | { kind: 'loading' }
@@ -24,7 +26,7 @@ type ImportDisplayStatus =
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [NgIf],
+  imports: [NgIf, ImportedReferenceControlsComponent],
   templateUrl: './settings-panel.component.html',
   styleUrl: './settings-panel.component.scss'
 })
@@ -32,6 +34,7 @@ export class SettingsPanelComponent {
   private readonly sessions = inject(SessionsService);
   private readonly activeWorld = inject(ActiveWorldService);
   private readonly importedGeometry = inject(ImportedGeometryService);
+  private readonly referenceRender = inject(ImportedReferenceRenderService);
   private readonly modelImport = inject(ModelImportService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -101,6 +104,8 @@ export class SettingsPanelComponent {
       return;
     }
     this.importedGeometry.set(sessionId, object, fileName);
+    this.referenceRender.resetRotation(sessionId);
+    this.referenceRender.refreshScaledReference(sessionId);
     if (this.sessionId() === sessionId) {
       this.transientStatus.set('idle');
     }

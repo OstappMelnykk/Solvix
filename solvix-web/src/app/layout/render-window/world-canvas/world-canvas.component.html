@@ -1,1 +1,4 @@
 <canvas #canvas></canvas>
+<button class="camera-mode-toggle" type="button" (click)="toggleCameraMode()">
+  {{ getCameraMode() === 'perspective' ? 'Перспектива' : 'Ортографія' }}
+</button>

@@ -1,9 +1,19 @@
+// Shared tokens for every field/button below - one consistent dark
+// "editable surface" language instead of each control keeping its own
+// default browser chrome.
+$field-bg: #1e1f22;
+$field-border: rgba(255, 255, 255, 0.18);
+$accent: #39c5f2;
+// Same orange as the dimension-line labels (geometry/dimension-lines.ts) -
+// checkbox/range/hover accent, distinct from $accent above (focus borders).
+$accent-toggle: #da680b;
+
 :host {
   display: block;
   background: #2b2d30;
   color: #dfe1e5;
   font-family: sans-serif;
-  padding: 10px;
+  padding: 10px 20px 10px 10px;
   overflow-y: auto;
 }
 
@@ -17,34 +27,59 @@
   margin-bottom: 12px;
 }
 
+// Top-level section header (Import / Вигляд геометрії / Довідка про
+// геометрію) - every h4 in the panel gets the SAME treatment, so sections
+// always read as the same kind of thing no matter which one it is.
 h4 {
-  margin: 16px 0 8px;
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid $field-border;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9096a0;
 
   &:first-child {
     margin-top: 0;
   }
 }
 
+// Applies to both <button class="tool"> and the file-picker <label
+// class="tool tool--import"> - one consistent look/feel for every clickable
+// action in the panel, matching the dark "editable surface" language of the
+// inputs below (same $field-bg/$field-border, hover/active/focus states
+// instead of a flat static block).
 .tool {
-  padding: 8px 12px;
-  margin-bottom: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-.row {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 6px;
+  color: #dfe1e5;
   font-size: 13px;
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-}
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
 
-.tool--import {
-  display: block;
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: $accent;
+  }
 }
 
 .import-status {
