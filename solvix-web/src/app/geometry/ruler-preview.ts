@@ -12,7 +12,7 @@ const TICK_LENGTH_FACTOR = 0.15;
 // (already at whatever scale it's being shown at) - the same frame
 // dimension-lines.ts builds in. The returned group is meant to have the
 // reference's own position+quaternion copied onto it afterward
-// (ImportedReferenceScaleService), so it rotates rigidly along with the
+// (ImportedReferenceRenderService), so it rotates rigidly along with the
 // object rather than staying axis-aligned to world space.
 //
 // `distance`: how far past the object's own surface the ruler sits, along
@@ -29,10 +29,10 @@ export function buildRulerPreview(box: THREE.Box3, longestAxis: 0 | 1 | 2, densi
 
   // Perpendicular axes: offsetAxisIndex is the face normal the ruler moves
   // along (the object's "positive" face on that axis), tickAxisIndex draws
-  // the perpendicular tick marks. Y (index 1, "up") is avoided as the offset
-  // axis whenever there's a choice - the ruler sits beside the object in the
-  // horizontal plane, not floating above it. Y only becomes the offset axis
-  // when it's the only option left (longestAxis itself is Y).
+  // the perpendicular tick marks. Y (index 1, "up") is NEVER the offset
+  // axis - it's either the tick axis (longestAxis X or Z) or the length
+  // axis itself (longestAxis Y) - so the ruler always sits beside the
+  // object in the horizontal plane, never floating above/below it.
   const [offsetAxisIndex, tickAxisIndex] = longestAxis === 0 ? [2, 1] : longestAxis === 1 ? [0, 2] : [0, 1];
   const offset = max[offsetAxisIndex] + Math.max(0, distance);
 

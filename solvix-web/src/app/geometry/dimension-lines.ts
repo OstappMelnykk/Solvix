@@ -6,7 +6,7 @@ const LABEL_COLOR = '#ffcc33';
 // Draftsman-style dimension lines (extension line + witness line + end
 // ticks + a text label) along all 3 axes of `box`, built in the SAME local,
 // pivot-centered frame as the reference mesh itself (see
-// ImportedGeometryService/ImportedReferenceScaleService) - the returned
+// ImportedGeometryService/ImportedReferenceRenderService) - the returned
 // group is meant to have the reference's own position+quaternion copied
 // onto it afterward, so it rotates rigidly along with the object instead of
 // staying axis-aligned to world space. `box` should already reflect the

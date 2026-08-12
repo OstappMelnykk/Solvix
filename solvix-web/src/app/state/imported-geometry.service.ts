@@ -10,7 +10,7 @@ import { computeMeshStats } from '../geometry/mesh-stats';
 export interface ImportedGeometry {
   // A pivot Group wrapping the loaded object, NOT the loaded object
   // itself - its local (0,0,0) is the object's own geometric center (see
-  // `set()`), so rotating this pivot (ImportedReferenceScaleService) spins
+  // `set()`), so rotating this pivot (ImportedReferenceRenderService) spins
   // the object in place instead of orbiting around an arbitrary
   // file-authored local origin.
   readonly object: THREE.Object3D;
@@ -68,7 +68,7 @@ export class ImportedGeometryService {
     // Center `object`'s own local geometry on ITS OWN origin first (before
     // wrapping in `pivot` below) - this makes the pivot's local (0,0,0)
     // coincide with the object's true geometric center, so that later
-    // rotating `pivot` (ImportedReferenceScaleService, user-driven via the
+    // rotating `pivot` (ImportedReferenceRenderService, user-driven via the
     // rotate gizmo) spins the object in place around its own center rather
     // than orbiting around wherever the source file happened to put its
     // local origin.

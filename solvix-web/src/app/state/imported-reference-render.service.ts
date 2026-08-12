@@ -12,15 +12,22 @@ const DEFAULT_DENSITY = 8;
 const MIN_DENSITY = 1;
 const MAX_DENSITY = 90;
 
-// How big the imported reference should APPEAR in the 3D view, per
-// session - independent of the file's real-world size (which can be
-// anything: mm, inches, an arbitrary CAD unit, especially for .stl - see
-// geometry/loaders/stl-file-loader.ts). The user picks how many world
-// units the import's longest bounding-box axis should measure
-// ("density"), proportions preserved; ImportedGeometryService's raw object
-// is never mutated - this only ever scales a CLONE of it, cached here.
+// Owns everything about how the imported reference is actually PLACED and
+// DRAWN in the 3D view, per session - scale (see "density" below), user-
+// driven rotation (the rotate gizmo, WorldCanvasComponent), and the
+// dimension-lines/ruler overlays derived from both. ImportedGeometryService's
+// raw object is never mutated - this only ever builds fresh CLONEs of it
+// (scaled/rotated/recentered), cached here so consumers get a STABLE object
+// identity between rebuilds (WorldCanvasComponent only re-clones into its
+// own scene when that identity changes - see getScaledReference below).
+//
+// "Density": the user picks how many world units the import's longest
+// bounding-box axis should measure, independent of the file's real-world
+// size (which can be anything: mm, inches, an arbitrary CAD unit,
+// especially for .stl - see geometry/loaders/stl-file-loader.ts).
+// Proportions are always preserved.
 @Injectable({ providedIn: 'root' })
-export class ImportedReferenceScaleService {
+export class ImportedReferenceRenderService {
   private readonly sessions = inject(SessionsService);
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly display = inject(ImportedReferenceDisplayService);

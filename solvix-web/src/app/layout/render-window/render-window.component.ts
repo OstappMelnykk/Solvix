@@ -6,7 +6,7 @@ import { WorldRepresentation, WorldRepresentationService } from '../../state/wor
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
-import { ImportedReferenceScaleService } from '../../state/imported-reference-scale.service';
+import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -30,7 +30,7 @@ export class RenderWindowComponent {
   private readonly representations = inject(WorldRepresentationService);
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
-  private readonly importedReferenceScale = inject(ImportedReferenceScaleService);
+  private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
   readonly worlds = WORLDS_CONFIG;
 
   // null when there's no active session - never matches a real worldIndex,
@@ -44,7 +44,7 @@ export class RenderWindowComponent {
   }
 
   // Ideal-World-only (see IDEAL_WORLD_INDEX) - shown as a visual guide
-  // only, never part of `representation`. Prefers ImportedReferenceScaleService's
+  // only, never part of `representation`. Prefers ImportedReferenceRenderService's
   // scaled clone (what "Розмір" in the settings panel actually controls) so
   // the user sees the SAME thing that any future size-dependent operation
   // would use, not the raw unscaled import - falls back to the raw object
@@ -61,7 +61,7 @@ export class RenderWindowComponent {
     if (sessionId === null || !this.importedReferenceDisplay.getStyle(sessionId).visible) {
       return null;
     }
-    return this.importedReferenceScale.getScaledReference(sessionId) ?? this.importedGeometry.get(sessionId)?.object ?? null;
+    return this.importedReferenceRender.getScaledReference(sessionId) ?? this.importedGeometry.get(sessionId)?.object ?? null;
   }
 
   // Ideal-World-only, same gating as getImportedReference - how to DRAW
@@ -87,7 +87,7 @@ export class RenderWindowComponent {
     if (sessionId === null || !this.importedReferenceDisplay.getStyle(sessionId).dimensionsVisible) {
       return null;
     }
-    return this.importedReferenceScale.getDimensionLines(sessionId);
+    return this.importedReferenceRender.getDimensionLines(sessionId);
   }
 
   // Ideal-World-only, independent of getImportedReference's own visibility
@@ -100,6 +100,6 @@ export class RenderWindowComponent {
     if (sessionId === null || !this.importedReferenceDisplay.getStyle(sessionId).rulerVisible) {
       return null;
     }
-    return this.importedReferenceScale.getRuler(sessionId);
+    return this.importedReferenceRender.getRuler(sessionId);
   }
 }

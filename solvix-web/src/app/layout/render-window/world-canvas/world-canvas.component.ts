@@ -5,7 +5,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 import { ImportedReferenceStyle } from '../../../state/imported-reference-display.service';
-import { ImportedReferenceScaleService } from '../../../state/imported-reference-scale.service';
+import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
@@ -60,10 +60,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // opacity for whatever IS being shown.
   @Input() importedReferenceStyle: ImportedReferenceStyle | null = null;
   // Draftsman-style axis dimension lines matching importedReference
-  // (ImportedReferenceScaleService) - a separate overlay, independently
+  // (ImportedReferenceRenderService) - a separate overlay, independently
   // toggleable (ImportedReferenceDisplayService.dimensionsVisible).
   @Input() dimensionLines: THREE.Object3D | null = null;
-  // Green tick-mark ruler along the longest axis (ImportedReferenceScaleService,
+  // Green tick-mark ruler along the longest axis (ImportedReferenceRenderService,
   // geometry/ruler-preview.ts) - a separate overlay, independently
   // toggleable (ImportedReferenceDisplayService.rulerVisible).
   @Input() ruler: THREE.Object3D | null = null;
@@ -81,7 +81,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // (`.enabled`) while this canvas is the active tab, same gating as
   // `controls` (OrbitControls) below.
   private rotateGizmo!: TransformControls;
-  private readonly referenceScale = inject(ImportedReferenceScaleService);
+  private readonly referenceRender = inject(ImportedReferenceRenderService);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
   // listener below for why position can't just be corrected live during the
@@ -109,7 +109,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // rebuilding when only mode/color/opacity change (e.g. toggling
   // solid/wireframe on an already-shown import).
   private lastImportedReferenceStyleKey: string | null = null;
-  // Geometry/materials here are owned by ImportedReferenceScaleService (a
+  // Geometry/materials here are owned by ImportedReferenceRenderService (a
   // freshly-built object per density/import change, cached there) - same
   // sharing model as currentModel/lastModel, so this clones on add but
   // never disposes on remove (only the service's own rebuild/prune does).
@@ -240,7 +240,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       // final now, its world-space bbox changes shape as it rotates) but
       // don't jump straight there - capture it, restore the pre-correction
       // position, and ease into it instead (animate() below). Persisting
-      // the rotation (ImportedReferenceScaleService, so a later density
+      // the rotation (ImportedReferenceRenderService, so a later density
       // change etc. rebuilds at the SAME orientation) is deferred until the
       // settle finishes, so the service doesn't swap in an already-correct
       // clone mid-animation and cut it short.
@@ -365,7 +365,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Eases the object into its final re-grounded/re-centered position after
   // a rotate-gizmo drag ends (see the 'dragging-changed' listener) instead
   // of snapping it there instantly. Once the ease completes, persists the
-  // rotation (ImportedReferenceScaleService) - deferred until now so the
+  // rotation (ImportedReferenceRenderService) - deferred until now so the
   // service's rebuild doesn't swap in an already-settled clone mid-animation.
   private updateSettleAnimation(): void {
     const settle = this.settleAnimation;
@@ -388,7 +388,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (t >= 1) {
       this.settleAnimation = null;
       if (this.sessionId !== null) {
-        this.referenceScale.setRotation(this.sessionId, settle.object.quaternion);
+        this.referenceRender.setRotation(this.sessionId, settle.object.quaternion);
       }
     }
   }
@@ -407,7 +407,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Keeps the dimension-lines/ruler overlays rigidly attached to the
   // imported reference once the rotate gizmo drag ends - both are built in
   // the SAME local, pivot-centered frame as the reference mesh
-  // (ImportedReferenceScaleService), so copying its position+quaternion
+  // (ImportedReferenceRenderService), so copying its position+quaternion
   // onto them is enough; no geometry rebuild needed.
   private syncOverlayTransform(): void {
     if (!this.currentImportedReference) {
