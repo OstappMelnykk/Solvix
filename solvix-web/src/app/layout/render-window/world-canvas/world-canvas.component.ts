@@ -1,12 +1,18 @@
 import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 import { ImportedReferenceStyle } from '../../../state/imported-reference-display.service';
+import { ImportedReferenceScaleService } from '../../../state/imported-reference-scale.service';
+import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const AXES_LENGTH = 50;
+const GRID_SIZE = 50;
+const GRID_DIVISIONS = 50;
+const SETTLE_DURATION_MS = 180;
 
 // One of exactly 3 instances for the whole app - one per World (Ideal/Real/
 // Solver). Its Scene/Camera/Renderer/OrbitControls are NOT recreated per
@@ -68,6 +74,21 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
   private controls!: OrbitControls;
+  // The rotate gizmo (3 draggable ring arcs, one per axis) shown on the
+  // imported reference - Ideal-World-only in practice, since importedReference
+  // is only ever non-null there (RenderWindowComponent). Attached/detached
+  // to whichever clone is currently shown; only truly interactive
+  // (`.enabled`) while this canvas is the active tab, same gating as
+  // `controls` (OrbitControls) below.
+  private rotateGizmo!: TransformControls;
+  private readonly referenceScale = inject(ImportedReferenceScaleService);
+  // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
+  // instead of snapping it instantly on drag end - see the 'dragging-changed'
+  // listener below for why position can't just be corrected live during the
+  // drag itself. Without this, releasing a ring visibly "pops" the object up
+  // to the floor, which reads as a bug (looks like height is being added)
+  // rather than the intended settle.
+  private settleAnimation: { object: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; startTime: number } | null = null;
   // The model actually placed in this canvas's own Scene - a clone of
   // `model`, never `model` itself. The same source Object3D is shared by
   // all 3 WorldCanvasComponent (WorldRepresentationService currently hands
@@ -144,6 +165,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.disposeImportedReferenceClone(this.currentImportedReference);
     }
     this.controls?.dispose();
+    this.rotateGizmo?.dispose();
     this.renderer?.dispose();
   }
 
@@ -172,23 +194,94 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05 / 3;
+    this.controls.rotateSpeed = 0.5;
+
+    // Rotate mode draws exactly the 3 draggable ring arcs (X/Y/Z, plus a
+    // 4th screen-space ring) the user asked for - dragging one spins the
+    // attached object around that axis. Detached (invisible, per attach/
+    // detach behavior) until updateImportedReference() has something to
+    // attach it to.
+    this.rotateGizmo = new TransformControls(this.camera, this.renderer.domElement);
+    this.rotateGizmo.setMode('rotate');
+    // Snap dragging to 45deg increments (0/45/90/135/180/...) - built into
+    // TransformControls itself (applied before the delta is committed to
+    // the object, so it's exact, not a post-hoc round), makes it easy to
+    // land on a square/clean orientation instead of fighting to eyeball it.
+    this.rotateGizmo.setRotationSnap(THREE.MathUtils.degToRad(45));
+    this.scene.add(this.rotateGizmo.getHelper());
+
+    // Fires continuously while dragging a ring - keep the dimension-lines/
+    // ruler overlays' ORIENTATION following live (cheap: just copies the
+    // quaternion onto separate objects, doesn't feed back into the gizmo's
+    // own drag state at all). Deliberately does NOT touch position/recenter
+    // here: rotate mode's drag math tracks deltas from a reference frame
+    // captured once at pointer-down, and mutating the attached object's
+    // position mid-drag was corrupting that frame, causing severe jitter/
+    // shaking. Position is only fixed up once, at drag end below.
+    this.rotateGizmo.addEventListener('objectChange', () => {
+      if (this.currentImportedReference) {
+        this.syncOverlayQuaternion();
+      }
+    });
+
+    // Fires once when a drag starts/ends.
+    this.rotateGizmo.addEventListener('dragging-changed', event => {
+      if (event.value) {
+        // A new drag starting mid-settle (rare: clicking another ring right
+        // after releasing one) - drop the old settle rather than fight it;
+        // this drag's own end will reground from wherever it left off.
+        this.settleAnimation = null;
+        return;
+      }
+      if (!this.currentImportedReference || this.sessionId === null) {
+        return;
+      }
+      // Compute the re-grounded/re-centered target position (rotation is
+      // final now, its world-space bbox changes shape as it rotates) but
+      // don't jump straight there - capture it, restore the pre-correction
+      // position, and ease into it instead (animate() below). Persisting
+      // the rotation (ImportedReferenceScaleService, so a later density
+      // change etc. rebuilds at the SAME orientation) is deferred until the
+      // settle finishes, so the service doesn't swap in an already-correct
+      // clone mid-animation and cut it short.
+      const from = this.currentImportedReference.position.clone();
+      recenterAtOrigin(this.currentImportedReference);
+      const to = this.currentImportedReference.position.clone();
+      this.currentImportedReference.position.copy(from);
+      this.syncOverlayTransform();
+      this.settleAnimation = { object: this.currentImportedReference, from, to, startTime: performance.now() };
+    });
 
     this.updateModel();
     this.updateImportedReference();
     this.updateDimensionLines();
     this.updateRuler();
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    // Lower ambient than before, plus a key/fill pair of directional lights
+    // from opposite sides (instead of one) - a single light + strong ambient
+    // washes out shading almost evenly across a solid surface, making its
+    // facets/contours hard to read. Two lights of different strength from
+    // different angles give every face a distinct brightness, so shape and
+    // silhouette actually read at a glance.
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
     this.scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 5, 5);
-    this.scene.add(directionalLight);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(5, 8, 5);
+    this.scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    fillLight.position.set(-5, 2, -5);
+    this.scene.add(fillLight);
 
     // Standard THREE.js axis colors: X red, Y green, Z blue - a fixed scene
     // fixture (not per-session/model), same lifetime as the lights above, so
     // it needs no cleanup/disposal logic of its own either.
     this.scene.add(new THREE.AxesHelper(AXES_LENGTH));
+
+    // Floor grid on the XZ plane (Y=0) - same fixed-fixture lifetime as
+    // AxesHelper above, purely a visual reference for scale/orientation.
+    this.scene.add(new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS));
   }
 
   private updateModel(): void {
@@ -225,6 +318,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.lastImportedReferenceStyleKey = styleKey;
 
     if (this.currentImportedReference) {
+      this.rotateGizmo.detach();
       this.scene.remove(this.currentImportedReference);
       this.disposeImportedReferenceClone(this.currentImportedReference);
       this.currentImportedReference = null;
@@ -246,12 +340,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // well past a few hundred thousand triangles, hence this being a user
     // choice (ImportedReferenceDisplayService) rather than the only option.
     const mode = style?.mode ?? 'solid';
-    const color = style?.color ?? 0x39c5f2;
+    const color = style?.color ?? 0xffffff;
     const opacity = style?.opacity ?? 0.5;
+    // flatShading (solid mode only) - each triangle gets its own face
+    // normal instead of interpolating vertex normals, so adjacent facets at
+    // different angles pick up visibly different shading under the
+    // key/fill lights above. Without it, curved/faceted surfaces lit this
+    // way can look like a single smooth blob with no readable contours.
     const material: THREE.Material =
       mode === 'wireframe'
         ? new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity })
-        : new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide });
+        : new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, flatShading: true, roughness: 0.6 });
     clone.traverse(child => {
       if (child instanceof THREE.Mesh) {
         child.material = material;
@@ -259,7 +358,69 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     });
     this.currentImportedReference = clone;
     this.scene.add(clone);
+    this.rotateGizmo.attach(clone);
     this.renderer.compile(this.scene, this.camera);
+  }
+
+  // Eases the object into its final re-grounded/re-centered position after
+  // a rotate-gizmo drag ends (see the 'dragging-changed' listener) instead
+  // of snapping it there instantly. Once the ease completes, persists the
+  // rotation (ImportedReferenceScaleService) - deferred until now so the
+  // service's rebuild doesn't swap in an already-settled clone mid-animation.
+  private updateSettleAnimation(): void {
+    const settle = this.settleAnimation;
+    if (!settle) {
+      return;
+    }
+    // The clone being animated got swapped out from under us (e.g. a style/
+    // density change rebuilt the reference while this was still easing) -
+    // nothing sensible left to finish animating.
+    if (settle.object !== this.currentImportedReference) {
+      this.settleAnimation = null;
+      return;
+    }
+
+    const t = Math.min(1, (performance.now() - settle.startTime) / SETTLE_DURATION_MS);
+    const eased = 1 - Math.pow(1 - t, 3);
+    settle.object.position.lerpVectors(settle.from, settle.to, eased);
+    this.syncOverlayTransform();
+
+    if (t >= 1) {
+      this.settleAnimation = null;
+      if (this.sessionId !== null) {
+        this.referenceScale.setRotation(this.sessionId, settle.object.quaternion);
+      }
+    }
+  }
+
+  // Live mid-drag tracking (see the 'objectChange' listener above) - only
+  // the orientation changes while dragging (position is deliberately left
+  // alone until drag end), so only the quaternion needs to follow.
+  private syncOverlayQuaternion(): void {
+    if (!this.currentImportedReference) {
+      return;
+    }
+    this.currentDimensionLines?.quaternion.copy(this.currentImportedReference.quaternion);
+    this.currentRuler?.quaternion.copy(this.currentImportedReference.quaternion);
+  }
+
+  // Keeps the dimension-lines/ruler overlays rigidly attached to the
+  // imported reference once the rotate gizmo drag ends - both are built in
+  // the SAME local, pivot-centered frame as the reference mesh
+  // (ImportedReferenceScaleService), so copying its position+quaternion
+  // onto them is enough; no geometry rebuild needed.
+  private syncOverlayTransform(): void {
+    if (!this.currentImportedReference) {
+      return;
+    }
+    if (this.currentDimensionLines) {
+      this.currentDimensionLines.position.copy(this.currentImportedReference.position);
+      this.currentDimensionLines.quaternion.copy(this.currentImportedReference.quaternion);
+    }
+    if (this.currentRuler) {
+      this.currentRuler.position.copy(this.currentImportedReference.position);
+      this.currentRuler.quaternion.copy(this.currentImportedReference.quaternion);
+    }
   }
 
   private updateDimensionLines(): void {
@@ -354,8 +515,18 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateSession();
+    this.updateSettleAnimation();
 
-    this.controls.enabled = this.active;
+    // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
+    // show/hide toggle for the rings, independent of whether a reference is
+    // even attached (rotateGizmo.object stays undefined until one is).
+    const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined;
+    this.rotateGizmo.getHelper().visible = this.active && gizmoWanted;
+    this.rotateGizmo.enabled = this.active && gizmoWanted;
+    // Suppress orbiting while a ring is actively being dragged - otherwise
+    // OrbitControls' own pointer handling fights the gizmo's for the same
+    // mouse drag.
+    this.controls.enabled = this.active && !this.rotateGizmo.dragging;
     this.controls.update();
 
     if (this.active) {

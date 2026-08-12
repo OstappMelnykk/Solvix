@@ -1,16 +1,8 @@
 <div class="context">Session {{ sessionId() }} · World {{ worldIndex() }}</div>
 
-<h4>Actions</h4>
-<div class="tool">Add Hex</div>
-<div class="tool">Delete</div>
-<div class="tool">Move</div>
-<div class="tool">Refine Zone</div>
-<div class="tool">Validate</div>
-<div class="tool">Export</div>
-
 <h4>Import</h4>
 <ng-container *ngIf="isIdealWorld(); else importElsewhere">
-  <label class="tool tool--import">
+  <label class="tool">
     Import model ({{ acceptedExtensions }})
     <input type="file" [attr.accept]="acceptedExtensions" hidden (change)="onImportFile($event)" />
   </label>
@@ -29,50 +21,61 @@
 
 <ng-container *ngIf="isIdealWorld()">
   <h4>Вигляд геометрії</h4>
-  <label class="row">
-    <span>Показати</span>
-    <input type="checkbox" [checked]="isReferenceVisible()" (change)="onReferenceVisibleChange($event)" />
-  </label>
-  <label class="row">
-    <span>Розмір (найдовша сторона)</span>
-    <input type="number" min="1" max="90" [value]="getReferenceDensity()" (change)="onReferenceDensityChange($event)" />
-  </label>
-  <label class="row">
-    <span>Режим</span>
-    <select [value]="getReferenceMode()" (change)="onReferenceModeChange($event)">
-      <option value="solid">Суцільна</option>
-      <option value="wireframe">Wireframe</option>
-    </select>
-  </label>
-  <label class="row">
-    <span>Колір</span>
-    <input type="color" [value]="getReferenceColorHex()" (change)="onReferenceColorChange($event)" />
-  </label>
-  <label class="row">
-    <span>Прозорість</span>
-    <input type="range" min="0" max="100" [value]="getReferenceOpacityPercent()" (change)="onReferenceOpacityChange($event)" />
-  </label>
-  <label class="row">
-    <span>Розміри (лінії)</span>
-    <input type="checkbox" [checked]="isDimensionsVisible()" (change)="onDimensionsVisibleChange($event)" />
-  </label>
-  <label class="row">
-    <span>Рулетка</span>
-    <input type="checkbox" [checked]="isRulerVisible()" (change)="onRulerVisibleChange($event)" />
-  </label>
-  <label class="row">
-    <span>Відстань рулетки</span>
-    <input type="number" min="0" step="0.1" [value]="getRulerDistance()" (change)="onRulerDistanceChange($event)" />
-  </label>
+
+  <div class="group">
+    <div class="group-label">Показ</div>
+    <label class="row">
+      <span>Показати</span>
+      <input type="checkbox" [checked]="isReferenceVisible()" (change)="onReferenceVisibleChange($event)" />
+    </label>
+    <label class="row">
+      <span>Прозорість</span>
+      <input type="range" min="0" max="100" [value]="getReferenceOpacityPercent()" (change)="onReferenceOpacityChange($event)" />
+    </label>
+    <label class="row">
+      <span>Режим</span>
+      <select [value]="getReferenceMode()" (change)="onReferenceModeChange($event)">
+        <option value="solid">Суцільна</option>
+        <option value="wireframe">Wireframe</option>
+      </select>
+    </label>
+    <label class="row">
+      <span>Колір</span>
+      <input type="color" [value]="getReferenceColorHex()" (change)="onReferenceColorChange($event)" />
+    </label>
+    <label class="row">
+      <span>Розмір (найдовша сторона)</span>
+      <input type="number" min="1" max="90" [value]="getReferenceDensity()" (change)="onReferenceDensityChange($event)" />
+    </label>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Обертання</div>
+    <label class="row">
+      <span>Кільця обертання</span>
+      <input type="checkbox" [checked]="isRotateGizmoVisible()" (change)="onRotateGizmoVisibleChange($event)" />
+    </label>
+    <button class="tool" type="button" (click)="onResetRotation()">Скинути оберт</button>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Вимірювання</div>
+    <label class="row">
+      <span>Розміри (лінії)</span>
+      <input type="checkbox" [checked]="isDimensionsVisible()" (change)="onDimensionsVisibleChange($event)" />
+    </label>
+    <label class="row">
+      <span>Рулетка</span>
+      <input type="checkbox" [checked]="isRulerVisible()" (change)="onRulerVisibleChange($event)" />
+    </label>
+    <label class="row">
+      <span>Відстань рулетки</span>
+      <input type="number" min="0" step="0.1" [value]="getRulerDistance()" (change)="onRulerDistanceChange($event)" />
+    </label>
+  </div>
 
   <ng-container *ngIf="getGeometryInfo() as info">
     <h4 *ngIf="info.length > 0">Довідка про геометрію</h4>
     <div class="row" *ngFor="let entry of info"><span>{{ entry.label }}</span><span>{{ entry.value }}</span></div>
   </ng-container>
 </ng-container>
-
-<h4>Properties</h4>
-<div class="row"><span>Id</span><span>—</span></div>
-<div class="row"><span>X, Y, Z</span><span>—</span></div>
-<div class="row"><span>Level</span><span>—</span></div>
-<div class="row"><span>Valid</span><span>—</span></div>

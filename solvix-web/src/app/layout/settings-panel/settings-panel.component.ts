@@ -112,6 +112,7 @@ export class SettingsPanelComponent {
       return;
     }
     this.importedGeometry.set(sessionId, object, fileName);
+    this.referenceScale.resetRotation(sessionId);
     this.referenceScale.refreshScaledReference(sessionId);
     if (this.sessionId() === sessionId) {
       this.transientStatus.set('idle');
@@ -163,7 +164,7 @@ export class SettingsPanelComponent {
 
   getReferenceColorHex(): string {
     const sessionId = this.sessionId();
-    const color = sessionId === null ? 0x39c5f2 : this.referenceDisplay.getStyle(sessionId).color;
+    const color = sessionId === null ? 0xffffff : this.referenceDisplay.getStyle(sessionId).color;
     return `#${color.toString(16).padStart(6, '0')}`;
   }
 
@@ -252,6 +253,32 @@ export class SettingsPanelComponent {
   getRulerDistance(): number {
     const sessionId = this.sessionId();
     return sessionId === null ? 0 : this.referenceDisplay.getStyle(sessionId).rulerDistance;
+  }
+
+  isRotateGizmoVisible(): boolean {
+    const sessionId = this.sessionId();
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).rotateGizmoVisible;
+  }
+
+  onRotateGizmoVisibleChange(event: Event): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setRotateGizmoVisible(sessionId, (event.target as HTMLInputElement).checked);
+  }
+
+  // Puts the reference back to the orientation it had right after import
+  // (identity rotation) - the rotate gizmo (world-canvas.component.ts) has
+  // no keyboard/UI way to undo a drag on its own, so this is the escape
+  // hatch when the user rotates it somewhere they don't want.
+  onResetRotation(): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceScale.resetRotation(sessionId);
+    this.referenceScale.refreshScaledReference(sessionId);
   }
 
   onRulerDistanceChange(event: Event): void {

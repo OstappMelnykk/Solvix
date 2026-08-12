@@ -8,6 +8,11 @@ import { recenterAtOrigin } from '../geometry/recenter-object3d';
 import { computeMeshStats } from '../geometry/mesh-stats';
 
 export interface ImportedGeometry {
+  // A pivot Group wrapping the loaded object, NOT the loaded object
+  // itself - its local (0,0,0) is the object's own geometric center (see
+  // `set()`), so rotating this pivot (ImportedReferenceScaleService) spins
+  // the object in place instead of orbiting around an arbitrary
+  // file-authored local origin.
   readonly object: THREE.Object3D;
   readonly fileName: string;
   readonly watertight: boolean;
@@ -21,9 +26,9 @@ export interface ImportedGeometry {
   readonly boundingSize: THREE.Vector3;
   readonly longestAxis: 0 | 1 | 2;
   readonly longestLength: number;
-  // The actual min/max, AFTER `set()` has recentered `object` so this
-  // box's center is the origin - so min/max end up symmetric per axis
-  // (e.g. min.x = -0.5, max.x = 0.5 for a 1-unit-wide import), unlike
+  // The actual min/max, AFTER `set()` has recentered `object` so its
+  // footprint is centered on X/Z (e.g. min.x = -0.5, max.x = 0.5 for a
+  // 1-unit-wide import) but it rests on the floor with min.y = 0, unlike
   // `object`'s own original, unrecentered local geometry.
   readonly boundingBox: THREE.Box3;
 }
@@ -59,25 +64,40 @@ export class ImportedGeometryService {
     if (existing) {
       disposeObject3D(existing.object);
     }
-    // Recenter so the bounding box's center sits at the origin - imported
-    // files can have their geometry authored anywhere (off to one side, a
-    // corner at the origin, etc.), but every downstream consumer (the
-    // display-scale reference, dimension lines) needs a known, fixed
-    // position to work from rather than wherever the source file happened
-    // to place it.
-    recenterAtOrigin(object);
 
-    const boundingBox = new THREE.Box3().setFromObject(object);
+    // Center `object`'s own local geometry on ITS OWN origin first (before
+    // wrapping in `pivot` below) - this makes the pivot's local (0,0,0)
+    // coincide with the object's true geometric center, so that later
+    // rotating `pivot` (ImportedReferenceScaleService, user-driven via the
+    // rotate gizmo) spins the object in place around its own center rather
+    // than orbiting around wherever the source file happened to put its
+    // local origin.
+    object.updateMatrixWorld(true);
+    const ownCenter = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+    object.position.sub(ownCenter);
+    object.updateMatrixWorld(true);
+
+    const pivot = new THREE.Group();
+    pivot.add(object);
+    // Recenter the pivot so the bounding box is centered on X/Z and rests
+    // on the floor (min.y = 0) - imported files can have their geometry
+    // authored anywhere (off to one side, a corner at the origin, etc.),
+    // but every downstream consumer (the display-scale reference,
+    // dimension lines) needs a known, fixed position to work from rather
+    // than wherever the source file happened to place it.
+    recenterAtOrigin(pivot);
+
+    const boundingBox = new THREE.Box3().setFromObject(pivot);
     const boundingSize = boundingBox.getSize(new THREE.Vector3());
     const longestAxis: 0 | 1 | 2 =
       boundingSize.x >= boundingSize.y && boundingSize.x >= boundingSize.z ? 0 : boundingSize.y >= boundingSize.z ? 1 : 2;
     const longestLength = [boundingSize.x, boundingSize.y, boundingSize.z][longestAxis];
-    const stats = computeMeshStats(object);
+    const stats = computeMeshStats(pivot);
 
     this.bySession.set(sessionId, {
-      object,
+      object: pivot,
       fileName,
-      watertight: isWatertight(object),
+      watertight: isWatertight(pivot),
       meshCount: stats.meshCount,
       triangleCount: stats.triangleCount,
       vertexCount: stats.vertexCount,

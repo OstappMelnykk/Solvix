@@ -4,19 +4,23 @@ const LINE_COLOR = 0xffcc33;
 const LABEL_COLOR = '#ffcc33';
 
 // Draftsman-style dimension lines (extension line + witness line + end
-// ticks + a text label) along all 3 axes of `originalBox`, drawn at `scale`
-// (matching whatever size the reference is actually shown at, see
-// ImportedReferenceScaleService) - the label prints that SAME scaled
-// length, matching the "Розмір" control exactly. Not the raw file's own
-// units: those are frequently meaningless anyway (.stl has no embedded
+// ticks + a text label) along all 3 axes of `box`, built in the SAME local,
+// pivot-centered frame as the reference mesh itself (see
+// ImportedGeometryService/ImportedReferenceScaleService) - the returned
+// group is meant to have the reference's own position+quaternion copied
+// onto it afterward, so it rotates rigidly along with the object instead of
+// staying axis-aligned to world space. `box` should already reflect the
+// current display scale (caller multiplies) - the label prints that SAME
+// scaled length, matching the "Розмір" control exactly. Not the raw file's
+// own units: those are frequently meaningless anyway (.stl has no embedded
 // unit at all - could be mm, inches, anything), so the one number that's
 // actually reliable and means something to the user is whatever size
 // they've told the reference to display at.
-export function buildDimensionLines(originalBox: THREE.Box3, scale: number): THREE.Object3D {
+export function buildDimensionLines(box: THREE.Box3): THREE.Object3D {
   const group = new THREE.Group();
 
-  const min = originalBox.min.clone().multiplyScalar(scale);
-  const max = originalBox.max.clone().multiplyScalar(scale);
+  const min = box.min;
+  const max = box.max;
   const size = new THREE.Vector3().subVectors(max, min);
   const margin = Math.max(size.x, size.y, size.z, 1e-6) * 0.15 + 0.05;
   const tick = margin * 0.3;

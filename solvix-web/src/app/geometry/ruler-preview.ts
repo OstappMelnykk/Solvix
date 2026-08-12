@@ -8,11 +8,12 @@ const TICK_LENGTH_FACTOR = 0.15;
 // "this many unit-of-density segments fit along this side" measuring tape,
 // separate from the numeric axis dimension lines (geometry/dimension-lines.ts).
 //
-// `box`: the object's ACTUAL bounding box (already at whatever scale it's
-// being shown at) - NOT assumed centered at the origin, even though in
-// practice it currently always is (ImportedGeometryService recenters on
-// import) - positioning the ruler from `size` alone would silently assume
-// that and draw the ruler somewhere the object isn't if that ever changes.
+// `box`: the object's bounding box in its own LOCAL, pivot-centered frame
+// (already at whatever scale it's being shown at) - the same frame
+// dimension-lines.ts builds in. The returned group is meant to have the
+// reference's own position+quaternion copied onto it afterward
+// (ImportedReferenceScaleService), so it rotates rigidly along with the
+// object rather than staying axis-aligned to world space.
 //
 // `distance`: how far past the object's own surface the ruler sits, along
 // that surface's normal - a user-controlled input, not a fixed fraction of

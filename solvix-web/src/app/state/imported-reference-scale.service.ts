@@ -41,6 +41,11 @@ export class ImportedReferenceScaleService {
   // - owns its own geometry/materials same as dimensionLinesBySession, so
   // also needs disposing on prune/rebuild.
   private readonly rulerBySession = new KeyedStore<number, THREE.Object3D>();
+  // User-driven rotation of the reference (rotate gizmo, WorldCanvasComponent) -
+  // applied around the pivot's local origin, which ImportedGeometryService
+  // arranges to be the object's own geometric center. Absent = identity
+  // (no rotation), the common case.
+  private readonly rotationBySession = new KeyedStore<number, THREE.Quaternion>();
 
   constructor() {
     effect(() => {
@@ -53,6 +58,7 @@ export class ImportedReferenceScaleService {
       this.scaledReferenceBySession.pruneTo(ids);
       this.dimensionLinesBySession.pruneTo(ids, lines => disposeDimensionLines(lines));
       this.rulerBySession.pruneTo(ids, ruler => disposeRulerPreview(ruler));
+      this.rotationBySession.pruneTo(ids);
     });
   }
 
@@ -98,10 +104,32 @@ export class ImportedReferenceScaleService {
     return this.rulerBySession.get(sessionId) ?? null;
   }
 
+  // User-driven rotation (rotate gizmo) applied around the reference's own
+  // geometric center - identity (no rotation) when nothing's been set yet.
+  getRotation(sessionId: number): THREE.Quaternion {
+    return this.rotationBySession.get(sessionId) ?? new THREE.Quaternion();
+  }
+
+  // Called by WorldCanvasComponent once a rotate-gizmo drag ends, so a
+  // later rebuild (density change, new import, etc.) reconstructs the
+  // clone at the SAME orientation the user left it at, instead of
+  // silently snapping back to identity.
+  setRotation(sessionId: number, rotation: THREE.Quaternion): void {
+    this.rotationBySession.set(sessionId, rotation.clone());
+    this.refreshScaledReference(sessionId);
+  }
+
+  // Back to unrotated - called when a new file replaces the current
+  // import (settings-panel.component.ts), since a fresh import has no
+  // business inheriting the previous file's orientation.
+  resetRotation(sessionId: number): void {
+    this.rotationBySession.delete(sessionId);
+  }
+
   // Rebuilds the cached scaled clone (and its matching dimension lines and
-  // ruler) from the CURRENT import + density. Call after a new import
-  // lands (nothing to scale before that) and whenever density changes
-  // (setDensity already does this).
+  // ruler) from the CURRENT import + density + rotation. Call after a new
+  // import lands (nothing to scale before that) and whenever density
+  // changes (setDensity already does this).
   refreshScaledReference(sessionId: number): void {
     const info = this.importedGeometry.get(sessionId);
     const scale = this.getScale(sessionId);
@@ -119,31 +147,57 @@ export class ImportedReferenceScaleService {
     }
     const clone = info.object.clone();
     clone.scale.setScalar(scale);
-    // info.object is already centered at scale 1 (ImportedGeometryService),
-    // but scaling around its own local origin drifts the world-space
-    // center away from 0 unless scale is exactly 1 - reapply centering
-    // post-scale rather than deriving the position offset by hand.
+    // Rotation is applied around the pivot's own local origin - which
+    // ImportedGeometryService arranges to be the object's geometric
+    // center - BEFORE recentering, so recenterAtOrigin grounds/centers the
+    // POST-rotation world bbox (a rotated non-cubical object has different
+    // world extents than its unrotated self).
+    clone.quaternion.copy(this.getRotation(sessionId));
     recenterAtOrigin(clone);
     this.scaledReferenceBySession.set(sessionId, clone);
-    this.dimensionLinesBySession.set(sessionId, buildDimensionLines(info.boundingBox, scale));
+
+    // Built in the same local, pivot-centered frame as `clone` itself (see
+    // dimension-lines.ts/ruler-preview.ts) - copying clone's own
+    // position+quaternion onto them afterward is what keeps them rigidly
+    // attached to the object through rotation, rather than staying
+    // axis-aligned to world space.
+    const localBox = this.getLocalBox(info, scale);
+    const dimensionLines = buildDimensionLines(localBox);
+    dimensionLines.position.copy(clone.position);
+    dimensionLines.quaternion.copy(clone.quaternion);
+    this.dimensionLinesBySession.set(sessionId, dimensionLines);
+
     this.refreshRuler(sessionId);
   }
 
   // Rebuilds ONLY the cached ruler, from the CURRENT import + density +
-  // ImportedReferenceDisplayService's rulerDistance - call whenever the
-  // distance changes on its own (density changes already go through
-  // refreshScaledReference, which calls this too).
+  // rotation + ImportedReferenceDisplayService's rulerDistance - call
+  // whenever the distance changes on its own (density/rotation changes
+  // already go through refreshScaledReference, which calls this too).
   refreshRuler(sessionId: number): void {
     const info = this.importedGeometry.get(sessionId);
     const scale = this.getScale(sessionId);
-    if (!info || scale === null) {
+    const clone = this.scaledReferenceBySession.get(sessionId);
+    if (!info || scale === null || !clone) {
       this.disposeRuler(sessionId);
       return;
     }
-    const scaledBox = new THREE.Box3(info.boundingBox.min.clone().multiplyScalar(scale), info.boundingBox.max.clone().multiplyScalar(scale));
+    const localBox = this.getLocalBox(info, scale);
     const distance = this.display.getStyle(sessionId).rulerDistance;
     this.disposeRuler(sessionId);
-    this.rulerBySession.set(sessionId, buildRulerPreview(scaledBox, info.longestAxis, this.getDensity(sessionId), distance));
+    const ruler = buildRulerPreview(localBox, info.longestAxis, this.getDensity(sessionId), distance);
+    ruler.position.copy(clone.position);
+    ruler.quaternion.copy(clone.quaternion);
+    this.rulerBySession.set(sessionId, ruler);
+  }
+
+  // The reference's own bounding box in its LOCAL, pivot-centered frame -
+  // symmetric about the origin on all 3 axes (unlike `info.boundingBox`,
+  // which is the GROUNDED world box at scale 1) - see ImportedGeometryService
+  // for why the pivot's local origin sits at the object's geometric center.
+  private getLocalBox(info: { boundingSize: THREE.Vector3 }, scale: number): THREE.Box3 {
+    const half = info.boundingSize.clone().multiplyScalar(scale * 0.5);
+    return new THREE.Box3(half.clone().negate(), half);
   }
 
   private disposeRuler(sessionId: number): void {

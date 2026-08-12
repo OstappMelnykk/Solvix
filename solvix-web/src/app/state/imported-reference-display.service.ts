@@ -21,16 +21,22 @@ export interface ImportedReferenceStyle {
   // How far past the object's own surface the ruler sits, along that
   // surface's normal - see buildRulerPreview.
   readonly rulerDistance: number;
+  // Whether the rotate gizmo (3 draggable ring arcs, world-canvas.component.ts)
+  // is shown/interactive - independent of `visible`, so the user can hide
+  // the rings (e.g. to inspect the geometry unobstructed) without losing
+  // the reference itself.
+  readonly rotateGizmoVisible: boolean;
 }
 
 const DEFAULT_STYLE: ImportedReferenceStyle = {
   visible: true,
   mode: 'solid',
-  color: 0x39c5f2,
+  color: 0xffffff,
   opacity: 0.5,
   dimensionsVisible: true,
   rulerVisible: true,
-  rulerDistance: 1
+  rulerDistance: 1,
+  rotateGizmoVisible: true
 };
 
 // How the imported reference geometry (ImportedGeometryService) should be
@@ -79,6 +85,10 @@ export class ImportedReferenceDisplayService {
 
   setRulerDistance(sessionId: number, distance: number): void {
     this.update(sessionId, { rulerDistance: Math.max(0, distance) });
+  }
+
+  setRotateGizmoVisible(sessionId: number, visible: boolean): void {
+    this.update(sessionId, { rotateGizmoVisible: visible });
   }
 
   private update(sessionId: number, patch: Partial<ImportedReferenceStyle>): void {
