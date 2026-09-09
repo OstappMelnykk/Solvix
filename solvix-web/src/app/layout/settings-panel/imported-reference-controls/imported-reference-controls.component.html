@@ -64,11 +64,12 @@
       class="voxelize-status"
       *ngIf="voxelStatus.kind !== 'idle'"
       [class.voxelize-status--warning]="voxelStatus.kind === 'too-large'"
-      [class.voxelize-status--error]="voxelStatus.kind === 'error'"
+      [class.voxelize-status--error]="voxelStatus.kind === 'error' || voxelStatus.kind === 'invalid-mesh'"
     >
       <span *ngIf="voxelStatus.kind === 'loading'">Вокселізація…</span>
       <span *ngIf="voxelStatus.kind === 'ok'">{{ getVoxelCubeCount(voxelStatus.result) }} кубів</span>
       <span *ngIf="voxelStatus.kind === 'too-large'">Забагато кубів ({{ voxelStatus.cellCount }}, ліміт {{ voxelStatus.limit }}) — зменши розмір</span>
+      <span *ngIf="voxelStatus.kind === 'invalid-mesh'">{{ voxelStatus.message }}</span>
       <span *ngIf="voxelStatus.kind === 'error'">Не вдалось виконати вокселізацію</span>
     </div>
   </ng-container>

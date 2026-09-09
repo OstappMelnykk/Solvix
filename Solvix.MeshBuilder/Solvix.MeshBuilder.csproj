@@ -9,6 +9,13 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets Solvix.MeshBuilder.Tests construct the internal
+         MeshBuilderFacade directly with a fake IVoxelizer - see
+         MeshBuilderFacadeTests.cs. -->
+    <InternalsVisibleTo Include="Solvix.MeshBuilder.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

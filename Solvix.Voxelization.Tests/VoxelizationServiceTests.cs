@@ -159,4 +159,29 @@ public class VoxelizationServiceTests
 
         Assert.Throws<VoxelizationTooLargeException>(() => _voxelizationService.Voxelize(scaled));
     }
+
+    // Regression: countX*countY*countZ used to be multiplied as int32.
+    // Each axis alone (900,000) sits AT the cap - not over it, so nothing
+    // clamps any single axis - but their product (~7.29e17) overflows
+    // int32 many times over. The old code let that silently wrap to some
+    // unrelated (possibly small, possibly negative) int and slip past the
+    // `estimatedCells > MaxCells` check entirely, corrupting everything
+    // downstream (occupancy array size, CellIndex math) instead of
+    // cleanly reporting "too large".
+    [Test]
+    public void Throws_instead_of_silently_overflowing_when_all_three_axis_counts_multiply_past_int32_range()
+    {
+        var scaled = Box(900_000, 900_000, 900_000);
+
+        Assert.Throws<VoxelizationTooLargeException>(() => _voxelizationService.Voxelize(scaled));
+    }
+
+    [Test]
+    public void Stops_early_via_the_cancellation_token_instead_of_finishing_a_cancelled_request()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => _voxelizationService.Voxelize(Box(3, 3, 3), cts.Token));
+    }
 }

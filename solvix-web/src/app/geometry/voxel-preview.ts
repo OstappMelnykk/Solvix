@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VoxelGridDto, countOccupied, isOccupied, voxelCenter } from './voxel-grid-contract';
+import { VoxelGridDto, isOccupied, voxelCenter } from './voxel-grid-contract';
 
 const VOXEL_COLOR = 0x9b59b6;
 const EDGE_COLOR = 0xffffff;
@@ -11,8 +11,10 @@ const EDGE_COLOR = 0xffffff;
 // (a single flat position buffer, same technique as geometry/dimension-lines.ts,
 // not per-instance geometry - InstancedMesh doesn't support LineSegments).
 // Iterates the grid+bitmask directly (voxel-grid-contract.ts) rather than a
-// materialized list of centers - two passes: count occupied cells first (to
-// size the InstancedMesh exactly), then fill instance matrices.
+// materialized list of centers - one pass, collecting each occupied cell's
+// center as it's found, so isOccupied's bit-test never runs twice per cell
+// (an earlier version counted occupied cells first via countOccupied to
+// size the InstancedMesh, then walked the grid again to fill it).
 // Built directly in WORLD space: the grid's origin is already in world
 // coordinates (the mesh sent to Solvix.Api was baked from the DISPLAYED
 // scaled reference's own world transform - see VoxelizationService.run /
@@ -24,29 +26,28 @@ export function buildVoxelPreview(grid: VoxelGridDto, opacity: number): THREE.Ob
   const group = new THREE.Group();
   const half = grid.cellSize / 2;
 
-  const occupiedCount = countOccupied(grid);
-
-  const geometry = new THREE.BoxGeometry(grid.cellSize, grid.cellSize, grid.cellSize);
-  const material = new THREE.MeshStandardMaterial({ color: VOXEL_COLOR, transparent: true, opacity, side: THREE.DoubleSide });
-  const fill = new THREE.InstancedMesh(geometry, material, occupiedCount);
-
-  const matrix = new THREE.Matrix4();
-  const edgePositions: number[] = [];
-  let instanceIndex = 0;
+  const occupiedCenters: { x: number; y: number; z: number }[] = [];
   for (let ix = 0; ix < grid.countX; ix++) {
     for (let iy = 0; iy < grid.countY; iy++) {
       for (let iz = 0; iz < grid.countZ; iz++) {
-        if (!isOccupied(grid, ix, iy, iz)) {
-          continue;
+        if (isOccupied(grid, ix, iy, iz)) {
+          occupiedCenters.push(voxelCenter(grid, ix, iy, iz));
         }
-        const center = voxelCenter(grid, ix, iy, iz);
-        matrix.makeTranslation(center.x, center.y, center.z);
-        fill.setMatrixAt(instanceIndex, matrix);
-        addCubeEdges(edgePositions, center, half);
-        instanceIndex++;
       }
     }
   }
+
+  const geometry = new THREE.BoxGeometry(grid.cellSize, grid.cellSize, grid.cellSize);
+  const material = new THREE.MeshStandardMaterial({ color: VOXEL_COLOR, transparent: true, opacity, side: THREE.DoubleSide });
+  const fill = new THREE.InstancedMesh(geometry, material, occupiedCenters.length);
+
+  const matrix = new THREE.Matrix4();
+  const edgePositions: number[] = [];
+  occupiedCenters.forEach((center, index) => {
+    matrix.makeTranslation(center.x, center.y, center.z);
+    fill.setMatrixAt(index, matrix);
+    addCubeEdges(edgePositions, center, half);
+  });
   fill.instanceMatrix.needsUpdate = true;
   group.add(fill);
 

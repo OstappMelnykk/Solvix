@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { environment } from '../../environments/environment';
-import { MeshApiService, parseVoxelizationTooLargeError } from './mesh-api.service';
+import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from './mesh-api.service';
 import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 
 // Builds the exact byte layout Solvix.Voxelization's internal
@@ -78,6 +78,31 @@ describe('parseVoxelizationTooLargeError', () => {
 
   it('returns null when the decoded body is missing cellCount/limit', () => {
     const result = parseVoxelizationTooLargeError(errorResponseWithArrayBufferBody({ message: 'server error' }));
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('parseInvalidMeshError', () => {
+  function errorResponseWithArrayBufferBody(body: unknown): HttpErrorResponse {
+    const bytes = new TextEncoder().encode(JSON.stringify(body));
+    return new HttpErrorResponse({ error: bytes.buffer, status: 400 });
+  }
+
+  it('decodes the ArrayBuffer error body into { message }', () => {
+    const result = parseInvalidMeshError(errorResponseWithArrayBufferBody({ message: 'bad mesh' }));
+
+    expect(result).toEqual({ message: 'bad mesh' });
+  });
+
+  it('returns null when the decoded body is missing message', () => {
+    const result = parseInvalidMeshError(errorResponseWithArrayBufferBody({ cellCount: 5000, limit: 1000 }));
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when the error body is not an ArrayBuffer', () => {
+    const result = parseInvalidMeshError(new HttpErrorResponse({ error: 'network error', status: 0 }));
 
     expect(result).toBeNull();
   });

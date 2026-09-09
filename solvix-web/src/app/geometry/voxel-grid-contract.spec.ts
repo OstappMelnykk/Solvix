@@ -33,6 +33,14 @@ describe('fromVoxelGridBinary', () => {
 
     expect(Array.from(grid.occupancy)).toEqual([0xff, 0x01]);
   });
+
+  // Regression: a truncated/corrupted response used to decode "successfully"
+  // into a grid whose occupancy silently reads as all-empty past the real
+  // data, instead of failing loudly.
+  it('throws when the occupancy buffer is too short for the declared grid dimensions', () => {
+    // 900 cells need ceil(900/8) = 113 bytes; this response only has 1.
+    expect(() => fromVoxelGridBinary(encode(0, 0, 0, 1, 900, 1, 1, [0]))).toThrowError(/truncated/);
+  });
 });
 
 describe('isOccupied', () => {

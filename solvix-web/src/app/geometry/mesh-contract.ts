@@ -56,16 +56,28 @@ export function toMeshBinary(object: THREE.Object3D): ArrayBuffer {
     if (!position) {
       return;
     }
-    const triangleIndices = geometry.index ? geometry.index.array : Array.from({ length: position.count }, (_, i) => i);
-
-    for (let i = 0; i < triangleIndices.length; i++) {
-      point.fromBufferAttribute(position, triangleIndices[i]).applyMatrix4(child.matrixWorld);
+    // Non-indexed geometries have no index buffer to read corners from -
+    // rather than materializing an identity array ([0, 1, 2, ...]) just to
+    // read i back out of it, this writes straight from the loop counter.
+    const writeCorner = (sourceIndex: number): void => {
+      point.fromBufferAttribute(position, sourceIndex).applyMatrix4(child.matrixWorld);
       const vertexOffset = vertexBase + corner * 12;
       view.setFloat32(vertexOffset, point.x, true);
       view.setFloat32(vertexOffset + 4, point.y, true);
       view.setFloat32(vertexOffset + 8, point.z, true);
       view.setUint32(indexBase + corner * 4, corner, true);
       corner++;
+    };
+
+    if (geometry.index) {
+      const triangleIndices = geometry.index.array;
+      for (let i = 0; i < triangleIndices.length; i++) {
+        writeCorner(triangleIndices[i]);
+      }
+    } else {
+      for (let i = 0; i < position.count; i++) {
+        writeCorner(i);
+      }
     }
   });
 

@@ -35,6 +35,10 @@ function encodeTooLargeError(cellCount: number, limit: number): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify({ cellCount, limit })).buffer as ArrayBuffer;
 }
 
+function encodeInvalidMeshError(message: string): ArrayBuffer {
+  return new TextEncoder().encode(JSON.stringify({ message })).buffer as ArrayBuffer;
+}
+
 describe('VoxelizationService', () => {
   let sessions: SessionsService;
   let importedGeometry: ImportedGeometryService;
@@ -114,6 +118,19 @@ describe('VoxelizationService', () => {
       .flush(encodeTooLargeError(5000, 1000), { status: 400, statusText: 'Bad Request' });
 
     expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'too-large', cellCount: 5000, limit: 1000 });
+  });
+
+  it('reports invalid-mesh for InvalidMeshException\'s 400 body shape', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`)
+      .flush(encodeInvalidMeshError('bad mesh'), { status: 400, statusText: 'Bad Request' });
+
+    expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'invalid-mesh', message: 'bad mesh' });
   });
 
   it('falls back to a generic error for any other failure response', () => {

@@ -141,15 +141,24 @@ export class ImportedReferenceRenderService {
     const info = this.importedGeometry.get(sessionId);
     const scale = this.getScale(sessionId);
 
-    const previousLines = this.dimensionLinesBySession.get(sessionId);
-    if (previousLines) {
-      disposeDimensionLines(previousLines);
-      this.dimensionLinesBySession.delete(sessionId);
-    }
+    // Does NOT dispose the outgoing dimensionLines/ruler here, even though
+    // they're about to be replaced - WorldCanvasComponent shares their
+    // geometry/material by reference (clone() doesn't deep-copy either),
+    // and disposing them the instant new ones are built races the moment
+    // WorldCanvasComponent's own change-detection-driven update*() methods
+    // actually remove the OLD clone from the scene (a render-loop frame
+    // scheduled via requestAnimationFrame can land in between, rendering a
+    // clone whose GPU buffers were just freed). Disposal now happens in
+    // WorldCanvasComponent itself, at the exact moment it swaps the old
+    // clone out - see its updateDimensionLines/updateRuler. Only pruneTo's
+    // session-close cleanup (in the constructor) still disposes eagerly
+    // here, since a closed session's overlay may never be swapped out by
+    // any WorldCanvasComponent at all.
+    this.dimensionLinesBySession.delete(sessionId);
 
     if (!info || scale === null) {
       this.scaledReferenceBySession.delete(sessionId);
-      this.disposeRuler(sessionId);
+      this.rulerBySession.delete(sessionId);
       return;
     }
     const clone = info.object.clone();
@@ -186,12 +195,14 @@ export class ImportedReferenceRenderService {
     const scale = this.getScale(sessionId);
     const clone = this.scaledReferenceBySession.get(sessionId);
     if (!info || scale === null || !clone) {
-      this.disposeRuler(sessionId);
+      this.rulerBySession.delete(sessionId);
       return;
     }
     const localBox = this.getLocalBox(info, scale);
     const distance = this.display.getStyle(sessionId).rulerDistance;
-    this.disposeRuler(sessionId);
+    // See refreshScaledReference's comment - not disposed here, only
+    // overwritten; WorldCanvasComponent disposes the outgoing ruler when
+    // it actually removes it from the scene.
     const ruler = buildRulerPreview(localBox, info.longestAxis, this.getDensity(sessionId), distance);
     ruler.position.copy(clone.position);
     ruler.quaternion.copy(clone.quaternion);
@@ -205,13 +216,5 @@ export class ImportedReferenceRenderService {
   private getLocalBox(info: { boundingSize: THREE.Vector3 }, scale: number): THREE.Box3 {
     const half = info.boundingSize.clone().multiplyScalar(scale * 0.5);
     return new THREE.Box3(half.clone().negate(), half);
-  }
-
-  private disposeRuler(sessionId: number): void {
-    const previous = this.rulerBySession.get(sessionId);
-    if (previous) {
-      disposeRulerPreview(previous);
-      this.rulerBySession.delete(sessionId);
-    }
   }
 }

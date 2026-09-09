@@ -7,11 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Just for AddVoxelization()'s IServiceCollection extension - no
+         runtime dependency, this package is interfaces only. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Lets Solvix.Voxelization.Tests see this assembly's internal
-         classes directly - everything except Voxelizer and
-         VoxelizationTooLargeException is internal on purpose (see
-         Voxelizer.cs), so this is the only way to unit-test the algorithm
-         and wire-format serializers at that level of detail. -->
+         classes directly - everything except IVoxelizer and the two
+         public exceptions is internal on purpose (see Voxelizer.cs), so
+         this is the only way to unit-test the algorithm and wire-format
+         serializers at that level of detail. -->
     <InternalsVisibleTo Include="Solvix.Voxelization.Tests" />
   </ItemGroup>
 

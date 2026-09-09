@@ -28,6 +28,20 @@ export function fromVoxelGridBinary(buffer: ArrayBuffer): VoxelGridDto {
   const countY = view.getUint32(20, true);
   const countZ = view.getUint32(24, true);
   const occupancy = new Uint8Array(buffer, 28);
+
+  // Declared dimensions must actually be backed by enough occupancy bytes
+  // - without this, a truncated/corrupted response silently reads past
+  // the real data as `undefined` (isOccupied's bitwise AND against
+  // `undefined` evaluates to 0, i.e. "not occupied") instead of failing
+  // loudly, hiding a broken response as a merely-empty result.
+  const cellCount = countX * countY * countZ;
+  const expectedOccupancyBytes = Math.ceil(cellCount / 8);
+  if (occupancy.length < expectedOccupancyBytes) {
+    throw new Error(
+      `Voxel grid response is truncated: ${countX}x${countY}x${countZ} cells need ${expectedOccupancyBytes} occupancy bytes, got ${occupancy.length}.`
+    );
+  }
+
   return { origin, cellSize, countX, countY, countZ, occupancy };
 }
 

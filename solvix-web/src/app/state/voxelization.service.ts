@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
-import { MeshApiService, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
+import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 import { toMeshBinary } from '../geometry/mesh-contract';
 import { buildVoxelPreview, disposeVoxelPreview, setVoxelPreviewOpacity } from '../geometry/voxel-preview';
@@ -16,6 +16,7 @@ export type VoxelizationStatus =
   | { kind: 'loading' }
   | { kind: 'ok'; result: VoxelGridDto }
   | { kind: 'too-large'; cellCount: number; limit: number }
+  | { kind: 'invalid-mesh'; message: string }
   | { kind: 'error' };
 
 // Per-session voxelization request/result state. Deliberately does NOT
@@ -128,10 +129,15 @@ export class VoxelizationService {
           return;
         }
         this.statusBySession.set(sessionId, { kind: 'ok', result });
-        const previous = this.voxelPreviewBySession.get(sessionId);
-        if (previous) {
-          disposeVoxelPreview(previous);
-        }
+        // Does NOT dispose the outgoing preview here, even though it's
+        // about to be replaced - see ImportedReferenceRenderService's
+        // refreshScaledReference for why (the same race applies to any
+        // overlay whose geometry/material WorldCanvasComponent's clone
+        // shares by reference). WorldCanvasComponent disposes the old
+        // clone itself, at the moment it actually removes it from the
+        // scene. Only pruneTo's session-close cleanup (in the constructor)
+        // still disposes eagerly, since a closed session's preview may
+        // never be swapped out by any WorldCanvasComponent at all.
         this.voxelPreviewBySession.set(sessionId, buildVoxelPreview(result, this.getOpacity(sessionId)));
       },
       error: (response: HttpErrorResponse) => {
@@ -139,7 +145,12 @@ export class VoxelizationService {
           return;
         }
         const tooLarge = parseVoxelizationTooLargeError(response);
-        this.statusBySession.set(sessionId, tooLarge ? { kind: 'too-large', ...tooLarge } : { kind: 'error' });
+        if (tooLarge) {
+          this.statusBySession.set(sessionId, { kind: 'too-large', ...tooLarge });
+          return;
+        }
+        const invalidMesh = parseInvalidMeshError(response);
+        this.statusBySession.set(sessionId, invalidMesh ? { kind: 'invalid-mesh', ...invalidMesh } : { kind: 'error' });
       }
     });
   }

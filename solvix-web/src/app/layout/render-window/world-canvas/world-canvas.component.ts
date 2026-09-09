@@ -7,6 +7,9 @@ import { WorldCameraMemoryService } from '../../../state/world-camera-memory.ser
 import { ImportedReferenceStyle } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
+import { disposeDimensionLines } from '../../../geometry/dimension-lines';
+import { disposeRulerPreview } from '../../../geometry/ruler-preview';
+import { disposeVoxelPreview } from '../../../geometry/voxel-preview';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const AXES_LENGTH = 50;
@@ -464,6 +467,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     if (this.currentDimensionLines) {
       this.scene.remove(this.currentDimensionLines);
+      // Disposed HERE, not by ImportedReferenceRenderService the moment it
+      // builds a replacement - geometry/material are shared by reference
+      // with this clone (clone() doesn't deep-copy them), so disposing
+      // any earlier risks a still-scheduled render-loop frame drawing this
+      // exact clone with GPU buffers that were already freed. This is the
+      // one place that's actually done rendering the outgoing object.
+      disposeDimensionLines(this.currentDimensionLines);
       this.currentDimensionLines = null;
     }
 
@@ -485,6 +495,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     if (this.currentRuler) {
       this.scene.remove(this.currentRuler);
+      // See updateDimensionLines' comment - disposed here, not by
+      // ImportedReferenceRenderService, for the same shared-geometry
+      // race reasoning.
+      disposeRulerPreview(this.currentRuler);
       this.currentRuler = null;
     }
 
@@ -506,6 +520,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     if (this.currentVoxelPreview) {
       this.scene.remove(this.currentVoxelPreview);
+      // See updateDimensionLines' comment - disposed here, not by
+      // VoxelizationService, for the same shared-geometry race reasoning.
+      disposeVoxelPreview(this.currentVoxelPreview);
       this.currentVoxelPreview = null;
     }
 

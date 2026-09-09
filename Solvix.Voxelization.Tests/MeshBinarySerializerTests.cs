@@ -47,4 +47,41 @@ public class MeshBinarySerializerTests
         Assert.That(mesh.Vertices, Is.EqualTo(new[] { new System.Numerics.Vector3(1, 2, 3), new System.Numerics.Vector3(4, 5, 6) }));
         Assert.That(mesh.Indices, Is.EqualTo(new[] { 0, 1 }));
     }
+
+    // Regression: a body whose header LIES about how much data follows -
+    // this must be caught before Deserialize sizes any allocation off the
+    // declared counts, not after (see MalformedMeshException's own doc
+    // comment - the whole point is catching this before `new
+    // Vector3[vertexCount]` runs at all).
+    [Test]
+    public void Throws_MalformedMeshException_when_the_declared_counts_dont_fit_the_actual_body()
+    {
+        var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(0xFFFFFFFFu); // vertexCount - would need ~48GB, actual body has none of it
+            writer.Write(0u);
+        }
+        stream.Position = 0;
+
+        Assert.Throws<MalformedMeshException>(() => MeshBinarySerializer.Deserialize(stream));
+    }
+
+    [Test]
+    public void Throws_MalformedMeshException_for_a_body_too_short_to_even_hold_the_header()
+    {
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        Assert.Throws<MalformedMeshException>(() => MeshBinarySerializer.Deserialize(stream));
+    }
+
+    [Test]
+    public void Throws_MalformedMeshException_when_an_index_does_not_reference_a_declared_vertex()
+    {
+        float[] vertices = [1, 2, 3]; // one vertex (index 0 valid, 1+ invalid)
+        uint[] indices = [0, 1, 2];
+        using var stream = Encode(vertices, indices);
+
+        Assert.Throws<MalformedMeshException>(() => MeshBinarySerializer.Deserialize(stream));
+    }
 }

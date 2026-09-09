@@ -2,11 +2,13 @@ using System.Numerics;
 
 namespace Solvix.Voxelization;
 
-// All logic for turning a triangle mesh into a set of unit voxels lives
-// here: spatial-grid-accelerated SAT triangle-vs-box test for cubes the
-// surface actually touches, plus a grid-accelerated ray-parity test for
-// cubes fully enclosed by the surface. Internal - see Voxelizer.cs for
-// this project's sole public entry point.
+// Orchestrates turning a triangle mesh into a set of unit voxels: collects
+// triangles, computes the bounding box and grid dimensions, builds a
+// TriangleSpatialGrid to accelerate lookups, then for each cell decides
+// inclusion via a SAT triangle-vs-box test (cells the surface actually
+// touches) or a grid-accelerated ray-parity test (cells fully enclosed by
+// the surface). Internal - see Voxelizer.cs for this project's sole public
+// entry point.
 internal sealed class VoxelizationService
 {
     // The cube side is always literally 1 - density is achieved by the
@@ -23,10 +25,7 @@ internal sealed class VoxelizationService
     // exactly along a face/edge.
     private static readonly Vector3 InsideTestDirection = Vector3.Normalize(new Vector3(0.9137f, 0.2711f, 0.3053f));
 
-    private readonly record struct Triangle(Vector3 A, Vector3 B, Vector3 C);
-    private readonly record struct GridDims(int CountX, int CountY, int CountZ);
-
-    public VoxelizationResult Voxelize(ImportedSurfaceMesh mesh)
+    public VoxelizationResult Voxelize(ImportedSurfaceMesh mesh, CancellationToken cancellationToken = default)
     {
         var triangles = CollectTriangles(mesh);
         if (triangles.Count == 0)
@@ -55,17 +54,25 @@ internal sealed class VoxelizationService
         // the CUBE of density (10x density -> ~1000x cells, not 10x) and
         // why that count is checked against MaxCells below - "more detail"
         // and "hitting the cell cap" are the same knob.
-        var countX = Math.Max(1, (int)Math.Ceiling((boxMax.X - boxMin.X) / cellSize));
-        var countY = Math.Max(1, (int)Math.Ceiling((boxMax.Y - boxMin.Y) / cellSize));
-        var countZ = Math.Max(1, (int)Math.Ceiling((boxMax.Z - boxMin.Z) / cellSize));
-        var estimatedCells = countX * countY * countZ;
-        if (estimatedCells > MaxCells)
+        var countX = SafeCellCount(boxMax.X - boxMin.X, cellSize);
+        var countY = SafeCellCount(boxMax.Y - boxMin.Y, cellSize);
+        var countZ = SafeCellCount(boxMax.Z - boxMin.Z, cellSize);
+        // long, not int - countX*countY*countZ can individually be capped
+        // to at most MaxCells+1 by SafeCellCount, but their PRODUCT still
+        // overflows int32 well before any one axis alone gets that large
+        // (e.g. 50_000 x 50_000 x 1 already exceeds int.MaxValue). Doing
+        // this multiply in int let an attacker-scaled mesh wrap the count
+        // to a small/negative number and slip past the MaxCells check
+        // below entirely.
+        var estimatedCellsLong = (long)countX * countY * countZ;
+        if (estimatedCellsLong > MaxCells)
         {
-            throw new VoxelizationTooLargeException(estimatedCells, MaxCells);
+            throw new VoxelizationTooLargeException((int)Math.Min(estimatedCellsLong, int.MaxValue), MaxCells);
         }
+        var estimatedCells = (int)estimatedCellsLong; // safe: <= MaxCells (900_000) here
 
         var dims = new GridDims(countX, countY, countZ);
-        var grid = BuildTriangleGrid(triangles, boxMin, cellSize, dims);
+        var grid = TriangleSpatialGrid.Build(triangles, boxMin, cellSize, dims);
 
         // Iterate by CELL INDEX (0..countX/Y/Z-1), not by stepping a
         // coordinate until it exceeds boxMax - a cell's CENTER can
@@ -82,6 +89,11 @@ internal sealed class VoxelizationService
         var occupancy = new byte[(estimatedCells + 7) / 8];
         for (var ix = 0; ix < countX; ix++)
         {
+            // Checked once per X-slice, not per cell - cheap enough not to
+            // matter even at MaxCells, but still catches a cancelled
+            // request (client disconnected, see MeshesController) well
+            // before a large grid finishes computing for nobody.
+            cancellationToken.ThrowIfCancellationRequested();
             var x = boxMin.X + half + ix * cellSize;
             for (var iy = 0; iy < countY; iy++)
             {
@@ -127,46 +139,24 @@ internal sealed class VoxelizationService
         return (min, max);
     }
 
-    private static int AxisCellIndex(float coord, float minCoord, float cellSize, int count)
+    // Ceiling(span / cellSize), clamped to a value that's always safe to
+    // multiply against the other two axes in an int (see estimatedCellsLong
+    // in Voxelize) - a malformed/attacker-scaled mesh's bounding box can
+    // make the raw ratio NaN, infinite, or simply too large for `(int)` to
+    // cast correctly (an out-of-range double->int cast in C# is
+    // unchecked and produces an unspecified result, not an exception).
+    // Capping at MaxCells+1 is enough: Voxelize's own combined check
+    // throws VoxelizationTooLargeException as soon as any axis (or their
+    // product) exceeds MaxCells, so the exact oversized value never
+    // matters past this point.
+    private static int SafeCellCount(float span, float cellSize)
     {
-        var index = (int)Math.Floor((coord - minCoord) / cellSize);
-        return Math.Min(count - 1, Math.Max(0, index));
-    }
-
-    // Buckets each triangle into every grid cell its own AABB overlaps -
-    // turns the scan from O(cells x triangles) into roughly O(cells +
-    // triangles).
-    private static Dictionary<(int, int, int), List<Triangle>> BuildTriangleGrid(
-        List<Triangle> triangles, Vector3 boxMin, float cellSize, GridDims dims)
-    {
-        var grid = new Dictionary<(int, int, int), List<Triangle>>();
-        foreach (var triangle in triangles)
+        var raw = Math.Ceiling(span / cellSize);
+        if (double.IsNaN(raw) || raw > MaxCells)
         {
-            var ixMin = AxisCellIndex(Math.Min(triangle.A.X, Math.Min(triangle.B.X, triangle.C.X)), boxMin.X, cellSize, dims.CountX);
-            var ixMax = AxisCellIndex(Math.Max(triangle.A.X, Math.Max(triangle.B.X, triangle.C.X)), boxMin.X, cellSize, dims.CountX);
-            var iyMin = AxisCellIndex(Math.Min(triangle.A.Y, Math.Min(triangle.B.Y, triangle.C.Y)), boxMin.Y, cellSize, dims.CountY);
-            var iyMax = AxisCellIndex(Math.Max(triangle.A.Y, Math.Max(triangle.B.Y, triangle.C.Y)), boxMin.Y, cellSize, dims.CountY);
-            var izMin = AxisCellIndex(Math.Min(triangle.A.Z, Math.Min(triangle.B.Z, triangle.C.Z)), boxMin.Z, cellSize, dims.CountZ);
-            var izMax = AxisCellIndex(Math.Max(triangle.A.Z, Math.Max(triangle.B.Z, triangle.C.Z)), boxMin.Z, cellSize, dims.CountZ);
-
-            for (var ix = ixMin; ix <= ixMax; ix++)
-            {
-                for (var iy = iyMin; iy <= iyMax; iy++)
-                {
-                    for (var iz = izMin; iz <= izMax; iz++)
-                    {
-                        var key = (ix, iy, iz);
-                        if (!grid.TryGetValue(key, out var bucket))
-                        {
-                            bucket = [];
-                            grid[key] = bucket;
-                        }
-                        bucket.Add(triangle);
-                    }
-                }
-            }
+            return MaxCells + 1;
         }
-        return grid;
+        return Math.Max(1, (int)raw);
     }
 
     // Separating-axis test (Akenine-Moller) for triangle vs axis-aligned
@@ -223,13 +213,12 @@ internal sealed class VoxelizationService
     // from it crosses the surface an odd number of times. Walks the same
     // uniform grid via 3D DDA (Amanatides-Woo) so only triangles in cells
     // the ray actually passes through get tested.
-    private static bool IsPointInsideViaGrid(
-        Vector3 point, Vector3 boxMin, float cellSize, GridDims dims, Dictionary<(int, int, int), List<Triangle>> grid)
+    private static bool IsPointInsideViaGrid(Vector3 point, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
         var direction = InsideTestDirection;
-        var ix = AxisCellIndex(point.X, boxMin.X, cellSize, dims.CountX);
-        var iy = AxisCellIndex(point.Y, boxMin.Y, cellSize, dims.CountY);
-        var iz = AxisCellIndex(point.Z, boxMin.Z, cellSize, dims.CountZ);
+        var ix = grid.CellIndexX(point.X);
+        var iy = grid.CellIndexY(point.Y);
+        var iz = grid.CellIndexZ(point.Z);
 
         var stepX = direction.X > 0 ? 1 : -1;
         var stepY = direction.Y > 0 ? 1 : -1;
@@ -258,12 +247,9 @@ internal sealed class VoxelizationService
 
         for (var step = 0; step <= maxSteps; step++)
         {
-            if (grid.TryGetValue((ix, iy, iz), out var bucket))
+            foreach (var triangle in grid.TrianglesNear(ix, iy, iz))
             {
-                foreach (var triangle in bucket)
-                {
-                    candidates.Add(triangle);
-                }
+                candidates.Add(triangle);
             }
 
             if (tMaxX <= tMaxY && tMaxX <= tMaxZ)
@@ -329,17 +315,13 @@ internal sealed class VoxelizationService
     }
 
     private static bool IsCubeIncluded(
-        int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims,
-        Dictionary<(int, int, int), List<Triangle>> grid)
+        int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
-        if (grid.TryGetValue((ix, iy, iz), out var bucket))
+        foreach (var triangle in grid.TrianglesNear(ix, iy, iz))
         {
-            foreach (var triangle in bucket)
+            if (TriangleIntersectsBox(triangle, center, half))
             {
-                if (TriangleIntersectsBox(triangle, center, half))
-                {
-                    return true;
-                }
+                return true;
             }
         }
         // No triangle touches the cube at all - it's either fully inside or

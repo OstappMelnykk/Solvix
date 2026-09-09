@@ -2,105 +2,83 @@ using Solvix.Voxelization;
 
 namespace Solvix.MeshBuilder.Tests;
 
+// A controllable stand-in for the real Voxelizer - lets these tests assert
+// on MeshBuilderFacade's OWN logic (delegation, exception translation) in
+// isolation, rather than needing to drive the real SAT/ray-parity algorithm
+// just to observe how the facade behaves around it.
+public sealed class FakeVoxelizer : IVoxelizer
+{
+    public byte[]? ReturnValue { get; set; }
+    public Exception? ThrowOnVoxelize { get; set; }
+    public byte[]? ReceivedMeshBinary { get; private set; }
+    public CancellationToken ReceivedCancellationToken { get; private set; }
+
+    public byte[] Voxelize(byte[] meshBinary, CancellationToken cancellationToken = default)
+    {
+        ReceivedMeshBinary = meshBinary;
+        ReceivedCancellationToken = cancellationToken;
+        if (ThrowOnVoxelize is not null)
+        {
+            throw ThrowOnVoxelize;
+        }
+        return ReturnValue ?? [];
+    }
+}
+
 public class MeshBuilderFacadeTests
 {
+    private FakeVoxelizer _voxelizer = null!;
     private MeshBuilderFacade _facade = null!;
 
     [SetUp]
     public void SetUp()
     {
-        _facade = new MeshBuilderFacade(new Voxelizer());
-    }
-
-    // Same 1x1x1 box mesh as Solvix.Voxelization.Tests.VoxelizerTests,
-    // encoded as the wire format Voxelizer expects.
-    private static byte[] EncodeUnitBox()
-    {
-        float h = 0.5f;
-        float[] vertices =
-        [
-            -h, -h, -h, h, -h, -h, h, h, -h, -h, h, -h,
-            -h, -h, h, h, -h, h, h, h, h, -h, h, h
-        ];
-        uint[] indices =
-        [
-            0, 1, 2, 0, 2, 3,
-            5, 4, 7, 5, 7, 6,
-            4, 0, 3, 4, 3, 7,
-            1, 5, 6, 1, 6, 2,
-            3, 2, 6, 3, 6, 7,
-            4, 5, 1, 4, 1, 0
-        ];
-
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        writer.Write((uint)(vertices.Length / 3));
-        writer.Write((uint)indices.Length);
-        foreach (var component in vertices)
-        {
-            writer.Write(component);
-        }
-        foreach (var index in indices)
-        {
-            writer.Write(index);
-        }
-        return stream.ToArray();
+        _voxelizer = new FakeVoxelizer();
+        _facade = new MeshBuilderFacade(_voxelizer);
     }
 
     [Test]
-    public void Delegates_to_the_voxelizer_and_returns_its_bytes_unchanged()
+    public void Delegates_the_mesh_bytes_and_cancellation_token_to_the_voxelizer_unchanged()
     {
-        var input = EncodeUnitBox();
+        var input = new byte[] { 1, 2, 3 };
+        using var cts = new CancellationTokenSource();
+        _voxelizer.ReturnValue = [4, 5, 6];
 
-        var response = _facade.Voxelize(input);
+        var response = _facade.Voxelize(input, cts.Token);
 
-        Assert.That(response, Is.EqualTo(new Voxelizer().Voxelize(input)));
+        Assert.That(_voxelizer.ReceivedMeshBinary, Is.SameAs(input));
+        Assert.That(_voxelizer.ReceivedCancellationToken, Is.EqualTo(cts.Token));
+        Assert.That(response, Is.SameAs(_voxelizer.ReturnValue));
     }
 
     // The one thing that's actually MeshBuilderFacade's own logic (not
-    // just delegation) - translating Solvix.Voxelization's exception into
+    // just delegation) - translating Solvix.Voxelization's exceptions into
     // MeshBuilder's own, so Solvix.Api never needs to know
-    // Solvix.Voxelization exists, even to catch its exception type.
+    // Solvix.Voxelization exists, even to catch its exception types.
     [Test]
     public void Translates_the_voxelization_too_large_exception_into_its_own_type_with_the_same_counts()
     {
-        float h = 0.5f * 200; // scaled far too large relative to the unit cube
-        float[] vertices =
-        [
-            -h, -h, -h, h, -h, -h, h, h, -h, -h, h, -h,
-            -h, -h, h, h, -h, h, h, h, h, -h, h, h
-        ];
-        uint[] indices =
-        [
-            0, 1, 2, 0, 2, 3,
-            5, 4, 7, 5, 7, 6,
-            4, 0, 3, 4, 3, 7,
-            1, 5, 6, 1, 6, 2,
-            3, 2, 6, 3, 6, 7,
-            4, 5, 1, 4, 1, 0
-        ];
-        using var stream = new MemoryStream();
-        using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true))
-        {
-            writer.Write((uint)(vertices.Length / 3));
-            writer.Write((uint)indices.Length);
-            foreach (var component in vertices) writer.Write(component);
-            foreach (var index in indices) writer.Write(index);
-        }
+        _voxelizer.ThrowOnVoxelize = new VoxelizationTooLargeException(5000, 1000);
 
-        VoxelizationTooLargeException fromVoxelizer = null!;
-        try
-        {
-            new Voxelizer().Voxelize(stream.ToArray());
-        }
-        catch (VoxelizationTooLargeException error)
-        {
-            fromVoxelizer = error;
-        }
-        Assert.That(fromVoxelizer, Is.Not.Null, "expected Voxelizer itself to throw first, to compare counts against");
+        var thrown = Assert.Throws<MeshTooLargeException>(() => _facade.Voxelize([], CancellationToken.None));
+        Assert.That(thrown.CellCount, Is.EqualTo(5000));
+        Assert.That(thrown.Limit, Is.EqualTo(1000));
+    }
 
-        var thrown = Assert.Throws<MeshTooLargeException>(() => _facade.Voxelize(stream.ToArray()));
-        Assert.That(thrown.CellCount, Is.EqualTo(fromVoxelizer.CellCount));
-        Assert.That(thrown.Limit, Is.EqualTo(fromVoxelizer.Limit));
+    [Test]
+    public void Translates_the_malformed_mesh_exception_into_its_own_type_with_the_same_message()
+    {
+        _voxelizer.ThrowOnVoxelize = new MalformedMeshException("bad mesh");
+
+        var thrown = Assert.Throws<InvalidMeshException>(() => _facade.Voxelize([], CancellationToken.None));
+        Assert.That(thrown.Message, Is.EqualTo("bad mesh"));
+    }
+
+    [Test]
+    public void Lets_any_other_exception_propagate_untranslated()
+    {
+        _voxelizer.ThrowOnVoxelize = new InvalidOperationException("unrelated failure");
+
+        Assert.Throws<InvalidOperationException>(() => _facade.Voxelize([], CancellationToken.None));
     }
 }
