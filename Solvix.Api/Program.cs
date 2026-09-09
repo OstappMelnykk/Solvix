@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Solvix.Contracts.Facades;
 using Solvix.Data;
+using Solvix.MeshBuilder;
 
 var builder = WebApplication.CreateBuilder(args);
 
 const string frontendCorsPolicy = "Frontend";
 
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -20,7 +22,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<SolvixDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
-builder.Services.AddScoped<IMeshBuilderFacade, Solvix.MeshBuilder.MeshBuilderFacade>();
+builder.Services.AddMeshBuilder();
 builder.Services.AddScoped<ISolverFacade, Solvix.Solver.SolverFacade>();
 builder.Services.AddScoped<Solvix.Bridge.Bridge>();
 
@@ -40,5 +42,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors(frontendCorsPolicy);
+
+app.MapControllers();
 
 app.Run();

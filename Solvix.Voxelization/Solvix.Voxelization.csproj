@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets Solvix.Voxelization.Tests see this assembly's internal
+         classes directly - everything except Voxelizer and
+         VoxelizationTooLargeException is internal on purpose (see
+         Voxelizer.cs), so this is the only way to unit-test the algorithm
+         and wire-format serializers at that level of detail. -->
+    <InternalsVisibleTo Include="Solvix.Voxelization.Tests" />
+  </ItemGroup>
+
+</Project>
