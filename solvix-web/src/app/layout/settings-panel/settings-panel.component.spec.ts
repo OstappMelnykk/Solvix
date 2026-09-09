@@ -1,4 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Subject } from 'rxjs';
 import * as THREE from 'three';
 import { SettingsPanelComponent } from './settings-panel.component';
@@ -45,7 +47,7 @@ describe('SettingsPanelComponent import race conditions', () => {
   beforeEach(() => {
     fakeImport = new FakeModelImportService();
     TestBed.configureTestingModule({
-      providers: [{ provide: ModelImportService, useValue: fakeImport }]
+      providers: [{ provide: ModelImportService, useValue: fakeImport }, provideHttpClient(), provideHttpClientTesting()]
     });
     sessions = TestBed.inject(SessionsService);
     importedGeometry = TestBed.inject(ImportedGeometryService);

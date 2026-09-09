@@ -3,6 +3,8 @@ import { NgFor, NgIf } from '@angular/common';
 import { ImportedGeometryService } from '../../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceMode } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { VoxelizationService, VoxelizationStatus } from '../../../state/voxelization.service';
+import { VoxelGridDto, countOccupied } from '../../../geometry/voxel-grid-contract';
 
 interface GeometryInfoEntry {
   readonly label: string;
@@ -28,6 +30,7 @@ export class ImportedReferenceControlsComponent {
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  private readonly voxelization = inject(VoxelizationService);
 
   @Input({ required: true }) sessionId!: number | null;
 
@@ -177,6 +180,43 @@ export class ImportedReferenceControlsComponent {
     }
     this.referenceRender.resetRotation(sessionId);
     this.referenceRender.refreshScaledReference(sessionId);
+  }
+
+  // Sends the currently-shown scaled reference (ImportedReferenceRenderService)
+  // to Solvix.Api for voxelization.
+  runVoxelization(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    this.voxelization.run(sessionId);
+  }
+
+  getVoxelizationStatus(): VoxelizationStatus {
+    const sessionId = this.sessionId;
+    return sessionId === null ? { kind: 'idle' } : this.voxelization.getStatus(sessionId);
+  }
+
+  // Cube count for the "ok" status line - VoxelizationStatus carries the
+  // raw grid+bitmask (VoxelGridDto), not a precomputed count, since
+  // nothing else needs one (buildVoxelPreview counts internally too, for
+  // its own reason - sizing the InstancedMesh).
+  getVoxelCubeCount(result: VoxelGridDto): number {
+    return countOccupied(result);
+  }
+
+  getVoxelOpacityPercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getOpacity(sessionId) * 100);
+  }
+
+  onVoxelOpacityChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setOpacity(sessionId, percent / 100);
   }
 
   // Full metadata dictionary for whatever's currently imported

@@ -174,3 +174,20 @@ h4 {
     cursor: pointer;
   }
 }
+
+// Same visual language as settings-panel.component.scss's .import-status
+// (duplicated for the same encapsulation reason as everything else in this
+// file - see the top-of-file comment).
+.voxelize-status {
+  font-size: 11px;
+  color: #8a8f98;
+  margin: -2px 0 8px;
+}
+
+.voxelize-status--warning {
+  color: #e2b93b;
+}
+
+.voxelize-status--error {
+  color: #e05252;
+}

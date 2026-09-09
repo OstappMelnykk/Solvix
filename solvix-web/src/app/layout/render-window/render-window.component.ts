@@ -7,6 +7,7 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { VoxelizationService } from '../../state/voxelization.service';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -31,6 +32,7 @@ export class RenderWindowComponent {
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
+  private readonly voxelization = inject(VoxelizationService);
   readonly worlds = WORLDS_CONFIG;
 
   // null when there's no active session - never matches a real worldIndex,
@@ -101,5 +103,19 @@ export class RenderWindowComponent {
       return null;
     }
     return this.importedReferenceRender.getRuler(sessionId);
+  }
+
+  // Ideal-World-only - the last successfully voxelized result
+  // (VoxelizationService), shown alongside the reference the user clicked
+  // "Вокселізувати" on. Unlike the reference/dimension-lines/ruler
+  // overlays above, this has no independent visibility toggle yet - it
+  // simply shows whenever a result exists (VoxelizationService itself
+  // hides it once stale - see isStale there).
+  getVoxelPreview(worldIndex: number): THREE.Object3D | null {
+    if (worldIndex !== IDEAL_WORLD_INDEX) {
+      return null;
+    }
+    const sessionId = this.sessions.activeSessionId();
+    return sessionId === null ? null : this.voxelization.getVoxelPreview(sessionId);
   }
 }
