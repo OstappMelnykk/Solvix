@@ -52,6 +52,37 @@
   </label>
 </div>
 
+<div class="group">
+  <div class="group-label">Вокселізація</div>
+  <label class="row">
+    <span>Показати кубики</span>
+    <input type="checkbox" [checked]="isVoxelPreviewVisible()" (change)="onVoxelPreviewVisibleChange($event)" />
+  </label>
+  <label class="row">
+    <span>Прозорість кубів</span>
+    <input type="range" min="0" max="100" [value]="getVoxelOpacityPercent()" (change)="onVoxelOpacityChange($event)" />
+  </label>
+  <label class="row">
+    <span>Прозорість каркасу</span>
+    <input type="range" min="0" max="100" [value]="getVoxelEdgeOpacityPercent()" (change)="onVoxelEdgeOpacityChange($event)" />
+  </label>
+  <button class="tool" type="button" (click)="runVoxelization()">Вокселізувати</button>
+  <ng-container *ngIf="getVoxelizationStatus() as voxelStatus">
+    <div
+      class="voxelize-status"
+      *ngIf="voxelStatus.kind !== 'idle'"
+      [class.voxelize-status--warning]="voxelStatus.kind === 'too-large'"
+      [class.voxelize-status--error]="voxelStatus.kind === 'error' || voxelStatus.kind === 'invalid-mesh'"
+    >
+      <span *ngIf="voxelStatus.kind === 'loading'">Вокселізація…</span>
+      <span *ngIf="voxelStatus.kind === 'ok'">{{ getVoxelCubeCount(voxelStatus.result) }} кубів</span>
+      <span *ngIf="voxelStatus.kind === 'too-large'">Забагато кубів ({{ voxelStatus.cellCount }}, ліміт {{ voxelStatus.limit }}) — зменши розмір</span>
+      <span *ngIf="voxelStatus.kind === 'invalid-mesh'">{{ voxelStatus.message }}</span>
+      <span *ngIf="voxelStatus.kind === 'error'">Не вдалось виконати вокселізацію</span>
+    </div>
+  </ng-container>
+</div>
+
 <ng-container *ngIf="getGeometryInfo() as info">
   <h4 *ngIf="info.length > 0">Довідка про геометрію</h4>
   <div class="row" *ngFor="let entry of info"><span>{{ entry.label }}</span><span>{{ entry.value }}</span></div>

@@ -7,6 +7,9 @@ import { WorldCameraMemoryService } from '../../../state/world-camera-memory.ser
 import { ImportedReferenceStyle } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
+import { disposeDimensionLines } from '../../../geometry/dimension-lines';
+import { disposeRulerPreview } from '../../../geometry/ruler-preview';
+import { disposeVoxelPreview } from '../../../geometry/voxel-preview';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const AXES_LENGTH = 50;
@@ -67,6 +70,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // geometry/ruler-preview.ts) - a separate overlay, independently
   // toggleable (ImportedReferenceDisplayService.rulerVisible).
   @Input() ruler: THREE.Object3D | null = null;
+  // Instanced-cube preview of the last successful voxelization
+  // (VoxelizationService, geometry/voxel-preview.ts) - unlike
+  // importedReference/dimensionLines/ruler, already built in WORLD space
+  // (see buildVoxelPreview's doc comment), so it's added to the scene at
+  // identity rather than needing a position/quaternion copied onto it.
+  @Input() voxelPreview: THREE.Object3D | null = null;
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
@@ -131,6 +140,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Same sharing model as currentDimensionLines/lastDimensionLines.
   private currentRuler: THREE.Object3D | null = null;
   private lastRuler: THREE.Object3D | null = null;
+  // Same sharing model as currentDimensionLines/lastDimensionLines - owned
+  // and disposed by VoxelizationService, not here.
+  private currentVoxelPreview: THREE.Object3D | null = null;
+  private lastVoxelPreview: THREE.Object3D | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private lastSessionId: number | null = null;
   private sceneReady = false;
@@ -165,6 +178,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateImportedReference();
     this.updateDimensionLines();
     this.updateRuler();
+    this.updateVoxelPreview();
     this.updateSession();
     this.renderer.render(this.scene, this.camera);
   }
@@ -276,6 +290,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateImportedReference();
     this.updateDimensionLines();
     this.updateRuler();
+    this.updateVoxelPreview();
 
     // Lower ambient than before, plus a key/fill pair of directional lights
     // from opposite sides (instead of one) - a single light + strong ambient
@@ -452,6 +467,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     if (this.currentDimensionLines) {
       this.scene.remove(this.currentDimensionLines);
+      // Disposed HERE, not by ImportedReferenceRenderService the moment it
+      // builds a replacement - geometry/material are shared by reference
+      // with this clone (clone() doesn't deep-copy them), so disposing
+      // any earlier risks a still-scheduled render-loop frame drawing this
+      // exact clone with GPU buffers that were already freed. This is the
+      // one place that's actually done rendering the outgoing object.
+      disposeDimensionLines(this.currentDimensionLines);
       this.currentDimensionLines = null;
     }
 
@@ -473,6 +495,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     if (this.currentRuler) {
       this.scene.remove(this.currentRuler);
+      // See updateDimensionLines' comment - disposed here, not by
+      // ImportedReferenceRenderService, for the same shared-geometry
+      // race reasoning.
+      disposeRulerPreview(this.currentRuler);
       this.currentRuler = null;
     }
 
@@ -482,6 +508,33 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     this.currentRuler = source.clone();
     this.scene.add(this.currentRuler);
+    this.renderer.compile(this.scene, this.camera);
+  }
+
+  private updateVoxelPreview(): void {
+    const source = this.voxelPreview;
+    if (this.lastVoxelPreview === source) {
+      return;
+    }
+    this.lastVoxelPreview = source;
+
+    if (this.currentVoxelPreview) {
+      this.scene.remove(this.currentVoxelPreview);
+      // See updateDimensionLines' comment - disposed here, not by
+      // VoxelizationService, for the same shared-geometry race reasoning.
+      disposeVoxelPreview(this.currentVoxelPreview);
+      this.currentVoxelPreview = null;
+    }
+
+    if (source === null) {
+      return;
+    }
+
+    // Already in world space (see voxelPreview's @Input doc comment) -
+    // added at identity, unlike dimensionLines/ruler which need the
+    // reference's position/quaternion copied onto them.
+    this.currentVoxelPreview = source.clone();
+    this.scene.add(this.currentVoxelPreview);
     this.renderer.compile(this.scene, this.camera);
   }
 
@@ -534,6 +587,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateImportedReference();
     this.updateDimensionLines();
     this.updateRuler();
+    this.updateVoxelPreview();
     this.updateSession();
     this.updateSettleAnimation();
 

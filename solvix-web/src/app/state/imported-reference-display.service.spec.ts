@@ -25,6 +25,7 @@ describe('ImportedReferenceDisplayService', () => {
     expect(style.rulerVisible).toBe(true);
     expect(style.rulerDistance).toBe(1);
     expect(style.rotateGizmoVisible).toBe(true);
+    expect(style.voxelPreviewVisible).toBe(true);
   });
 
   it('setters patch only the field they touch, leaving the rest at whatever they were', () => {
@@ -65,17 +66,19 @@ describe('ImportedReferenceDisplayService', () => {
     expect(display.getStyle(sessionId).rulerDistance).toBe(0);
   });
 
-  it('setDimensionsVisible/setRulerVisible/setRotateGizmoVisible are independent toggles', () => {
+  it('setDimensionsVisible/setRulerVisible/setRotateGizmoVisible/setVoxelPreviewVisible are independent toggles', () => {
     const sessionId = sessions.sessions()[0].id;
 
     display.setDimensionsVisible(sessionId, false);
     display.setRulerVisible(sessionId, false);
     display.setRotateGizmoVisible(sessionId, false);
+    display.setVoxelPreviewVisible(sessionId, false);
 
     const style = display.getStyle(sessionId);
     expect(style.dimensionsVisible).toBe(false);
     expect(style.rulerVisible).toBe(false);
     expect(style.rotateGizmoVisible).toBe(false);
+    expect(style.voxelPreviewVisible).toBe(false);
     expect(style.visible).toBe(true); // still untouched
   });
 
