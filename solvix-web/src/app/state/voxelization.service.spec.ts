@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import * as THREE from 'three';
@@ -314,5 +314,78 @@ describe('VoxelizationService', () => {
       .getVoxelPreview(sessionId)!
       .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.1, 5);
+  });
+
+  it('auto re-runs voxelization, debounced, after the reference is rebuilt', fakeAsync(() => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+
+    referenceRender.setDensity(sessionId, 10); // rebuilds the reference -> referenceChanged$
+
+    httpMock.expectNone(`${environment.apiBaseUrl}/api/meshes/voxelize`); // still debouncing
+    tick(500);
+
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    expect(voxelization.getStatus(sessionId).kind).toBe('ok');
+  }));
+
+  it('fires only once for a rapid sequence of edits to the same session', fakeAsync(() => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+
+    referenceRender.setDensity(sessionId, 10);
+    tick(200); // well within the debounce window
+    referenceRender.setDensity(sessionId, 20);
+    tick(200);
+    referenceRender.setDensity(sessionId, 30);
+    tick(500); // past the debounce window since only the LAST edit
+
+    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`);
+    request.flush(encodeGrid(1));
+    expect(request.request.method).toBe('POST'); // exactly one request total - expectOne already enforces that
+  }));
+
+  it("debounces each session independently - one session's edit doesn't reset another's timer", fakeAsync(() => {
+    const first = sessions.sessions()[0].id;
+    sessions.createSession();
+    const second = sessions.sessions()[1].id;
+    importedGeometry.set(first, box(), 'first.glb');
+    importedGeometry.set(second, box(), 'second.glb');
+
+    referenceRender.setDensity(first, 10);
+    tick(400); // first: 400ms since its own edit - not due yet
+    referenceRender.setDensity(second, 10); // a different group - must not touch first's timer
+    tick(400); // first: 800ms since its edit (due); second: 400ms since its edit (not due yet)
+
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1)); // first's only
+    expect(voxelization.getStatus(first).kind).toBe('ok');
+    expect(voxelization.getStatus(second).kind).toBe('idle'); // second's own debounce hasn't fired yet
+
+    tick(200); // second: 600ms since its edit - due now
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1)); // second's
+    expect(voxelization.getStatus(second).kind).toBe('ok');
+  }));
+
+  it("discards a superseded run's response instead of letting it clobber a newer result", () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    voxelization.run(sessionId); // supersedes the first before it resolves
+
+    const requests = httpMock.match(`${environment.apiBaseUrl}/api/meshes/voxelize`);
+    expect(requests.length).toBe(2);
+    const [firstRequest, secondRequest] = requests;
+
+    secondRequest.flush(encodeGrid(1)); // the LATEST run resolves first
+    expect(voxelization.getStatus(sessionId).kind).toBe('ok');
+
+    firstRequest.flush(encodeGrid(0)); // the stale run resolves after - must be ignored
+    const status = voxelization.getStatus(sessionId);
+    expect(status.kind).toBe('ok');
+    // encodeGrid(1) (the second/latest run) sets occupancy bit 0; encodeGrid(0)
+    // (the stale first run) clears it - still 1 confirms the stale reply didn't win.
+    expect(status.kind === 'ok' && status.result.occupancy[0]).toBe(1);
   });
 });

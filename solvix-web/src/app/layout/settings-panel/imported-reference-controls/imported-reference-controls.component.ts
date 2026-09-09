@@ -192,6 +192,19 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.run(sessionId);
   }
 
+  isVoxelPreviewVisible(): boolean {
+    const sessionId = this.sessionId;
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).voxelPreviewVisible;
+  }
+
+  onVoxelPreviewVisibleChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setVoxelPreviewVisible(sessionId, (event.target as HTMLInputElement).checked);
+  }
+
   getVoxelizationStatus(): VoxelizationStatus {
     const sessionId = this.sessionId;
     return sessionId === null ? { kind: 'idle' } : this.voxelization.getStatus(sessionId);

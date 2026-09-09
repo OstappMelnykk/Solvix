@@ -40,6 +40,25 @@ export function buildVoxelPreview(grid: VoxelGridDto, opacity: number): THREE.Ob
   const geometry = new THREE.BoxGeometry(grid.cellSize, grid.cellSize, grid.cellSize);
   const material = new THREE.MeshStandardMaterial({ color: VOXEL_COLOR, transparent: true, opacity, side: THREE.DoubleSide });
   const fill = new THREE.InstancedMesh(geometry, material, occupiedCenters.length);
+  // The cube fill and the imported reference mesh are both transparent AND
+  // literally overlapping (that's the whole point of conservative
+  // voxelization: cubes touch/enclose the surface). Three.js sorts
+  // transparent objects by camera distance before drawing them, and as the
+  // camera orbits, that sort order between "the mesh" and "the cube fill"
+  // can flip - whichever object draws FIRST writes its depth, and the
+  // other then fails the depth test wherever the two overlap and simply
+  // doesn't draw there (not a blend - it reads as the mesh randomly
+  // vanishing). renderOrder overrides distance-based sorting outright (Three.js
+  // checks it before distance, only falling back to distance when two
+  // objects share the same value) - a fixed, higher renderOrder than the
+  // mesh's default (0) guarantees the mesh always draws first regardless
+  // of camera angle, so its color is already in the framebuffer before the
+  // cubes blend over it. Depth writing itself stays on (unlike an earlier
+  // version of this fix that disabled it) - turning it off let neighboring
+  // cube faces stop occluding each other entirely, so the fill's apparent
+  // color drifted with camera angle depending on how many overlapping
+  // translucent faces happened to be stacked along each pixel's view ray.
+  fill.renderOrder = 1;
 
   const matrix = new THREE.Matrix4();
   const edgePositions: number[] = [];

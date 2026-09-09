@@ -26,6 +26,13 @@ export interface ImportedReferenceStyle {
   // the rings (e.g. to inspect the geometry unobstructed) without losing
   // the reference itself.
   readonly rotateGizmoVisible: boolean;
+  // Whether the voxelization cube preview (VoxelizationService, geometry/voxel-preview.ts)
+  // is shown - independent of `visible`, same reasoning as dimensionsVisible/
+  // rulerVisible: the voxel result can be hidden to inspect the reference
+  // unobstructed without losing the last computed result (VoxelizationService
+  // keeps it cached either way - this only gates whether RenderWindowComponent
+  // hands it to WorldCanvasComponent).
+  readonly voxelPreviewVisible: boolean;
 }
 
 const DEFAULT_STYLE: ImportedReferenceStyle = {
@@ -36,7 +43,8 @@ const DEFAULT_STYLE: ImportedReferenceStyle = {
   dimensionsVisible: true,
   rulerVisible: true,
   rulerDistance: 1,
-  rotateGizmoVisible: true
+  rotateGizmoVisible: true,
+  voxelPreviewVisible: true
 };
 
 // How the imported reference geometry (ImportedGeometryService) should be
@@ -89,6 +97,10 @@ export class ImportedReferenceDisplayService {
 
   setRotateGizmoVisible(sessionId: number, visible: boolean): void {
     this.update(sessionId, { rotateGizmoVisible: visible });
+  }
+
+  setVoxelPreviewVisible(sessionId: number, visible: boolean): void {
+    this.update(sessionId, { voxelPreviewVisible: visible });
   }
 
   private update(sessionId: number, patch: Partial<ImportedReferenceStyle>): void {

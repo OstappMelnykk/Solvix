@@ -105,17 +105,20 @@ export class RenderWindowComponent {
     return this.importedReferenceRender.getRuler(sessionId);
   }
 
-  // Ideal-World-only - the last successfully voxelized result
-  // (VoxelizationService), shown alongside the reference the user clicked
-  // "Вокселізувати" on. Unlike the reference/dimension-lines/ruler
-  // overlays above, this has no independent visibility toggle yet - it
-  // simply shows whenever a result exists (VoxelizationService itself
-  // hides it once stale - see isStale there).
+  // Ideal-World-only, independent of getImportedReference's own visibility
+  // (ImportedReferenceStyle.voxelPreviewVisible) - same gating pattern as
+  // getDimensionLines/getRuler. The last successfully voxelized result
+  // (VoxelizationService) still gets computed/cached and kept up to date
+  // (auto re-run on rebuild) even while hidden - this only controls
+  // whether WorldCanvasComponent is handed it to actually draw.
   getVoxelPreview(worldIndex: number): THREE.Object3D | null {
     if (worldIndex !== IDEAL_WORLD_INDEX) {
       return null;
     }
     const sessionId = this.sessions.activeSessionId();
-    return sessionId === null ? null : this.voxelization.getVoxelPreview(sessionId);
+    if (sessionId === null || !this.importedReferenceDisplay.getStyle(sessionId).voxelPreviewVisible) {
+      return null;
+    }
+    return this.voxelization.getVoxelPreview(sessionId);
   }
 }

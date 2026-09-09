@@ -1,5 +1,6 @@
 import { Injectable, effect, inject } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
+import { debounceTime, groupBy, mergeMap } from 'rxjs';
 import * as THREE from 'three';
 import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
@@ -10,6 +11,13 @@ import { toMeshBinary } from '../geometry/mesh-contract';
 import { buildVoxelPreview, disposeVoxelPreview, setVoxelPreviewOpacity } from '../geometry/voxel-preview';
 
 const DEFAULT_VOXEL_OPACITY = 0.55;
+
+// How long to wait after the LAST reference rebuild (density change,
+// rotation commit, reset) before auto-re-running voxelization - long
+// enough that a quick sequence of edits (e.g. nudging density a few times)
+// only triggers one network round-trip for the final value, short enough
+// that the result reappears promptly once the user settles.
+const AUTO_RERUN_DEBOUNCE_MS = 500;
 
 export type VoxelizationStatus =
   | { kind: 'idle' }
@@ -56,6 +64,15 @@ export class VoxelizationService {
   // even while stale/hidden, so whatever the user last set is what the
   // NEXT successful run's preview starts at, rather than resetting.
   private readonly opacityBySession = new KeyedStore<number, number>();
+  // Bumped on every run() call and captured by that call's own closure -
+  // lets a response recognize it's no longer the LATEST request for this
+  // session (superseded by a later run() before this one's HTTP call
+  // returned) and discard itself instead of overwriting a fresher result.
+  // Only matters once runs can fire without direct user action (see the
+  // auto-rerun subscription below) - a manual click already couldn't
+  // overlap with itself, but a debounced auto-run now can land while an
+  // earlier request (manual or auto) is still in flight.
+  private readonly runGenerationBySession = new KeyedStore<number, number>();
 
   constructor() {
     effect(() => {
@@ -64,7 +81,21 @@ export class VoxelizationService {
       this.voxelPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
       this.voxelizedReferenceBySession.pruneTo(ids);
       this.opacityBySession.pruneTo(ids);
+      this.runGenerationBySession.pruneTo(ids);
     });
+
+    // Auto-re-run instead of just leaving a stale result hidden (see
+    // isStale) once the reference it was computed from is rebuilt -
+    // grouped by session so one session's edits don't reset another's
+    // debounce timer, and each group debounced independently so a quick
+    // sequence of edits to the SAME session only fires one request, for
+    // the final value.
+    this.referenceRender.referenceChanged$
+      .pipe(
+        groupBy(sessionId => sessionId),
+        mergeMap(group$ => group$.pipe(debounceTime(AUTO_RERUN_DEBOUNCE_MS)))
+      )
+      .subscribe(sessionId => this.run(sessionId));
   }
 
   getStatus(sessionId: number): VoxelizationStatus {
@@ -110,14 +141,25 @@ export class VoxelizationService {
   }
 
   // Sends the session's current scaled reference (ImportedReferenceRenderService)
-  // to Solvix.Api and stores the outcome - call from an explicit user
-  // action only (not automatic on every density change), since it's a real
-  // network request against whatever's currently expensive about the mesh.
+  // to Solvix.Api and stores the outcome. Called both directly (the
+  // "Вокселізувати" button) and automatically, debounced, whenever the
+  // reference is rebuilt (see the constructor's referenceChanged$
+  // subscription) - either way it's a real network request against
+  // whatever's currently expensive about the mesh, so callers should
+  // still avoid firing it in a tight loop themselves.
   run(sessionId: number): void {
     const scaledReference = this.referenceRender.getScaledReference(sessionId);
     if (!scaledReference) {
       return;
     }
+
+    const generation = (this.runGenerationBySession.get(sessionId) ?? 0) + 1;
+    this.runGenerationBySession.set(sessionId, generation);
+    // True only for the response that arrives from THIS call - guards
+    // against a superseded run (e.g. the debounced auto-run firing while
+    // a manual click's request is still in flight) overwriting a result
+    // that came from a LATER run() call for the same session.
+    const isCurrentRun = () => this.runGenerationBySession.get(sessionId) === generation;
 
     this.voxelizedReferenceBySession.set(sessionId, scaledReference);
     this.statusBySession.set(sessionId, { kind: 'loading' });
@@ -125,7 +167,7 @@ export class VoxelizationService {
 
     this.meshApi.voxelize(mesh).subscribe({
       next: result => {
-        if (!this.sessionExists(sessionId)) {
+        if (!this.sessionExists(sessionId) || !isCurrentRun()) {
           return;
         }
         this.statusBySession.set(sessionId, { kind: 'ok', result });
@@ -141,7 +183,7 @@ export class VoxelizationService {
         this.voxelPreviewBySession.set(sessionId, buildVoxelPreview(result, this.getOpacity(sessionId)));
       },
       error: (response: HttpErrorResponse) => {
-        if (!this.sessionExists(sessionId)) {
+        if (!this.sessionExists(sessionId) || !isCurrentRun()) {
           return;
         }
         const tooLarge = parseVoxelizationTooLargeError(response);
