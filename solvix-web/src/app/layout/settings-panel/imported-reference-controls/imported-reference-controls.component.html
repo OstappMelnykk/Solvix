@@ -62,6 +62,10 @@
     <span>Прозорість кубів</span>
     <input type="range" min="0" max="100" [value]="getVoxelOpacityPercent()" (change)="onVoxelOpacityChange($event)" />
   </label>
+  <label class="row">
+    <span>Прозорість каркасу</span>
+    <input type="range" min="0" max="100" [value]="getVoxelEdgeOpacityPercent()" (change)="onVoxelEdgeOpacityChange($event)" />
+  </label>
   <button class="tool" type="button" (click)="runVoxelization()">Вокселізувати</button>
   <ng-container *ngIf="getVoxelizationStatus() as voxelStatus">
     <div

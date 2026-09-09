@@ -232,6 +232,20 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.setOpacity(sessionId, percent / 100);
   }
 
+  getVoxelEdgeOpacityPercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getEdgeOpacity(sessionId) * 100);
+  }
+
+  onVoxelEdgeOpacityChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setEdgeOpacity(sessionId, percent / 100);
+  }
+
   // Full metadata dictionary for whatever's currently imported
   // (ImportedGeometryService + ImportedReferenceRenderService) - a flat
   // label/value list so the template just iterates it, rather than

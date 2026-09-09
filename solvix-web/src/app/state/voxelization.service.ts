@@ -8,9 +8,10 @@ import { ImportedReferenceRenderService } from './imported-reference-render.serv
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 import { toMeshBinary } from '../geometry/mesh-contract';
-import { buildVoxelPreview, disposeVoxelPreview, setVoxelPreviewOpacity } from '../geometry/voxel-preview';
+import { buildVoxelPreview, disposeVoxelPreview, setVoxelEdgeOpacity, setVoxelPreviewOpacity } from '../geometry/voxel-preview';
 
 const DEFAULT_VOXEL_OPACITY = 0.55;
+const DEFAULT_VOXEL_EDGE_OPACITY = 1;
 
 // How long to wait after the LAST reference rebuild (density change,
 // rotation commit, reset) before auto-re-running voxelization - long
@@ -59,11 +60,15 @@ export class VoxelizationService {
   // of silently showing voxel cubes that no longer match the geometry's
   // current size/orientation.
   private readonly voxelizedReferenceBySession = new KeyedStore<number, THREE.Object3D>();
-  // User-controlled transparency for the voxel-cube FILL only (the white
-  // edge outline is always fully opaque - see buildVoxelPreview). Kept
-  // even while stale/hidden, so whatever the user last set is what the
-  // NEXT successful run's preview starts at, rather than resetting.
+  // User-controlled transparency for the voxel-cube FILL. Kept even while
+  // stale/hidden, so whatever the user last set is what the NEXT
+  // successful run's preview starts at, rather than resetting.
   private readonly opacityBySession = new KeyedStore<number, number>();
+  // Same, but for the white edge outline (wireframe) - a separate control
+  // from the fill's opacity above, so the two can be tuned independently
+  // (e.g. a near-invisible fill with a fully-opaque wireframe, or vice
+  // versa).
+  private readonly edgeOpacityBySession = new KeyedStore<number, number>();
   // Bumped on every run() call and captured by that call's own closure -
   // lets a response recognize it's no longer the LATEST request for this
   // session (superseded by a later run() before this one's HTTP call
@@ -81,6 +86,7 @@ export class VoxelizationService {
       this.voxelPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
       this.voxelizedReferenceBySession.pruneTo(ids);
       this.opacityBySession.pruneTo(ids);
+      this.edgeOpacityBySession.pruneTo(ids);
       this.runGenerationBySession.pruneTo(ids);
     });
 
@@ -126,6 +132,20 @@ export class VoxelizationService {
     const preview = this.voxelPreviewBySession.get(sessionId);
     if (preview) {
       setVoxelPreviewOpacity(preview, clamped);
+    }
+  }
+
+  getEdgeOpacity(sessionId: number): number {
+    return this.edgeOpacityBySession.get(sessionId) ?? DEFAULT_VOXEL_EDGE_OPACITY;
+  }
+
+  // Same live-mutation reasoning as setOpacity, for the edge outline.
+  setEdgeOpacity(sessionId: number, opacity: number): void {
+    const clamped = Math.min(1, Math.max(0, opacity));
+    this.edgeOpacityBySession.set(sessionId, clamped);
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    if (preview) {
+      setVoxelEdgeOpacity(preview, clamped);
     }
   }
 
@@ -180,7 +200,7 @@ export class VoxelizationService {
         // scene. Only pruneTo's session-close cleanup (in the constructor)
         // still disposes eagerly, since a closed session's preview may
         // never be swapped out by any WorldCanvasComponent at all.
-        this.voxelPreviewBySession.set(sessionId, buildVoxelPreview(result, this.getOpacity(sessionId)));
+        this.voxelPreviewBySession.set(sessionId, buildVoxelPreview(result, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId)));
       },
       error: (response: HttpErrorResponse) => {
         if (!this.sessionExists(sessionId) || !isCurrentRun()) {

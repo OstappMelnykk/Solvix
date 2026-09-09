@@ -34,6 +34,85 @@ public class VoxelizationServiceTests
         return new ImportedSurfaceMesh(vertices, indices);
     }
 
+    // Two separate 1x1x1 boxes, several units apart along X - combined
+    // into one mesh so their shared bounding box (and therefore the grid)
+    // includes the real empty gap between them. Any occupied cell in that
+    // gap that isn't touching (or adjacent to) either actual box is
+    // exactly the "ghost cube" bug this is meant to catch: a false
+    // positive from the ray-parity inside test, not from anything the
+    // mesh actually contains there.
+    private static ImportedSurfaceMesh TwoBoxesWithGap()
+    {
+        var boxA = Box(1, 1, 1);
+        var boxB = Box(1, 1, 1);
+        var offsetA = new Vector3(-3, 0, 0);
+        var offsetB = new Vector3(3, 0, 0);
+        var vertices = boxA.Vertices.Select(v => v + offsetA)
+            .Concat(boxB.Vertices.Select(v => v + offsetB))
+            .ToArray();
+        var indices = boxA.Indices
+            .Concat(boxB.Indices.Select(i => i + boxA.Vertices.Count))
+            .ToArray();
+        return new ImportedSurfaceMesh(vertices, indices);
+    }
+
+    // Rotates every vertex around the origin - used to check that the
+    // ghost-cube fix holds regardless of orientation, not just for
+    // axis-aligned meshes. The voxel grid itself never rotates with the
+    // mesh (it's always aligned to WORLD axes - see docs on the rotate
+    // gizmo), so a rotated mesh's faces/edges can land exactly on grid
+    // boundaries via a completely different SAT axis than an unrotated
+    // mesh would (see TriangleIntersectsBox's comment - this is why the
+    // boundary-exact check covers all 13 axes, not just the 3 box axes).
+    private static ImportedSurfaceMesh Rotated(ImportedSurfaceMesh mesh, float angleRadians, Vector3 axis)
+    {
+        var rotation = Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), angleRadians);
+        var vertices = mesh.Vertices.Select(v => Vector3.Transform(v, rotation)).ToArray();
+        return new ImportedSurfaceMesh(vertices, mesh.Indices);
+    }
+
+    // Number of 6-connected (face-adjacent) groups among the given cells -
+    // used instead of exact coordinates for the rotated case below, since
+    // rotation makes the exact occupied cell indices impractical to
+    // predict by hand, but "how many separate blobs" is still meaningful:
+    // two physically separate boxes should never produce more than 2.
+    private static int CountConnectedComponents(List<(int X, int Y, int Z)> cells)
+    {
+        var indexOf = new Dictionary<(int, int, int), int>();
+        for (var i = 0; i < cells.Count; i++)
+        {
+            indexOf[cells[i]] = i;
+        }
+        var parent = Enumerable.Range(0, cells.Count).ToArray();
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            return x;
+        }
+        (int, int, int)[] faceOffsets = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+        for (var i = 0; i < cells.Count; i++)
+        {
+            var (x, y, z) = cells[i];
+            foreach (var (dx, dy, dz) in faceOffsets)
+            {
+                if (indexOf.TryGetValue((x + dx, y + dy, z + dz), out var j))
+                {
+                    var ri = Find(i);
+                    var rj = Find(j);
+                    if (ri != rj)
+                    {
+                        parent[ri] = rj;
+                    }
+                }
+            }
+        }
+        return Enumerable.Range(0, cells.Count).Select(Find).Distinct().Count();
+    }
+
     // All occupied cells' world-space centers, derived from the grid the
     // same way solvix-web/src/app/geometry/voxel-grid-contract.ts does -
     // Origin + cellSize*(index + 0.5) per axis, only for cells IsOccupied
@@ -183,5 +262,83 @@ public class VoxelizationServiceTests
         cts.Cancel();
 
         Assert.Throws<OperationCanceledException>(() => _voxelizationService.Voxelize(Box(3, 3, 3), cts.Token));
+    }
+
+    // Regression: a false positive from the ray-parity inside test (see
+    // InsideTestRays' comment) produces an isolated occupied cell with no
+    // connection to either real solid - reported as a "ghost cube"
+    // floating in otherwise-empty space on real architectural imports
+    // (lots of triangulated rectangular faces = lots of diagonal edges a
+    // ray can graze). Two 1x1x1 boxes several units apart puts a real,
+    // unambiguous gap inside the grid - exactly two cells (one per box)
+    // should end up occupied, and nothing in between. (An earlier version
+    // of this test asserted "every occupied cell has an occupied
+    // neighbor" instead, which is wrong for this mesh on its own terms:
+    // each box is exactly one cell, so its own cell correctly has no
+    // neighbor either - that's a small solid object, not a bug.)
+    [Test]
+    public void Does_not_produce_an_isolated_ghost_cell_in_the_empty_gap_between_two_separate_solids()
+    {
+        var result = _voxelizationService.Voxelize(TwoBoxesWithGap());
+
+        var occupied = new List<(int X, int Y, int Z)>();
+        for (var ix = 0; ix < result.CountX; ix++)
+        {
+            for (var iy = 0; iy < result.CountY; iy++)
+            {
+                for (var iz = 0; iz < result.CountZ; iz++)
+                {
+                    if (result.IsOccupied(ix, iy, iz))
+                    {
+                        occupied.Add((ix, iy, iz));
+                    }
+                }
+            }
+        }
+
+        // boxA at x=-3, boxB at x=+3 (see TwoBoxesWithGap), each 1x1x1 -
+        // exactly one cell each, nothing in the 5 cells of genuinely empty
+        // space between them (ix 1..5 out of 0..6).
+        Assert.That(occupied, Has.Count.EqualTo(2), $"Expected exactly 2 occupied cells (one per box), got: [{string.Join(", ", occupied)}]");
+        Assert.That(occupied, Has.Some.EqualTo((0, 0, 0)));
+        Assert.That(occupied, Has.Some.EqualTo((result.CountX - 1, 0, 0)));
+    }
+
+    // Same regression as above, but rotated 45 degrees - the voxel grid
+    // never rotates with the mesh (see Rotated's comment), so a mesh that
+    // rotation makes the grid's boundary-exact coincidence lands on a
+    // DIFFERENT one of the 13 SAT axes than the unrotated case exercises
+    // (edge-cross or the triangle's own normal, not one of the 3 box
+    // axes) - this is exactly the report that motivated widening the
+    // boundary-exact check to all 13 axes instead of just those 3.
+    // Rotation preserves distances, so the two boxes stay just as
+    // separate as in the unrotated case - "at most 2 connected blobs" is
+    // still the right invariant, just checked via connectivity instead of
+    // exact cell coordinates, which rotation makes impractical to predict
+    // by hand.
+    [Test]
+    public void Does_not_produce_an_isolated_ghost_cell_when_the_gap_mesh_is_rotated_45_degrees()
+    {
+        var rotated = Rotated(TwoBoxesWithGap(), MathF.PI / 4, new Vector3(0, 1, 0));
+        var result = _voxelizationService.Voxelize(rotated);
+
+        var occupied = new List<(int X, int Y, int Z)>();
+        for (var ix = 0; ix < result.CountX; ix++)
+        {
+            for (var iy = 0; iy < result.CountY; iy++)
+            {
+                for (var iz = 0; iz < result.CountZ; iz++)
+                {
+                    if (result.IsOccupied(ix, iy, iz))
+                    {
+                        occupied.Add((ix, iy, iz));
+                    }
+                }
+            }
+        }
+
+        var componentCount = CountConnectedComponents(occupied);
+        Assert.That(componentCount, Is.LessThanOrEqualTo(2),
+            $"Expected at most 2 connected components (one per box), got {componentCount}. Occupied cells: [{string.Join(", ", occupied)}]");
     }
 }

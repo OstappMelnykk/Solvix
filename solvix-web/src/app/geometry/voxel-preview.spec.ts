@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildVoxelPreview, disposeVoxelPreview, setVoxelPreviewOpacity } from './voxel-preview';
+import { buildVoxelPreview, disposeVoxelPreview, setVoxelEdgeOpacity, setVoxelPreviewOpacity } from './voxel-preview';
 import { VoxelGridDto } from './voxel-grid-contract';
 
 function fillOf(preview: THREE.Object3D): THREE.InstancedMesh {
@@ -35,7 +35,7 @@ describe('buildVoxelPreview', () => {
   it('creates one instance per occupied cell, sized to cellSize', () => {
     const grid = gridWithCentersAlongX([0, 2, 4], 2);
 
-    const fill = fillOf(buildVoxelPreview(grid, 0.5));
+    const fill = fillOf(buildVoxelPreview(grid, 0.5, 1));
 
     expect(fill.count).toBe(3);
     const parameters = (fill.geometry as THREE.BoxGeometry).parameters;
@@ -47,7 +47,7 @@ describe('buildVoxelPreview', () => {
   it('places each instance at its center via the instance matrix', () => {
     const grid = singleCellGridAt({ x: 5, y: -3, z: 7 }, 1);
 
-    const fill = fillOf(buildVoxelPreview(grid, 0.5));
+    const fill = fillOf(buildVoxelPreview(grid, 0.5, 1));
 
     const matrix = new THREE.Matrix4();
     fill.getMatrixAt(0, matrix);
@@ -58,46 +58,68 @@ describe('buildVoxelPreview', () => {
   });
 
   it('sets the fill material opacity from the given value', () => {
-    const fill = fillOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.25));
+    const fill = fillOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.25, 1));
 
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBe(0.25);
   });
 
+  it('sets the edge material opacity from the given value, independent of the fill', () => {
+    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.9, 0.3));
+
+    expect((edges.material as THREE.LineBasicMaterial).opacity).toBe(0.3);
+  });
+
   it('draws a white edge outline with 12 edges (24 points) per cube', () => {
-    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5));
+    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1));
 
     expect((edges.material as THREE.LineBasicMaterial).color.getHex()).toBe(0xffffff);
     expect(edges.geometry.getAttribute('position').count).toBe(24); // 12 edges * 2 points
   });
 
   it('is built at identity - no position/quaternion baked into the group itself', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: 5, z: 5 }, 1), 0.5);
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: 5, z: 5 }, 1), 0.5, 1);
 
     expect(preview.position.equals(new THREE.Vector3(0, 0, 0))).toBe(true);
     expect(preview.quaternion.equals(new THREE.Quaternion())).toBe(true);
   });
 
   it('handles a grid with no occupied cells without throwing', () => {
-    expect(() => buildVoxelPreview(EMPTY_GRID, 0.5)).not.toThrow();
-    expect(fillOf(buildVoxelPreview(EMPTY_GRID, 0.5)).count).toBe(0);
+    expect(() => buildVoxelPreview(EMPTY_GRID, 0.5, 1)).not.toThrow();
+    expect(fillOf(buildVoxelPreview(EMPTY_GRID, 0.5, 1)).count).toBe(0);
   });
 });
 
 describe('setVoxelPreviewOpacity', () => {
   it('updates the fill material in place without touching the edge outline', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5);
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
     const edgeMaterial = edgesOf(preview).material as THREE.LineBasicMaterial;
+    const edgeOpacityBefore = edgeMaterial.opacity;
 
     setVoxelPreviewOpacity(preview, 0.9);
 
     expect((fillOf(preview).material as THREE.MeshStandardMaterial).opacity).toBe(0.9);
     expect(edgesOf(preview).material).toBe(edgeMaterial);
+    expect(edgeMaterial.opacity).toBe(edgeOpacityBefore);
+  });
+});
+
+describe('setVoxelEdgeOpacity', () => {
+  it('updates the edge material in place without touching the fill', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
+    const fillMaterial = fillOf(preview).material as THREE.MeshStandardMaterial;
+    const fillOpacityBefore = fillMaterial.opacity;
+
+    setVoxelEdgeOpacity(preview, 0.2);
+
+    expect((edgesOf(preview).material as THREE.LineBasicMaterial).opacity).toBe(0.2);
+    expect(fillOf(preview).material).toBe(fillMaterial);
+    expect(fillMaterial.opacity).toBe(fillOpacityBefore);
   });
 });
 
 describe('disposeVoxelPreview', () => {
   it('disposes both the instanced fill and the edge outline', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5);
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
     const fill = fillOf(preview);
     const edges = edgesOf(preview);
     const fillGeometryDispose = spyOn(fill.geometry, 'dispose');

@@ -20,10 +20,29 @@ internal sealed class VoxelizationService
     // unit cube fails fast instead of hanging.
     private const int MaxCells = 900_000;
 
-    // Ray direction for the inside/outside parity test - arbitrary but
-    // non-axis-aligned, to sidestep the common degenerate case of grazing
-    // exactly along a face/edge.
-    private static readonly Vector3 InsideTestDirection = Vector3.Normalize(new Vector3(0.9137f, 0.2711f, 0.3053f));
+    // Rays for the inside/outside parity test - THREE, not one, voted by
+    // majority (see IsPointInsideViaGrid). A single ray is a single point
+    // of failure: real imported meshes are rarely perfectly watertight,
+    // and even on a watertight one a ray can graze exactly along some
+    // edge it happens to be near-parallel to, flipping that one cell's
+    // parity count and producing an isolated "ghost" cube with no
+    // connection to the actual body - triangulated rectangular faces
+    // (near-universal in architectural/CAD imports) are exactly this: two
+    // triangles sharing a diagonal edge, which a ray passing close to that
+    // diagonal can register as crossing TWICE (once per triangle) instead
+    // of once. Varying only the DIRECTION isn't enough on its own - all
+    // three still fire from the exact same query point, so if that point
+    // is the thing that's unluckily positioned relative to some diagonal,
+    // every direction from it inherits the same risk. Each vote also
+    // starts from a slightly different ORIGIN (a small fixed offset, a
+    // fraction of one cell) so the three votes aren't all staring at the
+    // same potentially-degenerate feature from the same spot.
+    private static readonly (Vector3 Direction, Vector3 OriginJitter)[] InsideTestRays =
+    [
+        (Vector3.Normalize(new Vector3(0.9137f, 0.2711f, 0.3053f)), new Vector3(0.017f, -0.023f, 0.011f)),
+        (Vector3.Normalize(new Vector3(0.2416f, 0.8837f, -0.3981f)), new Vector3(-0.013f, 0.019f, -0.029f)),
+        (Vector3.Normalize(new Vector3(-0.5271f, 0.3162f, 0.7889f)), new Vector3(0.021f, 0.007f, -0.017f))
+    ];
 
     public VoxelizationResult Voxelize(ImportedSurfaceMesh mesh, CancellationToken cancellationToken = default)
     {
@@ -162,12 +181,35 @@ internal sealed class VoxelizationService
     // Separating-axis test (Akenine-Moller) for triangle vs axis-aligned
     // box - needed on top of the inside test because a cube whose CENTER is
     // outside the body can still have the surface cut through one of its
-    // corners/edges.
-    private static bool TriangleIntersectsBox(Triangle triangle, Vector3 boxCenter, float boxHalf)
+    // corners/edges. `isBoundaryExactOnly` (only meaningful when this
+    // returns true) flags a specific degenerate case, checked on ALL 13
+    // axes (the 3 box axes, the 9 edge-cross axes, AND the triangle's own
+    // normal - not just the box axes, since the voxel grid is always
+    // WORLD-axis-aligned and never rotates with the mesh: an unrotated
+    // architectural mesh hits this on the 3 box axes specifically
+    // (axis-aligned rectangular faces landing exactly on grid lines), but
+    // a mesh rotated to some other angle can hit the exact same
+    // coincidence on one of the other 10 axes instead, once some edge or
+    // face-normal direction happens to line up with the box just as
+    // exactly). The triangle projects to a single flat value along an
+    // axis (inevitable for its own normal, common for edges) AND that
+    // value lands EXACTLY on this box's boundary along that axis - a
+    // coincidence any of these axes can hit once the mesh's own
+    // dimensions/orientation are round numbers relative to the 1-unit
+    // grid. That configuration registers as "touching" on BOTH sides of
+    // the boundary: the box whose solid interior the face actually
+    // bounds, AND the neighboring box on the empty far side of it, which
+    // the mesh's solid never occupies at all. IsCubeIncluded uses this
+    // flag to avoid trusting such a touch on its own (see there for why
+    // NOT the face's normal direction, which would be the obvious fix but
+    // isn't safe: real imported meshes can't be trusted to have
+    // consistent outward winding).
+    private static bool TriangleIntersectsBox(Triangle triangle, Vector3 boxCenter, float boxHalf, out bool isBoundaryExactOnly)
     {
         var v0 = triangle.A - boxCenter;
         var v1 = triangle.B - boxCenter;
         var v2 = triangle.C - boxCenter;
+        var boundaryExact = false;
 
         bool OverlapsOnAxis(Vector3 axis)
         {
@@ -181,6 +223,11 @@ internal sealed class VoxelizationService
             var triMin = Math.Min(p0, Math.Min(p1, p2));
             var triMax = Math.Max(p0, Math.Max(p1, p2));
             var r = boxHalf * (Math.Abs(axis.X) + Math.Abs(axis.Y) + Math.Abs(axis.Z));
+            const float epsilon = 1e-4f;
+            if (triMax - triMin < epsilon * MathF.Max(1f, r) && (Math.Abs(triMin - r) < epsilon * MathF.Max(1f, r) || Math.Abs(triMax + r) < epsilon * MathF.Max(1f, r)))
+            {
+                boundaryExact = true;
+            }
             return triMin <= r && triMax >= -r;
         }
 
@@ -189,6 +236,7 @@ internal sealed class VoxelizationService
         {
             if (!OverlapsOnAxis(axis))
             {
+                isBoundaryExactOnly = false;
                 return false;
             }
         }
@@ -200,22 +248,45 @@ internal sealed class VoxelizationService
             {
                 if (!OverlapsOnAxis(Vector3.Cross(boxAxis, edge)))
                 {
+                    isBoundaryExactOnly = false;
                     return false;
                 }
             }
         }
 
         var triangleNormal = Vector3.Cross(edges[0], edges[1]);
-        return OverlapsOnAxis(triangleNormal);
+        if (!OverlapsOnAxis(triangleNormal))
+        {
+            isBoundaryExactOnly = false;
+            return false;
+        }
+
+        isBoundaryExactOnly = boundaryExact;
+        return true;
+    }
+
+    // Majority vote across InsideTestRays - see that field's comment for
+    // why neither the direction nor the origin alone is trusted outright.
+    private static bool IsPointInsideViaGrid(Vector3 point, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
+    {
+        var insideVotes = 0;
+        foreach (var (direction, originJitter) in InsideTestRays)
+        {
+            var origin = point + originJitter * cellSize;
+            if (IsPointInsideAlongRay(origin, direction, boxMin, cellSize, dims, grid))
+            {
+                insideVotes++;
+            }
+        }
+        return insideVotes * 2 > InsideTestRays.Length;
     }
 
     // Parity ray-cast test: a point is inside a closed surface iff a ray
     // from it crosses the surface an odd number of times. Walks the same
     // uniform grid via 3D DDA (Amanatides-Woo) so only triangles in cells
     // the ray actually passes through get tested.
-    private static bool IsPointInsideViaGrid(Vector3 point, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
+    private static bool IsPointInsideAlongRay(Vector3 point, Vector3 direction, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
-        var direction = InsideTestDirection;
         var ix = grid.CellIndexX(point.X);
         var iy = grid.CellIndexY(point.Y);
         var iz = grid.CellIndexZ(point.Z);
@@ -319,13 +390,16 @@ internal sealed class VoxelizationService
     {
         foreach (var triangle in grid.TrianglesNear(ix, iy, iz))
         {
-            if (TriangleIntersectsBox(triangle, center, half))
+            if (TriangleIntersectsBox(triangle, center, half, out var isBoundaryExactOnly) && !isBoundaryExactOnly)
             {
-                return true;
+                return true; // a genuine, non-degenerate touch - trust it immediately
             }
         }
-        // No triangle touches the cube at all - it's either fully inside or
-        // fully outside the body. One point suffices to tell which.
+        // No triangle touches the cube at all, or every touch found was a
+        // boundary-exact coincidence (see TriangleIntersectsBox) - neither
+        // is trustworthy evidence of solid volume on its own, so the
+        // ray-parity test (independent of face winding, unlike a
+        // normal-direction tiebreak would be) makes the actual call.
         return IsPointInsideViaGrid(center, boxMin, cellSize, dims, grid);
     }
 }

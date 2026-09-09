@@ -22,7 +22,7 @@ const EDGE_COLOR = 0xffffff;
 // to be added to the scene at identity - no position/quaternion copying
 // needed, unlike dimension lines/ruler (which are built in a LOCAL,
 // pivot-centered frame instead).
-export function buildVoxelPreview(grid: VoxelGridDto, opacity: number): THREE.Object3D {
+export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeOpacity: number): THREE.Object3D {
   const group = new THREE.Group();
   const half = grid.cellSize / 2;
 
@@ -38,7 +38,7 @@ export function buildVoxelPreview(grid: VoxelGridDto, opacity: number): THREE.Ob
   }
 
   const geometry = new THREE.BoxGeometry(grid.cellSize, grid.cellSize, grid.cellSize);
-  const material = new THREE.MeshStandardMaterial({ color: VOXEL_COLOR, transparent: true, opacity, side: THREE.DoubleSide });
+  const material = new THREE.MeshStandardMaterial({ color: VOXEL_COLOR, transparent: true, opacity: fillOpacity, side: THREE.DoubleSide });
   const fill = new THREE.InstancedMesh(geometry, material, occupiedCenters.length);
   // The cube fill and the imported reference mesh are both transparent AND
   // literally overlapping (that's the whole point of conservative
@@ -72,7 +72,7 @@ export function buildVoxelPreview(grid: VoxelGridDto, opacity: number): THREE.Ob
 
   const edgeGeometry = new THREE.BufferGeometry();
   edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-  group.add(new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR })));
+  group.add(new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: edgeOpacity })));
 
   return group;
 }
@@ -104,12 +104,24 @@ function addCubeEdges(positions: number[], center: { x: number; y: number; z: nu
 // Mutates the fill material's opacity in place on an already-built preview
 // - cheap (no geometry rebuild) so the transparency slider can update live
 // without VoxelizationService needing to re-fetch anything from Solvix.Api.
-// The white edge outline is deliberately NOT affected - it's meant to stay
-// crisp/readable regardless of how transparent the fill is.
+// Independent of the edge outline's own opacity (setVoxelEdgeOpacity) - the
+// two are separate controls on purpose, since a fully-opaque wireframe
+// stays readable even when the fill is turned nearly invisible, or vice
+// versa.
 export function setVoxelPreviewOpacity(object: THREE.Object3D, opacity: number): void {
   object.traverse(child => {
     if (child instanceof THREE.InstancedMesh) {
       (child.material as THREE.MeshStandardMaterial).opacity = opacity;
+    }
+  });
+}
+
+// Same live-mutation reasoning as setVoxelPreviewOpacity, for the white
+// edge outline instead of the fill.
+export function setVoxelEdgeOpacity(object: THREE.Object3D, opacity: number): void {
+  object.traverse(child => {
+    if (child instanceof THREE.LineSegments) {
+      (child.material as THREE.LineBasicMaterial).opacity = opacity;
     }
   });
 }
