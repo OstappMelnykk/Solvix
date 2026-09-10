@@ -246,6 +246,34 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.setEdgeOpacity(sessionId, percent / 100);
   }
 
+  getVoxelNodeSizePercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getNodeSize(sessionId) * 100);
+  }
+
+  onVoxelNodeSizeChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setNodeSize(sessionId, percent / 100);
+  }
+
+  getVoxelNodeOpacityPercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getNodeOpacity(sessionId) * 100);
+  }
+
+  onVoxelNodeOpacityChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setNodeOpacity(sessionId, percent / 100);
+  }
+
   // Full metadata dictionary for whatever's currently imported
   // (ImportedGeometryService + ImportedReferenceRenderService) - a flat
   // label/value list so the template just iterates it, rather than

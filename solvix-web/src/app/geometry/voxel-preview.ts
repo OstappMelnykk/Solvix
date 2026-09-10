@@ -1,9 +1,22 @@
 import * as THREE from 'three';
 import { VoxelGridDto } from './voxel-grid-contract';
-import { buildVoxelCells } from './voxel-cell';
+import { buildVoxelCells, collectUniqueNodes } from './voxel-cell';
 import { EDGES, buildVoxelHexahedronFillGeometry } from './voxel-hexahedron';
 
 const EDGE_COLOR = 0xffffff;
+// Distinct from both the purple fill and the white edges, so a node stays
+// visible sitting right on top of a face/edge - the whole point of
+// rendering these is to make the SHARED, deduplicated nodes (voxel-cell.ts's
+// collectUniqueNodes) visually verifiable: one sphere per unique lattice
+// point, never one per (cell, corner) pair, no matter how many cells
+// touch it.
+const NODE_COLOR = 0xffaa00;
+// nodeSize is a [0,1] slider value (same convention as fillOpacity/
+// edgeOpacity) - this is the radius a node gets, relative to cellSize, at
+// nodeSize=1. A tiny floor keeps the geometry non-degenerate at nodeSize=0
+// rather than an exactly-zero-radius sphere.
+const NODE_RADIUS_MAX_FACTOR = 0.12;
+const MIN_NODE_RADIUS = 0.001;
 
 // One BatchedMesh draw call for potentially tens of thousands of cubes,
 // but each cube is still its OWN independent geometry (own addGeometry +
@@ -24,8 +37,14 @@ const EDGE_COLOR = 0xffffff;
 // to be added to the scene at identity - no position/quaternion copying
 // needed, unlike dimension lines/ruler (which are built in a LOCAL,
 // pivot-centered frame instead).
-export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeOpacity: number): THREE.Object3D {
+export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeOpacity: number, nodeSize: number, nodeOpacity: number): THREE.Object3D {
   const group = new THREE.Group();
+  // Node size is expressed relative to cellSize (see NODE_RADIUS_MAX_FACTOR),
+  // so setVoxelNodeSize needs cellSize back later to recompute an absolute
+  // radius - stashed here rather than threaded through as an extra
+  // parameter, keeping that setter's signature symmetric with
+  // setVoxelPreviewOpacity/setVoxelEdgeOpacity (object, value).
+  group.userData['cellSize'] = grid.cellSize;
   const cells = buildVoxelCells(grid);
 
   const VERTICES_PER_VOXEL = 36; // 6 faces x 2 triangles x 3 vertices - see buildVoxelHexahedronFillGeometry
@@ -59,6 +78,27 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
   edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
   group.add(new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: edgeOpacity })));
 
+  // One sphere per UNIQUE node (collectUniqueNodes - shared corners
+  // between adjacent voxels collapse to a single sphere, not one per
+  // cell that touches them), instanced for the same reason the fill is
+  // batched: a real grid can have tens of thousands of nodes.
+  const nodes = collectUniqueNodes(cells);
+  const nodeRadius = Math.max(MIN_NODE_RADIUS, grid.cellSize * NODE_RADIUS_MAX_FACTOR * nodeSize);
+  const nodeGeometry = new THREE.SphereGeometry(nodeRadius, 8, 6);
+  const nodeMesh = new THREE.InstancedMesh(
+    nodeGeometry,
+    new THREE.MeshBasicMaterial({ color: NODE_COLOR, transparent: true, opacity: nodeOpacity }),
+    nodes.length
+  );
+  const nodeMatrix = new THREE.Matrix4();
+  nodes.forEach((node, index) => {
+    nodeMatrix.makeTranslation(node.x, node.y, node.z);
+    nodeMesh.setMatrixAt(index, nodeMatrix);
+  });
+  nodeMesh.instanceMatrix.needsUpdate = true;
+  nodeMesh.renderOrder = 2; // draw after the fill (renderOrder 1) so a node sitting on a face never z-fights it away
+  group.add(nodeMesh);
+
   return group;
 }
 
@@ -87,6 +127,33 @@ export function setVoxelEdgeOpacity(object: THREE.Object3D, opacity: number): vo
   });
 }
 
+// Same live-mutation reasoning as setVoxelPreviewOpacity/setVoxelEdgeOpacity,
+// for the node spheres.
+export function setVoxelNodeOpacity(object: THREE.Object3D, opacity: number): void {
+  object.traverse(child => {
+    if (child instanceof THREE.InstancedMesh) {
+      (child.material as THREE.MeshBasicMaterial).opacity = opacity;
+    }
+  });
+}
+
+// Unlike the opacity setters above, this DOES rebuild geometry - a
+// sphere's radius isn't a material property that can be mutated in place.
+// Still cheap: one shared SphereGeometry for every instance (InstancedMesh),
+// not one per node, so this is a single small geometry swap regardless of
+// how many nodes exist.
+export function setVoxelNodeSize(object: THREE.Object3D, size: number): void {
+  const cellSize = (object.userData['cellSize'] as number | undefined) ?? 1;
+  const radius = Math.max(MIN_NODE_RADIUS, cellSize * NODE_RADIUS_MAX_FACTOR * size);
+  object.traverse(child => {
+    if (child instanceof THREE.InstancedMesh) {
+      const oldGeometry = child.geometry;
+      child.geometry = new THREE.SphereGeometry(radius, 8, 6);
+      oldGeometry.dispose();
+    }
+  });
+}
+
 // Guards against disposing the same preview twice - BatchedMesh.dispose()
 // is NOT idempotent (it nulls its own internal texture references on the
 // way out, so a second call throws trying to dispose() them again, not
@@ -110,7 +177,7 @@ export function disposeVoxelPreview(object: THREE.Object3D): void {
       child.dispose(); // frees BatchedMesh's own internal merged geometry/textures
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach(material => material.dispose());
-    } else if (child instanceof THREE.LineSegments) {
+    } else if (child instanceof THREE.LineSegments || child instanceof THREE.InstancedMesh) {
       child.geometry.dispose();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach(material => material.dispose());

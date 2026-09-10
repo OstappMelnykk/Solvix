@@ -395,6 +395,56 @@ describe('VoxelizationService', () => {
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.1, 5);
   });
 
+  it('defaults node size/opacity and clamps their setters to [0, 1]', () => {
+    const sessionId = sessions.sessions()[0].id;
+    expect(voxelization.getNodeSize(sessionId)).toBeCloseTo(0.5, 5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(1);
+
+    voxelization.setNodeSize(sessionId, 1.5);
+    expect(voxelization.getNodeSize(sessionId)).toBe(1);
+    voxelization.setNodeSize(sessionId, -0.5);
+    expect(voxelization.getNodeSize(sessionId)).toBe(0);
+
+    voxelization.setNodeOpacity(sessionId, 1.5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(1);
+    voxelization.setNodeOpacity(sessionId, -0.5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(0);
+  });
+
+  it('applies the current node size/opacity to a newly built preview', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+    voxelization.setNodeSize(sessionId, 1);
+    voxelization.setNodeOpacity(sessionId, 0.3);
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+
+    const nodes = voxelization
+      .getVoxelPreview(sessionId)!
+      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    expect((nodes.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.3, 5);
+  });
+
+  it('updates an already-built preview live when node size/opacity change', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const preview = voxelization.getVoxelPreview(sessionId)!;
+    const nodesBefore = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const radiusBefore = (nodesBefore.geometry as THREE.SphereGeometry).parameters.radius;
+
+    voxelization.setNodeOpacity(sessionId, 0.2);
+    voxelization.setNodeSize(sessionId, 1);
+
+    const nodesAfter = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    expect((nodesAfter.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.2, 5);
+    expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
+  });
+
   it("discards a superseded run's response instead of letting it clobber a newer result", () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(), 'model.glb');

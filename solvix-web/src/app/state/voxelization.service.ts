@@ -7,10 +7,19 @@ import { ImportedReferenceRenderService } from './imported-reference-render.serv
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 import { toMeshBinary } from '../geometry/mesh-contract';
-import { buildVoxelPreview, disposeVoxelPreview, setVoxelEdgeOpacity, setVoxelPreviewOpacity } from '../geometry/voxel-preview';
+import {
+  buildVoxelPreview,
+  disposeVoxelPreview,
+  setVoxelEdgeOpacity,
+  setVoxelNodeOpacity,
+  setVoxelNodeSize,
+  setVoxelPreviewOpacity
+} from '../geometry/voxel-preview';
 
 const DEFAULT_VOXEL_OPACITY = 0.55;
 const DEFAULT_VOXEL_EDGE_OPACITY = 1;
+const DEFAULT_VOXEL_NODE_SIZE = 0.5;
+const DEFAULT_VOXEL_NODE_OPACITY = 1;
 
 export type VoxelizationStatus =
   | { kind: 'idle' }
@@ -53,6 +62,15 @@ export class VoxelizationService {
   // (e.g. a near-invisible fill with a fully-opaque wireframe, or vice
   // versa).
   private readonly edgeOpacityBySession = new KeyedStore<number, number>();
+  // Radius of the node spheres, relative to cellSize (see
+  // voxel-preview.ts's NODE_RADIUS_MAX_FACTOR) - same [0,1] slider
+  // convention as the opacity controls above, independent of them.
+  private readonly nodeSizeBySession = new KeyedStore<number, number>();
+  // Same, but for the node spheres' opacity - independent of the fill and
+  // edge opacity above, same reasoning (a near-invisible fill/wireframe
+  // with fully-opaque nodes highlighting just the mesh's unique vertices,
+  // or vice versa).
+  private readonly nodeOpacityBySession = new KeyedStore<number, number>();
   // Bumped on every run() call and captured by that call's own closure -
   // lets a response recognize it's no longer the LATEST request for this
   // session (superseded by a later run() before this one's HTTP call
@@ -70,6 +88,8 @@ export class VoxelizationService {
       this.voxelPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
       this.opacityBySession.pruneTo(ids);
       this.edgeOpacityBySession.pruneTo(ids);
+      this.nodeSizeBySession.pruneTo(ids);
+      this.nodeOpacityBySession.pruneTo(ids);
       this.runGenerationBySession.pruneTo(ids);
     });
 
@@ -119,6 +139,36 @@ export class VoxelizationService {
     const preview = this.voxelPreviewBySession.get(sessionId);
     if (preview) {
       setVoxelEdgeOpacity(preview, clamped);
+    }
+  }
+
+  getNodeSize(sessionId: number): number {
+    return this.nodeSizeBySession.get(sessionId) ?? DEFAULT_VOXEL_NODE_SIZE;
+  }
+
+  // Same live-mutation reasoning as setOpacity, for the node spheres' size
+  // (setVoxelNodeSize swaps their shared SphereGeometry in place - cheap,
+  // one geometry regardless of node count).
+  setNodeSize(sessionId: number, size: number): void {
+    const clamped = Math.min(1, Math.max(0, size));
+    this.nodeSizeBySession.set(sessionId, clamped);
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    if (preview) {
+      setVoxelNodeSize(preview, clamped);
+    }
+  }
+
+  getNodeOpacity(sessionId: number): number {
+    return this.nodeOpacityBySession.get(sessionId) ?? DEFAULT_VOXEL_NODE_OPACITY;
+  }
+
+  // Same live-mutation reasoning as setOpacity, for the node spheres.
+  setNodeOpacity(sessionId: number, opacity: number): void {
+    const clamped = Math.min(1, Math.max(0, opacity));
+    this.nodeOpacityBySession.set(sessionId, clamped);
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    if (preview) {
+      setVoxelNodeOpacity(preview, clamped);
     }
   }
 
@@ -183,7 +233,10 @@ export class VoxelizationService {
         // the time a frame actually renders, the single consumer has
         // already swapped to whatever this method set here.
         const outgoing = this.voxelPreviewBySession.get(sessionId);
-        this.voxelPreviewBySession.set(sessionId, buildVoxelPreview(result, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId)));
+        this.voxelPreviewBySession.set(
+          sessionId,
+          buildVoxelPreview(result, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId), this.getNodeSize(sessionId), this.getNodeOpacity(sessionId))
+        );
         if (outgoing) {
           disposeVoxelPreview(outgoing);
         }

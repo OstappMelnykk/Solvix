@@ -107,3 +107,20 @@ export function buildVoxelCells(grid: VoxelGridDto): VoxelCell[] {
 
   return cells;
 }
+
+// All corner NODES referenced by `cells`, deduplicated - a Set collapses
+// them by object identity, which works here specifically because
+// buildVoxelCells already hands adjacent cells the SAME Vector3 instance
+// for a shared corner (see cellCorners' `nodes` map above), not merely
+// numerically-equal copies. This is the unique node set voxel-preview.ts
+// draws as visible spheres - one per node, never one per (cell, corner)
+// pair.
+export function collectUniqueNodes(cells: readonly VoxelCell[]): THREE.Vector3[] {
+  const nodes = new Set<THREE.Vector3>();
+  for (const cell of cells) {
+    for (const corner of cell.corners) {
+      nodes.add(corner);
+    }
+  }
+  return [...nodes];
+}

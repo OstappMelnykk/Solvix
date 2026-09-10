@@ -1,4 +1,4 @@
-import { buildVoxelCells, VoxelCell } from './voxel-cell';
+import { buildVoxelCells, collectUniqueNodes, VoxelCell } from './voxel-cell';
 import { VoxelGridDto } from './voxel-grid-contract';
 
 // countX x countY x countZ grid, occupied cells given as [ix,iy,iz] tuples.
@@ -137,5 +137,36 @@ describe('buildVoxelCells', () => {
     const [cell] = buildVoxelCells(grid);
 
     expect(cell.batchInstanceId).toBeNull();
+  });
+});
+
+describe('collectUniqueNodes', () => {
+  it('returns all 8 corners of a single isolated cell', () => {
+    const grid = gridWithOccupied(1, 1, 1, [[0, 0, 0]]);
+
+    const nodes = collectUniqueNodes(buildVoxelCells(grid));
+
+    expect(nodes.length).toBe(8);
+  });
+
+  it('does not duplicate a corner shared by two face-adjacent cells', () => {
+    const grid = gridWithOccupied(2, 1, 1, [[0, 0, 0], [1, 0, 0]]);
+
+    const nodes = collectUniqueNodes(buildVoxelCells(grid));
+
+    // 8 + 8 corners, 4 shared on the common face -> 12 unique.
+    expect(nodes.length).toBe(12);
+  });
+
+  it('still collapses the shared edge of two only-diagonally-adjacent cells', () => {
+    const grid = gridWithOccupied(2, 2, 1, [[0, 0, 0], [1, 1, 0]]);
+
+    const nodes = collectUniqueNodes(buildVoxelCells(grid));
+
+    // Both cells span the same single Z layer (countZ=1), so touching
+    // only at the (x,y) diagonal still means sharing a full vertical
+    // edge (2 points: z=0 and z=1) at that corner, not just 1 point.
+    // 8 + 8 corners, 2 shared -> 14 unique.
+    expect(nodes.length).toBe(14);
   });
 });
