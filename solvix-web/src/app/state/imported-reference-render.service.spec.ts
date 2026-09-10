@@ -155,6 +155,25 @@ describe('ImportedReferenceRenderService', () => {
     expect(render.getRuler(sessionId)).toBeNull();
   });
 
+  // Regression: the early-return path (nothing imported, or a degenerate
+  // zero-extent import whose scale is undefined) used to skip emitting
+  // referenceChanged$ entirely - a consumer that cached something computed
+  // from a PREVIOUS, valid reference (VoxelizationService's voxel preview)
+  // never found out that reference was gone, and kept showing a stale
+  // result forever with no way to clear it.
+  it('emits referenceChanged$ even when refreshScaledReference has nothing to build', () => {
+    const sessionId = sessions.sessions()[0].id;
+    const emitted: number[] = [];
+    render.referenceChanged$.subscribe(id => emitted.push(id));
+
+    render.refreshScaledReference(sessionId); // nothing imported at all
+    expect(emitted).toEqual([sessionId]);
+
+    importedGeometry.set(sessionId, box(0, 0, 0), 'degenerate.glb'); // longestLength <= 0 -> scale null
+    render.refreshScaledReference(sessionId);
+    expect(emitted).toEqual([sessionId, sessionId]);
+  });
+
   it('disposes dimension lines and ruler (but not the shared reference geometry) when a session closes', () => {
     const first = sessions.sessions()[0].id;
     sessions.createSession();

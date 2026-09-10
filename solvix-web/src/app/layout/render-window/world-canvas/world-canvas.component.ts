@@ -2,14 +2,15 @@ import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, Simp
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { IDEAL_WORLD_INDEX } from '../../../config/app-settings';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
-import { ImportedReferenceStyle } from '../../../state/imported-reference-display.service';
+import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { VoxelizationService } from '../../../state/voxelization.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
-import { disposeVoxelPreview } from '../../../geometry/voxel-preview';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const AXES_LENGTH = 50;
@@ -70,12 +71,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // geometry/ruler-preview.ts) - a separate overlay, independently
   // toggleable (ImportedReferenceDisplayService.rulerVisible).
   @Input() ruler: THREE.Object3D | null = null;
-  // Instanced-cube preview of the last successful voxelization
-  // (VoxelizationService, geometry/voxel-preview.ts) - unlike
-  // importedReference/dimensionLines/ruler, already built in WORLD space
-  // (see buildVoxelPreview's doc comment), so it's added to the scene at
-  // identity rather than needing a position/quaternion copied onto it.
-  @Input() voxelPreview: THREE.Object3D | null = null;
+  // Voxel preview is deliberately NOT an @Input like the overlays above -
+  // see updateVoxelPreview() for why (a disposal race that was a real,
+  // confirmed crash for this specific resource).
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
@@ -90,6 +88,18 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private perspectiveCamera!: THREE.PerspectiveCamera;
   private orthographicCamera!: THREE.OrthographicCamera;
   private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  // Tracked separately from `camera` itself (rather than derived by
+  // comparing it against `orthographicCamera`) because both of those
+  // fields stay `undefined` until initScene() runs inside ngAfterViewInit -
+  // which fires mid-way through Angular's very FIRST change detection
+  // pass. The template (getCameraMode(), read twice per cycle in dev mode)
+  // would see `undefined === undefined` (true - "orthographic") on the
+  // first read and two real, distinct camera objects (false -
+  // "perspective") on dev mode's immediate re-check of the same values,
+  // throwing NG0100 on every single page load. This field has a real
+  // default from the moment the class is constructed, so both reads
+  // always agree.
+  private cameraMode: 'perspective' | 'orthographic' = 'perspective';
   // Half the world-space height the orthographic camera shows at zoom=1 -
   // recomputed whenever switching INTO orthographic (from the perspective
   // camera's current distance-to-target, so the switch doesn't visibly
@@ -104,6 +114,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // `controls` (OrbitControls) below.
   private rotateGizmo!: TransformControls;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  // Read directly (not via @Input) inside updateVoxelPreview() - see there
+  // for why.
+  private readonly voxelization = inject(VoxelizationService);
+  private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
   // listener below for why position can't just be corrected live during the
@@ -511,18 +525,42 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
+  // Reads VoxelizationService/ImportedReferenceDisplayService DIRECTLY
+  // here, every frame - NOT via an @Input like the overlays above.
+  // Regression: an @Input is only refreshed when Angular actually runs
+  // change detection for this component, which is gated on its own
+  // (rAF-coalesced) schedule - a SEPARATE clock from this component's own
+  // `animate()` rAF loop. VoxelizationService disposes a superseded
+  // preview SYNCHRONOUSLY (run()/clearResult()), and BatchedMesh.dispose()
+  // leaves the object in a state that crashes renderer.render() if it's
+  // drawn again (nulls internal texture refs onBeforeRender then
+  // dereferences). If this component's own rAF fired before Angular's CD
+  // caught up, `this.voxelPreview` (the @Input) would still hold the
+  // now-disposed reference, and this method's own "nothing changed" guard
+  // would skip removing it - `renderer.render()` right after would then
+  // throw. Computing the value directly here, in the SAME synchronous
+  // call as the removal/render decision, makes that race impossible: JS
+  // is single-threaded, so whatever VoxelizationService disposed has
+  // already fully happened by the time this next runs, no matter which
+  // rAF queue got there first.
   private updateVoxelPreview(): void {
-    const source = this.voxelPreview;
+    const source =
+      this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.importedReferenceDisplay.getStyle(this.sessionId).voxelPreviewVisible
+        ? this.voxelization.getVoxelPreview(this.sessionId)
+        : null;
     if (this.lastVoxelPreview === source) {
       return;
     }
     this.lastVoxelPreview = source;
 
+    // Removes from the scene WITHOUT disposing - VoxelizationService owns
+    // disposal entirely (run()/clearResult()/pruneTo), since it's the only
+    // thing that actually knows when an object is retired for good versus
+    // just temporarily not the one to show (e.g. "Показати кубики" toggled
+    // off keeps the object valid in the service's cache; this component
+    // must not destroy it just because it stopped being asked to draw it).
     if (this.currentVoxelPreview) {
       this.scene.remove(this.currentVoxelPreview);
-      // See updateDimensionLines' comment - disposed here, not by
-      // VoxelizationService, for the same shared-geometry race reasoning.
-      disposeVoxelPreview(this.currentVoxelPreview);
       this.currentVoxelPreview = null;
     }
 
@@ -530,10 +568,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
-    // Already in world space (see voxelPreview's @Input doc comment) -
-    // added at identity, unlike dimensionLines/ruler which need the
-    // reference's position/quaternion copied onto them.
-    this.currentVoxelPreview = source.clone();
+    // Added directly, NOT cloned - already in world space (see
+    // buildVoxelPreview's own doc comment), unlike dimensionLines/ruler
+    // (whose clone() exists specifically to copy the reference's position/
+    // quaternion onto a per-canvas copy) - and BatchedMesh (the fill's
+    // renderer) can't support Object3D.clone() at all regardless.
+    this.currentVoxelPreview = source;
     this.scene.add(this.currentVoxelPreview);
     this.renderer.compile(this.scene, this.camera);
   }
@@ -642,7 +682,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Whichever camera is currently active - read by the template to label
   // the toggle button.
   getCameraMode(): 'perspective' | 'orthographic' {
-    return this.camera === this.orthographicCamera ? 'orthographic' : 'perspective';
+    return this.cameraMode;
   }
 
   // Swaps the active camera, carrying position/orientation across so the
@@ -670,7 +710,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.orthographicCamera.quaternion.copy(this.perspectiveCamera.quaternion);
     this.orthographicCamera.zoom = 1;
     this.updateCameraFrustum(this.lastWidth, this.lastHeight);
-    this.setActiveCamera(this.orthographicCamera);
+    this.setActiveCamera(this.orthographicCamera, 'orthographic');
   }
 
   private switchToPerspective(): void {
@@ -686,11 +726,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const direction = offset.lengthSq() > 1e-8 ? offset.normalize() : new THREE.Vector3(0, 0, 1).applyQuaternion(this.orthographicCamera.quaternion);
     this.perspectiveCamera.position.copy(target).addScaledVector(direction, distance);
     this.perspectiveCamera.quaternion.copy(this.orthographicCamera.quaternion);
-    this.setActiveCamera(this.perspectiveCamera);
+    this.setActiveCamera(this.perspectiveCamera, 'perspective');
   }
 
-  private setActiveCamera(camera: THREE.PerspectiveCamera | THREE.OrthographicCamera): void {
+  private setActiveCamera(camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, mode: 'perspective' | 'orthographic'): void {
     this.camera = camera;
+    this.cameraMode = mode;
     this.controls.object = camera;
     this.controls.update();
     this.rotateGizmo.camera = camera;

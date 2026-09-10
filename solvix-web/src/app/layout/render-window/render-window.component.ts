@@ -7,7 +7,6 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
-import { VoxelizationService } from '../../state/voxelization.service';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -32,7 +31,6 @@ export class RenderWindowComponent {
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
-  private readonly voxelization = inject(VoxelizationService);
   readonly worlds = WORLDS_CONFIG;
 
   // null when there's no active session - never matches a real worldIndex,
@@ -105,20 +103,11 @@ export class RenderWindowComponent {
     return this.importedReferenceRender.getRuler(sessionId);
   }
 
-  // Ideal-World-only, independent of getImportedReference's own visibility
-  // (ImportedReferenceStyle.voxelPreviewVisible) - same gating pattern as
-  // getDimensionLines/getRuler. The last successfully voxelized result
-  // (VoxelizationService) still gets computed/cached and kept up to date
-  // (auto re-run on rebuild) even while hidden - this only controls
-  // whether WorldCanvasComponent is handed it to actually draw.
-  getVoxelPreview(worldIndex: number): THREE.Object3D | null {
-    if (worldIndex !== IDEAL_WORLD_INDEX) {
-      return null;
-    }
-    const sessionId = this.sessions.activeSessionId();
-    if (sessionId === null || !this.importedReferenceDisplay.getStyle(sessionId).voxelPreviewVisible) {
-      return null;
-    }
-    return this.voxelization.getVoxelPreview(sessionId);
-  }
+  // No getVoxelPreview() here, unlike the overlays above - WorldCanvasComponent
+  // computes voxel preview visibility itself, reading VoxelizationService/
+  // ImportedReferenceDisplayService directly every frame instead of
+  // through an @Input this component would otherwise compute. See
+  // world-canvas.component.ts's updateVoxelPreview for why (a confirmed
+  // disposal-race crash that pattern would reintroduce for this
+  // specifically fragile resource - BatchedMesh).
 }

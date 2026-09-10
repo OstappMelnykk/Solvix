@@ -1,4 +1,4 @@
-import { TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import * as THREE from 'three';
@@ -198,8 +198,8 @@ describe('VoxelizationService', () => {
 
     const preview = voxelization.getVoxelPreview(sessionId);
     expect(preview).not.toBeNull();
-    const fill = preview!.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
-    expect(fill.count).toBe(1);
+    const fill = preview!.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    expect(fill.instanceCount).toBe(1);
   });
 
   it('keeps the last successful preview visible even if a later run fails', () => {
@@ -218,6 +218,30 @@ describe('VoxelizationService', () => {
     expect(voxelization.getVoxelPreview(sessionId)).toBe(firstPreview);
   });
 
+  // Regression: BatchedMesh (the fill's renderer - see voxel-preview.ts)
+  // can't be cloned per canvas, so WorldCanvasComponent now shows this
+  // EXACT cached object rather than a clone of it - which means disposal
+  // must happen in exactly one place, at the moment this service knows
+  // for certain an object is being retired for good (superseded by a
+  // newer run, same as here, or the session closing - see the next test).
+  it('disposes the outgoing preview once a later run succeeds and replaces it', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const firstPreview = voxelization.getVoxelPreview(sessionId)!;
+    const firstFill = firstPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    const disposeSpy = spyOn(firstFill, 'dispose').and.callThrough();
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(voxelization.getVoxelPreview(sessionId)).not.toBe(firstPreview);
+  });
+
   it("disposes a closed session's voxel preview and leaves other sessions untouched", () => {
     const first = sessions.sessions()[0].id;
     sessions.createSession();
@@ -232,8 +256,8 @@ describe('VoxelizationService', () => {
     voxelization.run(second);
     httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
     const secondPreview = voxelization.getVoxelPreview(second)!;
-    const secondFill = secondPreview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
-    const geometryDispose = spyOn(secondFill.geometry, 'dispose');
+    const secondFill = secondPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    const geometryDispose = spyOn(secondFill, 'dispose');
 
     sessions.closeSession(first);
     TestBed.flushEffects();
@@ -259,6 +283,26 @@ describe('VoxelizationService', () => {
     expect(voxelization.getVoxelPreview(sessionId)).toBeNull();
   });
 
+  // Regression: a rebuilt reference must actually DISPOSE the outdated
+  // preview (freeing its GPU resources right away), not just hide it and
+  // leave it cached until some later run happens to replace it.
+  it('disposes the outdated preview (not just hides it) once the reference is rebuilt', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const fill = voxelization
+      .getVoxelPreview(sessionId)!
+      .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    const disposeSpy = spyOn(fill, 'dispose').and.callThrough();
+
+    referenceRender.setDensity(sessionId, 20);
+
+    expect(disposeSpy).toHaveBeenCalled();
+  });
+
   it('shows the result again after re-running against the rebuilt reference', () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(), 'model.glb');
@@ -273,6 +317,41 @@ describe('VoxelizationService', () => {
 
     expect(voxelization.getStatus(sessionId).kind).toBe('ok');
     expect(voxelization.getVoxelPreview(sessionId)).not.toBeNull();
+  });
+
+  // Regression: the density change above must not trigger voxelization to
+  // run again on its own - it only ever starts from the explicit button.
+  it('does not auto-re-run voxelization when the reference is rebuilt', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+
+    referenceRender.setDensity(sessionId, 20);
+
+    httpMock.expectNone(`${environment.apiBaseUrl}/api/meshes/voxelize`);
+    expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'idle' });
+  });
+
+  // Regression: if the reference changes WHILE a request is still in
+  // flight, that request's eventual response must not resurrect a result
+  // for geometry that no longer exists.
+  it('discards an in-flight response if the reference changes before it arrives', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`);
+
+    referenceRender.setDensity(sessionId, 20); // changes mid-request
+
+    request.flush(encodeGrid(1));
+
+    expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'idle' });
+    expect(voxelization.getVoxelPreview(sessionId)).toBeNull();
   });
 
   it('defaults opacity and clamps setOpacity to [0, 1]', () => {
@@ -297,7 +376,7 @@ describe('VoxelizationService', () => {
 
     const fill = voxelization
       .getVoxelPreview(sessionId)!
-      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+      .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.3, 5);
   });
 
@@ -312,59 +391,59 @@ describe('VoxelizationService', () => {
 
     const fill = voxelization
       .getVoxelPreview(sessionId)!
-      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+      .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.1, 5);
   });
 
-  it('auto re-runs voxelization, debounced, after the reference is rebuilt', fakeAsync(() => {
+  it('defaults node size/opacity and clamps their setters to [0, 1]', () => {
+    const sessionId = sessions.sessions()[0].id;
+    expect(voxelization.getNodeSize(sessionId)).toBeCloseTo(0.5, 5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(1);
+
+    voxelization.setNodeSize(sessionId, 1.5);
+    expect(voxelization.getNodeSize(sessionId)).toBe(1);
+    voxelization.setNodeSize(sessionId, -0.5);
+    expect(voxelization.getNodeSize(sessionId)).toBe(0);
+
+    voxelization.setNodeOpacity(sessionId, 1.5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(1);
+    voxelization.setNodeOpacity(sessionId, -0.5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(0);
+  });
+
+  it('applies the current node size/opacity to a newly built preview', () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(), 'model.glb');
-
-    referenceRender.setDensity(sessionId, 10); // rebuilds the reference -> referenceChanged$
-
-    httpMock.expectNone(`${environment.apiBaseUrl}/api/meshes/voxelize`); // still debouncing
-    tick(500);
-
-    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
-    expect(voxelization.getStatus(sessionId).kind).toBe('ok');
-  }));
-
-  it('fires only once for a rapid sequence of edits to the same session', fakeAsync(() => {
-    const sessionId = sessions.sessions()[0].id;
-    importedGeometry.set(sessionId, box(), 'model.glb');
-
     referenceRender.setDensity(sessionId, 10);
-    tick(200); // well within the debounce window
-    referenceRender.setDensity(sessionId, 20);
-    tick(200);
-    referenceRender.setDensity(sessionId, 30);
-    tick(500); // past the debounce window since only the LAST edit
+    voxelization.setNodeSize(sessionId, 1);
+    voxelization.setNodeOpacity(sessionId, 0.3);
 
-    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`);
-    request.flush(encodeGrid(1));
-    expect(request.request.method).toBe('POST'); // exactly one request total - expectOne already enforces that
-  }));
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
 
-  it("debounces each session independently - one session's edit doesn't reset another's timer", fakeAsync(() => {
-    const first = sessions.sessions()[0].id;
-    sessions.createSession();
-    const second = sessions.sessions()[1].id;
-    importedGeometry.set(first, box(), 'first.glb');
-    importedGeometry.set(second, box(), 'second.glb');
+    const nodes = voxelization
+      .getVoxelPreview(sessionId)!
+      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    expect((nodes.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.3, 5);
+  });
 
-    referenceRender.setDensity(first, 10);
-    tick(400); // first: 400ms since its own edit - not due yet
-    referenceRender.setDensity(second, 10); // a different group - must not touch first's timer
-    tick(400); // first: 800ms since its edit (due); second: 400ms since its edit (not due yet)
+  it('updates an already-built preview live when node size/opacity change', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const preview = voxelization.getVoxelPreview(sessionId)!;
+    const nodesBefore = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const radiusBefore = (nodesBefore.geometry as THREE.SphereGeometry).parameters.radius;
 
-    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1)); // first's only
-    expect(voxelization.getStatus(first).kind).toBe('ok');
-    expect(voxelization.getStatus(second).kind).toBe('idle'); // second's own debounce hasn't fired yet
+    voxelization.setNodeOpacity(sessionId, 0.2);
+    voxelization.setNodeSize(sessionId, 1);
 
-    tick(200); // second: 600ms since its edit - due now
-    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1)); // second's
-    expect(voxelization.getStatus(second).kind).toBe('ok');
-  }));
+    const nodesAfter = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    expect((nodesAfter.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.2, 5);
+    expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
+  });
 
   it("discards a superseded run's response instead of letting it clobber a newer result", () => {
     const sessionId = sessions.sessions()[0].id;

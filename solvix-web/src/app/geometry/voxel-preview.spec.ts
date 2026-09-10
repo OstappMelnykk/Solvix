@@ -1,13 +1,24 @@
 import * as THREE from 'three';
-import { buildVoxelPreview, disposeVoxelPreview, setVoxelEdgeOpacity, setVoxelPreviewOpacity } from './voxel-preview';
+import {
+  buildVoxelPreview,
+  disposeVoxelPreview,
+  setVoxelEdgeOpacity,
+  setVoxelNodeOpacity,
+  setVoxelNodeSize,
+  setVoxelPreviewOpacity
+} from './voxel-preview';
 import { VoxelGridDto } from './voxel-grid-contract';
 
-function fillOf(preview: THREE.Object3D): THREE.InstancedMesh {
-  return preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+function fillOf(preview: THREE.Object3D): THREE.BatchedMesh {
+  return preview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
 }
 
 function edgesOf(preview: THREE.Object3D): THREE.LineSegments {
   return preview.children.find(child => child instanceof THREE.LineSegments) as THREE.LineSegments;
+}
+
+function nodesOf(preview: THREE.Object3D): THREE.InstancedMesh {
+  return preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
 }
 
 // Builds a grid whose occupied cells' centers land exactly on `centers` -
@@ -32,80 +43,129 @@ function singleCellGridAt(center: { x: number; y: number; z: number }, cellSize:
 const EMPTY_GRID: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0]) };
 
 describe('buildVoxelPreview', () => {
-  it('creates one instance per occupied cell, sized to cellSize', () => {
+  it('creates one BatchedMesh instance per occupied cell', () => {
     const grid = gridWithCentersAlongX([0, 2, 4], 2);
 
-    const fill = fillOf(buildVoxelPreview(grid, 0.5, 1));
+    const fill = fillOf(buildVoxelPreview(grid, 0.5, 1, 0.5, 1));
 
-    expect(fill.count).toBe(3);
-    const parameters = (fill.geometry as THREE.BoxGeometry).parameters;
-    expect(parameters.width).toBe(2);
-    expect(parameters.height).toBe(2);
-    expect(parameters.depth).toBe(2);
+    expect(fill.instanceCount).toBe(3);
   });
 
-  it('places each instance at its center via the instance matrix', () => {
-    const grid = singleCellGridAt({ x: 5, y: -3, z: 7 }, 1);
+  it('gives each cell its own geometry, sized and positioned at its world-space center', () => {
+    const fill = fillOf(buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 0.5, 1));
 
-    const fill = fillOf(buildVoxelPreview(grid, 0.5, 1));
-
-    const matrix = new THREE.Matrix4();
-    fill.getMatrixAt(0, matrix);
-    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
-    expect(position.x).toBeCloseTo(5, 5);
-    expect(position.y).toBeCloseTo(-3, 5);
-    expect(position.z).toBeCloseTo(7, 5);
+    const box = new THREE.Box3();
+    fill.getBoundingBoxAt(0, box);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    expect(center.x).toBeCloseTo(5, 5);
+    expect(center.y).toBeCloseTo(-3, 5);
+    expect(center.z).toBeCloseTo(7, 5);
+    expect(size.x).toBeCloseTo(2, 5);
+    expect(size.y).toBeCloseTo(2, 5);
+    expect(size.z).toBeCloseTo(2, 5);
   });
 
   it('sets the fill material opacity from the given value', () => {
-    const fill = fillOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.25, 1));
+    const fill = fillOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.25, 1, 0.5, 1));
 
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBe(0.25);
   });
 
   it('sets the edge material opacity from the given value, independent of the fill', () => {
-    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.9, 0.3));
+    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.9, 0.3, 0.5, 1));
 
     expect((edges.material as THREE.LineBasicMaterial).opacity).toBe(0.3);
   });
 
   it('draws a white edge outline with 12 edges (24 points) per cube', () => {
-    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1));
+    const edges = edgesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1));
 
     expect((edges.material as THREE.LineBasicMaterial).color.getHex()).toBe(0xffffff);
     expect(edges.geometry.getAttribute('position').count).toBe(24); // 12 edges * 2 points
   });
 
   it('is built at identity - no position/quaternion baked into the group itself', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: 5, z: 5 }, 1), 0.5, 1);
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: 5, z: 5 }, 1), 0.5, 1, 0.5, 1);
 
     expect(preview.position.equals(new THREE.Vector3(0, 0, 0))).toBe(true);
     expect(preview.quaternion.equals(new THREE.Quaternion())).toBe(true);
   });
 
   it('handles a grid with no occupied cells without throwing', () => {
-    expect(() => buildVoxelPreview(EMPTY_GRID, 0.5, 1)).not.toThrow();
-    expect(fillOf(buildVoxelPreview(EMPTY_GRID, 0.5, 1)).count).toBe(0);
+    expect(() => buildVoxelPreview(EMPTY_GRID, 0.5, 1, 0.5, 1)).not.toThrow();
+    expect(fillOf(buildVoxelPreview(EMPTY_GRID, 0.5, 1, 0.5, 1)).instanceCount).toBe(0);
+  });
+
+  it('draws one sphere per corner for a single, isolated cube', () => {
+    const nodes = nodesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1));
+
+    expect(nodes.count).toBe(8);
+  });
+
+  // Regression: two face-adjacent voxels share 4 corners (their common
+  // face) - those must collapse to a single sphere each, not one per cell
+  // that touches them. 8 + 8 corners with 4 shared = 12 unique, not 16.
+  it('draws one sphere per UNIQUE node - shared corners between adjacent cubes are not duplicated', () => {
+    const grid = gridWithCentersAlongX([0, 1], 1); // two cubes, touching face-to-face
+
+    const nodes = nodesOf(buildVoxelPreview(grid, 0.5, 1, 0.5, 1));
+
+    expect(nodes.count).toBe(12);
+  });
+
+  it('sizes node spheres relative to cellSize and the given nodeSize', () => {
+    const nodes = nodesOf(buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 1, 1));
+
+    // radius = cellSize * NODE_RADIUS_MAX_FACTOR(0.12) * nodeSize(1)
+    expect((nodes.geometry as THREE.SphereGeometry).parameters.radius).toBeCloseTo(0.24, 5);
+  });
+
+  it('positions node spheres at the cube corners', () => {
+    const nodes = nodesOf(buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 0.5, 1));
+
+    const matrix = new THREE.Matrix4();
+    nodes.getMatrixAt(0, matrix);
+    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+    // One of the 8 corners of a cube centered at (5,-3,7), half-size 1.
+    expect(Math.abs(position.x - 5)).toBeCloseTo(1, 5);
+    expect(Math.abs(position.y - -3)).toBeCloseTo(1, 5);
+    expect(Math.abs(position.z - 7)).toBeCloseTo(1, 5);
+  });
+
+  it('sets the node material opacity from the given value', () => {
+    const nodes = nodesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 0.4));
+
+    expect((nodes.material as THREE.MeshBasicMaterial).opacity).toBe(0.4);
+  });
+
+  it('never collapses to a zero-radius sphere at nodeSize=0', () => {
+    const nodes = nodesOf(buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0, 1));
+
+    expect((nodes.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(0);
   });
 });
 
 describe('setVoxelPreviewOpacity', () => {
-  it('updates the fill material in place without touching the edge outline', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
+  it('updates the fill material in place without touching the edge outline or nodes', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
     const edgeMaterial = edgesOf(preview).material as THREE.LineBasicMaterial;
     const edgeOpacityBefore = edgeMaterial.opacity;
+    const nodeMaterial = nodesOf(preview).material as THREE.MeshBasicMaterial;
+    const nodeOpacityBefore = nodeMaterial.opacity;
 
     setVoxelPreviewOpacity(preview, 0.9);
 
     expect((fillOf(preview).material as THREE.MeshStandardMaterial).opacity).toBe(0.9);
     expect(edgesOf(preview).material).toBe(edgeMaterial);
     expect(edgeMaterial.opacity).toBe(edgeOpacityBefore);
+    expect(nodeMaterial.opacity).toBe(nodeOpacityBefore);
   });
 });
 
 describe('setVoxelEdgeOpacity', () => {
   it('updates the edge material in place without touching the fill', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
     const fillMaterial = fillOf(preview).material as THREE.MeshStandardMaterial;
     const fillOpacityBefore = fillMaterial.opacity;
 
@@ -117,21 +177,71 @@ describe('setVoxelEdgeOpacity', () => {
   });
 });
 
+describe('setVoxelNodeOpacity', () => {
+  it('updates the node material in place without touching the fill or edges', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+    const fillMaterial = fillOf(preview).material as THREE.MeshStandardMaterial;
+    const edgeMaterial = edgesOf(preview).material as THREE.LineBasicMaterial;
+
+    setVoxelNodeOpacity(preview, 0.3);
+
+    expect((nodesOf(preview).material as THREE.MeshBasicMaterial).opacity).toBe(0.3);
+    expect(fillOf(preview).material).toBe(fillMaterial);
+    expect(edgesOf(preview).material).toBe(edgeMaterial);
+  });
+});
+
+describe('setVoxelNodeSize', () => {
+  it('replaces the shared sphere geometry with the new radius', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 2), 0.5, 1, 0.5, 1);
+    const before = (nodesOf(preview).geometry as THREE.SphereGeometry).parameters.radius;
+
+    setVoxelNodeSize(preview, 1, 2);
+
+    const after = (nodesOf(preview).geometry as THREE.SphereGeometry).parameters.radius;
+    expect(after).toBeGreaterThan(before);
+    expect(after).toBeCloseTo(0.24, 5); // cellSize(2) * NODE_RADIUS_MAX_FACTOR(0.12) * size(1)
+  });
+
+  it('disposes the old geometry when swapping it', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+    const oldGeometry = nodesOf(preview).geometry;
+    const disposeSpy = spyOn(oldGeometry, 'dispose');
+
+    setVoxelNodeSize(preview, 1, 1);
+
+    expect(disposeSpy).toHaveBeenCalled();
+  });
+});
+
 describe('disposeVoxelPreview', () => {
-  it('disposes both the instanced fill and the edge outline', () => {
-    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
-    const fill = fillOf(preview);
-    const edges = edgesOf(preview);
-    const fillGeometryDispose = spyOn(fill.geometry, 'dispose');
-    const fillMaterialDispose = spyOn(fill.material as THREE.Material, 'dispose');
-    const edgeGeometryDispose = spyOn(edges.geometry, 'dispose');
-    const edgeMaterialDispose = spyOn(edges.material as THREE.Material, 'dispose');
+  it('is safe to call twice on the same object - BatchedMesh.dispose() itself is not idempotent', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
 
     disposeVoxelPreview(preview);
 
-    expect(fillGeometryDispose).toHaveBeenCalled();
+    expect(() => disposeVoxelPreview(preview)).not.toThrow();
+  });
+
+  it('disposes the batched fill, the edge outline, and the node spheres', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+    const fill = fillOf(preview);
+    const edges = edgesOf(preview);
+    const nodes = nodesOf(preview);
+    const fillDispose = spyOn(fill, 'dispose').and.callThrough();
+    const fillMaterialDispose = spyOn(fill.material as THREE.Material, 'dispose');
+    const edgeGeometryDispose = spyOn(edges.geometry, 'dispose');
+    const edgeMaterialDispose = spyOn(edges.material as THREE.Material, 'dispose');
+    const nodeGeometryDispose = spyOn(nodes.geometry, 'dispose');
+    const nodeMaterialDispose = spyOn(nodes.material as THREE.Material, 'dispose');
+
+    disposeVoxelPreview(preview);
+
+    expect(fillDispose).toHaveBeenCalled();
     expect(fillMaterialDispose).toHaveBeenCalled();
     expect(edgeGeometryDispose).toHaveBeenCalled();
     expect(edgeMaterialDispose).toHaveBeenCalled();
+    expect(nodeGeometryDispose).toHaveBeenCalled();
+    expect(nodeMaterialDispose).toHaveBeenCalled();
   });
 });

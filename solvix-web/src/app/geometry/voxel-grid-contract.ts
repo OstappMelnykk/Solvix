@@ -57,9 +57,12 @@ export function isOccupied(grid: VoxelGridDto, ix: number, iy: number, iz: numbe
   return (grid.occupancy[index >> 3] & (1 << (index & 7))) !== 0;
 }
 
-// Total occupied-cell count - used both by buildVoxelPreview (to size the
-// InstancedMesh exactly) and by the settings-panel cube-count display, so
-// it lives here once rather than being duplicated in both places.
+// Total occupied-cell count - used by the settings-panel cube-count
+// display. buildVoxelPreview no longer needs this itself (it counts via
+// buildVoxelCells(grid).length instead, since it needs the full VoxelCell
+// list anyway), but the display value is still exactly this count, so it
+// stays a shared function rather than being reimplemented at the one
+// remaining call site.
 export function countOccupied(grid: VoxelGridDto): number {
   let count = 0;
   for (let ix = 0; ix < grid.countX; ix++) {

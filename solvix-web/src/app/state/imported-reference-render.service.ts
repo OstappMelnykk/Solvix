@@ -56,13 +56,13 @@ export class ImportedReferenceRenderService {
   private readonly rotationBySession = new KeyedStore<number, THREE.Quaternion>();
   // Emits a session id every time refreshScaledReference actually rebuilds
   // a live scaled clone for it (density change, rotation commit, reset,
-  // new import) - VoxelizationService subscribes to this (debounced per
-  // session) to re-run voxelization automatically instead of just hiding
-  // a now-stale result and waiting for the user to click the button
-  // again. Exposed as an Observable, not injected the other way around -
-  // ImportedReferenceRenderService has no reason to know VoxelizationService
-  // exists, and injecting it here would be circular (VoxelizationService
-  // already injects this service).
+  // new import) - VoxelizationService subscribes to this to CLEAR a now-
+  // outdated voxelization result the moment the geometry it was computed
+  // from is gone (never to re-run automatically - voxelization only ever
+  // runs on the explicit "Вокселізувати" click). Exposed as an Observable,
+  // not injected the other way around - ImportedReferenceRenderService has
+  // no reason to know VoxelizationService exists, and injecting it here
+  // would be circular (VoxelizationService already injects this service).
   private readonly referenceChanged = new Subject<number>();
   readonly referenceChanged$ = this.referenceChanged.asObservable();
 
@@ -171,6 +171,14 @@ export class ImportedReferenceRenderService {
     if (!info || scale === null) {
       this.scaledReferenceBySession.delete(sessionId);
       this.rulerBySession.delete(sessionId);
+      // Still emits, even though there's no new reference to show - a
+      // consumer that cached something computed from the PREVIOUS
+      // reference (VoxelizationService's voxel preview) needs to know
+      // that reference is gone too, or it keeps showing a now-orphaned
+      // stale result forever (getScaledReference returns null here on,
+      // e.g., importing a second, degenerate/zero-extent file over a
+      // valid one - re-running silently no-ops with nothing to clear it).
+      this.referenceChanged.next(sessionId);
       return;
     }
     const clone = info.object.clone();

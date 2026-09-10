@@ -66,6 +66,14 @@
     <span>Прозорість каркасу</span>
     <input type="range" min="0" max="100" [value]="getVoxelEdgeOpacityPercent()" (change)="onVoxelEdgeOpacityChange($event)" />
   </label>
+  <label class="row">
+    <span>Розмір вузлів</span>
+    <input type="range" min="0" max="100" [value]="getVoxelNodeSizePercent()" (change)="onVoxelNodeSizeChange($event)" />
+  </label>
+  <label class="row">
+    <span>Прозорість вузлів</span>
+    <input type="range" min="0" max="100" [value]="getVoxelNodeOpacityPercent()" (change)="onVoxelNodeOpacityChange($event)" />
+  </label>
   <button class="tool" type="button" (click)="runVoxelization()">Вокселізувати</button>
   <ng-container *ngIf="getVoxelizationStatus() as voxelStatus">
     <div

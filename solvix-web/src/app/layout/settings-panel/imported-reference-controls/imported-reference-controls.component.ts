@@ -211,9 +211,8 @@ export class ImportedReferenceControlsComponent {
   }
 
   // Cube count for the "ok" status line - VoxelizationStatus carries the
-  // raw grid+bitmask (VoxelGridDto), not a precomputed count, since
-  // nothing else needs one (buildVoxelPreview counts internally too, for
-  // its own reason - sizing the InstancedMesh).
+  // raw grid+bitmask (VoxelGridDto), not a precomputed count, since this
+  // is the only place that needs one.
   getVoxelCubeCount(result: VoxelGridDto): number {
     return countOccupied(result);
   }
@@ -244,6 +243,34 @@ export class ImportedReferenceControlsComponent {
     }
     const percent = Number((event.target as HTMLInputElement).value);
     this.voxelization.setEdgeOpacity(sessionId, percent / 100);
+  }
+
+  getVoxelNodeSizePercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getNodeSize(sessionId) * 100);
+  }
+
+  onVoxelNodeSizeChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setNodeSize(sessionId, percent / 100);
+  }
+
+  getVoxelNodeOpacityPercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getNodeOpacity(sessionId) * 100);
+  }
+
+  onVoxelNodeOpacityChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setNodeOpacity(sessionId, percent / 100);
   }
 
   // Full metadata dictionary for whatever's currently imported
