@@ -48,7 +48,26 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
   const cells = buildVoxelCells(grid);
 
   const VERTICES_PER_VOXEL = 36; // 6 faces x 2 triangles x 3 vertices - see buildVoxelHexahedronFillGeometry
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: fillOpacity, side: THREE.DoubleSide });
+  // depthWrite off: with it on, even a near-invisible (low-opacity) cube
+  // still writes the depth buffer wherever it's drawn, so it can block
+  // whatever's meant to be seen through it (the imported mesh, or other
+  // cubes) at that pixel regardless of how transparent it looks - worse,
+  // WHICH overlapping cube face "wins" that write depends on draw order
+  // (BatchedMesh's own back-to-front sort, keyed off each instance's
+  // distance to the camera), which can flip unpredictably at some camera
+  // angles, reading as cubes suddenly turning into an opaque wall. With
+  // it off, every cube's color blends purely by alpha regardless of draw
+  // order - the tradeoff (documented on the pre-BatchedMesh version of
+  // this file) is that deeply overlapping translucent faces can drift in
+  // apparent color instead of cleanly occluding each other, but seeing
+  // through the fill is this control's entire purpose.
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: fillOpacity,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
   // maxIndexCount is irrelevant here (buildVoxelHexahedronFillGeometry's
   // geometries are all non-indexed) - kept at 1 rather than 0 since
   // BatchedMesh treats 0 as "use the maxVertexCount*2 default".
@@ -56,6 +75,16 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
   // See buildVoxelHexahedron's own comment - same transparent-overlap
   // z-fight fix, now applied to the shared batch instead of a per-cube mesh.
   batched.renderOrder = 1;
+  // BatchedMesh's default per-instance frustum culling computes each
+  // cube's bounding sphere from a shared internal buffer and re-evaluates
+  // it against the camera every frame - at some camera angles this was
+  // dropping cubes that were genuinely still on screen (an unstable,
+  // angle-dependent "some cubes just don't render" glitch, not a
+  // transparency/depth issue). Our counts are capped low enough
+  // (MaxCells = 900_000, realistically far fewer for interactive use)
+  // that always submitting every instance costs little, and correctness
+  // here matters more than the CPU-side skip.
+  batched.perObjectFrustumCulled = false;
 
   const edgePositions: number[] = [];
   for (const cell of cells) {
