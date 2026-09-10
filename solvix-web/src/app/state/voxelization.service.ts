@@ -10,7 +10,9 @@ import { toMeshBinary } from '../geometry/mesh-contract';
 import {
   buildVoxelPreview,
   disposeVoxelPreview,
+  getVoxelCellByInstanceId,
   setVoxelEdgeOpacity,
+  setVoxelHighlight,
   setVoxelNodeOpacity,
   setVoxelNodeSize,
   setVoxelPreviewOpacity
@@ -174,6 +176,22 @@ export class VoxelizationService {
     if (preview) {
       setVoxelNodeOpacity(preview, clamped);
     }
+  }
+
+  // Click-to-select a single voxel: `instanceId` is whatever a raycast
+  // against the preview's BatchedMesh reported (Intersection.batchId - see
+  // WorldCanvasComponent's click handler), or null for "clicked empty
+  // space, deselect". No separate "selected cell" state is kept here - the
+  // preview's own highlight overlay (setVoxelHighlight) IS the selection
+  // state, so it resets for free whenever the preview itself is rebuilt or
+  // cleared (a fresh run, or the reference geometry changing under it).
+  selectVoxelInstance(sessionId: number, instanceId: number | null): void {
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    if (!preview) {
+      return;
+    }
+    const cell = instanceId === null ? null : getVoxelCellByInstanceId(preview, instanceId);
+    setVoxelHighlight(preview, cell);
   }
 
   // Drops a session's result the moment its geometry changes underneath it

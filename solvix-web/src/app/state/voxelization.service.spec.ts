@@ -445,6 +445,56 @@ describe('VoxelizationService', () => {
     expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
   });
 
+  describe('selectVoxelInstance', () => {
+    function highlightOf(preview: THREE.Object3D): THREE.Mesh {
+      return preview.children.find(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight') as THREE.Mesh;
+    }
+
+    it('does nothing when there is no preview yet', () => {
+      const sessionId = sessions.sessions()[0].id;
+      expect(() => voxelization.selectVoxelInstance(sessionId, 0)).not.toThrow();
+    });
+
+    it('highlights the cell matching a valid instanceId', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      const preview = voxelization.getVoxelPreview(sessionId)!;
+      expect(highlightOf(preview).visible).toBe(false);
+
+      voxelization.selectVoxelInstance(sessionId, 0);
+
+      expect(highlightOf(preview).visible).toBe(true);
+    });
+
+    it('deselects (hides the highlight) when instanceId is null', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      voxelization.selectVoxelInstance(sessionId, 0);
+
+      voxelization.selectVoxelInstance(sessionId, null);
+
+      expect(highlightOf(voxelization.getVoxelPreview(sessionId)!).visible).toBe(false);
+    });
+
+    it('leaves the highlight hidden for an instanceId with no matching cell', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+
+      voxelization.selectVoxelInstance(sessionId, 999);
+
+      expect(highlightOf(voxelization.getVoxelPreview(sessionId)!).visible).toBe(false);
+    });
+  });
+
   it("discards a superseded run's response instead of letting it clobber a newer result", () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(), 'model.glb');

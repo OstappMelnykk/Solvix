@@ -17,6 +17,12 @@ const AXES_LENGTH = 50;
 const GRID_SIZE = 50;
 const GRID_DIVISIONS = 50;
 const SETTLE_DURATION_MS = 180;
+// Above this many CSS pixels of movement between pointerdown and pointerup,
+// treat the gesture as an OrbitControls drag, not a click-to-select - the
+// browser's native `click` event has no such threshold (it fires on
+// mouseup at the same DOM target regardless of how far the pointer moved
+// in between), so this is tracked by hand.
+const VOXEL_CLICK_MOVE_THRESHOLD_PX = 4;
 
 // One of exactly 3 instances for the whole app - one per World (Ideal/Real/
 // Solver). Its Scene/Camera/Renderer/OrbitControls are NOT recreated per
@@ -158,6 +164,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // and disposed by VoxelizationService, not here.
   private currentVoxelPreview: THREE.Object3D | null = null;
   private lastVoxelPreview: THREE.Object3D | null = null;
+  // Click-to-select a single voxel (see handlePointerDown/Up below) -
+  // Ideal-World-only in practice, since currentVoxelPreview is only ever
+  // non-null there. Reused across clicks (raycaster/pointer are just scratch
+  // objects, no per-click allocation needed) rather than owned by
+  // VoxelizationService - picking is a property of THIS canvas's camera/DOM
+  // element, not of the voxelization result itself.
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointerNdc = new THREE.Vector2();
+  private pointerDownClient: { x: number; y: number } | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private lastSessionId: number | null = null;
   private sceneReady = false;
@@ -166,6 +181,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
   private onContextRestored = () => this.checkResize();
+  private onPointerDown = (event: PointerEvent) => {
+    this.pointerDownClient = { x: event.clientX, y: event.clientY };
+  };
+  private onPointerUp = (event: PointerEvent) => this.handleVoxelPickClick(event);
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -174,6 +193,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointerup', this.onPointerUp);
 
     this.animate();
   }
@@ -202,6 +223,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerup', this.onPointerUp);
     if (this.currentImportedReference) {
       this.disposeImportedReferenceClone(this.currentImportedReference);
     }
@@ -576,6 +599,49 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.currentVoxelPreview = source;
     this.scene.add(this.currentVoxelPreview);
     this.renderer.compile(this.scene, this.camera);
+  }
+
+  // Click-to-select a single voxel: raycasts against the current preview's
+  // BatchedMesh and forwards whichever instance it hit (or null, for
+  // "missed everything - deselect") to VoxelizationService, which owns the
+  // actual highlight state. Fires on pointerup, gated by a movement
+  // threshold against the matching pointerdown (onPointerDown) so an
+  // OrbitControls drag-to-orbit gesture (mouse moves a lot between down and
+  // up) never gets misread as a click.
+  private handleVoxelPickClick(event: PointerEvent): void {
+    const downClient = this.pointerDownClient;
+    this.pointerDownClient = null;
+    if (!downClient) {
+      return;
+    }
+    const movedPx = Math.hypot(event.clientX - downClient.x, event.clientY - downClient.y);
+    if (movedPx > VOXEL_CLICK_MOVE_THRESHOLD_PX) {
+      return;
+    }
+    // Voxel selection only exists in the Ideal World (currentVoxelPreview is
+    // only ever non-null there), only on the currently-active canvas tab,
+    // never while the rotate gizmo is mid-drag (its own click already means
+    // something else - releasing a ring, not picking a voxel), and never
+    // for a session that's since closed.
+    if (this.worldIndex !== IDEAL_WORLD_INDEX || !this.active || this.sessionId === null || this.rotateGizmo.dragging) {
+      return;
+    }
+
+    const batchedFill = this.currentVoxelPreview?.children.find(
+      (child): child is THREE.BatchedMesh => child instanceof THREE.BatchedMesh
+    );
+    if (!batchedFill) {
+      this.voxelization.selectVoxelInstance(this.sessionId, null);
+      return;
+    }
+
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+    const hits = this.raycaster.intersectObject(batchedFill);
+    const instanceId = hits.length > 0 && hits[0].batchId !== undefined ? hits[0].batchId : null;
+    this.voxelization.selectVoxelInstance(this.sessionId, instanceId);
   }
 
   // Geometry is shared with the source object (ImportedGeometryService owns
