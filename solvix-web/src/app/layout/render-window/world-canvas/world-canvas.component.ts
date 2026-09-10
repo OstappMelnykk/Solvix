@@ -89,6 +89,18 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private perspectiveCamera!: THREE.PerspectiveCamera;
   private orthographicCamera!: THREE.OrthographicCamera;
   private camera!: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  // Tracked separately from `camera` itself (rather than derived by
+  // comparing it against `orthographicCamera`) because both of those
+  // fields stay `undefined` until initScene() runs inside ngAfterViewInit -
+  // which fires mid-way through Angular's very FIRST change detection
+  // pass. The template (getCameraMode(), read twice per cycle in dev mode)
+  // would see `undefined === undefined` (true - "orthographic") on the
+  // first read and two real, distinct camera objects (false -
+  // "perspective") on dev mode's immediate re-check of the same values,
+  // throwing NG0100 on every single page load. This field has a real
+  // default from the moment the class is constructed, so both reads
+  // always agree.
+  private cameraMode: 'perspective' | 'orthographic' = 'perspective';
   // Half the world-space height the orthographic camera shows at zoom=1 -
   // recomputed whenever switching INTO orthographic (from the perspective
   // camera's current distance-to-target, so the switch doesn't visibly
@@ -651,7 +663,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Whichever camera is currently active - read by the template to label
   // the toggle button.
   getCameraMode(): 'perspective' | 'orthographic' {
-    return this.camera === this.orthographicCamera ? 'orthographic' : 'perspective';
+    return this.cameraMode;
   }
 
   // Swaps the active camera, carrying position/orientation across so the
@@ -679,7 +691,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.orthographicCamera.quaternion.copy(this.perspectiveCamera.quaternion);
     this.orthographicCamera.zoom = 1;
     this.updateCameraFrustum(this.lastWidth, this.lastHeight);
-    this.setActiveCamera(this.orthographicCamera);
+    this.setActiveCamera(this.orthographicCamera, 'orthographic');
   }
 
   private switchToPerspective(): void {
@@ -695,11 +707,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const direction = offset.lengthSq() > 1e-8 ? offset.normalize() : new THREE.Vector3(0, 0, 1).applyQuaternion(this.orthographicCamera.quaternion);
     this.perspectiveCamera.position.copy(target).addScaledVector(direction, distance);
     this.perspectiveCamera.quaternion.copy(this.orthographicCamera.quaternion);
-    this.setActiveCamera(this.perspectiveCamera);
+    this.setActiveCamera(this.perspectiveCamera, 'perspective');
   }
 
-  private setActiveCamera(camera: THREE.PerspectiveCamera | THREE.OrthographicCamera): void {
+  private setActiveCamera(camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, mode: 'perspective' | 'orthographic'): void {
     this.camera = camera;
+    this.cameraMode = mode;
     this.controls.object = camera;
     this.controls.update();
     this.rotateGizmo.camera = camera;
