@@ -2,3 +2,6 @@
 <button class="camera-mode-toggle" type="button" (click)="toggleCameraMode()">
   {{ getCameraMode() === 'perspective' ? 'Перспектива' : 'Ортографія' }}
 </button>
+<button class="camera-reset-button" type="button" title="Скинути камеру до початкового положення" (click)="resetCamera()">
+  Скинути камеру
+</button>

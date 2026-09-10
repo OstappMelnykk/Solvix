@@ -41,3 +41,28 @@ canvas {
     border-color: #39c5f2;
   }
 }
+
+// Same overlay treatment as .camera-mode-toggle, stacked directly below it.
+.camera-reset-button {
+  position: absolute;
+  top: 44px;
+  right: 10px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #39c5f2;
+  }
+}

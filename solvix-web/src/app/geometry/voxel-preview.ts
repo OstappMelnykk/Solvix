@@ -183,8 +183,9 @@ export function setVoxelHighlight(preview: THREE.Object3D, cell: VoxelCell | nul
   if (!highlight) {
     return;
   }
-  if (!cell) {
+  if (!cell || cell.batchInstanceId === null) {
     highlight.visible = false;
+    selectedInstanceIdByPreview.delete(preview);
     return;
   }
   const box = new THREE.Box3().setFromPoints([...cell.corners]);
@@ -193,6 +194,23 @@ export function setVoxelHighlight(preview: THREE.Object3D, cell: VoxelCell | nul
   highlight.position.copy(center);
   highlight.scale.copy(size);
   highlight.visible = true;
+  selectedInstanceIdByPreview.set(preview, cell.batchInstanceId);
+}
+
+// Which cell setVoxelHighlight last selected on this preview, if any - the
+// "press Delete to remove the selected voxel" feature
+// (VoxelizationService.removeSelectedVoxel) needs to know this without a
+// separate, easy-to-desync "current selection" store of its own. Keyed by
+// the preview object's own identity (same idiom as
+// cellByInstanceIdByPreview above) so a rebuilt/replaced preview starts
+// with no selection automatically - exactly matching the highlight mesh's
+// own visible=false default on a fresh build, rather than needing to be
+// cleared by hand every place a preview gets replaced.
+const selectedInstanceIdByPreview = new WeakMap<THREE.Object3D, number>();
+
+export function getSelectedVoxelCell(preview: THREE.Object3D): VoxelCell | null {
+  const instanceId = selectedInstanceIdByPreview.get(preview);
+  return instanceId === undefined ? null : getVoxelCellByInstanceId(preview, instanceId);
 }
 
 // Mutates the fill material's opacity in place on an already-built preview

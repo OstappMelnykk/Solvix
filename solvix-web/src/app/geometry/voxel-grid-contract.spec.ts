@@ -1,4 +1,4 @@
-import { countOccupied, fromVoxelGridBinary, isOccupied, voxelCenter } from './voxel-grid-contract';
+import { VoxelGridDto, countOccupied, fromVoxelGridBinary, isOccupied, voxelCenter, withCellSet } from './voxel-grid-contract';
 
 // Builds the exact byte layout Solvix.Voxelization's internal
 // VoxelizationResultBinarySerializer produces, so these tests exercise the
@@ -75,6 +75,60 @@ describe('countOccupied', () => {
     const grid = fromVoxelGridBinary(encode(0, 0, 0, 1, 1, 1, 1, [0]));
 
     expect(countOccupied(grid)).toBe(0);
+  });
+});
+
+describe('withCellSet', () => {
+  it('sets a cell within the existing bounds without growing the grid', () => {
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b01]) };
+
+    const result = withCellSet(grid, 1, 0, 0, true);
+
+    expect(result.countX).toBe(2);
+    expect(result.origin).toEqual({ x: 0, y: 0, z: 0 });
+    expect(isOccupied(result, 0, 0, 0)).toBe(true);
+    expect(isOccupied(result, 1, 0, 0)).toBe(true);
+  });
+
+  it('grows the grid in the positive direction without shifting existing cells or the origin', () => {
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 2, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+
+    const result = withCellSet(grid, 3, 0, 0, true);
+
+    expect(result.countX).toBe(4);
+    expect(result.origin).toEqual({ x: 0, y: 0, z: 0 });
+    expect(isOccupied(result, 0, 0, 0)).toBe(true); // the original cell, unmoved
+    expect(isOccupied(result, 3, 0, 0)).toBe(true); // the newly added one
+  });
+
+  it('grows the grid in the negative direction, shifting the origin and every existing cell', () => {
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 2, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+
+    const result = withCellSet(grid, -2, 0, 0, true);
+
+    expect(result.countX).toBe(3);
+    expect(result.origin).toEqual({ x: -4, y: 0, z: 0 }); // shifted by 2 cells * cellSize(2)
+    expect(isOccupied(result, 0, 0, 0)).toBe(true); // the new cell, now at shifted index 0
+    expect(isOccupied(result, 2, 0, 0)).toBe(true); // the original cell, shifted to index 2
+    expect(isOccupied(result, 1, 0, 0)).toBe(false);
+  });
+
+  it('clears an occupied cell without touching the others', () => {
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b11]) };
+
+    const result = withCellSet(grid, 0, 0, 0, false);
+
+    expect(isOccupied(result, 0, 0, 0)).toBe(false);
+    expect(isOccupied(result, 1, 0, 0)).toBe(true);
+  });
+
+  it('does not mutate the original grid', () => {
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+
+    withCellSet(grid, 5, 0, 0, true);
+
+    expect(grid.countX).toBe(1);
+    expect(Array.from(grid.occupancy)).toEqual([0b1]);
   });
 });
 

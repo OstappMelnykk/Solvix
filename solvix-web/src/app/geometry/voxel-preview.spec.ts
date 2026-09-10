@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   buildVoxelPreview,
   disposeVoxelPreview,
+  getSelectedVoxelCell,
   getVoxelCellByInstanceId,
   setVoxelEdgeOpacity,
   setVoxelHighlight,
@@ -283,6 +284,32 @@ describe('setVoxelHighlight', () => {
     const highlightsAfter = preview.children.filter(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight');
     expect(highlightsAfter.length).toBe(highlightsBefore.length);
     expect(highlightOf(preview).position.x).toBeCloseTo(4, 5);
+  });
+});
+
+describe('getSelectedVoxelCell', () => {
+  it('returns null when nothing has been selected yet', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+
+    expect(getSelectedVoxelCell(preview)).toBeNull();
+  });
+
+  it('returns the cell that setVoxelHighlight last selected', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 0.5, 1);
+    const cell = getVoxelCellByInstanceId(preview, 0)!;
+
+    setVoxelHighlight(preview, cell);
+
+    expect(getSelectedVoxelCell(preview)).toBe(cell);
+  });
+
+  it('returns null again after the selection is cleared', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+    setVoxelHighlight(preview, getVoxelCellByInstanceId(preview, 0));
+
+    setVoxelHighlight(preview, null);
+
+    expect(getSelectedVoxelCell(preview)).toBeNull();
   });
 });
 

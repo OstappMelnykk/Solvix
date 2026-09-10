@@ -37,6 +37,29 @@ export const FACE_DIRECTIONS: readonly [number, number, number][] = [
   [0, 0, -1], [0, 0, 1] // -Z, +Z
 ];
 
+// Which of the 6 FACE_DIRECTIONS a raycast hit's face normal best matches -
+// the "click a face to add a voxel there" build feature
+// (VoxelizationService.addVoxelOnFace) needs this to turn a hit's
+// `Intersection.face.normal` into a concrete neighbor direction. Voxels are
+// always axis-aligned unit cubes built directly in world space with no
+// rotation anywhere in the scene graph (voxel-preview.ts's own doc
+// comment), so a genuine hit's normal should already point almost exactly
+// along one of these 6 directions - picking the best DOT PRODUCT match
+// (rather than requiring an exact component match) is what keeps this
+// robust to the normal's own small floating-point drift.
+export function faceIndexForNormal(normal: THREE.Vector3): number {
+  let bestIndex = 0;
+  let bestDot = -Infinity;
+  FACE_DIRECTIONS.forEach(([dx, dy, dz], index) => {
+    const dot = normal.x * dx + normal.y * dy + normal.z * dz;
+    if (dot > bestDot) {
+      bestDot = dot;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
 // The 8 corners of cell (ix,iy,iz), as offsets (0 or 1 per axis) onto the
 // GRID'S OWN CORNER LATTICE - a corner at lattice point (ix+dx,iy+dy,iz+dz)
 // is shared by every occupied cell touching that point (up to 8 of them),

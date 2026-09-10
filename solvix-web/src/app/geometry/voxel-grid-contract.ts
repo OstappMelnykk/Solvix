@@ -86,3 +86,56 @@ export function voxelCenter(grid: VoxelGridDto, ix: number, iy: number, iz: numb
     z: grid.origin.z + grid.cellSize * (iz + 0.5)
   };
 }
+
+// Sets (or clears) ONE cell, growing the grid's own bounds first if
+// (ix,iy,iz) falls outside them - the manual "click a face to add a voxel"
+// build feature (VoxelizationService.addVoxelOnFace) needs this since a
+// user can build past whatever the server originally covered, e.g. to patch
+// a real coverage gap by hand or just extend past the imported mesh's own
+// bounding box. This is plain data - returns a NEW grid rather than
+// mutating `grid` in place - with every previously occupied cell preserved
+// at its (possibly shifted) position; cellSize is never touched, only
+// origin/counts/occupancy.
+export function withCellSet(grid: VoxelGridDto, ix: number, iy: number, iz: number, occupied: boolean): VoxelGridDto {
+  const minX = Math.min(0, ix);
+  const minY = Math.min(0, iy);
+  const minZ = Math.min(0, iz);
+  const countX = Math.max(grid.countX - 1, ix) - minX + 1;
+  const countY = Math.max(grid.countY - 1, iy) - minY + 1;
+  const countZ = Math.max(grid.countZ - 1, iz) - minZ + 1;
+  // How far every existing (and the target) cell's index shifts along each
+  // axis - 0 unless the grid actually had to grow in the NEGATIVE direction
+  // on that axis (a positive-direction grow needs no shift at all, since
+  // index 0 already stays index 0).
+  const shiftX = -minX;
+  const shiftY = -minY;
+  const shiftZ = -minZ;
+
+  const origin = {
+    x: grid.origin.x - shiftX * grid.cellSize,
+    y: grid.origin.y - shiftY * grid.cellSize,
+    z: grid.origin.z - shiftZ * grid.cellSize
+  };
+
+  const occupancy = new Uint8Array(Math.max(1, Math.ceil((countX * countY * countZ) / 8)));
+  for (let x = 0; x < grid.countX; x++) {
+    for (let y = 0; y < grid.countY; y++) {
+      for (let z = 0; z < grid.countZ; z++) {
+        if (!isOccupied(grid, x, y, z)) {
+          continue;
+        }
+        const index = x + shiftX + (y + shiftY) * countX + (z + shiftZ) * countX * countY;
+        occupancy[index >> 3] |= 1 << (index & 7);
+      }
+    }
+  }
+
+  const targetIndex = ix + shiftX + (iy + shiftY) * countX + (iz + shiftZ) * countX * countY;
+  if (occupied) {
+    occupancy[targetIndex >> 3] |= 1 << (targetIndex & 7);
+  } else {
+    occupancy[targetIndex >> 3] &= ~(1 << (targetIndex & 7));
+  }
+
+  return { origin, cellSize: grid.cellSize, countX, countY, countZ, occupancy };
+}

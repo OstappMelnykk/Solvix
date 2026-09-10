@@ -1,4 +1,5 @@
-import { buildVoxelCells, collectUniqueNodes, VoxelCell } from './voxel-cell';
+import * as THREE from 'three';
+import { FACE_DIRECTIONS, buildVoxelCells, collectUniqueNodes, faceIndexForNormal, VoxelCell } from './voxel-cell';
 import { VoxelGridDto } from './voxel-grid-contract';
 
 // countX x countY x countZ grid, occupied cells given as [ix,iy,iz] tuples.
@@ -137,6 +138,20 @@ describe('buildVoxelCells', () => {
     const [cell] = buildVoxelCells(grid);
 
     expect(cell.batchInstanceId).toBeNull();
+  });
+});
+
+describe('faceIndexForNormal', () => {
+  it('picks the exact matching axis for each of the 6 FACE_DIRECTIONS', () => {
+    FACE_DIRECTIONS.forEach(([dx, dy, dz], index) => {
+      expect(faceIndexForNormal(new THREE.Vector3(dx, dy, dz))).toBe(index);
+    });
+  });
+
+  it('picks the closest axis for a normal that is not perfectly axis-aligned', () => {
+    // Mostly +X, with a small amount of drift on the other axes - a real
+    // raycast hit's normal is never perfectly (1,0,0).
+    expect(faceIndexForNormal(new THREE.Vector3(0.98, 0.1, -0.05))).toBe(1); // +X
   });
 });
 
