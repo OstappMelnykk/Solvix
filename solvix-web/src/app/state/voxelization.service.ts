@@ -191,16 +191,24 @@ export class VoxelizationService {
           return;
         }
         this.statusBySession.set(sessionId, { kind: 'ok', result });
-        // Does NOT dispose the outgoing preview here, even though it's
-        // about to be replaced - see ImportedReferenceRenderService's
-        // refreshScaledReference for why (the same race applies to any
-        // overlay whose geometry/material WorldCanvasComponent's clone
-        // shares by reference). WorldCanvasComponent disposes the old
-        // clone itself, at the moment it actually removes it from the
-        // scene. Only pruneTo's session-close cleanup (in the constructor)
-        // still disposes eagerly, since a closed session's preview may
-        // never be swapped out by any WorldCanvasComponent at all.
+        // DOES dispose the outgoing preview here, unlike the OLD
+        // InstancedMesh-based preview (which left this to
+        // WorldCanvasComponent, since its clone() shared geometry by
+        // reference with the source anyway - disposing either one broke
+        // both). BatchedMesh (see geometry/voxel-preview.ts) can't be
+        // cloned per canvas at all, so voxelPreview has exactly one real
+        // owner now - this service's cache - and exactly one consumer
+        // (Ideal World only, see render-window.component.ts). Whichever
+        // object this service is no longer caching is safe to dispose
+        // immediately: WorldCanvasComponent's updateVoxelPreview runs
+        // synchronously right before every renderer.render() call, so by
+        // the time a frame actually renders, the single consumer has
+        // already swapped to whatever this method set here.
+        const outgoing = this.voxelPreviewBySession.get(sessionId);
         this.voxelPreviewBySession.set(sessionId, buildVoxelPreview(result, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId)));
+        if (outgoing) {
+          disposeVoxelPreview(outgoing);
+        }
       },
       error: (response: HttpErrorResponse) => {
         if (!this.sessionExists(sessionId) || !isCurrentRun()) {

@@ -1,20 +1,22 @@
 import * as THREE from 'three';
-import { VoxelGridDto, isOccupied, voxelCenter } from './voxel-grid-contract';
+import { VoxelGridDto } from './voxel-grid-contract';
+import { buildVoxelCells } from './voxel-cell';
+import { EDGES, buildVoxelHexahedronFillGeometry } from './voxel-hexahedron';
 
-const VOXEL_COLOR = 0x9b59b6;
 const EDGE_COLOR = 0xffffff;
 
-// Instanced fill so a result with tens of thousands of cubes stays cheap to
-// render - one draw call regardless of count, same reasoning as solid-mode
-// imported-reference geometry (ordinary rasterization, not per-cube
-// overhead) - plus one white LineSegments outlining every cube's 12 edges
-// (a single flat position buffer, same technique as geometry/dimension-lines.ts,
-// not per-instance geometry - InstancedMesh doesn't support LineSegments).
-// Iterates the grid+bitmask directly (voxel-grid-contract.ts) rather than a
-// materialized list of centers - one pass, collecting each occupied cell's
-// center as it's found, so isOccupied's bit-test never runs twice per cell
-// (an earlier version counted occupied cells first via countOccupied to
-// size the InstancedMesh, then walked the grid again to fill it).
+// One BatchedMesh draw call for potentially tens of thousands of cubes,
+// but each cube is still its OWN independent geometry (own addGeometry +
+// addInstance call, own VoxelCell - see voxel-cell.ts/voxel-hexahedron.ts),
+// not a shared BoxGeometry stamped out via InstancedMesh - a voxel keeps
+// its own vertices/faces/neighbors as real data (buildVoxelCells), and
+// this function only decides how to DRAW that data efficiently. Each
+// cell's batchInstanceId is recorded so it can later be hidden/replaced
+// individually (BatchedMesh.setVisibleAt/setGeometryAt) without touching
+// any other cube - the seam a future per-voxel subdivision/recolor
+// feature would use. The white edge outline stays a single merged
+// LineSegments (same technique as geometry/dimension-lines.ts) - unlike
+// the fill, there's no per-cube state worth keeping there.
 // Built directly in WORLD space: the grid's origin is already in world
 // coordinates (the mesh sent to Solvix.Api was baked from the DISPLAYED
 // scaled reference's own world transform - see VoxelizationService.run /
@@ -24,81 +26,40 @@ const EDGE_COLOR = 0xffffff;
 // pivot-centered frame instead).
 export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeOpacity: number): THREE.Object3D {
   const group = new THREE.Group();
-  const half = grid.cellSize / 2;
+  const cells = buildVoxelCells(grid);
 
-  const occupiedCenters: { x: number; y: number; z: number }[] = [];
-  for (let ix = 0; ix < grid.countX; ix++) {
-    for (let iy = 0; iy < grid.countY; iy++) {
-      for (let iz = 0; iz < grid.countZ; iz++) {
-        if (isOccupied(grid, ix, iy, iz)) {
-          occupiedCenters.push(voxelCenter(grid, ix, iy, iz));
-        }
-      }
-    }
-  }
+  const VERTICES_PER_VOXEL = 36; // 6 faces x 2 triangles x 3 vertices - see buildVoxelHexahedronFillGeometry
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: fillOpacity, side: THREE.DoubleSide });
+  // maxIndexCount is irrelevant here (buildVoxelHexahedronFillGeometry's
+  // geometries are all non-indexed) - kept at 1 rather than 0 since
+  // BatchedMesh treats 0 as "use the maxVertexCount*2 default".
+  const batched = new THREE.BatchedMesh(Math.max(1, cells.length), Math.max(1, cells.length * VERTICES_PER_VOXEL), 1, material);
+  // See buildVoxelHexahedron's own comment - same transparent-overlap
+  // z-fight fix, now applied to the shared batch instead of a per-cube mesh.
+  batched.renderOrder = 1;
 
-  const geometry = new THREE.BoxGeometry(grid.cellSize, grid.cellSize, grid.cellSize);
-  const material = new THREE.MeshStandardMaterial({ color: VOXEL_COLOR, transparent: true, opacity: fillOpacity, side: THREE.DoubleSide });
-  const fill = new THREE.InstancedMesh(geometry, material, occupiedCenters.length);
-  // The cube fill and the imported reference mesh are both transparent AND
-  // literally overlapping (that's the whole point of conservative
-  // voxelization: cubes touch/enclose the surface). Three.js sorts
-  // transparent objects by camera distance before drawing them, and as the
-  // camera orbits, that sort order between "the mesh" and "the cube fill"
-  // can flip - whichever object draws FIRST writes its depth, and the
-  // other then fails the depth test wherever the two overlap and simply
-  // doesn't draw there (not a blend - it reads as the mesh randomly
-  // vanishing). renderOrder overrides distance-based sorting outright (Three.js
-  // checks it before distance, only falling back to distance when two
-  // objects share the same value) - a fixed, higher renderOrder than the
-  // mesh's default (0) guarantees the mesh always draws first regardless
-  // of camera angle, so its color is already in the framebuffer before the
-  // cubes blend over it. Depth writing itself stays on (unlike an earlier
-  // version of this fix that disabled it) - turning it off let neighboring
-  // cube faces stop occluding each other entirely, so the fill's apparent
-  // color drifted with camera angle depending on how many overlapping
-  // translucent faces happened to be stacked along each pixel's view ray.
-  fill.renderOrder = 1;
-
-  const matrix = new THREE.Matrix4();
   const edgePositions: number[] = [];
-  occupiedCenters.forEach((center, index) => {
-    matrix.makeTranslation(center.x, center.y, center.z);
-    fill.setMatrixAt(index, matrix);
-    addCubeEdges(edgePositions, center, half);
-  });
-  fill.instanceMatrix.needsUpdate = true;
-  group.add(fill);
+  for (const cell of cells) {
+    const fillGeometry = buildVoxelHexahedronFillGeometry(cell);
+    const geometryId = batched.addGeometry(fillGeometry);
+    cell.batchInstanceId = batched.addInstance(geometryId);
+    // BatchedMesh copies attribute data into its own internal buffers at
+    // addGeometry time - this per-cell geometry has served its purpose.
+    fillGeometry.dispose();
+
+    EDGES.forEach(([i, j]) => {
+      const p0 = cell.corners[i];
+      const p1 = cell.corners[j];
+      edgePositions.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+    });
+  }
+  group.add(batched);
 
   const edgeGeometry = new THREE.BufferGeometry();
   edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
   group.add(new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: edgeOpacity })));
 
   return group;
-}
-
-// The 12 edges of one axis-aligned cube centered at `center`, appended as
-// flat [x,y,z, x,y,z, ...] pairs (2 points per edge) onto `positions`.
-function addCubeEdges(positions: number[], center: { x: number; y: number; z: number }, half: number): void {
-  const { x, y, z } = center;
-  const corners: [number, number, number][] = [
-    [x - half, y - half, z - half],
-    [x + half, y - half, z - half],
-    [x + half, y + half, z - half],
-    [x - half, y + half, z - half],
-    [x - half, y - half, z + half],
-    [x + half, y - half, z + half],
-    [x + half, y + half, z + half],
-    [x - half, y + half, z + half]
-  ];
-  const edges: [number, number][] = [
-    [0, 1], [1, 2], [2, 3], [3, 0], // bottom face
-    [4, 5], [5, 6], [6, 7], [7, 4], // top face
-    [0, 4], [1, 5], [2, 6], [3, 7] // verticals
-  ];
-  for (const [a, b] of edges) {
-    positions.push(...corners[a], ...corners[b]);
-  }
 }
 
 // Mutates the fill material's opacity in place on an already-built preview
@@ -110,7 +71,7 @@ function addCubeEdges(positions: number[], center: { x: number; y: number; z: nu
 // versa.
 export function setVoxelPreviewOpacity(object: THREE.Object3D, opacity: number): void {
   object.traverse(child => {
-    if (child instanceof THREE.InstancedMesh) {
+    if (child instanceof THREE.BatchedMesh) {
       (child.material as THREE.MeshStandardMaterial).opacity = opacity;
     }
   });
@@ -126,9 +87,30 @@ export function setVoxelEdgeOpacity(object: THREE.Object3D, opacity: number): vo
   });
 }
 
+// Guards against disposing the same preview twice - BatchedMesh.dispose()
+// is NOT idempotent (it nulls its own internal texture references on the
+// way out, so a second call throws trying to dispose() them again, not
+// just a harmless no-op like a plain BufferGeometry's dispose()). This
+// matters here specifically because voxelPreview is no longer cloned per
+// canvas (see world-canvas.component.ts - BatchedMesh can't support
+// Object3D.clone()), so VoxelizationService's cache entry and whatever's
+// in the scene can end up being the literal same object; a defense-in-depth
+// safety net against any path disposing it more than once, on top of the
+// actual fix (voxelPreview disposal now happens in exactly one place -
+// see VoxelizationService.run/pruneTo - not also in WorldCanvasComponent).
+const disposedPreviews = new WeakSet<THREE.Object3D>();
+
 export function disposeVoxelPreview(object: THREE.Object3D): void {
+  if (disposedPreviews.has(object)) {
+    return;
+  }
+  disposedPreviews.add(object);
   object.traverse(child => {
-    if (child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments) {
+    if (child instanceof THREE.BatchedMesh) {
+      child.dispose(); // frees BatchedMesh's own internal merged geometry/textures
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach(material => material.dispose());
+    } else if (child instanceof THREE.LineSegments) {
       child.geometry.dispose();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach(material => material.dispose());

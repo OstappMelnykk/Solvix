@@ -9,7 +9,6 @@ import { ImportedReferenceRenderService } from '../../../state/imported-referenc
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
-import { disposeVoxelPreview } from '../../../geometry/voxel-preview';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const AXES_LENGTH = 50;
@@ -518,11 +517,20 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.lastVoxelPreview = source;
 
+    // Removes from the scene WITHOUT disposing, unlike dimensionLines/
+    // ruler/importedReference above - see VoxelizationService.run for why
+    // disposal now lives entirely there instead. This matters concretely
+    // for the "Показати кубики" visibility toggle: that's a transition to
+    // `source === null` (render-window.component.ts's getVoxelPreview)
+    // while VoxelizationService's cache still holds this EXACT object
+    // (voxelPreview isn't cloned per canvas - BatchedMesh can't support
+    // Object3D.clone() at all, its constructor requires a maxInstanceCount
+    // with no default) - disposing here on every removal used to destroy
+    // that still-valid, still-cached object the instant it was hidden,
+    // silently breaking it (BatchedMesh.dispose() is one-way) for good the
+    // next time it was shown again.
     if (this.currentVoxelPreview) {
       this.scene.remove(this.currentVoxelPreview);
-      // See updateDimensionLines' comment - disposed here, not by
-      // VoxelizationService, for the same shared-geometry race reasoning.
-      disposeVoxelPreview(this.currentVoxelPreview);
       this.currentVoxelPreview = null;
     }
 
@@ -530,10 +538,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
-    // Already in world space (see voxelPreview's @Input doc comment) -
-    // added at identity, unlike dimensionLines/ruler which need the
-    // reference's position/quaternion copied onto them.
-    this.currentVoxelPreview = source.clone();
+    // Added directly, NOT cloned - already in world space (see
+    // buildVoxelPreview's own doc comment), unlike dimensionLines/ruler
+    // (whose clone() exists specifically to copy the reference's position/
+    // quaternion onto a per-canvas copy).
+    this.currentVoxelPreview = source;
     this.scene.add(this.currentVoxelPreview);
     this.renderer.compile(this.scene, this.camera);
   }

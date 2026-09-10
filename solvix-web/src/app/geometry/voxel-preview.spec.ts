@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { buildVoxelPreview, disposeVoxelPreview, setVoxelEdgeOpacity, setVoxelPreviewOpacity } from './voxel-preview';
 import { VoxelGridDto } from './voxel-grid-contract';
 
-function fillOf(preview: THREE.Object3D): THREE.InstancedMesh {
-  return preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+function fillOf(preview: THREE.Object3D): THREE.BatchedMesh {
+  return preview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
 }
 
 function edgesOf(preview: THREE.Object3D): THREE.LineSegments {
@@ -32,29 +32,27 @@ function singleCellGridAt(center: { x: number; y: number; z: number }, cellSize:
 const EMPTY_GRID: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0]) };
 
 describe('buildVoxelPreview', () => {
-  it('creates one instance per occupied cell, sized to cellSize', () => {
+  it('creates one BatchedMesh instance per occupied cell', () => {
     const grid = gridWithCentersAlongX([0, 2, 4], 2);
 
     const fill = fillOf(buildVoxelPreview(grid, 0.5, 1));
 
-    expect(fill.count).toBe(3);
-    const parameters = (fill.geometry as THREE.BoxGeometry).parameters;
-    expect(parameters.width).toBe(2);
-    expect(parameters.height).toBe(2);
-    expect(parameters.depth).toBe(2);
+    expect(fill.instanceCount).toBe(3);
   });
 
-  it('places each instance at its center via the instance matrix', () => {
-    const grid = singleCellGridAt({ x: 5, y: -3, z: 7 }, 1);
+  it('gives each cell its own geometry, sized and positioned at its world-space center', () => {
+    const fill = fillOf(buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1));
 
-    const fill = fillOf(buildVoxelPreview(grid, 0.5, 1));
-
-    const matrix = new THREE.Matrix4();
-    fill.getMatrixAt(0, matrix);
-    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
-    expect(position.x).toBeCloseTo(5, 5);
-    expect(position.y).toBeCloseTo(-3, 5);
-    expect(position.z).toBeCloseTo(7, 5);
+    const box = new THREE.Box3();
+    fill.getBoundingBoxAt(0, box);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    expect(center.x).toBeCloseTo(5, 5);
+    expect(center.y).toBeCloseTo(-3, 5);
+    expect(center.z).toBeCloseTo(7, 5);
+    expect(size.x).toBeCloseTo(2, 5);
+    expect(size.y).toBeCloseTo(2, 5);
+    expect(size.z).toBeCloseTo(2, 5);
   });
 
   it('sets the fill material opacity from the given value', () => {
@@ -85,7 +83,7 @@ describe('buildVoxelPreview', () => {
 
   it('handles a grid with no occupied cells without throwing', () => {
     expect(() => buildVoxelPreview(EMPTY_GRID, 0.5, 1)).not.toThrow();
-    expect(fillOf(buildVoxelPreview(EMPTY_GRID, 0.5, 1)).count).toBe(0);
+    expect(fillOf(buildVoxelPreview(EMPTY_GRID, 0.5, 1)).instanceCount).toBe(0);
   });
 });
 
@@ -118,18 +116,26 @@ describe('setVoxelEdgeOpacity', () => {
 });
 
 describe('disposeVoxelPreview', () => {
-  it('disposes both the instanced fill and the edge outline', () => {
+  it('is safe to call twice on the same object - BatchedMesh.dispose() itself is not idempotent', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
+
+    disposeVoxelPreview(preview);
+
+    expect(() => disposeVoxelPreview(preview)).not.toThrow();
+  });
+
+  it('disposes both the batched fill and the edge outline', () => {
     const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1);
     const fill = fillOf(preview);
     const edges = edgesOf(preview);
-    const fillGeometryDispose = spyOn(fill.geometry, 'dispose');
+    const fillDispose = spyOn(fill, 'dispose').and.callThrough();
     const fillMaterialDispose = spyOn(fill.material as THREE.Material, 'dispose');
     const edgeGeometryDispose = spyOn(edges.geometry, 'dispose');
     const edgeMaterialDispose = spyOn(edges.material as THREE.Material, 'dispose');
 
     disposeVoxelPreview(preview);
 
-    expect(fillGeometryDispose).toHaveBeenCalled();
+    expect(fillDispose).toHaveBeenCalled();
     expect(fillMaterialDispose).toHaveBeenCalled();
     expect(edgeGeometryDispose).toHaveBeenCalled();
     expect(edgeMaterialDispose).toHaveBeenCalled();

@@ -198,8 +198,8 @@ describe('VoxelizationService', () => {
 
     const preview = voxelization.getVoxelPreview(sessionId);
     expect(preview).not.toBeNull();
-    const fill = preview!.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
-    expect(fill.count).toBe(1);
+    const fill = preview!.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    expect(fill.instanceCount).toBe(1);
   });
 
   it('keeps the last successful preview visible even if a later run fails', () => {
@@ -218,6 +218,30 @@ describe('VoxelizationService', () => {
     expect(voxelization.getVoxelPreview(sessionId)).toBe(firstPreview);
   });
 
+  // Regression: BatchedMesh (the fill's renderer - see voxel-preview.ts)
+  // can't be cloned per canvas, so WorldCanvasComponent now shows this
+  // EXACT cached object rather than a clone of it - which means disposal
+  // must happen in exactly one place, at the moment this service knows
+  // for certain an object is being retired for good (superseded by a
+  // newer run, same as here, or the session closing - see the next test).
+  it('disposes the outgoing preview once a later run succeeds and replaces it', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const firstPreview = voxelization.getVoxelPreview(sessionId)!;
+    const firstFill = firstPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    const disposeSpy = spyOn(firstFill, 'dispose').and.callThrough();
+
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(voxelization.getVoxelPreview(sessionId)).not.toBe(firstPreview);
+  });
+
   it("disposes a closed session's voxel preview and leaves other sessions untouched", () => {
     const first = sessions.sessions()[0].id;
     sessions.createSession();
@@ -232,8 +256,8 @@ describe('VoxelizationService', () => {
     voxelization.run(second);
     httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
     const secondPreview = voxelization.getVoxelPreview(second)!;
-    const secondFill = secondPreview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
-    const geometryDispose = spyOn(secondFill.geometry, 'dispose');
+    const secondFill = secondPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+    const geometryDispose = spyOn(secondFill, 'dispose');
 
     sessions.closeSession(first);
     TestBed.flushEffects();
@@ -297,7 +321,7 @@ describe('VoxelizationService', () => {
 
     const fill = voxelization
       .getVoxelPreview(sessionId)!
-      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+      .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.3, 5);
   });
 
@@ -312,7 +336,7 @@ describe('VoxelizationService', () => {
 
     const fill = voxelization
       .getVoxelPreview(sessionId)!
-      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+      .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
     expect((fill.material as THREE.MeshStandardMaterial).opacity).toBeCloseTo(0.1, 5);
   });
 
