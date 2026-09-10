@@ -171,6 +171,14 @@ export class ImportedReferenceRenderService {
     if (!info || scale === null) {
       this.scaledReferenceBySession.delete(sessionId);
       this.rulerBySession.delete(sessionId);
+      // Still emits, even though there's no new reference to show - a
+      // consumer that cached something computed from the PREVIOUS
+      // reference (VoxelizationService's voxel preview) needs to know
+      // that reference is gone too, or it keeps showing a now-orphaned
+      // stale result forever (getScaledReference returns null here on,
+      // e.g., importing a second, degenerate/zero-extent file over a
+      // valid one - re-running silently no-ops with nothing to clear it).
+      this.referenceChanged.next(sessionId);
       return;
     }
     const clone = info.object.clone();

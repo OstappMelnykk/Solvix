@@ -2,10 +2,12 @@ import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, Simp
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { IDEAL_WORLD_INDEX } from '../../../config/app-settings';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
-import { ImportedReferenceStyle } from '../../../state/imported-reference-display.service';
+import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { VoxelizationService } from '../../../state/voxelization.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
@@ -69,12 +71,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // geometry/ruler-preview.ts) - a separate overlay, independently
   // toggleable (ImportedReferenceDisplayService.rulerVisible).
   @Input() ruler: THREE.Object3D | null = null;
-  // Instanced-cube preview of the last successful voxelization
-  // (VoxelizationService, geometry/voxel-preview.ts) - unlike
-  // importedReference/dimensionLines/ruler, already built in WORLD space
-  // (see buildVoxelPreview's doc comment), so it's added to the scene at
-  // identity rather than needing a position/quaternion copied onto it.
-  @Input() voxelPreview: THREE.Object3D | null = null;
+  // Voxel preview is deliberately NOT an @Input like the overlays above -
+  // see updateVoxelPreview() for why (a disposal race that was a real,
+  // confirmed crash for this specific resource).
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
@@ -115,6 +114,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // `controls` (OrbitControls) below.
   private rotateGizmo!: TransformControls;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  // Read directly (not via @Input) inside updateVoxelPreview() - see there
+  // for why.
+  private readonly voxelization = inject(VoxelizationService);
+  private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
   // listener below for why position can't just be corrected live during the
@@ -522,25 +525,40 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
+  // Reads VoxelizationService/ImportedReferenceDisplayService DIRECTLY
+  // here, every frame - NOT via an @Input like the overlays above.
+  // Regression: an @Input is only refreshed when Angular actually runs
+  // change detection for this component, which is gated on its own
+  // (rAF-coalesced) schedule - a SEPARATE clock from this component's own
+  // `animate()` rAF loop. VoxelizationService disposes a superseded
+  // preview SYNCHRONOUSLY (run()/clearResult()), and BatchedMesh.dispose()
+  // leaves the object in a state that crashes renderer.render() if it's
+  // drawn again (nulls internal texture refs onBeforeRender then
+  // dereferences). If this component's own rAF fired before Angular's CD
+  // caught up, `this.voxelPreview` (the @Input) would still hold the
+  // now-disposed reference, and this method's own "nothing changed" guard
+  // would skip removing it - `renderer.render()` right after would then
+  // throw. Computing the value directly here, in the SAME synchronous
+  // call as the removal/render decision, makes that race impossible: JS
+  // is single-threaded, so whatever VoxelizationService disposed has
+  // already fully happened by the time this next runs, no matter which
+  // rAF queue got there first.
   private updateVoxelPreview(): void {
-    const source = this.voxelPreview;
+    const source =
+      this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.importedReferenceDisplay.getStyle(this.sessionId).voxelPreviewVisible
+        ? this.voxelization.getVoxelPreview(this.sessionId)
+        : null;
     if (this.lastVoxelPreview === source) {
       return;
     }
     this.lastVoxelPreview = source;
 
-    // Removes from the scene WITHOUT disposing, unlike dimensionLines/
-    // ruler/importedReference above - see VoxelizationService.run for why
-    // disposal now lives entirely there instead. This matters concretely
-    // for the "Показати кубики" visibility toggle: that's a transition to
-    // `source === null` (render-window.component.ts's getVoxelPreview)
-    // while VoxelizationService's cache still holds this EXACT object
-    // (voxelPreview isn't cloned per canvas - BatchedMesh can't support
-    // Object3D.clone() at all, its constructor requires a maxInstanceCount
-    // with no default) - disposing here on every removal used to destroy
-    // that still-valid, still-cached object the instant it was hidden,
-    // silently breaking it (BatchedMesh.dispose() is one-way) for good the
-    // next time it was shown again.
+    // Removes from the scene WITHOUT disposing - VoxelizationService owns
+    // disposal entirely (run()/clearResult()/pruneTo), since it's the only
+    // thing that actually knows when an object is retired for good versus
+    // just temporarily not the one to show (e.g. "Показати кубики" toggled
+    // off keeps the object valid in the service's cache; this component
+    // must not destroy it just because it stopped being asked to draw it).
     if (this.currentVoxelPreview) {
       this.scene.remove(this.currentVoxelPreview);
       this.currentVoxelPreview = null;
@@ -553,7 +571,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // Added directly, NOT cloned - already in world space (see
     // buildVoxelPreview's own doc comment), unlike dimensionLines/ruler
     // (whose clone() exists specifically to copy the reference's position/
-    // quaternion onto a per-canvas copy).
+    // quaternion onto a per-canvas copy) - and BatchedMesh (the fill's
+    // renderer) can't support Object3D.clone() at all regardless.
     this.currentVoxelPreview = source;
     this.scene.add(this.currentVoxelPreview);
     this.renderer.compile(this.scene, this.camera);
