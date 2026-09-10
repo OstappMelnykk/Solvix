@@ -8,6 +8,7 @@ import { WorldCameraMemoryService } from '../../../state/world-camera-memory.ser
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { VoxelizationService } from '../../../state/voxelization.service';
+import { getVoxelCellByInstanceId } from '../../../geometry/voxel-preview';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
@@ -17,6 +18,16 @@ const AXES_LENGTH = 50;
 const GRID_SIZE = 50;
 const GRID_DIVISIONS = 50;
 const SETTLE_DURATION_MS = 180;
+// Above this many CSS pixels of movement between pointerdown and pointerup,
+// treat the gesture as an OrbitControls drag, not a click-to-select - the
+// browser's native `click` event has no such threshold (it fires on
+// mouseup at the same DOM target regardless of how far the pointer moved
+// in between), so this is tracked by hand.
+const VOXEL_CLICK_MOVE_THRESHOLD_PX = 4;
+// Both cameras' starting point (initScene) and what resetCamera() below
+// restores - a single shared constant so the two can never drift apart.
+const DEFAULT_ORTHO_HALF_HEIGHT = 5;
+const DEFAULT_ORBIT_TARGET: [number, number, number] = [0, 0, 0];
 
 // One of exactly 3 instances for the whole app - one per World (Ideal/Real/
 // Solver). Its Scene/Camera/Renderer/OrbitControls are NOT recreated per
@@ -104,7 +115,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // recomputed whenever switching INTO orthographic (from the perspective
   // camera's current distance-to-target, so the switch doesn't visibly
   // jump), then only its aspect-dependent left/right get touched on resize.
-  private orthoHalfHeight = 5;
+  private orthoHalfHeight = DEFAULT_ORTHO_HALF_HEIGHT;
   private controls!: OrbitControls;
   // The rotate gizmo (3 draggable ring arcs, one per axis) shown on the
   // imported reference - Ideal-World-only in practice, since importedReference
@@ -158,6 +169,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // and disposed by VoxelizationService, not here.
   private currentVoxelPreview: THREE.Object3D | null = null;
   private lastVoxelPreview: THREE.Object3D | null = null;
+  // Click-to-select a single voxel (see handlePointerDown/Up below) -
+  // Ideal-World-only in practice, since currentVoxelPreview is only ever
+  // non-null there. Reused across clicks (raycaster/pointer are just scratch
+  // objects, no per-click allocation needed) rather than owned by
+  // VoxelizationService - picking is a property of THIS canvas's camera/DOM
+  // element, not of the voxelization result itself.
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointerNdc = new THREE.Vector2();
+  private pointerDownClient: { x: number; y: number } | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private lastSessionId: number | null = null;
   private sceneReady = false;
@@ -166,6 +186,19 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
   private onContextRestored = () => this.checkResize();
+  private onPointerDown = (event: PointerEvent) => {
+    this.pointerDownClient = { x: event.clientX, y: event.clientY };
+  };
+  private onPointerUp = (event: PointerEvent) => this.handleVoxelPointerUp(event);
+  // Right-click is repurposed as the "build" gesture (see
+  // handleVoxelPointerUp) - the browser's own context menu has no purpose
+  // over this 3D view and would otherwise pop up on every build click.
+  private onContextMenu = (event: Event) => event.preventDefault();
+  // Delete/Backspace removes whichever voxel is currently selected - the
+  // other half of the Minecraft-style build feature. Listens on `window`,
+  // not the canvas, since three.js canvases aren't focusable/focused by
+  // default - a canvas-scoped listener would simply never fire.
+  private onKeyDown = (event: KeyboardEvent) => this.handleVoxelDeleteKey(event);
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -174,6 +207,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('contextmenu', this.onContextMenu);
+    window.addEventListener('keydown', this.onKeyDown);
 
     this.animate();
   }
@@ -202,6 +239,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('contextmenu', this.onContextMenu);
+    window.removeEventListener('keydown', this.onKeyDown);
     if (this.currentImportedReference) {
       this.disposeImportedReferenceClone(this.currentImportedReference);
     }
@@ -578,6 +619,96 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
+  // Left-click selects a single voxel (highlighted red); right-click is the
+  // Minecraft-style build gesture - it adds a new voxel directly adjacent
+  // to whichever face was clicked. Both raycast against the current
+  // preview's BatchedMesh; only which service call the hit gets forwarded
+  // to differs. Fires on pointerup, gated by a movement threshold against
+  // the matching pointerdown (onPointerDown) so an OrbitControls
+  // drag-to-orbit gesture (mouse moves a lot between down and up) never
+  // gets misread as a click.
+  private handleVoxelPointerUp(event: PointerEvent): void {
+    const downClient = this.pointerDownClient;
+    this.pointerDownClient = null;
+    if (!downClient) {
+      return;
+    }
+    const movedPx = Math.hypot(event.clientX - downClient.x, event.clientY - downClient.y);
+    if (movedPx > VOXEL_CLICK_MOVE_THRESHOLD_PX) {
+      return;
+    }
+    // 0 = left (select), 2 = right (build) - anything else (e.g. the middle
+    // button, used for panning) is none of this component's business.
+    if (event.button !== 0 && event.button !== 2) {
+      return;
+    }
+    // Voxel selection/build only exists in the Ideal World
+    // (currentVoxelPreview is only ever non-null there), only on the
+    // currently-active canvas tab, never while the rotate gizmo is
+    // mid-drag (its own click already means something else - releasing a
+    // ring, not picking/building a voxel), and never for a session that's
+    // since closed.
+    if (this.worldIndex !== IDEAL_WORLD_INDEX || !this.active || this.sessionId === null || this.rotateGizmo.dragging) {
+      return;
+    }
+
+    const preview = this.currentVoxelPreview;
+    const batchedFill = preview?.children.find((child): child is THREE.BatchedMesh => child instanceof THREE.BatchedMesh);
+    if (!batchedFill) {
+      if (event.button === 0) {
+        this.voxelization.selectVoxelInstance(this.sessionId, null);
+      }
+      return;
+    }
+
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+    const hit = this.raycaster.intersectObject(batchedFill)[0];
+
+    if (event.button === 0) {
+      const instanceId = hit && hit.batchId !== undefined ? hit.batchId : null;
+      this.voxelization.selectVoxelInstance(this.sessionId, instanceId);
+      return;
+    }
+
+    // Right-click (build): missing a hit, its instance, its face, or the
+    // cell that instance resolves to all mean there's nothing to build
+    // onto here - silently do nothing, same as a select-click into empty
+    // space finding nothing to select.
+    if (!hit || hit.batchId === undefined || !hit.face || !preview) {
+      return;
+    }
+    const cell = getVoxelCellByInstanceId(preview, hit.batchId);
+    if (!cell) {
+      return;
+    }
+    this.voxelization.addVoxelOnFace(this.sessionId, cell, hit.face.normal);
+  }
+
+  // The other half of the Minecraft-style build: Delete/Backspace removes
+  // whichever voxel is currently selected (VoxelizationService owns both
+  // the selection and the removal - this just forwards the keypress).
+  private handleVoxelDeleteKey(event: KeyboardEvent): void {
+    if (event.key !== 'Delete' && event.key !== 'Backspace') {
+      return;
+    }
+    if (this.worldIndex !== IDEAL_WORLD_INDEX || !this.active || this.sessionId === null) {
+      return;
+    }
+    // Don't hijack Delete/Backspace while the user is typing somewhere else
+    // in the UI (a settings-panel input, for instance) - this listener is
+    // on `window`, not scoped to the canvas, so it sees every keypress in
+    // the app regardless of what currently has focus.
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      return;
+    }
+    event.preventDefault();
+    this.voxelization.removeSelectedVoxel(this.sessionId);
+  }
+
   // Geometry is shared with the source object (ImportedGeometryService owns
   // and disposes it) - only the material is unique to this clone (created
   // above), so only that gets disposed here.
@@ -609,7 +740,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.controls.target.copy(saved.target);
     } else {
       this.camera.position.set(...DEFAULT_CAMERA_POSITION);
-      this.controls.target.set(0, 0, 0);
+      this.controls.target.set(...DEFAULT_ORBIT_TARGET);
     }
 
     // Flush the camera-angle change through immediately, and drop any
@@ -735,5 +866,38 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.object = camera;
     this.controls.update();
     this.rotateGizmo.camera = camera;
+  }
+
+  // Restores this World's camera to exactly what it was right after
+  // initScene() - position, orbit target, perspective mode, and the
+  // orthographic camera's zoom/frustum - undoing any orbiting, panning,
+  // zooming, or mode switching the user has done since. Also persists that
+  // as this session's saved angle (WorldCameraMemoryService), same as
+  // updateSession does on every session switch - without this, switching
+  // away and back would bring the OLD (pre-reset) angle back.
+  resetCamera(): void {
+    this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    this.orthographicCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    this.orthographicCamera.zoom = 1;
+    this.orthoHalfHeight = DEFAULT_ORTHO_HALF_HEIGHT;
+    this.updateCameraFrustum(this.lastWidth, this.lastHeight);
+    this.controls.target.set(...DEFAULT_ORBIT_TARGET);
+
+    if (this.cameraMode !== 'perspective') {
+      this.setActiveCamera(this.perspectiveCamera, 'perspective');
+    }
+
+    // Same "flush immediately, drop leftover damping momentum" reasoning as
+    // updateSession's own camera-angle restore.
+    this.controls.enableDamping = false;
+    this.controls.update();
+    this.controls.enableDamping = true;
+
+    if (this.sessionId !== null) {
+      this.cameraMemory.set(this.sessionId, this.worldIndex, {
+        position: this.camera.position.clone(),
+        target: this.controls.target.clone()
+      });
+    }
   }
 }

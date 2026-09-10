@@ -7,6 +7,8 @@ import { ImportedGeometryService } from './imported-geometry.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { SessionsService } from './sessions.service';
 import { environment } from '../../environments/environment';
+import { getVoxelCellByInstanceId } from '../geometry/voxel-preview';
+import { VoxelCell } from '../geometry/voxel-cell';
 
 function box(): THREE.Object3D {
   const group = new THREE.Group();
@@ -443,6 +445,159 @@ describe('VoxelizationService', () => {
     const nodesAfter = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
     expect((nodesAfter.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.2, 5);
     expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
+  });
+
+  describe('selectVoxelInstance', () => {
+    function highlightOf(preview: THREE.Object3D): THREE.Mesh {
+      return preview.children.find(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight') as THREE.Mesh;
+    }
+
+    it('does nothing when there is no preview yet', () => {
+      const sessionId = sessions.sessions()[0].id;
+      expect(() => voxelization.selectVoxelInstance(sessionId, 0)).not.toThrow();
+    });
+
+    it('highlights the cell matching a valid instanceId', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      const preview = voxelization.getVoxelPreview(sessionId)!;
+      expect(highlightOf(preview).visible).toBe(false);
+
+      voxelization.selectVoxelInstance(sessionId, 0);
+
+      expect(highlightOf(preview).visible).toBe(true);
+    });
+
+    it('deselects (hides the highlight) when instanceId is null', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      voxelization.selectVoxelInstance(sessionId, 0);
+
+      voxelization.selectVoxelInstance(sessionId, null);
+
+      expect(highlightOf(voxelization.getVoxelPreview(sessionId)!).visible).toBe(false);
+    });
+
+    it('leaves the highlight hidden for an instanceId with no matching cell', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+
+      voxelization.selectVoxelInstance(sessionId, 999);
+
+      expect(highlightOf(voxelization.getVoxelPreview(sessionId)!).visible).toBe(false);
+    });
+  });
+
+  describe('addVoxelOnFace', () => {
+    it('does nothing when there is no result yet', () => {
+      const sessionId = sessions.sessions()[0].id;
+      const fakeCell = { ix: 0, iy: 0, iz: 0 } as VoxelCell;
+
+      expect(() => voxelization.addVoxelOnFace(sessionId, fakeCell, new THREE.Vector3(1, 0, 0))).not.toThrow();
+
+      expect(voxelization.getVoxelPreview(sessionId)).toBeNull();
+    });
+
+    it('adds a cell adjacent to the clicked face, growing the grid if needed', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      const preview = voxelization.getVoxelPreview(sessionId)!;
+      const cell = getVoxelCellByInstanceId(preview, 0)!;
+
+      voxelization.addVoxelOnFace(sessionId, cell, new THREE.Vector3(1, 0, 0));
+
+      const status = voxelization.getStatus(sessionId);
+      expect(status.kind).toBe('ok');
+      expect(status.kind === 'ok' && status.result.countX).toBe(2);
+      const newFill = voxelization
+        .getVoxelPreview(sessionId)!
+        .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      expect(newFill.instanceCount).toBe(2);
+    });
+
+    it('disposes the outgoing preview when replacing it with the newly-built one', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      const firstPreview = voxelization.getVoxelPreview(sessionId)!;
+      const firstFill = firstPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      const disposeSpy = spyOn(firstFill, 'dispose').and.callThrough();
+      const cell = getVoxelCellByInstanceId(firstPreview, 0)!;
+
+      voxelization.addVoxelOnFace(sessionId, cell, new THREE.Vector3(1, 0, 0));
+
+      expect(disposeSpy).toHaveBeenCalled();
+      expect(voxelization.getVoxelPreview(sessionId)).not.toBe(firstPreview);
+    });
+  });
+
+  describe('removeSelectedVoxel', () => {
+    it('does nothing when there is no result yet', () => {
+      const sessionId = sessions.sessions()[0].id;
+      expect(() => voxelization.removeSelectedVoxel(sessionId)).not.toThrow();
+    });
+
+    it('does nothing when there is a result but no selection', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      const preview = voxelization.getVoxelPreview(sessionId);
+
+      voxelization.removeSelectedVoxel(sessionId);
+
+      expect(voxelization.getVoxelPreview(sessionId)).toBe(preview); // untouched, no rebuild happened
+    });
+
+    it('removes the currently selected cell', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      voxelization.selectVoxelInstance(sessionId, 0);
+
+      voxelization.removeSelectedVoxel(sessionId);
+
+      const status = voxelization.getStatus(sessionId);
+      expect(status.kind).toBe('ok');
+      const newFill = voxelization
+        .getVoxelPreview(sessionId)!
+        .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      expect(newFill.instanceCount).toBe(0);
+    });
+
+    it('disposes the outgoing preview when replacing it', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      voxelization.selectVoxelInstance(sessionId, 0);
+      const firstPreview = voxelization.getVoxelPreview(sessionId)!;
+      const firstFill = firstPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      const disposeSpy = spyOn(firstFill, 'dispose').and.callThrough();
+
+      voxelization.removeSelectedVoxel(sessionId);
+
+      expect(disposeSpy).toHaveBeenCalled();
+      expect(voxelization.getVoxelPreview(sessionId)).not.toBe(firstPreview);
+    });
   });
 
   it("discards a superseded run's response instead of letting it clobber a newer result", () => {

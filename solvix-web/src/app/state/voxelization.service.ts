@@ -5,12 +5,16 @@ import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
-import { VoxelGridDto } from '../geometry/voxel-grid-contract';
+import { VoxelGridDto, withCellSet } from '../geometry/voxel-grid-contract';
+import { FACE_DIRECTIONS, VoxelCell, faceIndexForNormal } from '../geometry/voxel-cell';
 import { toMeshBinary } from '../geometry/mesh-contract';
 import {
   buildVoxelPreview,
   disposeVoxelPreview,
+  getSelectedVoxelCell,
+  getVoxelCellByInstanceId,
   setVoxelEdgeOpacity,
+  setVoxelHighlight,
   setVoxelNodeOpacity,
   setVoxelNodeSize,
   setVoxelPreviewOpacity
@@ -176,6 +180,84 @@ export class VoxelizationService {
     }
   }
 
+  // Click-to-select a single voxel: `instanceId` is whatever a raycast
+  // against the preview's BatchedMesh reported (Intersection.batchId - see
+  // WorldCanvasComponent's click handler), or null for "clicked empty
+  // space, deselect". No separate "selected cell" state is kept here - the
+  // preview's own highlight overlay (setVoxelHighlight) IS the selection
+  // state, so it resets for free whenever the preview itself is rebuilt or
+  // cleared (a fresh run, or the reference geometry changing under it).
+  selectVoxelInstance(sessionId: number, instanceId: number | null): void {
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    if (!preview) {
+      return;
+    }
+    const cell = instanceId === null ? null : getVoxelCellByInstanceId(preview, instanceId);
+    setVoxelHighlight(preview, cell);
+  }
+
+  // Minecraft-style manual build: adds one new cell directly adjacent to
+  // `cell`, through whichever face `faceNormal` (straight off a raycast
+  // hit - see WorldCanvasComponent's right-click handler) points through.
+  // Grows the grid's own bounds first if that lands outside them
+  // (voxel-grid-contract.ts's withCellSet) - lets a user patch a real
+  // coverage gap (e.g. from a non-watertight import) by hand, or just
+  // extend past what the server originally covered. A no-op without a
+  // successful result to build onto - otherwise defers to applyEditedGrid
+  // for actually rebuilding/re-caching the preview.
+  addVoxelOnFace(sessionId: number, cell: VoxelCell, faceNormal: THREE.Vector3): void {
+    const status = this.statusBySession.get(sessionId);
+    if (!status || status.kind !== 'ok') {
+      return;
+    }
+    const [dx, dy, dz] = FACE_DIRECTIONS[faceIndexForNormal(faceNormal)];
+    this.applyEditedGrid(sessionId, withCellSet(status.result, cell.ix + dx, cell.iy + dy, cell.iz + dz, true));
+  }
+
+  // The other half of the Minecraft-style manual build: removes whichever
+  // cell is currently selected (getSelectedVoxelCell - the same selection
+  // selectVoxelInstance sets, kept on the preview itself) - see
+  // WorldCanvasComponent's Delete/Backspace key handler. A no-op without a
+  // successful result, or without anything currently selected.
+  removeSelectedVoxel(sessionId: number): void {
+    const status = this.statusBySession.get(sessionId);
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    if (!status || status.kind !== 'ok' || !preview) {
+      return;
+    }
+    const cell = getSelectedVoxelCell(preview);
+    if (!cell) {
+      return;
+    }
+    this.applyEditedGrid(sessionId, withCellSet(status.result, cell.ix, cell.iy, cell.iz, false));
+  }
+
+  // Shared by run()'s success handler, addVoxelOnFace, and
+  // removeSelectedVoxel: stores `grid` as the session's new 'ok' result and
+  // rebuilds/re-caches its preview from it. DOES dispose the outgoing
+  // preview here, unlike the OLD InstancedMesh-based preview (which left
+  // this to WorldCanvasComponent, since its clone() shared geometry by
+  // reference with the source anyway - disposing either one broke both).
+  // BatchedMesh (see geometry/voxel-preview.ts) can't be cloned per canvas
+  // at all, so voxelPreview has exactly one real owner now - this
+  // service's cache. Safe to dispose immediately, synchronously, right
+  // here: WorldCanvasComponent reads getVoxelPreview() DIRECTLY every
+  // frame (not through an @Input gated on Angular change detection - see
+  // its updateVoxelPreview for the disposal-race that pattern used to
+  // cause), so whatever this call disposes has already fully happened, by
+  // construction, before that component's next read of this service.
+  private applyEditedGrid(sessionId: number, grid: VoxelGridDto): void {
+    this.statusBySession.set(sessionId, { kind: 'ok', result: grid });
+    const outgoing = this.voxelPreviewBySession.get(sessionId);
+    this.voxelPreviewBySession.set(
+      sessionId,
+      buildVoxelPreview(grid, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId), this.getNodeSize(sessionId), this.getNodeOpacity(sessionId))
+    );
+    if (outgoing) {
+      disposeVoxelPreview(outgoing);
+    }
+  }
+
   // Drops a session's result the moment its geometry changes underneath it
   // (see the referenceChanged$ subscription above) - back to idle, no
   // preview, so the old cubes never linger next to (or inside) geometry
@@ -222,28 +304,7 @@ export class VoxelizationService {
         if (!this.sessionExists(sessionId) || !isCurrentRun()) {
           return;
         }
-        this.statusBySession.set(sessionId, { kind: 'ok', result });
-        // DOES dispose the outgoing preview here, unlike the OLD
-        // InstancedMesh-based preview (which left this to
-        // WorldCanvasComponent, since its clone() shared geometry by
-        // reference with the source anyway - disposing either one broke
-        // both). BatchedMesh (see geometry/voxel-preview.ts) can't be
-        // cloned per canvas at all, so voxelPreview has exactly one real
-        // owner now - this service's cache. Safe to dispose immediately,
-        // synchronously, right here: WorldCanvasComponent reads
-        // getVoxelPreview() DIRECTLY every frame (not through an @Input
-        // gated on Angular change detection - see its updateVoxelPreview
-        // for the disposal-race that pattern used to cause), so whatever
-        // this call disposes has already fully happened, by construction,
-        // before that component's next read of this service.
-        const outgoing = this.voxelPreviewBySession.get(sessionId);
-        this.voxelPreviewBySession.set(
-          sessionId,
-          buildVoxelPreview(result, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId), this.getNodeSize(sessionId), this.getNodeOpacity(sessionId))
-        );
-        if (outgoing) {
-          disposeVoxelPreview(outgoing);
-        }
+        this.applyEditedGrid(sessionId, result);
       },
       error: (response: HttpErrorResponse) => {
         if (!this.sessionExists(sessionId) || !isCurrentRun()) {

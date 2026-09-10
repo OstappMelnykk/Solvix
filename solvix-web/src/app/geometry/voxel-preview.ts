@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { VoxelGridDto } from './voxel-grid-contract';
-import { buildVoxelCells, collectUniqueNodes } from './voxel-cell';
+import { VoxelCell, buildVoxelCells, collectUniqueNodes } from './voxel-cell';
 import { EDGES, buildVoxelHexahedronFillGeometry } from './voxel-hexahedron';
 import { disposeObject3D } from './dispose-object3d';
 
@@ -18,6 +18,35 @@ const NODE_COLOR = 0xffaa00;
 // rather than an exactly-zero-radius sphere.
 const NODE_RADIUS_MAX_FACTOR = 0.12;
 const MIN_NODE_RADIUS = 0.001;
+
+// Click-to-select highlight (setVoxelHighlight) - a single reusable overlay
+// mesh per preview, repositioned/rescaled onto whichever cell is currently
+// selected rather than rebuilt per click. Found later by `.name`, not by
+// `instanceof THREE.Mesh` alone - BatchedMesh (the fill) IS a THREE.Mesh
+// subclass, so type-checking alone can't tell the two apart.
+const VOXEL_HIGHLIGHT_NAME = 'voxel-highlight';
+const HIGHLIGHT_COLOR = 0xff0000;
+const HIGHLIGHT_OPACITY = 0.55;
+// Slightly larger than the cube itself so the red overlay's faces don't
+// z-fight the fill's own faces sitting at the exact same position.
+const HIGHLIGHT_OVERSCALE = 1.03;
+
+// Per-cell lookup for click-to-select, keyed by the preview object's own
+// identity so it needs no explicit disposal - it's freed the moment the
+// preview itself is garbage-collected, same idiom as `disposedPreviews`
+// below. Kept OUT of the preview's return type (still plain THREE.Object3D)
+// specifically so this stays purely additive: every existing caller/test
+// that builds, mutates, or disposes a preview keeps working unchanged.
+const cellByInstanceIdByPreview = new WeakMap<THREE.Object3D, ReadonlyMap<number, VoxelCell>>();
+
+// The cell a raycast hit resolves to, given the BatchedMesh instanceId
+// (`Intersection.batchId`, identical to VoxelCell.batchInstanceId - see
+// buildVoxelPreview) three.js's own raycast() reports. Null for a preview
+// that was never registered (shouldn't happen - every buildVoxelPreview
+// call registers one) or an instanceId with no matching cell.
+export function getVoxelCellByInstanceId(preview: THREE.Object3D, instanceId: number): VoxelCell | null {
+  return cellByInstanceIdByPreview.get(preview)?.get(instanceId) ?? null;
+}
 
 // One BatchedMesh draw call for potentially tens of thousands of cubes,
 // but each cube is still its OWN independent geometry (own addGeometry +
@@ -81,11 +110,13 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
   // here matters more than the CPU-side skip.
   batched.perObjectFrustumCulled = false;
 
+  const cellByInstanceId = new Map<number, VoxelCell>();
   const edgePositions: number[] = [];
   for (const cell of cells) {
     const fillGeometry = buildVoxelHexahedronFillGeometry(cell);
     const geometryId = batched.addGeometry(fillGeometry);
     cell.batchInstanceId = batched.addInstance(geometryId);
+    cellByInstanceId.set(cell.batchInstanceId, cell);
     // BatchedMesh copies attribute data into its own internal buffers at
     // addGeometry time - this per-cell geometry has served its purpose.
     fillGeometry.dispose();
@@ -97,6 +128,7 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
     });
   }
   group.add(batched);
+  cellByInstanceIdByPreview.set(group, cellByInstanceId);
 
   const edgeGeometry = new THREE.BufferGeometry();
   edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
@@ -123,7 +155,62 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
   nodeMesh.renderOrder = 2; // draw after the fill (renderOrder 1) so a node sitting on a face never z-fights it away
   group.add(nodeMesh);
 
+  // One reusable overlay, hidden until setVoxelHighlight actually selects a
+  // cell - see that function. A unit box: setVoxelHighlight scales it to
+  // whichever cell's size it's currently standing in for, rather than this
+  // rebuilding geometry per click.
+  const highlightMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({ color: HIGHLIGHT_COLOR, transparent: true, opacity: HIGHLIGHT_OPACITY, depthWrite: false })
+  );
+  highlightMesh.name = VOXEL_HIGHLIGHT_NAME;
+  highlightMesh.visible = false;
+  highlightMesh.renderOrder = 3; // after the fill(1) and nodes(2), so the highlight is never hidden behind either
+  group.add(highlightMesh);
+
   return group;
+}
+
+// Moves the single reusable highlight overlay onto `cell` and shows it, or
+// hides it when `cell` is null (clicked empty space, or nothing found for
+// the raycast's instanceId - see VoxelizationService.selectVoxelInstance).
+// Cheap regardless of how many cells exist: repositions/rescales one mesh,
+// never rebuilds geometry.
+export function setVoxelHighlight(preview: THREE.Object3D, cell: VoxelCell | null): void {
+  const highlight = preview.children.find(
+    (child): child is THREE.Mesh => child instanceof THREE.Mesh && child.name === VOXEL_HIGHLIGHT_NAME
+  );
+  if (!highlight) {
+    return;
+  }
+  if (!cell || cell.batchInstanceId === null) {
+    highlight.visible = false;
+    selectedInstanceIdByPreview.delete(preview);
+    return;
+  }
+  const box = new THREE.Box3().setFromPoints([...cell.corners]);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).multiplyScalar(HIGHLIGHT_OVERSCALE);
+  highlight.position.copy(center);
+  highlight.scale.copy(size);
+  highlight.visible = true;
+  selectedInstanceIdByPreview.set(preview, cell.batchInstanceId);
+}
+
+// Which cell setVoxelHighlight last selected on this preview, if any - the
+// "press Delete to remove the selected voxel" feature
+// (VoxelizationService.removeSelectedVoxel) needs to know this without a
+// separate, easy-to-desync "current selection" store of its own. Keyed by
+// the preview object's own identity (same idiom as
+// cellByInstanceIdByPreview above) so a rebuilt/replaced preview starts
+// with no selection automatically - exactly matching the highlight mesh's
+// own visible=false default on a fresh build, rather than needing to be
+// cleared by hand every place a preview gets replaced.
+const selectedInstanceIdByPreview = new WeakMap<THREE.Object3D, number>();
+
+export function getSelectedVoxelCell(preview: THREE.Object3D): VoxelCell | null {
+  const instanceId = selectedInstanceIdByPreview.get(preview);
+  return instanceId === undefined ? null : getVoxelCellByInstanceId(preview, instanceId);
 }
 
 // Mutates the fill material's opacity in place on an already-built preview

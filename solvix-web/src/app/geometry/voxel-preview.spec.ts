@@ -2,12 +2,19 @@ import * as THREE from 'three';
 import {
   buildVoxelPreview,
   disposeVoxelPreview,
+  getSelectedVoxelCell,
+  getVoxelCellByInstanceId,
   setVoxelEdgeOpacity,
+  setVoxelHighlight,
   setVoxelNodeOpacity,
   setVoxelNodeSize,
   setVoxelPreviewOpacity
 } from './voxel-preview';
 import { VoxelGridDto } from './voxel-grid-contract';
+
+function highlightOf(preview: THREE.Object3D): THREE.Mesh {
+  return preview.children.find(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight') as THREE.Mesh;
+}
 
 function fillOf(preview: THREE.Object3D): THREE.BatchedMesh {
   return preview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
@@ -211,6 +218,98 @@ describe('setVoxelNodeSize', () => {
     setVoxelNodeSize(preview, 1, 1);
 
     expect(disposeSpy).toHaveBeenCalled();
+  });
+});
+
+describe('getVoxelCellByInstanceId', () => {
+  it('resolves a valid instanceId to the cell at that grid position', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 0.5, 1);
+
+    const cell = getVoxelCellByInstanceId(preview, 0);
+
+    expect(cell).not.toBeNull();
+    expect(cell!.ix).toBe(0);
+    expect(cell!.iy).toBe(0);
+    expect(cell!.iz).toBe(0);
+  });
+
+  it('returns null for an instanceId with no matching cell', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+
+    expect(getVoxelCellByInstanceId(preview, 999)).toBeNull();
+  });
+
+  it('returns null for a preview that was never built by buildVoxelPreview', () => {
+    expect(getVoxelCellByInstanceId(new THREE.Group(), 0)).toBeNull();
+  });
+});
+
+describe('setVoxelHighlight', () => {
+  it('adds a hidden highlight overlay by default', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+
+    expect(highlightOf(preview).visible).toBe(false);
+  });
+
+  it('shows and centers the overlay on the given cell', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 0.5, 1);
+    const cell = getVoxelCellByInstanceId(preview, 0)!;
+
+    setVoxelHighlight(preview, cell);
+
+    const highlight = highlightOf(preview);
+    expect(highlight.visible).toBe(true);
+    expect(highlight.position.x).toBeCloseTo(5, 5);
+    expect(highlight.position.y).toBeCloseTo(-3, 5);
+    expect(highlight.position.z).toBeCloseTo(7, 5);
+  });
+
+  it('hides the overlay again when passed null', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+    setVoxelHighlight(preview, getVoxelCellByInstanceId(preview, 0));
+
+    setVoxelHighlight(preview, null);
+
+    expect(highlightOf(preview).visible).toBe(false);
+  });
+
+  it('moving the selection to a different cell repositions the same overlay mesh, without adding another', () => {
+    const grid = gridWithCentersAlongX([0, 2, 4], 2);
+    const preview = buildVoxelPreview(grid, 0.5, 1, 0.5, 1);
+    const highlightsBefore = preview.children.filter(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight');
+
+    setVoxelHighlight(preview, getVoxelCellByInstanceId(preview, 0));
+    setVoxelHighlight(preview, getVoxelCellByInstanceId(preview, 2));
+
+    const highlightsAfter = preview.children.filter(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight');
+    expect(highlightsAfter.length).toBe(highlightsBefore.length);
+    expect(highlightOf(preview).position.x).toBeCloseTo(4, 5);
+  });
+});
+
+describe('getSelectedVoxelCell', () => {
+  it('returns null when nothing has been selected yet', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+
+    expect(getSelectedVoxelCell(preview)).toBeNull();
+  });
+
+  it('returns the cell that setVoxelHighlight last selected', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 5, y: -3, z: 7 }, 2), 0.5, 1, 0.5, 1);
+    const cell = getVoxelCellByInstanceId(preview, 0)!;
+
+    setVoxelHighlight(preview, cell);
+
+    expect(getSelectedVoxelCell(preview)).toBe(cell);
+  });
+
+  it('returns null again after the selection is cleared', () => {
+    const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 1), 0.5, 1, 0.5, 1);
+    setVoxelHighlight(preview, getVoxelCellByInstanceId(preview, 0));
+
+    setVoxelHighlight(preview, null);
+
+    expect(getSelectedVoxelCell(preview)).toBeNull();
   });
 });
 
