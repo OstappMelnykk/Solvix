@@ -388,18 +388,57 @@ internal sealed class VoxelizationService
     private static bool IsCubeIncluded(
         int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
+        List<Vector3>? boundaryExactProbes = null;
         foreach (var triangle in grid.TrianglesNear(ix, iy, iz))
         {
-            if (TriangleIntersectsBox(triangle, center, half, out var isBoundaryExactOnly) && !isBoundaryExactOnly)
+            if (!TriangleIntersectsBox(triangle, center, half, out var isBoundaryExactOnly))
+            {
+                continue;
+            }
+            if (!isBoundaryExactOnly)
             {
                 return true; // a genuine, non-degenerate touch - trust it immediately
             }
+            // Boundary-exact (see TriangleIntersectsBox) - not trustworthy on
+            // its own, but keep a probe point near THIS triangle's actual
+            // contact (not just the cube's center) for the ray-parity
+            // fallback below: a small/thin feature can graze only a corner
+            // of a cell without its solid volume ever reaching the cube's
+            // geometric center, and testing only the center there would
+            // wrongly drop a cell the surface genuinely touches - reported
+            // as small real parts of the mesh going uncovered.
+            boundaryExactProbes ??= [];
+            var centroid = (triangle.A + triangle.B + triangle.C) / 3f;
+            var clamped = Vector3.Clamp(centroid, center - new Vector3(half), center + new Vector3(half));
+            var towardCenter = center - clamped;
+            var nudge = towardCenter.LengthSquared() > 1e-12f ? Vector3.Normalize(towardCenter) : Vector3.Zero;
+            boundaryExactProbes.Add(clamped + nudge * (half * 0.1f));
         }
+
         // No triangle touches the cube at all, or every touch found was a
-        // boundary-exact coincidence (see TriangleIntersectsBox) - neither
-        // is trustworthy evidence of solid volume on its own, so the
-        // ray-parity test (independent of face winding, unlike a
-        // normal-direction tiebreak would be) makes the actual call.
-        return IsPointInsideViaGrid(center, boxMin, cellSize, dims, grid);
+        // boundary-exact coincidence - neither is trustworthy evidence of
+        // solid volume on its own, so the ray-parity test (independent of
+        // face winding, unlike a normal-direction tiebreak would be) makes
+        // the actual call. Checked at the cube's center AND, when present,
+        // near each boundary-exact triangle's own contact point - erring
+        // toward inclusion here is the safe direction (conservative
+        // voxelization's guarantee is that the cube union covers the body;
+        // an extra cube is far cheaper than a missing sliver of it).
+        if (IsPointInsideViaGrid(center, boxMin, cellSize, dims, grid))
+        {
+            return true;
+        }
+        if (boundaryExactProbes is null)
+        {
+            return false;
+        }
+        foreach (var probe in boundaryExactProbes)
+        {
+            if (IsPointInsideViaGrid(probe, boxMin, cellSize, dims, grid))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
