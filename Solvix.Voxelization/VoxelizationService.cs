@@ -105,14 +105,24 @@ internal sealed class VoxelizationService
         // this cell, leaving a sliver of the body uncovered - conservative
         // voxelization's whole guarantee (union of cubes >= body volume)
         // depends on visiting every cell the grid dimensions say exist.
-        var occupancy = new byte[(estimatedCells + 7) / 8];
-        for (var ix = 0; ix < countX; ix++)
+        //
+        // Parallelized over X-slices: IsCubeIncluded is a pure function of
+        // its parameters (TriangleSpatialGrid is fully built and read-only
+        // by this point - see its own class comment), so different slices
+        // have no shared mutable state EXCEPT the result buffer. That's why
+        // this writes into a plain `bool[]` (one full byte per cell, so two
+        // threads writing adjacent cells never touch the same byte) instead
+        // of directly setting bits in the final packed `occupancy` array -
+        // `occupancy[i/8] |= ...` is a non-atomic read-modify-write, and two
+        // cells whose indices share a byte (any two of the 8
+        // consecutive-in-X cells packed together) being decided by
+        // different threads at the same time would race and silently drop
+        // one thread's bit. The bool[] -> packed-byte[] pass below is the
+        // single-threaded step that does the bit-packing safely.
+        var occupied = new bool[estimatedCells];
+        var parallelOptions = new ParallelOptions { CancellationToken = cancellationToken };
+        Parallel.For(0, countX, parallelOptions, ix =>
         {
-            // Checked once per X-slice, not per cell - cheap enough not to
-            // matter even at MaxCells, but still catches a cancelled
-            // request (client disconnected, see MeshesController) well
-            // before a large grid finishes computing for nobody.
-            cancellationToken.ThrowIfCancellationRequested();
             var x = boxMin.X + half + ix * cellSize;
             for (var iy = 0; iy < countY; iy++)
             {
@@ -123,10 +133,18 @@ internal sealed class VoxelizationService
                     var center = new Vector3(x, y, z);
                     if (IsCubeIncluded(ix, iy, iz, center, half, boxMin, cellSize, dims, grid))
                     {
-                        var index = VoxelizationResult.CellIndex(ix, iy, iz, countX, countY);
-                        occupancy[index / 8] |= (byte)(1 << (index % 8));
+                        occupied[VoxelizationResult.CellIndex(ix, iy, iz, countX, countY)] = true;
                     }
                 }
+            }
+        });
+
+        var occupancy = new byte[(estimatedCells + 7) / 8];
+        for (var i = 0; i < estimatedCells; i++)
+        {
+            if (occupied[i])
+            {
+                occupancy[i / 8] |= (byte)(1 << (i % 8));
             }
         }
 
