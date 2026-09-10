@@ -196,7 +196,7 @@ describe('setVoxelNodeSize', () => {
     const preview = buildVoxelPreview(singleCellGridAt({ x: 0, y: 0, z: 0 }, 2), 0.5, 1, 0.5, 1);
     const before = (nodesOf(preview).geometry as THREE.SphereGeometry).parameters.radius;
 
-    setVoxelNodeSize(preview, 1);
+    setVoxelNodeSize(preview, 1, 2);
 
     const after = (nodesOf(preview).geometry as THREE.SphereGeometry).parameters.radius;
     expect(after).toBeGreaterThan(before);
@@ -208,7 +208,7 @@ describe('setVoxelNodeSize', () => {
     const oldGeometry = nodesOf(preview).geometry;
     const disposeSpy = spyOn(oldGeometry, 'dispose');
 
-    setVoxelNodeSize(preview, 1);
+    setVoxelNodeSize(preview, 1, 1);
 
     expect(disposeSpy).toHaveBeenCalled();
   });

@@ -211,9 +211,8 @@ export class ImportedReferenceControlsComponent {
   }
 
   // Cube count for the "ok" status line - VoxelizationStatus carries the
-  // raw grid+bitmask (VoxelGridDto), not a precomputed count, since
-  // nothing else needs one (buildVoxelPreview counts internally too, for
-  // its own reason - sizing the InstancedMesh).
+  // raw grid+bitmask (VoxelGridDto), not a precomputed count, since this
+  // is the only place that needs one.
   getVoxelCubeCount(result: VoxelGridDto): number {
     return countOccupied(result);
   }

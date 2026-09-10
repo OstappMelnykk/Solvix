@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { VoxelGridDto } from './voxel-grid-contract';
 import { buildVoxelCells, collectUniqueNodes } from './voxel-cell';
 import { EDGES, buildVoxelHexahedronFillGeometry } from './voxel-hexahedron';
+import { disposeObject3D } from './dispose-object3d';
 
 const EDGE_COLOR = 0xffffff;
 // Distinct from both the purple fill and the white edges, so a node stays
@@ -39,12 +40,6 @@ const MIN_NODE_RADIUS = 0.001;
 // pivot-centered frame instead).
 export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeOpacity: number, nodeSize: number, nodeOpacity: number): THREE.Object3D {
   const group = new THREE.Group();
-  // Node size is expressed relative to cellSize (see NODE_RADIUS_MAX_FACTOR),
-  // so setVoxelNodeSize needs cellSize back later to recompute an absolute
-  // radius - stashed here rather than threaded through as an extra
-  // parameter, keeping that setter's signature symmetric with
-  // setVoxelPreviewOpacity/setVoxelEdgeOpacity (object, value).
-  group.userData['cellSize'] = grid.cellSize;
   const cells = buildVoxelCells(grid);
 
   const VERTICES_PER_VOXEL = 36; // 6 faces x 2 triangles x 3 vertices - see buildVoxelHexahedronFillGeometry
@@ -170,9 +165,12 @@ export function setVoxelNodeOpacity(object: THREE.Object3D, opacity: number): vo
 // sphere's radius isn't a material property that can be mutated in place.
 // Still cheap: one shared SphereGeometry for every instance (InstancedMesh),
 // not one per node, so this is a single small geometry swap regardless of
-// how many nodes exist.
-export function setVoxelNodeSize(object: THREE.Object3D, size: number): void {
-  const cellSize = (object.userData['cellSize'] as number | undefined) ?? 1;
+// how many nodes exist. Takes cellSize explicitly (the caller already has
+// it - VoxelizationService reads it off the cached VoxelizationStatus)
+// rather than stashing it on the object's untyped userData bag: a typo'd
+// or renamed string key there would compile fine and silently fall back
+// to a wrong default, only visible by inspecting the rendered size.
+export function setVoxelNodeSize(object: THREE.Object3D, size: number, cellSize: number): void {
   const radius = Math.max(MIN_NODE_RADIUS, cellSize * NODE_RADIUS_MAX_FACTOR * size);
   object.traverse(child => {
     if (child instanceof THREE.InstancedMesh) {
@@ -186,14 +184,15 @@ export function setVoxelNodeSize(object: THREE.Object3D, size: number): void {
 // Guards against disposing the same preview twice - BatchedMesh.dispose()
 // is NOT idempotent (it nulls its own internal texture references on the
 // way out, so a second call throws trying to dispose() them again, not
-// just a harmless no-op like a plain BufferGeometry's dispose()). This
-// matters here specifically because voxelPreview is no longer cloned per
-// canvas (see world-canvas.component.ts - BatchedMesh can't support
-// Object3D.clone()), so VoxelizationService's cache entry and whatever's
-// in the scene can end up being the literal same object; a defense-in-depth
-// safety net against any path disposing it more than once, on top of the
-// actual fix (voxelPreview disposal now happens in exactly one place -
-// see VoxelizationService.run/pruneTo - not also in WorldCanvasComponent).
+// just a harmless no-op like a plain BufferGeometry's dispose()). The
+// actual fix for a double-dispose is structural: disposal now happens in
+// exactly one place (VoxelizationService.run/clearResult/pruneTo), and
+// WorldCanvasComponent reads the service directly every frame instead of
+// through a change-detection-gated @Input, so it can never still be
+// holding (and rendering) a reference the service has already disposed -
+// see world-canvas.component.ts's updateVoxelPreview. This WeakSet is a
+// defense-in-depth backstop against a future call path reintroducing that
+// mistake, not the primary defense.
 const disposedPreviews = new WeakSet<THREE.Object3D>();
 
 export function disposeVoxelPreview(object: THREE.Object3D): void {
@@ -201,15 +200,5 @@ export function disposeVoxelPreview(object: THREE.Object3D): void {
     return;
   }
   disposedPreviews.add(object);
-  object.traverse(child => {
-    if (child instanceof THREE.BatchedMesh) {
-      child.dispose(); // frees BatchedMesh's own internal merged geometry/textures
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(material => material.dispose());
-    } else if (child instanceof THREE.LineSegments || child instanceof THREE.InstancedMesh) {
-      child.geometry.dispose();
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(material => material.dispose());
-    }
-  });
+  disposeObject3D(object);
 }

@@ -148,13 +148,17 @@ export class VoxelizationService {
 
   // Same live-mutation reasoning as setOpacity, for the node spheres' size
   // (setVoxelNodeSize swaps their shared SphereGeometry in place - cheap,
-  // one geometry regardless of node count).
+  // one geometry regardless of node count). Node radius is relative to
+  // cellSize, read off the cached status rather than stashed on the
+  // Object3D itself (see setVoxelNodeSize's own doc comment) - a no-op if
+  // there's no successful result yet, same as the preview-null guard below.
   setNodeSize(sessionId: number, size: number): void {
     const clamped = Math.min(1, Math.max(0, size));
     this.nodeSizeBySession.set(sessionId, clamped);
     const preview = this.voxelPreviewBySession.get(sessionId);
-    if (preview) {
-      setVoxelNodeSize(preview, clamped);
+    const status = this.statusBySession.get(sessionId);
+    if (preview && status?.kind === 'ok') {
+      setVoxelNodeSize(preview, clamped, status.result.cellSize);
     }
   }
 
@@ -225,13 +229,13 @@ export class VoxelizationService {
         // reference with the source anyway - disposing either one broke
         // both). BatchedMesh (see geometry/voxel-preview.ts) can't be
         // cloned per canvas at all, so voxelPreview has exactly one real
-        // owner now - this service's cache - and exactly one consumer
-        // (Ideal World only, see render-window.component.ts). Whichever
-        // object this service is no longer caching is safe to dispose
-        // immediately: WorldCanvasComponent's updateVoxelPreview runs
-        // synchronously right before every renderer.render() call, so by
-        // the time a frame actually renders, the single consumer has
-        // already swapped to whatever this method set here.
+        // owner now - this service's cache. Safe to dispose immediately,
+        // synchronously, right here: WorldCanvasComponent reads
+        // getVoxelPreview() DIRECTLY every frame (not through an @Input
+        // gated on Angular change detection - see its updateVoxelPreview
+        // for the disposal-race that pattern used to cause), so whatever
+        // this call disposes has already fully happened, by construction,
+        // before that component's next read of this service.
         const outgoing = this.voxelPreviewBySession.get(sessionId);
         this.voxelPreviewBySession.set(
           sessionId,

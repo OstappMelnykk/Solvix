@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VoxelCell } from './voxel-cell';
+import { disposeObject3D } from './dispose-object3d';
 
 const DEFAULT_FILL_COLOR = 0x9b59b6;
 const DEFAULT_EDGE_COLOR = 0xffffff;
@@ -114,11 +115,5 @@ export function buildVoxelHexahedron(cell: VoxelCell, fillOpacity: number, edgeO
 }
 
 export function disposeVoxelHexahedron(object: THREE.Object3D): void {
-  object.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
-      child.geometry.dispose();
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(material => material.dispose());
-    }
-  });
+  disposeObject3D(object);
 }

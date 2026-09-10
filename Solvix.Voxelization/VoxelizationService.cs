@@ -388,6 +388,11 @@ internal sealed class VoxelizationService
     private static bool IsCubeIncluded(
         int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
+        // Loop-invariant for the whole call - hoisted out of the per-triangle
+        // foreach below rather than reallocated once per boundary-exact touch.
+        var cubeMin = center - new Vector3(half);
+        var cubeMax = center + new Vector3(half);
+
         List<Vector3>? boundaryExactProbes = null;
         foreach (var triangle in grid.TrianglesNear(ix, iy, iz))
         {
@@ -409,7 +414,7 @@ internal sealed class VoxelizationService
             // as small real parts of the mesh going uncovered.
             boundaryExactProbes ??= [];
             var centroid = (triangle.A + triangle.B + triangle.C) / 3f;
-            var clamped = Vector3.Clamp(centroid, center - new Vector3(half), center + new Vector3(half));
+            var clamped = Vector3.Clamp(centroid, cubeMin, cubeMax);
             var towardCenter = center - clamped;
             var nudge = towardCenter.LengthSquared() > 1e-12f ? Vector3.Normalize(towardCenter) : Vector3.Zero;
             boundaryExactProbes.Add(clamped + nudge * (half * 0.1f));

@@ -50,6 +50,20 @@ const CORNER_OFFSETS: readonly [number, number, number][] = [
   [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
 ];
 
+// Same linearization convention as voxel-grid-contract.ts's cellIndex (ix
+// varies fastest, then iy, then iz) - a plain number, not a template
+// string, so keying the lookup maps below doesn't allocate a string per
+// cell/corner (real cost at the documented MaxCells = 900_000 cap: up to
+// ~900k cell keys plus up to ~7.2M corner keys, 8 per cell). ONLY valid
+// for coordinates already known to be within [0,countX)x[0,countY)x[0,countZ) -
+// callers that might pass an out-of-range coordinate (neighbor lookup at
+// the grid's edge) must bounds-check first, since the raw arithmetic can
+// otherwise alias a negative coordinate on one axis to a valid index on
+// another (e.g. flatIndex(-1, iy, iz) can equal flatIndex(countX-1, iy-1, iz)).
+function flatIndex(ix: number, iy: number, iz: number, countX: number, countY: number): number {
+  return ix + iy * countX + iz * countX * countY;
+}
+
 // World position of ONE corner lattice point - computed directly from its
 // own integer coordinates (not derived from a cell's center +/- half),
 // so two cells sharing a corner compute the identical float result by
@@ -66,9 +80,16 @@ function latticeCornerPosition(grid: VoxelGridDto, ix: number, iy: number, iz: n
 // happen to share are literally the same instance, the same way two
 // elements in the FEM reference project's Mesh share a node through one
 // AKT entry rather than each carrying its own copy.
-function cellCorners(grid: VoxelGridDto, ix: number, iy: number, iz: number, nodes: Map<string, THREE.Vector3>): THREE.Vector3[] {
+// `nodes` is keyed on the CORNER lattice, one size larger per axis than
+// the cell grid (countX+1 x countY+1 x countZ+1 possible lattice points) -
+// every CORNER_OFFSETS combination keeps each coordinate within
+// [0,countX] etc, always non-negative, so flatIndex is safe here without
+// the bounds-check flatIndex's own doc comment warns about for neighbors.
+function cellCorners(grid: VoxelGridDto, ix: number, iy: number, iz: number, nodes: Map<number, THREE.Vector3>): THREE.Vector3[] {
+  const cornersX = grid.countX + 1;
+  const cornersY = grid.countY + 1;
   return CORNER_OFFSETS.map(([dx, dy, dz]) => {
-    const key = `${ix + dx},${iy + dy},${iz + dz}`;
+    const key = flatIndex(ix + dx, iy + dy, iz + dz, cornersX, cornersY);
     let node = nodes.get(key);
     if (!node) {
       node = latticeCornerPosition(grid, ix + dx, iy + dy, iz + dz);
@@ -82,8 +103,8 @@ function cellCorners(grid: VoxelGridDto, ix: number, iy: number, iz: number, nod
 // each other's actual instances (not just coordinates) - two passes, since
 // a cell's neighbor may be discovered only after the cell itself is built.
 export function buildVoxelCells(grid: VoxelGridDto): VoxelCell[] {
-  const byKey = new Map<string, VoxelCell>();
-  const nodes = new Map<string, THREE.Vector3>();
+  const byKey = new Map<number, VoxelCell>();
+  const nodes = new Map<number, THREE.Vector3>();
   const cells: VoxelCell[] = [];
 
   for (let ix = 0; ix < grid.countX; ix++) {
@@ -94,14 +115,21 @@ export function buildVoxelCells(grid: VoxelGridDto): VoxelCell[] {
         }
         const cell = new VoxelCell(ix, iy, iz, cellCorners(grid, ix, iy, iz, nodes), new Array(6).fill(null));
         cells.push(cell);
-        byKey.set(`${ix},${iy},${iz}`, cell);
+        byKey.set(flatIndex(ix, iy, iz, grid.countX, grid.countY), cell);
       }
     }
   }
 
   for (const cell of cells) {
     FACE_DIRECTIONS.forEach(([dx, dy, dz], face) => {
-      cell.neighbors[face] = byKey.get(`${cell.ix + dx},${cell.iy + dy},${cell.iz + dz}`) ?? null;
+      const nx = cell.ix + dx;
+      const ny = cell.iy + dy;
+      const nz = cell.iz + dz;
+      // Bounds-checked BEFORE computing the flat index - see flatIndex's
+      // own doc comment for why an out-of-range coordinate can't just be
+      // looked up directly (it can alias a different, valid cell's key).
+      const inBounds = nx >= 0 && nx < grid.countX && ny >= 0 && ny < grid.countY && nz >= 0 && nz < grid.countZ;
+      cell.neighbors[face] = inBounds ? (byKey.get(flatIndex(nx, ny, nz, grid.countX, grid.countY)) ?? null) : null;
     });
   }
 
