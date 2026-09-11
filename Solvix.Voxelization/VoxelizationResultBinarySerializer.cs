@@ -14,6 +14,8 @@ namespace Solvix.Voxelization;
 //    ix + iy*countX + iz*countX*countY, LSB first within each byte]
 internal static class VoxelizationResultBinarySerializer
 {
+    /// <param name="result">The finished voxel grid (from <see cref="VoxelizationService.Voxelize"/>) to encode - its <see cref="VoxelizationResult.Occupancy"/> bitmask is written out verbatim, not recomputed.</param>
+    /// <param name="stream">Destination to write the binary layout (documented above) into - the HTTP response body in practice.</param>
     public static void Serialize(VoxelizationResult result, Stream stream)
     {
         using var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true);

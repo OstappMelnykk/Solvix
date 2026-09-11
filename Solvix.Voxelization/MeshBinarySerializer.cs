@@ -17,6 +17,13 @@ namespace Solvix.Voxelization;
 //   [indexCount * uint32]
 internal static class MeshBinarySerializer
 {
+    /// <param name="stream">
+    /// A seekable stream (always a <c>MemoryStream</c> in practice -
+    /// <see cref="Voxelizer"/> is this method's only caller) positioned at
+    /// the start of the binary mesh body described in this class's own
+    /// layout comment above.
+    /// </param>
+    /// <returns>The decoded vertex/index arrays as an <see cref="ImportedSurfaceMesh"/>, ready for <see cref="VoxelizationService.Voxelize"/>.</returns>
     public static ImportedSurfaceMesh Deserialize(Stream stream)
     {
         // vertexCount/indexCount are declared by the CALLER and used to

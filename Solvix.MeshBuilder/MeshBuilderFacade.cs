@@ -11,6 +11,13 @@ namespace Solvix.MeshBuilder;
 // being internal to Solvix.Voxelization.
 internal sealed class MeshBuilderFacade(IVoxelizer voxelizer) : IMeshBuilderFacade
 {
+    /// <param name="meshBinary">
+    /// Passed straight through to <see cref="IVoxelizer.Voxelize"/> unopened
+    /// - this method never inspects the bytes itself, only the exceptions
+    /// that come back out of parsing/processing them.
+    /// </param>
+    /// <param name="cancellationToken">Forwarded unchanged to <see cref="IVoxelizer.Voxelize"/>.</param>
+    /// <returns>The voxel grid bytes <see cref="IVoxelizer.Voxelize"/> produced, forwarded unchanged.</returns>
     public byte[] Voxelize(byte[] meshBinary, CancellationToken cancellationToken)
     {
         // Translates Solvix.Voxelization's own error types into

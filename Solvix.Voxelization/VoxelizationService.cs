@@ -44,6 +44,26 @@ internal sealed class VoxelizationService
         (Vector3.Normalize(new Vector3(-0.5271f, 0.3162f, 0.7889f)), new Vector3(0.021f, 0.007f, -0.017f))
     ];
 
+    /// <param name="mesh">
+    /// The triangle surface to voxelize, already in the exact world scale
+    /// the caller wants (the frontend achieves "density" by scaling the
+    /// mesh before sending it - this method never rescales).
+    /// </param>
+    /// <param name="cancellationToken">
+    /// Checked by the parallel per-cell loop below (via
+    /// <see cref="ParallelOptions.CancellationToken"/>) so a large grid can
+    /// actually stop early instead of finishing a computation the caller
+    /// already gave up on.
+    /// </param>
+    /// <returns>
+    /// The uniform voxel grid covering <paramref name="mesh"/>'s bounding
+    /// box: an empty (all-zero-dimension) result if the mesh has no
+    /// triangles at all.
+    /// </returns>
+    /// <exception cref="VoxelizationTooLargeException">
+    /// Thrown before any per-cell work happens if the mesh's bounding box,
+    /// scaled to 1-unit cells, would need more than <see cref="MaxCells"/> cells.
+    /// </exception>
     public VoxelizationResult Voxelize(ImportedSurfaceMesh mesh, CancellationToken cancellationToken = default)
     {
         var triangles = CollectTriangles(mesh);
@@ -151,6 +171,8 @@ internal sealed class VoxelizationService
         return new VoxelizationResult(boxMin, cellSize, countX, countY, countZ, occupancy);
     }
 
+    /// <param name="mesh">The raw vertex/index arrays as decoded off the wire.</param>
+    /// <returns>One <see cref="Triangle"/> (3 world-space points, no shared vertex references) per 3 consecutive indices - the flat index list expanded into the actual point triples the rest of this class works with.</returns>
     private static List<Triangle> CollectTriangles(ImportedSurfaceMesh mesh)
     {
         var triangles = new List<Triangle>(mesh.Indices.Count / 3);
@@ -164,6 +186,8 @@ internal sealed class VoxelizationService
         return triangles;
     }
 
+    /// <param name="triangles">Every triangle of the mesh being voxelized.</param>
+    /// <returns>The axis-aligned box tightly containing all of them - <c>min</c> becomes the grid's own <see cref="VoxelizationResult.Origin"/>, and <c>max - min</c> (divided by cell size) drives the grid's cell counts.</returns>
     private static (Vector3 min, Vector3 max) BoundingBox(List<Triangle> triangles)
     {
         var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
@@ -186,6 +210,9 @@ internal sealed class VoxelizationService
     // throws VoxelizationTooLargeException as soon as any axis (or their
     // product) exceeds MaxCells, so the exact oversized value never
     // matters past this point.
+    /// <param name="span">The bounding box's extent along one axis (e.g. <c>boxMax.X - boxMin.X</c>).</param>
+    /// <param name="cellSize">The grid's fixed cell size (always <see cref="UnitCubeSize"/> in practice).</param>
+    /// <returns>How many cells that axis needs to fully cover <paramref name="span"/> - always rounded UP (a partial trailing cell still counts as a whole one, so the cube union never falls short of the body), clamped so it's always safe to multiply against the other two axes without overflowing <see cref="int"/>.</returns>
     private static int SafeCellCount(float span, float cellSize)
     {
         var raw = Math.Ceiling(span / cellSize);
@@ -222,6 +249,17 @@ internal sealed class VoxelizationService
     // NOT the face's normal direction, which would be the obvious fix but
     // isn't safe: real imported meshes can't be trusted to have
     // consistent outward winding).
+    /// <param name="triangle">The mesh triangle to test.</param>
+    /// <param name="boxCenter">World-space center of the voxel cube being tested (not a corner).</param>
+    /// <param name="boxHalf">Half the cube's side length (<c>cellSize / 2</c>) - the cube spans <c>boxCenter ± boxHalf</c> on each axis.</param>
+    /// <param name="isBoundaryExactOnly">
+    /// Out: only meaningful when this method returns <c>true</c>. Set when
+    /// the ONLY reason the triangle registers as touching is that it lies
+    /// exactly flat on one of the box's boundary planes (a coincidence, not
+    /// genuine solid overlap) - see the field's own long comment above for
+    /// why that specific case can't be trusted on its own.
+    /// </param>
+    /// <returns><c>true</c> if the triangle and the cube overlap at all (by the separating-axis test across all 13 candidate axes).</returns>
     private static bool TriangleIntersectsBox(Triangle triangle, Vector3 boxCenter, float boxHalf, out bool isBoundaryExactOnly)
     {
         var v0 = triangle.A - boxCenter;
@@ -285,6 +323,12 @@ internal sealed class VoxelizationService
 
     // Majority vote across InsideTestRays - see that field's comment for
     // why neither the direction nor the origin alone is trusted outright.
+    /// <param name="point">The world-space point to classify (a cube's center, or a boundary-exact probe point near a specific triangle - see <see cref="IsCubeIncluded"/>).</param>
+    /// <param name="boxMin">The whole grid's own minimum corner - needed to resolve <paramref name="point"/> into a starting grid cell for each ray walk.</param>
+    /// <param name="cellSize">The grid's cell size.</param>
+    /// <param name="dims">The grid's cell counts, bounding how far each ray walk can travel before it's exited the grid entirely.</param>
+    /// <param name="grid">The prebuilt spatial index, used to fetch only the triangles each ray's DDA walk actually passes near.</param>
+    /// <returns><c>true</c> if at least 2 of the 3 <see cref="InsideTestRays"/> agree <paramref name="point"/> is inside the (possibly imperfectly watertight) surface.</returns>
     private static bool IsPointInsideViaGrid(Vector3 point, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
         var insideVotes = 0;
@@ -303,6 +347,13 @@ internal sealed class VoxelizationService
     // from it crosses the surface an odd number of times. Walks the same
     // uniform grid via 3D DDA (Amanatides-Woo) so only triangles in cells
     // the ray actually passes through get tested.
+    /// <param name="point">Ray origin (one of the 3 jittered start points from <see cref="IsPointInsideViaGrid"/>).</param>
+    /// <param name="direction">Ray direction - one of the 3 fixed, non-axis-aligned directions in <see cref="InsideTestRays"/>.</param>
+    /// <param name="boxMin">The grid's minimum corner, needed to resolve the ray's starting cell and each subsequent cell boundary crossing.</param>
+    /// <param name="cellSize">The grid's cell size.</param>
+    /// <param name="dims">The grid's cell counts - the walk stops once it steps outside <c>[0,CountX)×[0,CountY)×[0,CountZ)</c>.</param>
+    /// <param name="grid">The prebuilt spatial index - queried once per cell the DDA walk passes through, not against every triangle in the mesh.</param>
+    /// <returns><c>true</c> if the ray crosses the (candidate) surface an ODD number of times - the standard parity rule for "is this point inside a closed surface".</returns>
     private static bool IsPointInsideAlongRay(Vector3 point, Vector3 direction, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
         var ix = grid.CellIndexX(point.X);
@@ -375,6 +426,12 @@ internal sealed class VoxelizationService
 
     // Moller-Trumbore ray-triangle intersection, no backface culling -
     // only whether a forward hit exists is needed, not the hit point.
+    /// <param name="origin">Ray start point.</param>
+    /// <param name="direction">Ray direction (need not be normalized for this test to work).</param>
+    /// <param name="a">Triangle's first vertex.</param>
+    /// <param name="b">Triangle's second vertex.</param>
+    /// <param name="c">Triangle's third vertex.</param>
+    /// <returns><c>true</c> if the ray hits the triangle at a positive distance (behind-the-origin and exactly-at-origin hits don't count) - winding-independent, so a triangle facing either way still registers.</returns>
     private static bool IntersectsRay(Vector3 origin, Vector3 direction, Vector3 a, Vector3 b, Vector3 c)
     {
         const float epsilon = 1e-8f;
@@ -403,6 +460,22 @@ internal sealed class VoxelizationService
         return t > epsilon;
     }
 
+    /// <param name="ix">The cube's cell index along X - used only to look up its nearby triangles via <paramref name="grid"/>.</param>
+    /// <param name="iy">The cube's cell index along Y.</param>
+    /// <param name="iz">The cube's cell index along Z.</param>
+    /// <param name="center">World-space center of this specific cube.</param>
+    /// <param name="half">Half the cube's side length.</param>
+    /// <param name="boxMin">The whole grid's minimum corner - forwarded to the inside-test ray walks.</param>
+    /// <param name="cellSize">The grid's cell size - forwarded to the inside-test ray walks.</param>
+    /// <param name="dims">The grid's cell counts - forwarded to the inside-test ray walks.</param>
+    /// <param name="grid">The prebuilt spatial index, queried for this cube's own nearby triangles.</param>
+    /// <returns>
+    /// <c>true</c> if this cube should be marked occupied: either a
+    /// triangle genuinely touches it, or (when every touch found was a
+    /// boundary-exact coincidence, or no triangle touches it at all) the
+    /// ray-parity inside test says its center - or a probe point near a
+    /// boundary-exact triangle's real contact - lies inside the body.
+    /// </returns>
     private static bool IsCubeIncluded(
         int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
     {
