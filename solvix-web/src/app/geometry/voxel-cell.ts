@@ -159,6 +159,64 @@ export function buildVoxelCells(grid: VoxelGridDto): VoxelCell[] {
   return cells;
 }
 
+// Flood-fills the occupied cells of `grid` via face adjacency, treating
+// (excludeIx,excludeIy,excludeIz) as unoccupied WITHOUT mutating the grid -
+// lets VoxelizationService.removeSelectedVoxel check GEOMETRY_RULES.md's R2
+// (a deletion may never split the remaining geometry into more than one
+// connected group) before committing, by simulating the removal first.
+// Returns the size of every connected component found among what would
+// remain; R2 permits the deletion only when there's at most one (0, if the
+// excluded cell was the last one left).
+export function connectedComponentSizes(grid: VoxelGridDto, excludeIx: number, excludeIy: number, excludeIz: number): number[] {
+  const isKept = (ix: number, iy: number, iz: number): boolean =>
+    ix >= 0 &&
+    ix < grid.countX &&
+    iy >= 0 &&
+    iy < grid.countY &&
+    iz >= 0 &&
+    iz < grid.countZ &&
+    !(ix === excludeIx && iy === excludeIy && iz === excludeIz) &&
+    isOccupied(grid, ix, iy, iz);
+
+  const visited = new Set<number>();
+  const sizes: number[] = [];
+
+  for (let ix = 0; ix < grid.countX; ix++) {
+    for (let iy = 0; iy < grid.countY; iy++) {
+      for (let iz = 0; iz < grid.countZ; iz++) {
+        const startKey = flatIndex(ix, iy, iz, grid.countX, grid.countY);
+        if (!isKept(ix, iy, iz) || visited.has(startKey)) {
+          continue;
+        }
+        let size = 0;
+        const stack: [number, number, number][] = [[ix, iy, iz]];
+        visited.add(startKey);
+        while (stack.length > 0) {
+          const [cx, cy, cz] = stack.pop()!;
+          size++;
+          for (const [dx, dy, dz] of FACE_DIRECTIONS) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            const nz = cz + dz;
+            if (!isKept(nx, ny, nz)) {
+              continue;
+            }
+            const key = flatIndex(nx, ny, nz, grid.countX, grid.countY);
+            if (visited.has(key)) {
+              continue;
+            }
+            visited.add(key);
+            stack.push([nx, ny, nz]);
+          }
+        }
+        sizes.push(size);
+      }
+    }
+  }
+
+  return sizes;
+}
+
 // All corner NODES referenced by `cells`, deduplicated - a Set collapses
 // them by object identity, which works here specifically because
 // buildVoxelCells already hands adjacent cells the SAME Vector3 instance

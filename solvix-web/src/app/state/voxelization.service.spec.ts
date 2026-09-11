@@ -41,6 +41,27 @@ function encodeInvalidMeshError(message: string): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify({ message })).buffer as ArrayBuffer;
 }
 
+// A straight 1xNx1 chain of `length` occupied cells along X - instanceId i
+// (buildVoxelCells' iteration order: ix outer, iy/iz inner) corresponds to
+// grid cell (i,0,0), so selectVoxelInstance(sessionId, i) picks link i of
+// the chain directly.
+function encodeChain(length: number): ArrayBuffer {
+  const buffer = new ArrayBuffer(28 + Math.ceil(length / 8));
+  const view = new DataView(buffer);
+  view.setFloat32(0, 0, true);
+  view.setFloat32(4, 0, true);
+  view.setFloat32(8, 0, true);
+  view.setFloat32(12, 1, true);
+  view.setUint32(16, length, true);
+  view.setUint32(20, 1, true);
+  view.setUint32(24, 1, true);
+  const occupancy = new Uint8Array(buffer, 28);
+  for (let i = 0; i < length; i++) {
+    occupancy[i >> 3] |= 1 << (i & 7);
+  }
+  return buffer;
+}
+
 describe('VoxelizationService', () => {
   let sessions: SessionsService;
   let importedGeometry: ImportedGeometryService;
@@ -597,6 +618,62 @@ describe('VoxelizationService', () => {
 
       expect(disposeSpy).toHaveBeenCalled();
       expect(voxelization.getVoxelPreview(sessionId)).not.toBe(firstPreview);
+    });
+
+    // GEOMETRY_RULES.md R2.
+    it('defaults to no deletion violation for a session that has never had one', () => {
+      const sessionId = sessions.sessions()[0].id;
+      expect(voxelization.getDeletionViolation(sessionId)).toBeNull();
+    });
+
+    it('refuses to remove a chain\'s bridge cell and reports the resulting group sizes (R2-T2)', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeChain(3));
+      voxelization.selectVoxelInstance(sessionId, 1); // the middle link
+
+      voxelization.removeSelectedVoxel(sessionId);
+
+      const fill = voxelization
+        .getVoxelPreview(sessionId)!
+        .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      expect(fill.instanceCount).toBe(3); // unchanged - refused, not committed
+      expect(voxelization.getDeletionViolation(sessionId)).toEqual({ componentSizes: [1, 1] });
+    });
+
+    it('allows removing a chain\'s end link, which keeps the rest connected (R2-T1)', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeChain(3));
+      voxelization.selectVoxelInstance(sessionId, 2); // the end link
+
+      voxelization.removeSelectedVoxel(sessionId);
+
+      const fill = voxelization
+        .getVoxelPreview(sessionId)!
+        .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      expect(fill.instanceCount).toBe(2);
+      expect(voxelization.getDeletionViolation(sessionId)).toBeNull();
+    });
+
+    it('clears a standing violation once a later edit actually succeeds', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeChain(3));
+      voxelization.selectVoxelInstance(sessionId, 1);
+      voxelization.removeSelectedVoxel(sessionId); // refused, sets the violation
+      expect(voxelization.getDeletionViolation(sessionId)).not.toBeNull();
+
+      voxelization.selectVoxelInstance(sessionId, 2);
+      voxelization.removeSelectedVoxel(sessionId); // succeeds
+
+      expect(voxelization.getDeletionViolation(sessionId)).toBeNull();
     });
   });
 

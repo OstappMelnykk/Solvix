@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FACE_DIRECTIONS, buildVoxelCells, collectUniqueNodes, faceIndexForNormal, VoxelCell } from './voxel-cell';
+import { FACE_DIRECTIONS, buildVoxelCells, collectUniqueNodes, connectedComponentSizes, faceIndexForNormal, VoxelCell } from './voxel-cell';
 import { VoxelGridDto } from './voxel-grid-contract';
 
 // countX x countY x countZ grid, occupied cells given as [ix,iy,iz] tuples.
@@ -152,6 +152,48 @@ describe('faceIndexForNormal', () => {
     // Mostly +X, with a small amount of drift on the other axes - a real
     // raycast hit's normal is never perfectly (1,0,0).
     expect(faceIndexForNormal(new THREE.Vector3(0.98, 0.1, -0.05))).toBe(1); // +X
+  });
+});
+
+// GEOMETRY_RULES.md's R2 test cases (section 3), against the pure
+// connectivity check directly rather than through VoxelizationService -
+// VoxelizationService.spec.ts covers the same rule at the service level
+// (refusal + reported componentSizes).
+describe('connectedComponentSizes', () => {
+  it('R2-T1: removing a chain\'s leaf leaves the rest as one component', () => {
+    const grid = gridWithOccupied(3, 1, 1, [[0, 0, 0], [1, 0, 0], [2, 0, 0]]);
+
+    expect(connectedComponentSizes(grid, 2, 0, 0)).toEqual([2]);
+  });
+
+  it('R2-T2: removing a chain\'s bridge cell splits it into two components', () => {
+    const grid = gridWithOccupied(3, 1, 1, [[0, 0, 0], [1, 0, 0], [2, 0, 0]]);
+
+    const sizes = [...connectedComponentSizes(grid, 1, 0, 0)].sort();
+
+    expect(sizes).toEqual([1, 1]);
+  });
+
+  it('R2-T3: removing the only remaining cell leaves zero components', () => {
+    const grid = gridWithOccupied(1, 1, 1, [[0, 0, 0]]);
+
+    expect(connectedComponentSizes(grid, 0, 0, 0)).toEqual([]);
+  });
+
+  it('R2-T4: removing a branch point splits its two disconnected arms', () => {
+    // A(0,0,0) is face-adjacent to both B(1,0,0) and C(0,1,0); B and C are
+    // not adjacent to each other - removing A leaves them disconnected.
+    const grid = gridWithOccupied(2, 2, 1, [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
+
+    const sizes = [...connectedComponentSizes(grid, 0, 0, 0)].sort();
+
+    expect(sizes).toEqual([1, 1]);
+  });
+
+  it('ignores a coordinate that was never actually occupied', () => {
+    const grid = gridWithOccupied(2, 1, 1, [[0, 0, 0]]);
+
+    expect(connectedComponentSizes(grid, 1, 0, 0)).toEqual([1]);
   });
 });
 

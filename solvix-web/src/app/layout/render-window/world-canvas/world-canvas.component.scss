@@ -15,6 +15,35 @@ canvas {
   height: 100%;
 }
 
+// Same overlay treatment as .camera-mode-toggle, top-LEFT instead of
+// top-right so it never collides with the camera-mode/reset buttons stacked
+// there - a dedicated, always-reachable way to fully drop the STL reference
+// out of the scene (world-canvas.component.ts's toggleImportedReferenceVisible)
+// without hunting for the settings panel's own "Показати" checkbox.
+.reference-visibility-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #39c5f2;
+  }
+}
+
 // Overlay, like the ortho/persp toggle in Blender/CAD tools - sits directly
 // on the 3D view itself rather than in the settings panel, since the
 // camera (and its mode) belongs to this World's canvas, not to any session.
@@ -65,4 +94,28 @@ canvas {
     outline: none;
     border-color: #39c5f2;
   }
+}
+
+// GEOMETRY_RULES.md R2 refusal notice (VoxelizationService.
+// getDeletionViolation) - bottom-center over the canvas, near where the
+// user is actually deleting voxels, unlike the settings-panel's
+// voxelize-status (which reports the last whole-mesh voxelization run, not
+// a single edit). [hidden] rather than *ngIf since this component declares
+// no directive imports (see its imports: [] metadata) - toggling display
+// this way needs none.
+.voxel-rule-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: 8px 14px;
+  background: rgba(46, 20, 20, 0.85);
+  border: 1px solid rgba(224, 82, 82, 0.6);
+  border-radius: 6px;
+  color: #f0a8a8;
+  font-size: 12px;
+  font-family: sans-serif;
+  text-align: center;
+  pointer-events: none;
 }

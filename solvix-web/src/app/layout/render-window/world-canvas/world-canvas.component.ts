@@ -281,8 +281,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.setPixelRatio(window.devicePixelRatio);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.05 / 3;
+    // No inertia - the camera stops the instant the drag/scroll gesture
+    // ends, rather than easing to a stop on its own afterward.
+    this.controls.enableDamping = false;
     this.controls.rotateSpeed = 0.5;
 
     // Rotate mode draws exactly the 3 draggable ring arcs (X/Y/Z, plus a
@@ -739,6 +740,62 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.voxelization.removeSelectedVoxel(this.sessionId);
   }
 
+  // Gates the STL-reference visibility toggle button below (world-canvas.
+  // component.html) to the one canvas the reference actually lives on - same
+  // reasoning as RenderWindowComponent.getImportedReference's own
+  // IDEAL_WORLD_INDEX check, just read from this component's own worldIndex
+  // Input instead.
+  isIdealWorldCanvas(): boolean {
+    return this.worldIndex === IDEAL_WORLD_INDEX;
+  }
+
+  // Backing state for the on-canvas STL-reference visibility toggle -
+  // mirrors the settings-panel's own "Показати" checkbox
+  // (ImportedReferenceControlsComponent.isReferenceVisible/
+  // onReferenceVisibleChange, both driving the same
+  // ImportedReferenceDisplayService.visible flag), just reachable without
+  // opening the panel. Unlike lowering opacity, unchecking this actually
+  // drops the reference from the scene entirely (RenderWindowComponent.
+  // getImportedReference returns null while !visible), so whatever it was
+  // occluding becomes visible again rather than merely dimmed. Defaults to
+  // "visible" outside the Ideal World / without a session, matching
+  // ImportedReferenceDisplayService's own DEFAULT_STYLE - never actually
+  // shown there (isIdealWorldCanvas gates the button itself).
+  isImportedReferenceVisible(): boolean {
+    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+      return true;
+    }
+    return this.importedReferenceDisplay.getStyle(this.sessionId).visible;
+  }
+
+  toggleImportedReferenceVisible(): void {
+    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+      return;
+    }
+    const currentlyVisible = this.importedReferenceDisplay.getStyle(this.sessionId).visible;
+    this.importedReferenceDisplay.setVisible(this.sessionId, !currentlyVisible);
+  }
+
+  // Backing text for the R2-violation overlay (world-canvas.component.html)
+  // - null hides it. deletionViolationBySession is keyed only by sessionId,
+  // not by World, so this is gated to the Ideal World the same way the
+  // voxel-build feature itself is (see handleVoxelDeleteKey/
+  // handleVoxelPointerUp above) - otherwise the Real/Solver World canvases
+  // for the same session would show it too. Component sizes aren't
+  // grammatically pluralized (same simplification the settings-panel's own
+  // "N кубів" status line already makes) - "+"-joined so the split itself
+  // is legible at a glance, not just the group count.
+  getDeletionViolationMessage(): string | null {
+    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+      return null;
+    }
+    const violation = this.voxelization.getDeletionViolation(this.sessionId);
+    if (!violation) {
+      return null;
+    }
+    return `Видалення заборонено: геометрія розпадеться на ${violation.componentSizes.length} частини (${violation.componentSizes.join(' + ')} кубів)`;
+  }
+
   // Geometry is shared with the source object (ImportedGeometryService owns
   // and disposes it) - only the material is unique to this clone (created
   // above), so only that gets disposed here.
@@ -773,12 +830,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.controls.target.set(...DEFAULT_ORBIT_TARGET);
     }
 
-    // Flush the camera-angle change through immediately, and drop any
-    // in-flight damping momentum from the session we just left - without
-    // this, leftover velocity would keep nudging the newly-restored angle.
-    this.controls.enableDamping = false;
     this.controls.update();
-    this.controls.enableDamping = true;
   }
 
   private animate = (): void => {
@@ -917,11 +969,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.setActiveCamera(this.perspectiveCamera, 'perspective');
     }
 
-    // Same "flush immediately, drop leftover damping momentum" reasoning as
-    // updateSession's own camera-angle restore.
-    this.controls.enableDamping = false;
     this.controls.update();
-    this.controls.enableDamping = true;
 
     if (this.sessionId !== null) {
       this.cameraMemory.set(this.sessionId, this.worldIndex, {

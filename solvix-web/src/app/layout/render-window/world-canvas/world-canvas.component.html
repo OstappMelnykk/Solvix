@@ -1,7 +1,19 @@
 <canvas #canvas></canvas>
+<button
+  class="reference-visibility-toggle"
+  type="button"
+  [hidden]="!isIdealWorldCanvas()"
+  [title]="isImportedReferenceVisible() ? 'Приховати STL-референс' : 'Показати STL-референс'"
+  (click)="toggleImportedReferenceVisible()"
+>
+  {{ isImportedReferenceVisible() ? 'Приховати STL' : 'Показати STL' }}
+</button>
 <button class="camera-mode-toggle" type="button" (click)="toggleCameraMode()">
   {{ getCameraMode() === 'perspective' ? 'Перспектива' : 'Ортографія' }}
 </button>
 <button class="camera-reset-button" type="button" title="Скинути камеру до початкового положення" (click)="resetCamera()">
   Скинути камеру
 </button>
+<div class="voxel-rule-notice" [hidden]="!getDeletionViolationMessage()">
+  {{ getDeletionViolationMessage() }}
+</div>
