@@ -388,6 +388,17 @@ describe('VoxelizationService', () => {
     expect(voxelization.getOpacity(sessionId)).toBe(0);
   });
 
+  it('defaults line width and clamps setLineWidth to [0, 1]', () => {
+    const sessionId = sessions.sessions()[0].id;
+    expect(voxelization.getLineWidth(sessionId)).toBeCloseTo(0.25, 5);
+
+    voxelization.setLineWidth(sessionId, 1.5);
+    expect(voxelization.getLineWidth(sessionId)).toBe(1);
+
+    voxelization.setLineWidth(sessionId, -0.5);
+    expect(voxelization.getLineWidth(sessionId)).toBe(0);
+  });
+
   it('applies the current opacity to a newly built preview', () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(), 'model.glb');
@@ -446,7 +457,7 @@ describe('VoxelizationService', () => {
 
     const nodes = voxelization
       .getVoxelPreview(sessionId)!
-      .children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+      .children.find(child => child instanceof THREE.InstancedMesh && child.name === 'voxel-nodes') as THREE.InstancedMesh;
     expect((nodes.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.3, 5);
   });
 
@@ -457,13 +468,13 @@ describe('VoxelizationService', () => {
     voxelization.run(sessionId);
     httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
     const preview = voxelization.getVoxelPreview(sessionId)!;
-    const nodesBefore = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const nodesBefore = preview.children.find(child => child instanceof THREE.InstancedMesh && child.name === 'voxel-nodes') as THREE.InstancedMesh;
     const radiusBefore = (nodesBefore.geometry as THREE.SphereGeometry).parameters.radius;
 
     voxelization.setNodeOpacity(sessionId, 0.2);
     voxelization.setNodeSize(sessionId, 1);
 
-    const nodesAfter = preview.children.find(child => child instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const nodesAfter = preview.children.find(child => child instanceof THREE.InstancedMesh && child.name === 'voxel-nodes') as THREE.InstancedMesh;
     expect((nodesAfter.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.2, 5);
     expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
   });

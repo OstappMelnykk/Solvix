@@ -245,6 +245,20 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.setEdgeOpacity(sessionId, percent / 100);
   }
 
+  getVoxelLineWidthPercent(): number {
+    const sessionId = this.sessionId;
+    return sessionId === null ? 0 : Math.round(this.voxelization.getLineWidth(sessionId) * 100);
+  }
+
+  onVoxelLineWidthChange(event: Event): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setLineWidth(sessionId, percent / 100);
+  }
+
   getVoxelNodeSizePercent(): number {
     const sessionId = this.sessionId;
     return sessionId === null ? 0 : Math.round(this.voxelization.getNodeSize(sessionId) * 100);

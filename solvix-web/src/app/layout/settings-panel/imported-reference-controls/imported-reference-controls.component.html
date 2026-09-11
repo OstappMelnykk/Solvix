@@ -67,6 +67,10 @@
     <input type="range" min="0" max="100" [value]="getVoxelEdgeOpacityPercent()" (change)="onVoxelEdgeOpacityChange($event)" />
   </label>
   <label class="row">
+    <span>Товщина каркасу</span>
+    <input type="range" min="0" max="100" [value]="getVoxelLineWidthPercent()" (change)="onVoxelLineWidthChange($event)" />
+  </label>
+  <label class="row">
     <span>Розмір вузлів</span>
     <input type="range" min="0" max="100" [value]="getVoxelNodeSizePercent()" (change)="onVoxelNodeSizeChange($event)" />
   </label>

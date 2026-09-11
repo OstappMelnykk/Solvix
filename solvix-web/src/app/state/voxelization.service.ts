@@ -15,6 +15,7 @@ import {
   getVoxelCellByInstanceId,
   setVoxelEdgeOpacity,
   setVoxelHighlight,
+  setVoxelLineWidth,
   setVoxelNodeOpacity,
   setVoxelNodeSize,
   setVoxelPreviewOpacity
@@ -22,6 +23,10 @@ import {
 
 const DEFAULT_VOXEL_OPACITY = 0.55;
 const DEFAULT_VOXEL_EDGE_OPACITY = 1;
+// [0,1] slider value - see geometry/voxel-preview.ts's EDGE_RADIUS_MAX_FACTOR
+// for the cellSize-relative radius it maps onto. Deliberately thin by
+// default - a subtle wireframe accent, not a second layer of nodes.
+const DEFAULT_VOXEL_LINE_WIDTH = 0.25;
 const DEFAULT_VOXEL_NODE_SIZE = 0.5;
 const DEFAULT_VOXEL_NODE_OPACITY = 1;
 // How long a GEOMETRY_RULES.md R2 violation notice (see
@@ -80,6 +85,10 @@ export class VoxelizationService {
   // (e.g. a near-invisible fill with a fully-opaque wireframe, or vice
   // versa).
   private readonly edgeOpacityBySession = new KeyedStore<number, number>();
+  // Screen-space pixel width of the edge outline (LineSegments2/LineMaterial -
+  // see voxel-preview.ts's own comment on MIN/MAX_EDGE_WIDTH_PX), same [0,1]
+  // slider convention as the opacity controls, independent of them.
+  private readonly lineWidthBySession = new KeyedStore<number, number>();
   // Radius of the node spheres, relative to cellSize (see
   // voxel-preview.ts's NODE_RADIUS_MAX_FACTOR) - same [0,1] slider
   // convention as the opacity controls above, independent of them.
@@ -113,6 +122,7 @@ export class VoxelizationService {
       this.voxelPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
       this.opacityBySession.pruneTo(ids);
       this.edgeOpacityBySession.pruneTo(ids);
+      this.lineWidthBySession.pruneTo(ids);
       this.nodeSizeBySession.pruneTo(ids);
       this.nodeOpacityBySession.pruneTo(ids);
       this.runGenerationBySession.pruneTo(ids);
@@ -166,6 +176,23 @@ export class VoxelizationService {
     const preview = this.voxelPreviewBySession.get(sessionId);
     if (preview) {
       setVoxelEdgeOpacity(preview, clamped);
+    }
+  }
+
+  getLineWidth(sessionId: number): number {
+    return this.lineWidthBySession.get(sessionId) ?? DEFAULT_VOXEL_LINE_WIDTH;
+  }
+
+  // Same live-mutation reasoning as setOpacity/setEdgeOpacity, for the edge
+  // tubes' radius instead of their opacity - needs cellSize (setVoxelLineWidth's
+  // own doc comment), same as setNodeSize below.
+  setLineWidth(sessionId: number, width: number): void {
+    const clamped = Math.min(1, Math.max(0, width));
+    this.lineWidthBySession.set(sessionId, clamped);
+    const preview = this.voxelPreviewBySession.get(sessionId);
+    const status = this.statusBySession.get(sessionId);
+    if (preview && status?.kind === 'ok') {
+      setVoxelLineWidth(preview, clamped, status.result.cellSize);
     }
   }
 
@@ -315,7 +342,14 @@ export class VoxelizationService {
     const outgoing = this.voxelPreviewBySession.get(sessionId);
     this.voxelPreviewBySession.set(
       sessionId,
-      buildVoxelPreview(grid, this.getOpacity(sessionId), this.getEdgeOpacity(sessionId), this.getNodeSize(sessionId), this.getNodeOpacity(sessionId))
+      buildVoxelPreview(
+        grid,
+        this.getOpacity(sessionId),
+        this.getEdgeOpacity(sessionId),
+        this.getLineWidth(sessionId),
+        this.getNodeSize(sessionId),
+        this.getNodeOpacity(sessionId)
+      )
     );
     if (outgoing) {
       disposeVoxelPreview(outgoing);
