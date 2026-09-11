@@ -5,6 +5,39 @@ import { EDGES, buildVoxelHexahedronFillGeometry } from './voxel-hexahedron';
 import { disposeObject3D } from './dispose-object3d';
 
 const EDGE_COLOR = 0xffffff;
+// Real 3D tubes (InstancedMesh of a unit CylinderGeometry, one instance per
+// edge - see buildVoxelPreview below), not screen-space "fat lines"
+// (three's LineSegments2/LineMaterial addon) - that was tried first and
+// reverted: its quad-extrusion shader draws in screen space using a
+// `resolution` uniform this module has no renderer to supply on its own,
+// and in practice read as detached from the actual edges (visibly
+// shifted, sometimes not depth-resolving correctly against the fill/nodes,
+// flat rather than tube-shaped). A real cylinder participates in the
+// ordinary depth buffer exactly like the fill and node spheres already do
+// - no special-casing, no resolution to keep in sync, and it actually
+// looks like a tube. radialSegments stays low (6) and openEnded skips cap
+// geometry entirely (the node sphere already sitting at each endpoint
+// covers the open end visually) specifically to keep the per-instance
+// vertex count down - edges aren't deduplicated between face-adjacent
+// cells (each cell contributes its own 12 regardless of sharing, same as
+// the old line-based version), so a large grid can still mean millions of
+// instances.
+const EDGE_RADIAL_SEGMENTS = 6;
+// edgeWidth is a [0,1] slider value (same convention as fillOpacity/
+// nodeSize) - this is the cylinder's radius, relative to cellSize, at
+// edgeWidth=1. Kept deliberately thinner than a node at its own max
+// (NODE_RADIUS_MAX_FACTOR) so the edges read as a wireframe accent, not a
+// second layer of nodes. A tiny floor keeps the geometry non-degenerate at
+// edgeWidth=0, same reasoning as MIN_NODE_RADIUS below.
+const EDGE_RADIUS_MAX_FACTOR = 0.025;
+const MIN_EDGE_RADIUS = 0.001;
+// Distinguishes the edge/node InstancedMeshes from each other (and from
+// any other THREE.InstancedMesh a future feature might add to this same
+// group) when traversing - see setVoxelEdgeOpacity/setVoxelLineWidth vs.
+// setVoxelNodeOpacity/setVoxelNodeSize below. Same idiom as
+// VOXEL_HIGHLIGHT_NAME.
+const VOXEL_EDGE_NAME = 'voxel-edges';
+const VOXEL_NODE_NAME = 'voxel-nodes';
 // Distinct from both the purple fill and the white edges, so a node stays
 // visible sitting right on top of a face/edge - the whole point of
 // rendering these is to make the SHARED, deduplicated nodes (voxel-cell.ts's
@@ -67,7 +100,14 @@ export function getVoxelCellByInstanceId(preview: THREE.Object3D, instanceId: nu
 // to be added to the scene at identity - no position/quaternion copying
 // needed, unlike dimension lines/ruler (which are built in a LOCAL,
 // pivot-centered frame instead).
-export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeOpacity: number, nodeSize: number, nodeOpacity: number): THREE.Object3D {
+export function buildVoxelPreview(
+  grid: VoxelGridDto,
+  fillOpacity: number,
+  edgeOpacity: number,
+  lineWidth: number,
+  nodeSize: number,
+  nodeOpacity: number
+): THREE.Object3D {
   const group = new THREE.Group();
   const cells = buildVoxelCells(grid);
 
@@ -111,7 +151,6 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
   batched.perObjectFrustumCulled = false;
 
   const cellByInstanceId = new Map<number, VoxelCell>();
-  const edgePositions: number[] = [];
   for (const cell of cells) {
     const fillGeometry = buildVoxelHexahedronFillGeometry(cell);
     const geometryId = batched.addGeometry(fillGeometry);
@@ -120,19 +159,55 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
     // BatchedMesh copies attribute data into its own internal buffers at
     // addGeometry time - this per-cell geometry has served its purpose.
     fillGeometry.dispose();
-
-    EDGES.forEach(([i, j]) => {
-      const p0 = cell.corners[i];
-      const p1 = cell.corners[j];
-      edgePositions.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
-    });
   }
   group.add(batched);
   cellByInstanceIdByPreview.set(group, cellByInstanceId);
 
-  const edgeGeometry = new THREE.BufferGeometry();
-  edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-  group.add(new THREE.LineSegments(edgeGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: edgeOpacity })));
+  // One shared unit cylinder (radius 1, height 1, centered on the origin,
+  // aligned along local +Y - CylinderGeometry's own default), scaled/
+  // rotated/translated per instance below - same "one shared geometry,
+  // many instances" reasoning as the node spheres. See this file's own
+  // comment on EDGE_RADIAL_SEGMENTS for why this replaced screen-space
+  // "fat lines".
+  const edgeGeometry = new THREE.CylinderGeometry(1, 1, 1, EDGE_RADIAL_SEGMENTS, 1, true);
+  const edgeRadius = Math.max(MIN_EDGE_RADIUS, grid.cellSize * EDGE_RADIUS_MAX_FACTOR * lineWidth);
+  const edgeMesh = new THREE.InstancedMesh(
+    edgeGeometry,
+    new THREE.MeshBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: edgeOpacity }),
+    cells.length * EDGES.length
+  );
+  edgeMesh.name = VOXEL_EDGE_NAME;
+  // Scratch objects reused across every instance below (cells.length * 12
+  // of them for a real grid) rather than allocated per-edge - same
+  // reasoning as nodeMatrix below, just with more moving parts since an
+  // edge also needs a rotation (aligning the unit cylinder's +Y to the
+  // edge's own direction) and a non-uniform scale (radius on X/Z, the
+  // edge's actual length on Y), not just a translation.
+  const edgeMatrix = new THREE.Matrix4();
+  const edgeQuaternion = new THREE.Quaternion();
+  const edgeScale = new THREE.Vector3();
+  const edgeMidpoint = new THREE.Vector3();
+  const edgeDirection = new THREE.Vector3();
+  const CYLINDER_UP = new THREE.Vector3(0, 1, 0);
+  let edgeInstanceIndex = 0;
+  for (const cell of cells) {
+    EDGES.forEach(([i, j]) => {
+      const p0 = cell.corners[i];
+      const p1 = cell.corners[j];
+      edgeMidpoint.set((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2);
+      edgeDirection.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+      const length = edgeDirection.length();
+      edgeDirection.normalize();
+      edgeQuaternion.setFromUnitVectors(CYLINDER_UP, edgeDirection);
+      edgeScale.set(edgeRadius, length, edgeRadius);
+      edgeMatrix.compose(edgeMidpoint, edgeQuaternion, edgeScale);
+      edgeMesh.setMatrixAt(edgeInstanceIndex, edgeMatrix);
+      edgeInstanceIndex++;
+    });
+  }
+  edgeMesh.instanceMatrix.needsUpdate = true;
+  edgeMesh.renderOrder = 2; // same layer as the node spheres below - draw after the translucent fill (renderOrder 1) so neither z-fights it away
+  group.add(edgeMesh);
 
   // One sphere per UNIQUE node (collectUniqueNodes - shared corners
   // between adjacent voxels collapse to a single sphere, not one per
@@ -146,6 +221,7 @@ export function buildVoxelPreview(grid: VoxelGridDto, fillOpacity: number, edgeO
     new THREE.MeshBasicMaterial({ color: NODE_COLOR, transparent: true, opacity: nodeOpacity }),
     nodes.length
   );
+  nodeMesh.name = VOXEL_NODE_NAME;
   const nodeMatrix = new THREE.Matrix4();
   nodes.forEach((node, index) => {
     nodeMatrix.makeTranslation(node.x, node.y, node.z);
@@ -229,20 +305,56 @@ export function setVoxelPreviewOpacity(object: THREE.Object3D, opacity: number):
 }
 
 // Same live-mutation reasoning as setVoxelPreviewOpacity, for the white
-// edge outline instead of the fill.
+// edge tubes instead of the fill. Filtered by name, not just
+// `instanceof THREE.InstancedMesh` - the node spheres are ALSO an
+// InstancedMesh sitting in the same group (see setVoxelNodeOpacity below),
+// so type-checking alone can't tell the two apart.
 export function setVoxelEdgeOpacity(object: THREE.Object3D, opacity: number): void {
   object.traverse(child => {
-    if (child instanceof THREE.LineSegments) {
-      (child.material as THREE.LineBasicMaterial).opacity = opacity;
+    if (child instanceof THREE.InstancedMesh && child.name === VOXEL_EDGE_NAME) {
+      (child.material as THREE.MeshBasicMaterial).opacity = opacity;
     }
   });
 }
 
+// Unlike the opacity setters, this can't just mutate a material property -
+// the radius is baked into each instance's own transform matrix (scale.x/z),
+// alongside that edge's length (scale.y) and orientation (its rotation),
+// neither of which this should touch. Decomposes each instance's existing
+// matrix, replaces only the radius component, and recomposes it, rather
+// than rebuilding geometry (a cylinder's radius, unlike a sphere's -
+// setVoxelNodeSize below - can't be a single shared geometry parameter
+// here anyway, since world-space edge LENGTH already varies the scale.y
+// component per instance). Takes cellSize explicitly, same reasoning as
+// setVoxelNodeSize's own doc comment.
+export function setVoxelLineWidth(object: THREE.Object3D, width: number, cellSize: number): void {
+  const radius = Math.max(MIN_EDGE_RADIUS, cellSize * EDGE_RADIUS_MAX_FACTOR * width);
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  object.traverse(child => {
+    if (!(child instanceof THREE.InstancedMesh) || child.name !== VOXEL_EDGE_NAME) {
+      return;
+    }
+    for (let i = 0; i < child.count; i++) {
+      child.getMatrixAt(i, matrix);
+      matrix.decompose(position, quaternion, scale);
+      scale.x = radius;
+      scale.z = radius;
+      matrix.compose(position, quaternion, scale);
+      child.setMatrixAt(i, matrix);
+    }
+    child.instanceMatrix.needsUpdate = true;
+  });
+}
+
 // Same live-mutation reasoning as setVoxelPreviewOpacity/setVoxelEdgeOpacity,
-// for the node spheres.
+// for the node spheres - filtered by name for the same reason
+// setVoxelEdgeOpacity is (the edge tubes are ALSO an InstancedMesh).
 export function setVoxelNodeOpacity(object: THREE.Object3D, opacity: number): void {
   object.traverse(child => {
-    if (child instanceof THREE.InstancedMesh) {
+    if (child instanceof THREE.InstancedMesh && child.name === VOXEL_NODE_NAME) {
       (child.material as THREE.MeshBasicMaterial).opacity = opacity;
     }
   });
@@ -257,10 +369,11 @@ export function setVoxelNodeOpacity(object: THREE.Object3D, opacity: number): vo
 // rather than stashing it on the object's untyped userData bag: a typo'd
 // or renamed string key there would compile fine and silently fall back
 // to a wrong default, only visible by inspecting the rendered size.
+// Filtered by name, same reasoning as setVoxelNodeOpacity.
 export function setVoxelNodeSize(object: THREE.Object3D, size: number, cellSize: number): void {
   const radius = Math.max(MIN_NODE_RADIUS, cellSize * NODE_RADIUS_MAX_FACTOR * size);
   object.traverse(child => {
-    if (child instanceof THREE.InstancedMesh) {
+    if (child instanceof THREE.InstancedMesh && child.name === VOXEL_NODE_NAME) {
       const oldGeometry = child.geometry;
       child.geometry = new THREE.SphereGeometry(radius, 8, 6);
       oldGeometry.dispose();
