@@ -6,7 +6,7 @@ import { SessionsService } from './sessions.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto, withCellSet } from '../geometry/voxel-grid-contract';
-import { FACE_DIRECTIONS, VoxelCell, faceIndexForNormal } from '../geometry/voxel-cell';
+import { FACE_DIRECTIONS, VoxelCell, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
 import { toMeshBinary } from '../geometry/mesh-contract';
 import {
   buildVoxelPreview,
@@ -24,6 +24,20 @@ const DEFAULT_VOXEL_OPACITY = 0.55;
 const DEFAULT_VOXEL_EDGE_OPACITY = 1;
 const DEFAULT_VOXEL_NODE_SIZE = 0.5;
 const DEFAULT_VOXEL_NODE_OPACITY = 1;
+// How long a GEOMETRY_RULES.md R2 violation notice (see
+// DeletionViolation/reportDeletionViolation below) stays visible before
+// auto-clearing, same idea as a toast - long enough to actually read the
+// component-size breakdown, short enough not to linger over a scene the
+// user has since moved on from.
+const DELETION_VIOLATION_DISPLAY_MS = 6000;
+
+// Reported by removeSelectedVoxel when GEOMETRY_RULES.md's R2 blocks a
+// deletion - carries enough detail (the size of every group the remaining
+// geometry would split into) for the UI to explain exactly what would have
+// happened, not just that the action was refused.
+export interface VoxelDeletionViolation {
+  readonly componentSizes: readonly number[];
+}
 
 export type VoxelizationStatus =
   | { kind: 'idle' }
@@ -84,6 +98,13 @@ export class VoxelizationService {
   // "Вокселізувати" click, never automatically, but a user can still click
   // it again before the first response arrives.
   private readonly runGenerationBySession = new KeyedStore<number, number>();
+  // Current R2-violation notice per session (see VoxelDeletionViolation), if
+  // any - null/absent the rest of the time. auto-clears itself after
+  // DELETION_VIOLATION_DISPLAY_MS (timeout handle kept alongside so a
+  // second violation before the first notice expires can restart the
+  // clock instead of racing it).
+  private readonly deletionViolationBySession = new KeyedStore<number, VoxelDeletionViolation>();
+  private readonly deletionViolationTimeoutBySession = new KeyedStore<number, ReturnType<typeof setTimeout>>();
 
   constructor() {
     effect(() => {
@@ -95,6 +116,8 @@ export class VoxelizationService {
       this.nodeSizeBySession.pruneTo(ids);
       this.nodeOpacityBySession.pruneTo(ids);
       this.runGenerationBySession.pruneTo(ids);
+      this.deletionViolationBySession.pruneTo(ids);
+      this.deletionViolationTimeoutBySession.pruneTo(ids, timeout => clearTimeout(timeout));
     });
 
     // Actively clears (not just hides) a session's result the moment the
@@ -218,7 +241,10 @@ export class VoxelizationService {
   // cell is currently selected (getSelectedVoxelCell - the same selection
   // selectVoxelInstance sets, kept on the preview itself) - see
   // WorldCanvasComponent's Delete/Backspace key handler. A no-op without a
-  // successful result, or without anything currently selected.
+  // successful result, or without anything currently selected. Enforces
+  // GEOMETRY_RULES.md's R2 first: if removing this cell would split the
+  // remaining geometry into more than one connected group, the deletion is
+  // refused and reported via reportDeletionViolation instead of committed.
   removeSelectedVoxel(sessionId: number): void {
     const status = this.statusBySession.get(sessionId);
     const preview = this.voxelPreviewBySession.get(sessionId);
@@ -229,7 +255,35 @@ export class VoxelizationService {
     if (!cell) {
       return;
     }
+    const componentSizes = connectedComponentSizes(status.result, cell.ix, cell.iy, cell.iz);
+    if (componentSizes.length > 1) {
+      this.reportDeletionViolation(sessionId, componentSizes);
+      return;
+    }
     this.applyEditedGrid(sessionId, withCellSet(status.result, cell.ix, cell.iy, cell.iz, false));
+  }
+
+  getDeletionViolation(sessionId: number): VoxelDeletionViolation | null {
+    return this.deletionViolationBySession.get(sessionId) ?? null;
+  }
+
+  // Records an R2 refusal for removeSelectedVoxel to surface in the UI
+  // (WorldCanvasComponent's deletion-notice overlay), self-clearing after
+  // DELETION_VIOLATION_DISPLAY_MS. Restarts the clock rather than letting a
+  // second violation race the first one's timeout - otherwise a quick
+  // second blocked delete could get wiped by the FIRST notice's timer
+  // firing right after.
+  private reportDeletionViolation(sessionId: number, componentSizes: number[]): void {
+    const existingTimeout = this.deletionViolationTimeoutBySession.get(sessionId);
+    if (existingTimeout !== undefined) {
+      clearTimeout(existingTimeout);
+    }
+    this.deletionViolationBySession.set(sessionId, { componentSizes });
+    const timeout = setTimeout(() => {
+      this.deletionViolationBySession.delete(sessionId);
+      this.deletionViolationTimeoutBySession.delete(sessionId);
+    }, DELETION_VIOLATION_DISPLAY_MS);
+    this.deletionViolationTimeoutBySession.set(sessionId, timeout);
   }
 
   // Shared by run()'s success handler, addVoxelOnFace, and
@@ -248,6 +302,16 @@ export class VoxelizationService {
   // construction, before that component's next read of this service.
   private applyEditedGrid(sessionId: number, grid: VoxelGridDto): void {
     this.statusBySession.set(sessionId, { kind: 'ok', result: grid });
+    // A successful edit (add, permitted delete, or a fresh run()) means
+    // whatever R2 notice was showing no longer describes the current
+    // geometry - drop it immediately rather than leaving it to expire on
+    // its own timer.
+    const pendingViolationTimeout = this.deletionViolationTimeoutBySession.get(sessionId);
+    if (pendingViolationTimeout !== undefined) {
+      clearTimeout(pendingViolationTimeout);
+      this.deletionViolationTimeoutBySession.delete(sessionId);
+    }
+    this.deletionViolationBySession.delete(sessionId);
     const outgoing = this.voxelPreviewBySession.get(sessionId);
     this.voxelPreviewBySession.set(
       sessionId,
