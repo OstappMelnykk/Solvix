@@ -9,6 +9,12 @@ namespace Solvix.Voxelization;
 // project's own tests).
 internal sealed class Voxelizer : IVoxelizer
 {
+    /// <param name="meshBinary">Raw request body bytes - see <see cref="MeshBinarySerializer"/> for the layout this must follow.</param>
+    /// <param name="cancellationToken">Passed straight through to <see cref="VoxelizationService.Voxelize"/>.</param>
+    /// <returns>
+    /// The voxel grid <see cref="VoxelizationService.Voxelize"/> computed,
+    /// packed into bytes by <see cref="VoxelizationResultBinarySerializer"/>.
+    /// </returns>
     public byte[] Voxelize(byte[] meshBinary, CancellationToken cancellationToken = default)
     {
         using var input = new MemoryStream(meshBinary);

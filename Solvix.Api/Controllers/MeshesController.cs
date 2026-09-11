@@ -23,6 +23,26 @@ public class MeshesController(IMeshBuilderFacade meshBuilder, ILogger<MeshesCont
     [HttpPost("voxelize")]
     [RequestSizeLimit(MaxRequestBodyBytes)]
     [Consumes("application/octet-stream")]
+    /// <param name="cancellationToken">
+    /// Auto-bound by ASP.NET Core to <c>HttpContext.RequestAborted</c> - if
+    /// the client disconnects mid-request, this cancels both the body-read
+    /// and the voxelization work itself instead of computing a result
+    /// nobody will receive.
+    /// </param>
+    /// <returns>
+    /// <c>200 OK</c> with the voxel grid as an
+    /// <c>application/octet-stream</c> body (see
+    /// <c>VoxelizationResultBinarySerializer</c> for its layout) on success;
+    /// <c>400 BadRequest</c> with <c>{CellCount, Limit}</c> if the mesh
+    /// would need too many cells, or <c>{Message}</c> if the mesh body
+    /// itself is malformed.
+    /// </returns>
+    /// <remarks>
+    /// Reads the raw mesh bytes from <c>Request.Body</c> (the binary format
+    /// documented in <c>Solvix.Voxelization.MeshBinarySerializer</c>) - this
+    /// controller never inspects or names that shape itself, only HTTP
+    /// concerns (size limit, content type, status codes).
+    /// </remarks>
     public async Task<IActionResult> Voxelize(CancellationToken cancellationToken)
     {
         // Request.Body is a non-seekable network stream that doesn't allow
