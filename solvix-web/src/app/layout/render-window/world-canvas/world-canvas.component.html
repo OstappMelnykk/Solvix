@@ -14,6 +14,23 @@
 <button class="camera-reset-button" type="button" title="Скинути камеру до початкового положення" (click)="resetCamera()">
   Скинути камеру
 </button>
+<button
+  class="grid-toggle"
+  type="button"
+  [title]="isGridVisible() ? 'Сховати сітку підлоги' : 'Показати сітку підлоги'"
+  (click)="toggleGridVisible()"
+>
+  {{ isGridVisible() ? 'Сховати сітку' : 'Показати сітку' }}
+</button>
+<button
+  class="six-view-toggle"
+  type="button"
+  [disabled]="!hasModel()"
+  title="Переглянути об'єкт з 6 сторін (ортографічні проекції)"
+  (click)="openSixView()"
+>
+  6 сторін
+</button>
 <div class="voxel-rule-notice" [hidden]="!getDeletionViolationMessage()">
   {{ getDeletionViolationMessage() }}
 </div>

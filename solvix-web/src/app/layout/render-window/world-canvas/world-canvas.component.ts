@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
@@ -7,6 +7,7 @@ import { WorldRepresentation } from '../../../state/world-representation.service
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { VoxelizationService } from '../../../state/voxelization.service';
 import { getVoxelCellByInstanceId } from '../../../geometry/voxel-preview';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
@@ -124,11 +125,23 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // (`.enabled`) while this canvas is the active tab, same gating as
   // `controls` (OrbitControls) below.
   private rotateGizmo!: TransformControls;
+  // Floor grid on the XZ plane - kept by reference (not just added and
+  // forgotten, like AxesHelper) so its `visible` flag can be flipped from
+  // the on-canvas toggle button below, independently per World.
+  private gridHelper!: THREE.GridHelper;
+  // Mirrors gridHelper.visible for the template - a real default from
+  // construction, same reasoning as `cameraMode` above: the template can
+  // read isGridVisible() during Angular's very first change detection
+  // pass, before ngAfterViewInit (and initScene, which creates gridHelper)
+  // has even run, so reading gridHelper.visible directly there would throw.
+  private gridVisible = true;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   // Read directly (not via @Input) inside updateVoxelPreview() - see there
   // for why.
   private readonly voxelization = inject(VoxelizationService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
+  private readonly sixViewOverlay = inject(SixViewOverlayService);
+  private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
   // listener below for why position can't just be corrected live during the
@@ -146,6 +159,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // canvas its own independent placement.
   private currentModel: THREE.Object3D | null = null;
   private lastModel: THREE.Object3D | null = null;
+  // Mirrors `currentModel !== null` for the template's hasModel() - a real
+  // default from construction, same NG0100 reasoning as `cameraMode` and
+  // `gridVisible` above: ngAfterViewInit (which populates currentModel via
+  // updateModel(), synchronously, if a session/model already exists at
+  // startup) runs mid-way through Angular's very first change detection
+  // pass, so reading `currentModel !== null` directly from the template
+  // would flip between that pass and dev mode's immediate re-check of the
+  // same values.
+  private modelPresent = false;
   // Same clone-not-original reasoning as `currentModel`/`lastModel`, for the
   // imported reference overlay (also shared across all 3 canvases via
   // ImportedGeometryService).
@@ -203,6 +225,16 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   ngAfterViewInit(): void {
     this.initScene();
     this.sceneReady = true;
+    // initScene() (via updateModel()) can flip modelPresent from its
+    // construction-time default to true, mid-way through Angular's very
+    // first change-detection pass over THIS component's own template -
+    // exactly the NG0100 hazard the cameraMode/gridVisible doc comments
+    // above describe, except here the value genuinely does need to change.
+    // Forcing this component's own view to re-check RIGHT NOW (rather than
+    // leaving it for dev mode's later checkNoChanges pass to catch as a
+    // stale-vs-fresh mismatch) folds that change into the current cycle
+    // instead of exposing it across two.
+    this.cdr.detectChanges();
 
     const canvas = this.canvasRef.nativeElement;
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
@@ -372,7 +404,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     // Floor grid on the XZ plane (Y=0) - same fixed-fixture lifetime as
     // AxesHelper above, purely a visual reference for scale/orientation.
-    this.scene.add(new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS));
+    // Visibility is user-toggleable (see toggleGridVisible below), so this
+    // stays visible by default and gets its own field instead of being
+    // added anonymously like AxesHelper.
+    this.gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS);
+    this.gridHelper.visible = this.gridVisible;
+    this.scene.add(this.gridHelper);
   }
 
   private updateModel(): void {
@@ -388,6 +425,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.scene.remove(this.currentModel);
     }
     this.currentModel = object.clone();
+    this.modelPresent = true;
     this.scene.add(this.currentModel);
     // Each session's model carries its own, freshly-created material - the
     // GPU has never compiled a shader for it before. Warm it up here, while
@@ -948,6 +986,44 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.object = camera;
     this.controls.update();
     this.rotateGizmo.camera = camera;
+  }
+
+  // Backing state + action for the on-canvas floor-grid visibility toggle
+  // (world-canvas.component.html) - independent per World, since each of
+  // the 3 canvases owns its own GridHelper instance (see initScene).
+  isGridVisible(): boolean {
+    return this.gridVisible;
+  }
+
+  toggleGridVisible(): void {
+    this.gridVisible = !this.gridVisible;
+    this.gridHelper.visible = this.gridVisible;
+  }
+
+  // Backing state + action for the on-canvas "6 сторін" button - opens the
+  // single, app-wide SixViewOverlayComponent (app.component.html) showing
+  // THIS World's current model. Disabled (via hasModel()) rather than a
+  // no-op click, matching how the STL-visibility button doesn't appear at
+  // all outside the Ideal World - here there's simply nothing to show.
+  hasModel(): boolean {
+    return this.modelPresent;
+  }
+
+  openSixView(): void {
+    if (this.currentModel) {
+      const framingObjects: THREE.Object3D[] = [this.currentModel];
+      if (this.currentImportedReference) {
+        framingObjects.push(this.currentImportedReference);
+      }
+      this.sixViewOverlay.open({
+        scene: this.scene,
+        framingObjects,
+        // Rings and floor grid only add clutter to a 6-way "just show me
+        // the model" comparison - AxesHelper stays (not listed here) since
+        // orientation is exactly what these 6 fixed-axis panels are about.
+        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper()]
+      });
+    }
   }
 
   // Restores this World's camera to exactly what it was right after
