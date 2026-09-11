@@ -404,6 +404,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.lastImportedReference === source && this.lastImportedReferenceStyleKey === styleKey) {
       return;
     }
+    // Only an actual geometry/transform change (new import, density/scale
+    // change, or a committed rotation) should re-aim the camera below - a
+    // style-only change (color/opacity/solid<->wireframe) rebuilds the same
+    // shape at the same place, so recentering on it would be a no-op at
+    // best and, mid-drag on some other control, a pointless target jump.
+    const geometryChanged = this.lastImportedReference !== source;
     this.lastImportedReference = source;
     this.lastImportedReferenceStyleKey = styleKey;
 
@@ -450,6 +456,30 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.scene.add(clone);
     this.rotateGizmo.attach(clone);
     this.renderer.compile(this.scene, this.camera);
+
+    if (geometryChanged) {
+      this.centerOrbitTargetOn(clone);
+    }
+  }
+
+  // Re-aims OrbitControls at the reference's current world-space bounding-
+  // box center, without moving the camera itself - called whenever a NEW
+  // scaled/rotated clone lands (new import, density change, committed
+  // rotation). recenterAtOrigin (ImportedReferenceRenderService) always
+  // keeps the object's X/Z center at world 0 and its bottom grounded at
+  // Y=0, so DEFAULT_ORBIT_TARGET (world origin) only ever matches the
+  // object's true center by coincidence for a zero-height object - for
+  // anything with real height, the center sits at Y=halfHeight, which
+  // shifts every time density/rotation changes its extents. Computed from
+  // the live world bbox (not analytically) so it stays correct regardless
+  // of rotation.
+  private centerOrbitTargetOn(object: THREE.Object3D): void {
+    const box = new THREE.Box3().setFromObject(object);
+    if (box.isEmpty()) {
+      return;
+    }
+    this.controls.target.copy(box.getCenter(new THREE.Vector3()));
+    this.controls.update();
   }
 
   // Eases the object into its final re-grounded/re-centered position after
