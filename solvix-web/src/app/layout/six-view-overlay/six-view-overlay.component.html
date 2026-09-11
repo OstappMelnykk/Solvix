@@ -1,0 +1,36 @@
+<div class="six-view-overlay__header">
+  <span class="six-view-overlay__title">Перегляд з 6 сторін</span>
+  <button type="button" class="six-view-overlay__back" (click)="close()">Назад</button>
+</div>
+<div class="six-view-overlay__grid">
+  <div class="six-view-overlay__panel">
+    <canvas #canvas></canvas>
+    <span class="six-view-overlay__label">+X</span>
+    <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(0)">⟲</button>
+  </div>
+  <div class="six-view-overlay__panel">
+    <canvas #canvas></canvas>
+    <span class="six-view-overlay__label">-X</span>
+    <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(1)">⟲</button>
+  </div>
+  <div class="six-view-overlay__panel">
+    <canvas #canvas></canvas>
+    <span class="six-view-overlay__label">+Y (зверху)</span>
+    <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(2)">⟲</button>
+  </div>
+  <div class="six-view-overlay__panel">
+    <canvas #canvas></canvas>
+    <span class="six-view-overlay__label">-Y (знизу)</span>
+    <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(3)">⟲</button>
+  </div>
+  <div class="six-view-overlay__panel">
+    <canvas #canvas></canvas>
+    <span class="six-view-overlay__label">+Z</span>
+    <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(4)">⟲</button>
+  </div>
+  <div class="six-view-overlay__panel">
+    <canvas #canvas></canvas>
+    <span class="six-view-overlay__label">-Z</span>
+    <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(5)">⟲</button>
+  </div>
+</div>
