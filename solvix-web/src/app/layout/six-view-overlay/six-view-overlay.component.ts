@@ -87,8 +87,44 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   private frameId = 0;
   private viewReady = false;
 
+  // Deliberately does NOT create the 6 WebGLRenderers here - this used to,
+  // always-mounted since app boot alongside the 3 WorldCanvasComponent
+  // contexts, ZonePaintingComponent's 4, and SurfaceZonePaintingComponent's
+  // 4 - even with those 2 painting tools ALSO made lazy (create-on-open,
+  // free-on-close, since they're never both open at once), a real report
+  // still showed the Ideal World canvas going blank right after finishing
+  // the STL painting flow: THREE.WebGLRenderer.dispose() asks the browser
+  // to release a context but doesn't guarantee it happens immediately, so
+  // a rapid open/close cycle can transiently exceed the browser's per-page
+  // WebGL context limit (commonly 16 in Chrome) even when the STEADY-STATE
+  // count looks safe on paper. Making this the 3rd tool with a lazy
+  // create/teardown lifecycle drops the worst case from 3 + 6 + 4 = 13 down
+  // to 3 + 4 = 7 (this overlay and the 2 painting tools are mutually
+  // exclusive with each other and with each other, so at most one set of 4
+  // extra ever exists at a time) - a much bigger margin against exactly
+  // this kind of disposal-timing race.
   ngAfterViewInit(): void {
+    this.viewReady = true;
+    this.animate();
+  }
+
+  ngOnDestroy(): void {
+    cancelAnimationFrame(this.frameId);
+    this.teardownRenderers();
+  }
+
+  private ensureRenderersReady(): boolean {
+    if (this.renderers.length > 0) {
+      return true;
+    }
     const canvases = this.canvasRefs.toArray().map(ref => ref.nativeElement);
+    // Same "wait for real dimensions" reasoning as the 2 painting tools'
+    // own ensureRenderersReady - [hidden] flips the instant overlay.active()
+    // becomes non-null, in the SAME tick this checks it, before Angular's
+    // own change detection has necessarily caught up.
+    if (canvases.some(canvas => canvas.clientWidth === 0 || canvas.clientHeight === 0)) {
+      return false;
+    }
     // logarithmicDepthBuffer matters more here than on the main World
     // canvases: a large loaded model can push the near:far ratio (see
     // rebuildFraming) well past what a plain depth buffer can resolve,
@@ -113,15 +149,24 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
       controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
       return controls;
     });
-    this.viewReady = true;
-    this.animate();
+    this.lastPanelSizes.forEach(size => {
+      size.width = 0;
+      size.height = 0;
+    });
+    return true;
   }
 
-  ngOnDestroy(): void {
-    cancelAnimationFrame(this.frameId);
+  private teardownRenderers(): void {
+    if (this.renderers.length === 0) {
+      return;
+    }
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
+    this.renderers = [];
+    this.oitRenderers = [];
+    this.cameras = [];
+    this.controls = [];
   }
 
   close(): void {
@@ -251,7 +296,11 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     const source = this.overlay.active();
     if (source === null) {
       this.lastSource = null;
+      this.teardownRenderers();
       return;
+    }
+    if (!this.ensureRenderersReady()) {
+      return; // canvases not measurable yet - retry next frame
     }
     if (source !== this.lastSource) {
       this.lastSource = source;
