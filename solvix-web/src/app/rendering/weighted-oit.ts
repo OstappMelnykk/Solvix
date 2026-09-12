@@ -167,6 +167,27 @@ const COMPOSITE_FRAGMENT_SHADER = `
   uniform sampler2D tAccum;
   uniform sampler2D tReveal;
   varying vec2 vUv;
+
+  // Matches three.js's own sRGBTransferOETF (colorspace_pars_fragment.glsl.js)
+  // verbatim - this composite pass writes straight to the real canvas
+  // (WebGLRenderer.render(..., null)), but pulls its 3 inputs from
+  // OFFSCREEN render targets. Every one of THOSE passes ran with a
+  // non-null render target bound, which makes three.js's own
+  // getUnlitUniformColorSpace() (UniformsUtils.js) hand every material's
+  // and the scene background's own color uniforms LINEAR values instead of
+  // the sRGB-encoded ones a direct-to-canvas render gets - by three.js's
+  // own design, intermediate render-target passes are meant to carry
+  // linear data, and something downstream is expected to do the final
+  // encode. Skipping this here was the actual cause of two earlier
+  // symptoms that looked unrelated: colors reading as too dark/contrasty
+  // in general, and the scene background specifically changing shade the
+  // moment anything went through the accum/reveal passes (i.e. the moment
+  // opacity dropped below 1) rather than the single-pass direct-render
+  // fallback above.
+  vec3 linearToSRGB(vec3 value) {
+    return mix(pow(value, vec3(0.41666)) * 1.055 - vec3(0.055), value * 12.92, vec3(lessThanEqual(value, vec3(0.0031308))));
+  }
+
   void main() {
     vec4 accum = texture2D(tAccum, vUv);
     // Any of accum's RGBA channels would do - the reveal target was
@@ -180,7 +201,7 @@ const COMPOSITE_FRAGMENT_SHADER = `
     // in accum.rgb back into a weighted AVERAGE color.
     vec3 averageColor = accum.rgb / max(accum.a, 1e-5);
     vec3 finalColor = averageColor * (1.0 - reveal) + backgroundColor * reveal;
-    gl_FragColor = vec4(finalColor, 1.0);
+    gl_FragColor = vec4(linearToSRGB(finalColor), 1.0);
   }
 `;
 
