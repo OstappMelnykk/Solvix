@@ -9,12 +9,14 @@ import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../.
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { ZonePaintingService } from '../../../state/zone-painting.service';
+import { SurfaceZonePaintingService } from '../../../state/surface-zone-painting.service';
 import { VoxelizationService } from '../../../state/voxelization.service';
 import { getVoxelCellByInstanceId } from '../../../geometry/scene-objects/voxels';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
 import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/scene-objects/zone-overlay';
+import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../../geometry/scene-objects/surface-zone-overlay';
 import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
 import { buildAxesHelper } from '../../../geometry/scene-objects/axes-helper';
 import { buildFloorGrid } from '../../../geometry/scene-objects/floor-grid';
@@ -158,10 +160,24 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private zoneOverlayGroup: THREE.Group | null = null;
   private zoneOverlaySessionId: number | null = null;
   private zoneOverlayRevision = -1;
+  // Same "wanted vs. currently allowed" split as zonesOverlayWanted above,
+  // for the "Показати зони на STL" toggle - allowed only once
+  // SurfaceZonePaintingService.isSaved(sessionId), which (unlike voxel zone
+  // coverage) never goes back to false without a full resetSelections, so
+  // this needs no revision tracking: rebuild once per session, never again
+  // for that same session.
+  private surfaceZonesOverlayWanted = false;
+  private surfaceZoneOverlayGroup: THREE.Object3D | null = null;
+  private surfaceZoneOverlaySessionId: number | null = null;
+  // Last shouldShow value updateSurfaceZoneOverlay computed - lets it touch
+  // currentImportedReference.visible only right at a real transition, not
+  // unconditionally on every one of its (every-World, every-frame) calls.
+  private surfaceZoneOverlayShown = false;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   // Read directly (not via @Input) inside updateVoxelPreview() - see there
   // for why.
   private readonly voxelization = inject(VoxelizationService);
+  private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
   private readonly zonePainting = inject(ZonePaintingService);
@@ -231,7 +247,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastWidth = 0;
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
-  private onContextRestored = () => this.checkResize();
+  // checkResize() alone is a no-op whenever the canvas's own CSS size
+  // hasn't changed (the common case for a context loss/restore, which
+  // isn't triggered by any resize) - meaning it did nothing useful here
+  // before, leaving this canvas showing nothing until the NEXT time
+  // something else happened to force a render. Forces one directly instead
+  // (same idiom as ngOnChanges' own immediate-repaint-on-activate), then
+  // still runs checkResize() in case the size DID also change while lost.
+  private onContextRestored = () => {
+    this.checkResize();
+    this.oitRenderer.render(this.scene, this.camera);
+  };
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
   };
@@ -303,6 +329,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       disposeImportedReferenceClone(this.currentImportedReference);
     }
     this.clearZoneOverlay();
+    this.clearSurfaceZoneOverlay();
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
     this.oitRenderer?.dispose();
@@ -639,7 +666,14 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // rAF queue got there first.
   private updateVoxelPreview(): void {
     const source =
-      this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.importedReferenceDisplay.getStyle(this.sessionId).voxelPreviewVisible
+      this.worldIndex === IDEAL_WORLD_INDEX &&
+      this.sessionId !== null &&
+      this.importedReferenceDisplay.getStyle(this.sessionId).voxelPreviewVisible &&
+      // "Показати зони на STL" is meant to show ONLY the colored STL
+      // surface (per the user's own request) - the coarse voxel cubes
+      // sitting in roughly the same physical space would otherwise
+      // visually compete with (and largely hide) that fine-grained result.
+      !this.isSurfaceZonesOverlayVisible()
         ? this.voxelization.getVoxelPreview(this.sessionId)
         : null;
     if (this.lastVoxelPreview === source) {
@@ -851,6 +885,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateRuler();
     this.updateVoxelPreview();
     this.updateZoneOverlay();
+    this.updateSurfaceZoneOverlay();
     this.updateSession();
     this.updateSettleAnimation();
 
@@ -997,6 +1032,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.zonePainting.open(this.sessionId, {
         scene: this.scene,
         voxelPreview: this.currentVoxelPreview,
+        stlMesh: this.currentImportedReference,
         framingObjects: [this.currentVoxelPreview],
         // Same fixtures SixViewOverlayComponent hides while open - clutter,
         // not content, for a fixed-axis "just show me the voxels" view.
@@ -1033,7 +1069,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // data itself has actually changed since the last build - called every
   // frame from animate(), same pattern as updateVoxelPreview.
   private updateZoneOverlay(): void {
-    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isZonesOverlayVisible();
+    // "Показати зони на STL" means ONLY the STL surface's zones show - the
+    // voxel color-box overlay would otherwise still float there
+    // independently (it's a separate object, unaffected by
+    // updateVoxelPreview hiding the plain voxel cubes on their own).
+    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isZonesOverlayVisible() && !this.isSurfaceZonesOverlayVisible();
     if (!shouldShow) {
       this.clearZoneOverlay();
       return;
@@ -1093,6 +1133,83 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.zoneOverlayGroup) {
       setZoneOverlayOpacity(this.zoneOverlayGroup, opacity);
     }
+  }
+
+  // Backing state + action for the "Показати зони на STL" button - the
+  // step-2 (surface) counterpart to hasFullZoneCoverage/isZonesOverlayVisible/
+  // toggleZonesOverlay above. Only enabled once step 2 is actually saved
+  // (SurfaceZonePaintingService.isSaved) - unlike the voxel version, there's
+  // no "partial but still worth showing" state here at all (step 2 itself
+  // already requires full coverage before it lets you save).
+  hasSavedSurfaceZoning(): boolean {
+    return this.sessionId !== null && this.surfaceZonePainting.isSaved(this.sessionId);
+  }
+
+  isSurfaceZonesOverlayVisible(): boolean {
+    return this.surfaceZonesOverlayWanted && this.hasSavedSurfaceZoning();
+  }
+
+  toggleSurfaceZonesOverlay(): void {
+    this.surfaceZonesOverlayWanted = !this.surfaceZonesOverlayWanted;
+  }
+
+  // Lazily builds the overlay once per session (never rebuilt after that -
+  // unlike updateZoneOverlay, step 2's data is frozen the moment save()
+  // succeeds, so there's no revision to key off) - called every frame from
+  // animate(), same pattern as updateZoneOverlay/updateVoxelPreview.
+  private updateSurfaceZoneOverlay(): void {
+    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isSurfaceZonesOverlayVisible();
+    // The overlay is a fully-opaque clone of the EXACT same STL geometry,
+    // at the exact same depth - leaving the original reference visible
+    // underneath it would z-fight (2 coincident opaque surfaces, flickering
+    // unpredictably by floating-point depth precision) rather than being
+    // cleanly occluded. Toggled here (not inside updateImportedReference's
+    // own rebuild logic) so flipping this on/off never triggers a pointless
+    // reference rebuild/re-gizmo-attach cycle - same object, just hidden.
+    //
+    // Only touched right AT the shouldShow transition, not unconditionally
+    // every frame: this runs for all 3 Worlds, every frame, regardless of
+    // which one is actually active - forcing .visible=true every single
+    // tick whenever shouldShow is false would fight any OTHER mechanism
+    // that legitimately wants this object hidden for its own reasons
+    // (its own visibility checkbox, a different overlay's own toggling)
+    // by re-asserting an opinion here nobody asked for on ticks where
+    // nothing actually changed.
+    if (shouldShow !== this.surfaceZoneOverlayShown && this.currentImportedReference) {
+      this.currentImportedReference.visible = !shouldShow;
+    }
+    this.surfaceZoneOverlayShown = shouldShow;
+    if (!shouldShow) {
+      this.clearSurfaceZoneOverlay();
+      return;
+    }
+
+    const sessionId = this.sessionId!;
+    if (this.surfaceZoneOverlayGroup && this.surfaceZoneOverlaySessionId === sessionId) {
+      return; // already showing this session's (frozen) result - nothing to rebuild
+    }
+    if (this.surfaceZoneOverlayGroup) {
+      disposeSurfaceZoneOverlay(this.surfaceZoneOverlayGroup);
+      this.surfaceZoneOverlayGroup = null;
+    }
+    const session = this.surfaceZonePainting.getSession(sessionId);
+    const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
+    if (!session || !triangleZone || !this.currentImportedReference) {
+      this.surfaceZoneOverlaySessionId = null;
+      return;
+    }
+    const group = buildSurfaceZoneOverlay(this.currentImportedReference, triangleZone, session.voxelZones, 1);
+    this.scene.add(group);
+    this.surfaceZoneOverlayGroup = group;
+    this.surfaceZoneOverlaySessionId = sessionId;
+  }
+
+  private clearSurfaceZoneOverlay(): void {
+    if (this.surfaceZoneOverlayGroup) {
+      disposeSurfaceZoneOverlay(this.surfaceZoneOverlayGroup);
+      this.surfaceZoneOverlayGroup = null;
+    }
+    this.surfaceZoneOverlaySessionId = null;
   }
 
   openSixView(): void {

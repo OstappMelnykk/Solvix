@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { SessionsService } from './sessions.service';
 import { VoxelizationService } from './voxelization.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
+import { isSingleConnectedComponent } from './mask-connectivity';
 import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-contract';
 
 // What WorldCanvasComponent.openZonePainting hands the service to open the
@@ -15,6 +16,15 @@ import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-
 export interface ZonePaintingSource {
   readonly scene: THREE.Scene;
   readonly voxelPreview: THREE.Object3D;
+  // The displayed STL reference, when the Ideal World has one shown - null
+  // otherwise (voxelization can run against nothing, in principle, though
+  // in practice there's always a reference once voxels exist). Handed
+  // straight through to SurfaceZonePaintingService by
+  // ZonePaintingComponent's own "Розмітити STL" button, once this session's
+  // voxel zoning is saved - that second tool paints directly on ITS
+  // geometry (see docs/local-refinement/PROBLEMS.md's isoparametric-snap
+  // motivation).
+  readonly stlMesh: THREE.Object3D | null;
   readonly framingObjects: readonly THREE.Object3D[];
   readonly hiddenDuringView: readonly THREE.Object3D[];
 }
@@ -148,50 +158,6 @@ export function projectedCoords(axis: Axis, ix: number, iy: number, iz: number):
     return { u: ix, v: iz };
   }
   return { u: ix, v: iy };
-}
-
-// 4-connectivity flood fill - is every SET cell in `mask` reachable from
-// every other SET cell? An empty mask counts as connected (nothing to
-// disconnect yet), matching how "no selection" isn't itself a violation of
-// GEOMETRY_RULES.md-style connectivity rules elsewhere in this codebase.
-function isSingleConnectedComponent(mask: Uint8Array, width: number, height: number): boolean {
-  const start = mask.indexOf(1);
-  if (start === -1) {
-    return true;
-  }
-  const visited = new Uint8Array(mask.length);
-  visited[start] = 1;
-  let visitedCount = 1;
-  let total = 0;
-  for (let i = 0; i < mask.length; i++) {
-    if (mask[i]) {
-      total++;
-    }
-  }
-  const stack = [start];
-  while (stack.length > 0) {
-    const index = stack.pop()!;
-    const u = index % width;
-    const v = (index / width) | 0;
-    const neighbors: [number, number][] = [
-      [u + 1, v],
-      [u - 1, v],
-      [u, v + 1],
-      [u, v - 1]
-    ];
-    for (const [nu, nv] of neighbors) {
-      if (nu < 0 || nu >= width || nv < 0 || nv >= height) {
-        continue;
-      }
-      const nIndex = nu + nv * width;
-      if (mask[nIndex] && !visited[nIndex]) {
-        visited[nIndex] = 1;
-        visitedCount++;
-        stack.push(nIndex);
-      }
-    }
-  }
-  return visitedCount === total;
 }
 
 // Single shared instance, same reasoning as SixViewOverlayService - only one

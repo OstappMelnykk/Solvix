@@ -6,6 +6,7 @@ import { ToolbarPanelComponent } from './layout/toolbar-panel/toolbar-panel.comp
 import { FooterComponent } from './layout/footer/footer.component';
 import { SixViewOverlayComponent } from './layout/six-view-overlay/six-view-overlay.component';
 import { ZonePaintingComponent } from './layout/zone-painting/zone-painting.component';
+import { SurfaceZonePaintingComponent } from './layout/surface-zone-painting/surface-zone-painting.component';
 import { WorkspaceViewService } from './state/workspace-view.service';
 import { WORKSPACE_VIEWS } from './layout/workspace-views';
 
@@ -17,7 +18,16 @@ import { WORKSPACE_VIEWS } from './layout/workspace-views';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [NgComponentOutlet, RouterOutlet, SessionTabsComponent, ToolbarPanelComponent, FooterComponent, SixViewOverlayComponent, ZonePaintingComponent],
+  imports: [
+    NgComponentOutlet,
+    RouterOutlet,
+    SessionTabsComponent,
+    ToolbarPanelComponent,
+    FooterComponent,
+    SixViewOverlayComponent,
+    ZonePaintingComponent,
+    SurfaceZonePaintingComponent
+  ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })

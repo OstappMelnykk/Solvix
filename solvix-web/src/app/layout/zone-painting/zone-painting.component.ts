@@ -9,6 +9,7 @@ import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity, 
 import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 import { VoxelizationService } from '../../state/voxelization.service';
 import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
+import { SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
 
 type AxisSign = 1 | -1;
 
@@ -74,6 +75,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly voxelization = inject(VoxelizationService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
+  private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
 
   readonly axes = AXES; // panels 0-2 always show axes[i] - fixed, only the side (sign) is switchable
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i); // 0-2 painting views, 3 the free-orbit result
@@ -97,6 +99,12 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   private lastSessionId: number | null = null;
   private frameId = 0;
   private viewReady = false;
+  // Without preventDefault() here, a lost WebGL context on any of these 4
+  // canvases is PERMANENT - the browser only ever attempts to restore a
+  // context whose loss event was explicitly prevented. Matches
+  // WorldCanvasComponent's own long-standing handling, which these 4
+  // canvases never had.
+  private readonly onContextLost = (event: Event) => event.preventDefault();
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointerNdc = new THREE.Vector2();
@@ -114,8 +122,44 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   // mesh) - see rebuildZoneOverlayMesh's own comment for why.
   private zoneOverlayGroup: THREE.Group | null = null;
 
+  // Deliberately does NOT create the 4 WebGLRenderers here - this used to,
+  // but that (plus SixViewOverlayComponent's 6, always-mounted since app
+  // boot) already left little headroom before the browser's per-page WebGL
+  // context limit (commonly 16 in Chrome): 3 worlds + 6 six-view + 4 here =
+  // 13, and the moment SurfaceZonePaintingComponent's OWN 4 (step 2) are
+  // ALSO created while this tool happened to still be holding its 4, the
+  // total (17) went over the limit and silently lost an EARLIER context
+  // instead (the Ideal World canvas going blank - a real, reported
+  // regression). Since this component and SurfaceZonePaintingComponent are
+  // never meant to be open at the same time (opening one closes the
+  // other), making BOTH lazy (create on open, free on close) means their 4
+  // contexts never coexist - worst case stays 3 + 6 + 4 = 13, safely under
+  // the limit regardless of which of the 2 painting steps is open.
   ngAfterViewInit(): void {
+    this.viewReady = true;
+    this.animate();
+  }
+
+  ngOnDestroy(): void {
+    cancelAnimationFrame(this.frameId);
+    this.teardownRenderers();
+    this.disposeZoneOverlayMesh();
+  }
+
+  private ensureRenderersReady(): boolean {
+    if (this.renderers.length > 0) {
+      return true;
+    }
     const canvases = this.canvasRefs.toArray().map(ref => ref.nativeElement);
+    // Same "wait for real dimensions" reasoning as
+    // SurfaceZonePaintingComponent's own ensureRenderersReady - [hidden]
+    // flips the instant activeSessionId() becomes non-null, in the SAME
+    // tick this checks it, before Angular's own change detection has
+    // necessarily caught up.
+    if (canvases.some(canvas => canvas.clientWidth === 0 || canvas.clientHeight === 0)) {
+      return false;
+    }
+    canvases.forEach(canvas => canvas.addEventListener('webglcontextlost', this.onContextLost, false));
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
     this.oitRenderers = this.renderers.map(renderer => new WeightedOitRenderer(renderer));
     this.cameras = canvases.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
@@ -139,16 +183,25 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
       return controls;
     });
-    this.viewReady = true;
-    this.animate();
+    this.lastPanelSizes.forEach(size => {
+      size.width = 0;
+      size.height = 0;
+    });
+    return true;
   }
 
-  ngOnDestroy(): void {
-    cancelAnimationFrame(this.frameId);
+  private teardownRenderers(): void {
+    if (this.renderers.length === 0) {
+      return;
+    }
+    this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
-    this.disposeZoneOverlayMesh();
+    this.renderers = [];
+    this.oitRenderers = [];
+    this.cameras = [];
+    this.controls = [];
   }
 
   isHidden(): boolean {
@@ -283,8 +336,49 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  // The explicit next step (per the user's own preference: a separate step
+  // AFTER save, not an automatic mode switch inside this same window) -
+  // hands the ALREADY-saved voxel zoning off to SurfaceZonePaintingService,
+  // then closes this window so only one full-screen tool is ever showing at
+  // once (SurfaceZonePaintingComponent isn't nested inside this one - it's
+  // a sibling, mounted once at app.component.html, same pattern as this
+  // component itself and SixViewOverlayComponent).
+  canOpenSurfaceZonePainting(): boolean {
+    return this.isSaved() && this.zonePainting.activeSource()?.stlMesh != null;
+  }
+
+  openSurfaceZonePainting(): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    const source = this.zonePainting.activeSource();
+    if (sessionId === null || !source || !source.stlMesh) {
+      return;
+    }
+    const opened = this.surfaceZonePainting.open(sessionId, {
+      scene: source.scene,
+      stlMesh: source.stlMesh,
+      framingObjects: [source.stlMesh],
+      // The voxel fill occupies roughly the same physical space as the STL
+      // surface being clicked on here - left visible, it would visually
+      // compete with (and occlude) the smooth surface the user is trying
+      // to precisely click on.
+      hiddenDuringView: [source.voxelPreview],
+      // Kept verbatim so SurfaceZonePaintingComponent's own "← Крок 1" back
+      // button can re-open this exact same window later, without this
+      // component needing to still be around to hand it over again.
+      step1Source: source
+    });
+    if (opened) {
+      this.zonePainting.close();
+    }
+  }
+
+  // Left button only - this used to react to EVERY pointer button, so a
+  // right-drag pan gesture (OrbitControls' mouseButtons.RIGHT = PAN, set
+  // above) was ALSO tracked as a paint attempt and fired a toggleCell/
+  // selectRect the instant the button was released, fighting with the pan
+  // itself instead of letting it through untouched.
   onPointerDown(index: number, event: PointerEvent): void {
-    if (index === RESULT_PANEL_INDEX) {
+    if (index === RESULT_PANEL_INDEX || event.button !== 0) {
       return;
     }
     this.dragPanelIndex = index;
@@ -420,7 +514,11 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     const source = this.zonePainting.activeSource();
     if (sessionId === null || !source) {
       this.lastSessionId = null;
+      this.teardownRenderers();
       return;
+    }
+    if (!this.ensureRenderersReady()) {
+      return; // canvases not measurable yet - retry next frame
     }
     if (sessionId !== this.lastSessionId) {
       this.lastSessionId = sessionId;

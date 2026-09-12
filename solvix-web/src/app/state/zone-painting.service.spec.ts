@@ -17,6 +17,7 @@ function buildGrid(countX: number, countY: number, countZ: number): VoxelGridDto
 const fakeSource: ZonePaintingSource = {
   scene: new THREE.Scene(),
   voxelPreview: new THREE.Object3D(),
+  stlMesh: null,
   framingObjects: [],
   hiddenDuringView: []
 };

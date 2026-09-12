@@ -1,0 +1,379 @@
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: #1e1f22;
+  font-family: sans-serif;
+}
+
+:host([hidden]) {
+  display: none;
+}
+
+.surface-zone-painting__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
+  padding: 10px 14px;
+  background: rgba(30, 31, 34, 0.95);
+  // Amber accent = "step 2, STL" - visually distinct from
+  // ZonePaintingComponent's own blue "step 1, voxels" header, so which of
+  // the 2 sequential full-screen tools is open is unmistakable at a
+  // glance.
+  border-bottom: 2px solid #f4a261;
+}
+
+.surface-zone-painting__step {
+  padding: 3px 8px;
+  background: rgba(244, 162, 97, 0.16);
+  border: 1px solid rgba(244, 162, 97, 0.5);
+  border-radius: 4px;
+  color: #f7c99f;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.surface-zone-painting__title {
+  color: #dfe1e5;
+  font-size: 13px;
+  flex: 1;
+}
+
+.surface-zone-painting__back {
+  padding: 6px 14px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #f4a261;
+  }
+}
+
+// The wizard's "go back to step 1" link - blue (step 1's own accent), so
+// it visually reads as "leads back to the OTHER screen", mirroring
+// ZonePaintingComponent's own amber "Далі: розмітка STL-поверхні →".
+.surface-zone-painting__prev-step {
+  padding: 6px 14px;
+  background: rgba(57, 197, 242, 0.14);
+  border: 1px solid #39c5f2;
+  border-radius: 6px;
+  color: #9fe3f7;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(57, 197, 242, 0.26);
+  }
+}
+
+.surface-zone-painting__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.surface-zone-painting__grid {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 2px;
+  background: #000;
+}
+
+.surface-zone-painting__panel {
+  position: relative;
+  overflow: hidden;
+  background: #1e1f22;
+}
+
+.surface-zone-painting__panel--result {
+  outline: 1px solid rgba(244, 162, 97, 0.35);
+  outline-offset: -1px;
+}
+
+.surface-zone-painting__panel canvas {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.surface-zone-painting__overlay {
+  pointer-events: none;
+  z-index: 1;
+}
+
+.surface-zone-painting__label {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 2;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  color: #dfe1e5;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.surface-zone-painting__flip {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  color: #dfe1e5;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #f4a261;
+  }
+}
+
+.surface-zone-painting__sidebar {
+  flex: none;
+  width: 220px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(30, 31, 34, 0.95);
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  color: #dfe1e5;
+  font-size: 12px;
+  overflow-y: auto;
+}
+
+.surface-zone-painting__zone-picker-label {
+  color: #9aa0a6;
+  font-size: 11px;
+}
+
+// The single, unmissable "which zone am I painting right now" banner -
+// replaces an earlier list-of-buttons design real feedback said made the
+// active zone unclear. A thick colored border (the zone's own color) plus
+// a large swatch, not just a small icon buried among other controls.
+.surface-zone-painting__current-zone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 3px solid;
+  border-radius: 8px;
+}
+
+.surface-zone-painting__zone-nav {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.surface-zone-painting__current-zone-swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+
+.surface-zone-painting__current-zone-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f2f3f5;
+}
+
+.surface-zone-painting__brush-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.surface-zone-painting__mode-row {
+  display: flex;
+  gap: 6px;
+}
+
+.surface-zone-painting__mode-option {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &--active {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: #f4a261;
+  }
+}
+
+.surface-zone-painting__brush-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: 6px;
+  padding: 0;
+  background: rgba(30, 31, 34, 0.75);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &--active {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: #f4a261;
+  }
+}
+
+.surface-zone-painting__brush-dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: #dfe1e5;
+}
+
+.surface-zone-painting__finish {
+  padding: 6px 14px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    border-color: #da680b;
+  }
+}
+
+.surface-zone-painting__message {
+  margin: 0;
+  font-size: 11px;
+  color: #f4a261;
+}
+
+.surface-zone-painting__coverage {
+  margin: 0;
+  font-size: 11px;
+  color: #9aa0a6;
+}
+
+// THE primary action of this whole screen - explicitly made big/bold/
+// impossible-to-miss per real feedback that the earlier "Зберегти" button
+// was too easy to lose among the other sidebar controls.
+.surface-zone-painting__primary-action {
+  padding: 12px 14px;
+  background: rgba(42, 157, 143, 0.22);
+  border: 2px solid #2a9d8f;
+  border-radius: 8px;
+  color: #a8f0e3;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: rgba(42, 157, 143, 0.34);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.surface-zone-painting__saved {
+  margin: 0;
+  font-size: 11px;
+  color: #7fe0d1;
+}
+
+.surface-zone-painting__reset {
+  margin-top: auto;
+  padding: 6px 14px;
+  background: rgba(230, 57, 70, 0.12);
+  border: 1px solid rgba(230, 57, 70, 0.45);
+  border-radius: 6px;
+  color: #f2b8bd;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: rgba(230, 57, 70, 0.22);
+    border-color: #e63946;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #f4a261;
+  }
+}

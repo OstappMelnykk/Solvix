@@ -1,5 +1,14 @@
 <div class="zone-painting__header">
+  <span class="zone-painting__step">Крок 1 з 2 · Вокселі</span>
   <span class="zone-painting__title">Розмітка зон</span>
+  <button
+    type="button"
+    class="zone-painting__next-step"
+    *ngIf="canOpenSurfaceZonePainting()"
+    (click)="openSurfaceZonePainting()"
+  >
+    Далі: розмітка STL-поверхні →
+  </button>
   <button type="button" class="zone-painting__back" (click)="close()">Закрити</button>
 </div>
 
@@ -38,7 +47,9 @@
     <p class="zone-painting__coverage">{{ coverageText() }}</p>
 
     <button type="button" class="zone-painting__save" *ngIf="canSave()" (click)="save()">Зберегти</button>
-    <p class="zone-painting__saved" *ngIf="isSaved()">Зони збережено.</p>
+    <p class="zone-painting__saved" *ngIf="isSaved()">
+      Зони збережено. Натисніть "Далі" вгорі, щоб перейти до розмітки STL-поверхні.
+    </p>
 
     <label class="zone-painting__opacity" *ngIf="zonesFor().length > 0">
       Прозорість зон на 3D результаті
