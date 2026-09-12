@@ -65,3 +65,13 @@
     (input)="setZoneOverlayOpacityFromInput($any($event.target).value)"
   />
 </label>
+<button
+  class="surface-zones-overlay-toggle"
+  type="button"
+  [hidden]="!isIdealWorldCanvas()"
+  [disabled]="!hasSavedSurfaceZoning()"
+  [title]="hasSavedSurfaceZoning() ? 'Показати/сховати розфарбовану за зонами STL-поверхню (ховає вокселі)' : 'Доступно лише після завершення кроку 2 розмітки зон (STL-поверхня)'"
+  (click)="toggleSurfaceZonesOverlay()"
+>
+  {{ isSurfaceZonesOverlayVisible() ? 'Сховати зони на STL' : 'Показати зони на STL' }}
+</button>

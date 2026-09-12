@@ -242,18 +242,25 @@
   color: #7fe0d1;
 }
 
-.zone-painting__surface {
+// The one action to take next once step 1 is done - lives in the header
+// (always visible, no matter how long the sidebar below has gotten or how
+// far it's scrolled) and uses step 2's own amber accent so it visually
+// reads as "this leads to the next screen", not just another sidebar
+// button easy to miss among the opacity sliders/zone list/reset button.
+.zone-painting__next-step {
   padding: 6px 14px;
-  background: rgba(57, 197, 242, 0.14);
-  border: 1px solid rgba(57, 197, 242, 0.5);
+  background: rgba(244, 162, 97, 0.22);
+  border: 1px solid #f4a261;
   border-radius: 6px;
-  color: #9fe3f7;
+  color: #f7c99f;
   font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease;
 
   &:hover {
-    background: rgba(57, 197, 242, 0.26);
+    background: rgba(244, 162, 97, 0.36);
   }
 }
 

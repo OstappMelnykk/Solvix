@@ -258,6 +258,15 @@ export class SurfaceZonePaintingService {
     return zoneId === undefined || zoneId === -1 ? null : zoneId;
   }
 
+  // The raw array behind zoneIdOfTriangle - for a caller building a colored
+  // overlay over every triangle at once (SurfaceZonePaintingComponent's own
+  // result panel, WorldCanvasComponent's "Показати зони на STL" button),
+  // reading it directly is simpler and cheaper than looping
+  // zoneIdOfTriangle one call per triangle. null until save() has run.
+  getTriangleZones(sessionId: number): Int16Array | null {
+    return this.sessionsByKey.get(sessionId)?.triangleZone ?? null;
+  }
+
   // Wipes every committed assignment AND whatever's pending - the "Скинути
   // розмітку STL" button, same reasoning/shape as ZonePaintingService's own
   // resetZones (reuses createSession rather than clearing fields by hand).

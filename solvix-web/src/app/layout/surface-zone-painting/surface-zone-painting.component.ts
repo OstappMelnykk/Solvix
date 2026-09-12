@@ -557,32 +557,14 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     const session = this.surfaceZonePainting.getSession(sessionId);
-    if (!session) {
+    const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
+    if (!session || !triangleZone) {
       return;
-    }
-    const triangleCount = this.triangleCountOf(source.stlMesh);
-    const triangleZone = new Int16Array(triangleCount);
-    for (let i = 0; i < triangleCount; i++) {
-      triangleZone[i] = this.surfaceZonePainting.zoneIdOfTriangle(sessionId, i) ?? -1;
     }
     const overlay = buildSurfaceZoneOverlay(source.stlMesh, triangleZone, session.voxelZones, DEFAULT_OVERLAY_OPACITY);
     overlay.visible = false;
     source.scene.add(overlay);
     this.resultOverlay = overlay;
-  }
-
-  private triangleCountOf(object: THREE.Object3D): number {
-    let count = 0;
-    object.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        const position = child.geometry.getAttribute('position');
-        if (position) {
-          const index = child.geometry.index;
-          count += (index ? index.count : position.count) / 3;
-        }
-      }
-    });
-    return count;
   }
 
   private disposeResultOverlay(): void {
