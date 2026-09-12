@@ -153,6 +153,102 @@ canvas {
   }
 }
 
+// Same overlay treatment as .six-view-toggle, stacked directly below it -
+// only shown on the Ideal World canvas (isIdealWorldCanvas), same as
+// .reference-visibility-toggle above.
+.zone-painting-toggle {
+  position: absolute;
+  top: 146px;
+  right: 10px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #39c5f2;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+// Same overlay treatment as .zone-painting-toggle, stacked directly below
+// it - only enabled once every voxel has a zone (hasFullZoneCoverage).
+.zones-overlay-toggle {
+  position: absolute;
+  top: 180px;
+  right: 10px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #39c5f2;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+// Stacked directly below .zones-overlay-toggle - only shown while that
+// toggle is actually on (isZonesOverlayVisible), same [hidden] reasoning as
+// .voxel-rule-notice below.
+.zones-overlay-opacity {
+  position: absolute;
+  top: 214px;
+  right: 10px;
+  width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 11px;
+  font-family: sans-serif;
+
+  // Without this, the [hidden] attribute does nothing here: it and this
+  // class's own `display: flex` above have EQUAL CSS specificity, and
+  // author styles apply after the browser's UA stylesheet - so
+  // `display: flex` was winning even while [hidden] was set, and the
+  // slider stayed visible regardless of isZonesOverlayVisible().
+  &[hidden] {
+    display: none;
+  }
+
+  input[type='range'] {
+    width: 100%;
+  }
+}
+
 // GEOMETRY_RULES.md R2 refusal notice (VoxelizationService.
 // getDeletionViolation) - bottom-center over the canvas, near where the
 // user is actually deleting voxels, unlike the settings-panel's

@@ -10,8 +10,8 @@ import {
   setVoxelNodeOpacity,
   setVoxelNodeSize,
   setVoxelPreviewOpacity
-} from './voxel-preview';
-import { VoxelGridDto } from './voxel-grid-contract';
+} from './voxels';
+import { VoxelGridDto } from '../voxel-grid-contract';
 
 function highlightOf(preview: THREE.Object3D): THREE.Mesh {
   return preview.children.find(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight') as THREE.Mesh;

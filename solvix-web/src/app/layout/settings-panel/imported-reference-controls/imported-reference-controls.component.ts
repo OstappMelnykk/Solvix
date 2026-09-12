@@ -287,6 +287,17 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.setNodeOpacity(sessionId, percent / 100);
   }
 
+  // "Скинути рендер вокселів" - puts fill/edge/node opacity, line width, and
+  // node size back to their defaults. Never touches the voxelization result
+  // itself (VoxelizationService.resetRenderSettings's own doc comment).
+  resetVoxelRenderSettings(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    this.voxelization.resetRenderSettings(sessionId);
+  }
+
   // Full metadata dictionary for whatever's currently imported
   // (ImportedGeometryService + ImportedReferenceRenderService) - a flat
   // label/value list so the template just iterates it, rather than

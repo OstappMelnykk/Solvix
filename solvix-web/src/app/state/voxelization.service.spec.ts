@@ -7,7 +7,7 @@ import { ImportedGeometryService } from './imported-geometry.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { SessionsService } from './sessions.service';
 import { environment } from '../../environments/environment';
-import { getVoxelCellByInstanceId } from '../geometry/voxel-preview';
+import { getVoxelCellByInstanceId } from '../geometry/scene-objects/voxels';
 import { VoxelCell } from '../geometry/voxel-cell';
 
 function box(): THREE.Object3D {
@@ -241,7 +241,7 @@ describe('VoxelizationService', () => {
     expect(voxelization.getVoxelPreview(sessionId)).toBe(firstPreview);
   });
 
-  // Regression: BatchedMesh (the fill's renderer - see voxel-preview.ts)
+  // Regression: BatchedMesh (the fill's renderer - see scene-objects/voxels.ts)
   // can't be cloned per canvas, so WorldCanvasComponent now shows this
   // EXACT cached object rather than a clone of it - which means disposal
   // must happen in exactly one place, at the moment this service knows
@@ -477,6 +477,31 @@ describe('VoxelizationService', () => {
     const nodesAfter = preview.children.find(child => child instanceof THREE.InstancedMesh && child.name === 'voxel-nodes') as THREE.InstancedMesh;
     expect((nodesAfter.material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.2, 5);
     expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
+  });
+
+  it('resetRenderSettings puts every render setting back to default without touching the voxelization result', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const statusBefore = voxelization.getStatus(sessionId);
+
+    voxelization.setOpacity(sessionId, 0.1);
+    voxelization.setEdgeOpacity(sessionId, 0.1);
+    voxelization.setLineWidth(sessionId, 0.9);
+    voxelization.setNodeSize(sessionId, 0.9);
+    voxelization.setNodeOpacity(sessionId, 0.1);
+
+    voxelization.resetRenderSettings(sessionId);
+
+    expect(voxelization.getOpacity(sessionId)).toBeCloseTo(0.55, 5);
+    expect(voxelization.getEdgeOpacity(sessionId)).toBe(1);
+    expect(voxelization.getLineWidth(sessionId)).toBeCloseTo(0.25, 5);
+    expect(voxelization.getNodeSize(sessionId)).toBeCloseTo(0.5, 5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(1);
+    // The data itself (the grid/occupancy result) is untouched - same object.
+    expect(voxelization.getStatus(sessionId)).toBe(statusBefore);
   });
 
   describe('selectVoxelInstance', () => {

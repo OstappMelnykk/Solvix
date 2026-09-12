@@ -78,6 +78,9 @@
     <span>Прозорість вузлів</span>
     <input type="range" min="0" max="100" [value]="getVoxelNodeOpacityPercent()" (change)="onVoxelNodeOpacityChange($event)" />
   </label>
+  <button class="tool" type="button" title="Повернути прозорість/товщину/розмір до значень за замовчуванням - сама вокселізація не зачіпається" (click)="resetVoxelRenderSettings()">
+    Скинути рендер вокселів
+  </button>
   <button class="tool" type="button" (click)="runVoxelization()">Вокселізувати</button>
   <ng-container *ngIf="getVoxelizationStatus() as voxelStatus">
     <div

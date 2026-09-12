@@ -20,7 +20,7 @@ const FACES: readonly (readonly [number, number, number, number])[] = [
 ];
 
 // The 12 edges, as pairs of corner indices - same corner ordering as
-// FACES, one segment per edge. Exported so voxel-preview.ts's merged,
+// FACES, one segment per edge. Exported so scene-objects/voxels.ts's merged,
 // all-cells-in-one-LineSegments edge outline (cheap - no per-object state
 // worth batching separately, unlike the fill) can walk the same 12 pairs
 // per cell without redefining them.
@@ -41,7 +41,7 @@ export interface VoxelHexahedronOptions {
 
 // The fill geometry alone - 6 faces x 2 triangles x 3 vertices,
 // non-indexed so each face keeps its own flat normal and vertex color.
-// Factored out of buildVoxelHexahedron so voxel-preview.ts's BatchedMesh
+// Factored out of buildVoxelHexahedron so scene-objects/voxels.ts's BatchedMesh
 // path (many voxels merged into one draw call) can pull just the
 // geometry per cell via BatchedMesh.addGeometry(...) without building
 // (and immediately discarding) a whole standalone Mesh/material/Group
@@ -81,14 +81,14 @@ export function buildVoxelHexahedronFillGeometry(cell: VoxelCell, options: Voxel
 // both with their own materials. Deliberately independent of any other
 // voxel or of how many others exist - usable on its own (e.g. dropped
 // straight into a scene for debugging). For rendering many voxels
-// together efficiently, see voxel-preview.ts's BatchedMesh-based path,
+// together efficiently, see scene-objects/voxels.ts's BatchedMesh-based path,
 // which uses buildVoxelHexahedronFillGeometry directly instead of this.
 export function buildVoxelHexahedron(cell: VoxelCell, fillOpacity: number, edgeOpacity: number, options: VoxelHexahedronOptions = {}): THREE.Object3D {
   const fill = new THREE.Mesh(
     buildVoxelHexahedronFillGeometry(cell, options),
     new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: fillOpacity, side: THREE.DoubleSide })
   );
-  // Same z-fight fix as the batched preview (see voxel-preview.ts) - the
+  // Same z-fight fix as the batched preview (see scene-objects/voxels.ts) - the
   // fill and the imported reference mesh are both transparent and
   // literally overlapping, so a fixed renderOrder keeps the mesh drawing
   // first regardless of camera angle.

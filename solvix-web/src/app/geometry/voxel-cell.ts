@@ -42,7 +42,7 @@ export const FACE_DIRECTIONS: readonly [number, number, number][] = [
 // (VoxelizationService.addVoxelOnFace) needs this to turn a hit's
 // `Intersection.face.normal` into a concrete neighbor direction. Voxels are
 // always axis-aligned unit cubes built directly in world space with no
-// rotation anywhere in the scene graph (voxel-preview.ts's own doc
+// rotation anywhere in the scene graph (scene-objects/voxels.ts's own doc
 // comment), so a genuine hit's normal should already point almost exactly
 // along one of these 6 directions - picking the best DOT PRODUCT match
 // (rather than requiring an exact component match) is what keeps this
@@ -221,7 +221,7 @@ export function connectedComponentSizes(grid: VoxelGridDto, excludeIx: number, e
 // them by object identity, which works here specifically because
 // buildVoxelCells already hands adjacent cells the SAME Vector3 instance
 // for a shared corner (see cellCorners' `nodes` map above), not merely
-// numerically-equal copies. This is the unique node set voxel-preview.ts
+// numerically-equal copies. This is the unique node set scene-objects/voxels.ts
 // draws as visible spheres - one per node, never one per (cell, corner)
 // pair.
 export function collectUniqueNodes(cells: readonly VoxelCell[]): THREE.Vector3[] {

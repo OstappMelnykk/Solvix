@@ -34,3 +34,34 @@
 <div class="voxel-rule-notice" [hidden]="!getDeletionViolationMessage()">
   {{ getDeletionViolationMessage() }}
 </div>
+<button
+  class="zone-painting-toggle"
+  type="button"
+  [hidden]="!isIdealWorldCanvas()"
+  [disabled]="!hasVoxelization()"
+  title="Розмітити зони на вокселізованій сітці (docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант D)"
+  (click)="openZonePainting()"
+>
+  Розмітка зон
+</button>
+<button
+  class="zones-overlay-toggle"
+  type="button"
+  [hidden]="!isIdealWorldCanvas()"
+  [disabled]="!hasFullZoneCoverage()"
+  [title]="hasFullZoneCoverage() ? 'Показати/сховати кольори зон на моделі' : 'Доступно лише коли всі вокселі вже розмічені по зонах'"
+  (click)="toggleZonesOverlay()"
+>
+  {{ isZonesOverlayVisible() ? 'Сховати зони' : 'Показати зони' }}
+</button>
+<label class="zones-overlay-opacity" [hidden]="!isIdealWorldCanvas() || !isZonesOverlayVisible()">
+  Прозорість зон
+  <input
+    type="range"
+    min="0"
+    max="1"
+    step="0.01"
+    [value]="zoneOverlayOpacity()"
+    (input)="setZoneOverlayOpacityFromInput($any($event.target).value)"
+  />
+</label>

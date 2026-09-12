@@ -8,16 +8,19 @@ import { WorldCameraMemoryService } from '../../../state/world-camera-memory.ser
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
+import { ZonePaintingService } from '../../../state/zone-painting.service';
 import { VoxelizationService } from '../../../state/voxelization.service';
-import { getVoxelCellByInstanceId } from '../../../geometry/voxel-preview';
+import { getVoxelCellByInstanceId } from '../../../geometry/scene-objects/voxels';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
+import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/scene-objects/zone-overlay';
+import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
+import { buildAxesHelper } from '../../../geometry/scene-objects/axes-helper';
+import { buildFloorGrid } from '../../../geometry/scene-objects/floor-grid';
+import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
-const AXES_LENGTH = 50;
-const GRID_SIZE = 50;
-const GRID_DIVISIONS = 50;
 const SETTLE_DURATION_MS = 180;
 // Above this many CSS pixels of movement between pointerdown and pointerup,
 // treat the gesture as an OrbitControls drag, not a click-to-select - the
@@ -135,12 +138,25 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // pass, before ngAfterViewInit (and initScene, which creates gridHelper)
   // has even run, so reading gridHelper.visible directly there would throw.
   private gridVisible = true;
+  // Backing state for the "Показати зони" toggle (see hasFullZoneCoverage/
+  // toggleZonesOverlay/updateZoneOverlay) - whether the user WANTS to see
+  // it, independent of whether it's currently allowed to show (full
+  // coverage). Rebuilt lazily in updateZoneOverlay whenever the session or
+  // ZonePaintingService.zonesRevision(sessionId) has changed since the last
+  // build (a per-zone color edit bumps this WITHOUT changing zones.length,
+  // so revision - not length - is what this must key on), same identity-
+  // cache reasoning as updateVoxelPreview above.
+  private zonesOverlayWanted = false;
+  private zoneOverlayGroup: THREE.Group | null = null;
+  private zoneOverlaySessionId: number | null = null;
+  private zoneOverlayRevision = -1;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   // Read directly (not via @Input) inside updateVoxelPreview() - see there
   // for why.
   private readonly voxelization = inject(VoxelizationService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
+  private readonly zonePainting = inject(ZonePaintingService);
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -276,8 +292,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('keydown', this.onKeyDown);
     if (this.currentImportedReference) {
-      this.disposeImportedReferenceClone(this.currentImportedReference);
+      disposeImportedReferenceClone(this.currentImportedReference);
     }
+    this.clearZoneOverlay();
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
     this.renderer?.dispose();
@@ -380,34 +397,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateRuler();
     this.updateVoxelPreview();
 
-    // Lower ambient than before, plus a key/fill pair of directional lights
-    // from opposite sides (instead of one) - a single light + strong ambient
-    // washes out shading almost evenly across a solid surface, making its
-    // facets/contours hard to read. Two lights of different strength from
-    // different angles give every face a distinct brightness, so shape and
-    // silhouette actually read at a glance.
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
-    this.scene.add(ambientLight);
+    // Each a fixed scene fixture (not per-session/model), same lifetime as
+    // the whole component, so none of them needs cleanup/disposal logic of
+    // its own - see their own files under geometry/scene-objects/ for why
+    // each looks the way it does.
+    this.scene.add(buildSceneLights());
+    this.scene.add(buildAxesHelper());
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    keyLight.position.set(5, 8, 5);
-    this.scene.add(keyLight);
-
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
-    fillLight.position.set(-5, 2, -5);
-    this.scene.add(fillLight);
-
-    // Standard THREE.js axis colors: X red, Y green, Z blue - a fixed scene
-    // fixture (not per-session/model), same lifetime as the lights above, so
-    // it needs no cleanup/disposal logic of its own either.
-    this.scene.add(new THREE.AxesHelper(AXES_LENGTH));
-
-    // Floor grid on the XZ plane (Y=0) - same fixed-fixture lifetime as
-    // AxesHelper above, purely a visual reference for scale/orientation.
     // Visibility is user-toggleable (see toggleGridVisible below), so this
     // stays visible by default and gets its own field instead of being
-    // added anonymously like AxesHelper.
-    this.gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS);
+    // added anonymously like the lights/axes above.
+    this.gridHelper = buildFloorGrid();
     this.gridHelper.visible = this.gridVisible;
     this.scene.add(this.gridHelper);
   }
@@ -455,7 +455,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.currentImportedReference) {
       this.rotateGizmo.detach();
       this.scene.remove(this.currentImportedReference);
-      this.disposeImportedReferenceClone(this.currentImportedReference);
+      disposeImportedReferenceClone(this.currentImportedReference);
       this.currentImportedReference = null;
     }
 
@@ -463,34 +463,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
-    const clone = source.clone();
-    // A visual guide for the imported reference, not the model being worked
-    // on - override materials so it never gets mistaken for the actual
-    // session model rendered in the same scene. 'solid' is a normal LIT
-    // material (MeshStandardMaterial, DoubleSide) so the scene's existing
-    // lights actually shade it and it reads as a real 3D shape - solid
-    // triangle fill is cheap on the GPU regardless of triangle count
-    // (ordinary rasterization). 'wireframe' draws every triangle edge every
-    // frame instead - fine for a light import, but measurably tanks FPS
-    // well past a few hundred thousand triangles, hence this being a user
-    // choice (ImportedReferenceDisplayService) rather than the only option.
-    const mode = style?.mode ?? 'solid';
-    const color = style?.color ?? 0xffffff;
-    const opacity = style?.opacity ?? 0.5;
-    // flatShading (solid mode only) - each triangle gets its own face
-    // normal instead of interpolating vertex normals, so adjacent facets at
-    // different angles pick up visibly different shading under the
-    // key/fill lights above. Without it, curved/faceted surfaces lit this
-    // way can look like a single smooth blob with no readable contours.
-    const material: THREE.Material =
-      mode === 'wireframe'
-        ? new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity })
-        : new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, flatShading: true, roughness: 0.6 });
-    clone.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        child.material = material;
-      }
-    });
+    const clone = buildImportedReferenceClone(source, style);
     this.currentImportedReference = clone;
     this.scene.add(clone);
     this.rotateGizmo.attach(clone);
@@ -834,19 +807,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return `Видалення заборонено: геометрія розпадеться на ${violation.componentSizes.length} частини (${violation.componentSizes.join(' + ')} кубів)`;
   }
 
-  // Geometry is shared with the source object (ImportedGeometryService owns
-  // and disposes it) - only the material is unique to this clone (created
-  // above), so only that gets disposed here.
-  private disposeImportedReferenceClone(clone: THREE.Object3D): void {
-    clone.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) {
-        return;
-      }
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(material => material.dispose());
-    });
-  }
-
   private updateSession(): void {
     if (this.sessionId === null || this.lastSessionId === this.sessionId) {
       return;
@@ -879,6 +839,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateVoxelPreview();
+    this.updateZoneOverlay();
     this.updateSession();
     this.updateSettleAnimation();
 
@@ -1007,6 +968,119 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // all outside the Ideal World - here there's simply nothing to show.
   hasModel(): boolean {
     return this.modelPresent;
+  }
+
+  // Backing state + action for the on-canvas "Розмітка зон" button -
+  // docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант D. Gated to the
+  // Ideal World (same reasoning as isImportedReferenceVisible - zoning is
+  // about the shape itself, not a per-World display concern) AND to a
+  // successful voxelization, since the tool paints over that grid's own
+  // (ix,iy,iz) indices - there's nothing to paint before it exists.
+  hasVoxelization(): boolean {
+    return this.sessionId !== null && this.voxelization.getStatus(this.sessionId).kind === 'ok';
+  }
+
+  openZonePainting(): void {
+    if (this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.currentVoxelPreview) {
+      this.zonePainting.open(this.sessionId, {
+        scene: this.scene,
+        voxelPreview: this.currentVoxelPreview,
+        framingObjects: [this.currentVoxelPreview],
+        // Same fixtures SixViewOverlayComponent hides while open - clutter,
+        // not content, for a fixed-axis "just show me the voxels" view.
+        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper()]
+      });
+    }
+  }
+
+  // Backing state + action for the on-canvas "Показати зони" button - shows
+  // the same colored-zone overlay the zone-painting window's own 3D result
+  // panel shows (geometry/zone-overlay.ts, shared code), but directly on
+  // THIS canvas's normal, freely-orbitable view of the full-size model.
+  // Only enabled once every occupied voxel has been claimed by some zone -
+  // showing a PARTIAL result here (unlike the zone-painting window itself,
+  // which is explicitly about painting the not-yet-finished parts) would
+  // just look like missing/broken coverage rather than a deliberate choice.
+  hasFullZoneCoverage(): boolean {
+    if (this.sessionId === null) {
+      return false;
+    }
+    const coverage = this.zonePainting.coverage(this.sessionId);
+    return coverage !== null && coverage.total > 0 && coverage.assigned >= coverage.total;
+  }
+
+  isZonesOverlayVisible(): boolean {
+    return this.zonesOverlayWanted && this.hasFullZoneCoverage();
+  }
+
+  toggleZonesOverlay(): void {
+    this.zonesOverlayWanted = !this.zonesOverlayWanted;
+  }
+
+  // Lazily (re)builds the overlay group only when the session or the zone
+  // data itself has actually changed since the last build - called every
+  // frame from animate(), same pattern as updateVoxelPreview.
+  private updateZoneOverlay(): void {
+    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isZonesOverlayVisible();
+    if (!shouldShow) {
+      this.clearZoneOverlay();
+      return;
+    }
+
+    const sessionId = this.sessionId!;
+    const session = this.zonePainting.getSession(sessionId);
+    if (!session) {
+      this.clearZoneOverlay();
+      return;
+    }
+    const revision = this.zonePainting.zonesRevision(sessionId);
+    if (this.zoneOverlayGroup && this.zoneOverlaySessionId === sessionId && this.zoneOverlayRevision === revision) {
+      return; // already showing the current zone data - nothing to rebuild
+    }
+
+    if (this.zoneOverlayGroup) {
+      disposeZoneOverlayGroup(this.zoneOverlayGroup);
+      this.zoneOverlayGroup = null;
+    }
+    const opacity = this.zonePainting.getZoneOverlayOpacity(sessionId);
+    const group = buildZoneOverlayGroup(session.grid, session.zones, (ix, iy, iz) => this.zonePainting.zoneIdAt(sessionId, ix, iy, iz), opacity);
+    if (group) {
+      this.scene.add(group);
+    }
+    this.zoneOverlayGroup = group;
+    this.zoneOverlaySessionId = sessionId;
+    this.zoneOverlayRevision = revision;
+  }
+
+  private clearZoneOverlay(): void {
+    if (this.zoneOverlayGroup) {
+      disposeZoneOverlayGroup(this.zoneOverlayGroup);
+      this.zoneOverlayGroup = null;
+    }
+    this.zoneOverlaySessionId = null;
+    this.zoneOverlayRevision = -1;
+  }
+
+  // Backing value + action for the "Прозорість зон" slider next to
+  // "Показати зони" - cheap live update (setZoneOverlayOpacity just touches
+  // each material's opacity), not a full updateZoneOverlay rebuild, so
+  // dragging the slider stays smooth. Persisted per-session
+  // (ZonePaintingService.setZoneOverlayOpacity) - the SAME value the
+  // zone-painting window's own 3D result panel slider reads/writes, so
+  // adjusting it in either place carries over to the other.
+  zoneOverlayOpacity(): number {
+    return this.sessionId === null ? 0.75 : this.zonePainting.getZoneOverlayOpacity(this.sessionId);
+  }
+
+  setZoneOverlayOpacityFromInput(value: string): void {
+    if (this.sessionId === null) {
+      return;
+    }
+    const opacity = Number(value);
+    this.zonePainting.setZoneOverlayOpacity(this.sessionId, opacity);
+    if (this.zoneOverlayGroup) {
+      setZoneOverlayOpacity(this.zoneOverlayGroup, opacity);
+    }
   }
 
   openSixView(): void {

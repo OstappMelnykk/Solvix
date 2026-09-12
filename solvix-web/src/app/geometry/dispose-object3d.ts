@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // or BatchedMesh found anywhere in the object's subtree - the shared
 // disposal shape every feature that builds throwaway three.js geometry
 // needs (ImportedGeometryService and orphaned-import cleanup in
-// settings-panel.component.ts, and geometry/voxel-preview.ts's fill/edges/
+// settings-panel.component.ts, and geometry/scene-objects/voxels.ts's fill/edges/
 // nodes, geometry/voxel-hexahedron.ts's standalone single-cube builder).
 // BatchedMesh gets its own branch because it isn't just "a mesh with a
 // geometry" - THREE.BatchedMesh.dispose() frees its own internally-managed
