@@ -2,6 +2,7 @@ import { Injectable, effect, inject, signal } from '@angular/core';
 import * as THREE from 'three';
 import { SessionsService } from './sessions.service';
 import { VoxelizationService } from './voxelization.service';
+import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-contract';
 
 // What WorldCanvasComponent.openZonePainting hands the service to open the
@@ -77,6 +78,13 @@ interface PaintingSession {
   // "Показати зони" button) - NOT readonly, since a slider mutates it in
   // place via setZoneOverlayOpacity below. Survives resetZones (see there).
   opacity: number;
+  // Set by save() once the user explicitly confirms a fully-covered zoning -
+  // see save()'s own comment. NOT the same thing as "coverage is 100%":
+  // reaching full coverage no longer closes the window on its own (the user
+  // asked to stop that - they navigate away only when THEY choose to), so
+  // this is the one place that distinguishes "done and confirmed" from
+  // "happens to be fully covered right now, still fiddling with it".
+  saved: boolean;
   // -1 = unassigned. Same linearization as VoxelGridDto's own occupancy bit
   // index (voxel-grid-contract.ts's cellIndex) - ix fastest, then iy, then iz.
   readonly voxelZone: Int16Array;
@@ -193,6 +201,7 @@ function isSingleConnectedComponent(mask: Uint8Array, width: number, height: num
 export class ZonePaintingService {
   private readonly sessions = inject(SessionsService);
   private readonly voxelization = inject(VoxelizationService);
+  private readonly referenceRender = inject(ImportedReferenceRenderService);
 
   // Non-null means the painting window should be showing, for this session,
   // rendering `activeSource`'s REAL scene (same reasoning as
@@ -217,6 +226,26 @@ export class ZonePaintingService {
         this.close();
       }
     });
+
+    // The SAME event VoxelizationService itself listens to in order to
+    // clear a stale voxelization result (density change, rotate-gizmo drag,
+    // reset, new import - see VoxelizationService's own constructor
+    // comment): once the grid this painting session's (ix,iy,iz) data was
+    // computed from is gone, that data has no reliable meaning any more
+    // either (same reasoning open() already applies when re-opening onto a
+    // genuinely new grid), so it's discarded right here instead of lingering
+    // in sessionsByKey until someone happens to re-open the window.
+    this.referenceRender.referenceChanged$.subscribe(sessionId => this.discardSession(sessionId));
+  }
+
+  private discardSession(sessionId: number): void {
+    if (!this.sessionsByKey.has(sessionId)) {
+      return;
+    }
+    this.sessionsByKey.delete(sessionId);
+    if (this.activeSessionId() === sessionId) {
+      this.close();
+    }
   }
 
   // Opens the window for `sessionId`, provided its voxelization succeeded.
@@ -250,6 +279,7 @@ export class ZonePaintingService {
       zones: [],
       zonesRevision: 0,
       opacity: DEFAULT_ZONE_OVERLAY_OPACITY,
+      saved: false,
       voxelZone,
       maskX: new Uint8Array(grid.countY * grid.countZ),
       maskY: new Uint8Array(grid.countX * grid.countZ),
@@ -328,6 +358,29 @@ export class ZonePaintingService {
     }
     const assigned = session.zones.reduce((sum, zone) => sum + zone.voxelCount, 0);
     return { assigned, total: session.totalOccupied };
+  }
+
+  isSaved(sessionId: number): boolean {
+    return this.sessionsByKey.get(sessionId)?.saved ?? false;
+  }
+
+  // The explicit "Зберегти" action - marks a fully-covered zoning as
+  // confirmed (see PaintingSession.saved's own comment). Refuses to save a
+  // partial zoning - there's nothing ambiguous to "confirm" until the user
+  // has actually finished assigning every occupied voxel to some zone; the
+  // component itself already only shows the button once coverage() reports
+  // complete, this is the defensive backstop matching that same rule.
+  save(sessionId: number): boolean {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return false;
+    }
+    const assigned = session.zones.reduce((sum, zone) => sum + zone.voxelCount, 0);
+    if (assigned < session.totalOccupied) {
+      return false;
+    }
+    session.saved = true;
+    return true;
   }
 
   // The color the NEXT committed zone will get - shown while the user is

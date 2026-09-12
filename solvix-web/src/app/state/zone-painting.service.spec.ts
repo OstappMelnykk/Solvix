@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { ZonePaintingService, ZonePaintingSource } from './zone-painting.service';
 import { SessionsService } from './sessions.service';
 import { VoxelizationService, VoxelizationStatus } from './voxelization.service';
+import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 
 function buildGrid(countX: number, countY: number, countZ: number): VoxelGridDto {
@@ -289,6 +290,74 @@ describe('ZonePaintingService', () => {
       expect(view.cells[1]).toEqual({ kind: 'excluded' }); // (ix=1, iy=0)
       expect(view.cells[2]).toEqual({ kind: 'excluded' }); // (ix=0, iy=1)
       expect(view.cells[3]).toEqual({ kind: 'excluded' }); // (ix=1, iy=1)
+    });
+  });
+
+  describe('save', () => {
+    it('refuses to save while coverage is partial', () => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(2, 1, 1) });
+      service.open(1, fakeSource);
+      service.toggleCell(1, 'x', 0, 0);
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'z', 0, 0);
+      service.finishZone(1); // claims only (0,0,0) - the grid has 2 occupied cells
+
+      expect(service.save(1)).toBe(false);
+      expect(service.isSaved(1)).toBe(false);
+    });
+
+    it('saves once every occupied voxel is assigned to some zone', () => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });
+      service.open(1, fakeSource);
+      service.toggleCell(1, 'x', 0, 0);
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'z', 0, 0);
+      service.finishZone(1);
+
+      expect(service.save(1)).toBe(true);
+      expect(service.isSaved(1)).toBe(true);
+    });
+
+    it('resetZones clears the saved flag along with the zones', () => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });
+      service.open(1, fakeSource);
+      service.toggleCell(1, 'x', 0, 0);
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'z', 0, 0);
+      service.finishZone(1);
+      service.save(1);
+
+      service.resetZones(1);
+      expect(service.isSaved(1)).toBe(false);
+    });
+  });
+
+  describe('discarding a session when its reference changes', () => {
+    it('drops the zone data once the source STL reference changes (rotate/move/re-import)', () => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });
+      service.open(1, fakeSource);
+      service.toggleCell(1, 'x', 0, 0);
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'z', 0, 0);
+      service.finishZone(1);
+      expect(service.getSession(1)?.zones.length).toBe(1);
+
+      // Same event VoxelizationService itself reacts to in order to clear a
+      // stale voxelization result - refreshScaledReference's own early-return
+      // branch (no imported geometry set up here) still emits it.
+      TestBed.inject(ImportedReferenceRenderService).refreshScaledReference(1);
+
+      expect(service.getSession(1)).toBeNull();
+    });
+
+    it('closes the window if the discarded session was the one currently open', () => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });
+      service.open(1, fakeSource);
+      expect(service.activeSessionId()).toBe(1);
+
+      TestBed.inject(ImportedReferenceRenderService).refreshScaledReference(1);
+
+      expect(service.activeSessionId()).toBeNull();
     });
   });
 });
