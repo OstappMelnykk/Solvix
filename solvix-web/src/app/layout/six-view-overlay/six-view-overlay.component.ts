@@ -86,6 +86,15 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   private lastSource: SixViewSource | null = null;
   private frameId = 0;
   private viewReady = false;
+  // Without preventDefault() here, a lost WebGL context on any of these 6
+  // canvases is PERMANENT - the browser only ever attempts to restore a
+  // context whose loss event was explicitly prevented. Contexts can be
+  // lost for reasons entirely outside this app's own control (GPU memory
+  // pressure, a backgrounded browser tab, the OS reclaiming resources), not
+  // just from how many this app itself has open at once - every WebGL
+  // canvas needs this, matching WorldCanvasComponent's own long-standing
+  // handling, which these 6 canvases never had.
+  private readonly onContextLost = (event: Event) => event.preventDefault();
 
   // Deliberately does NOT create the 6 WebGLRenderers here - this used to,
   // always-mounted since app boot alongside the 3 WorldCanvasComponent
@@ -132,6 +141,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     // "the camera doesn't see far enough" - rather than an actual near/far
     // clipping-plane miss. Same fix WorldCanvasComponent's own renderer
     // already uses, for the same reason.
+    canvases.forEach(canvas => canvas.addEventListener('webglcontextlost', this.onContextLost, false));
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
     this.oitRenderers = this.renderers.map(renderer => new WeightedOitRenderer(renderer));
     this.cameras = VIEW_DIRECTIONS.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
@@ -160,6 +170,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (this.renderers.length === 0) {
       return;
     }
+    this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
     this.renderers.forEach(renderer => renderer.dispose());

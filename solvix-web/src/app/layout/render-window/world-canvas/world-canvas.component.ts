@@ -169,6 +169,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private surfaceZonesOverlayWanted = false;
   private surfaceZoneOverlayGroup: THREE.Object3D | null = null;
   private surfaceZoneOverlaySessionId: number | null = null;
+  // Last shouldShow value updateSurfaceZoneOverlay computed - lets it touch
+  // currentImportedReference.visible only right at a real transition, not
+  // unconditionally on every one of its (every-World, every-frame) calls.
+  private surfaceZoneOverlayShown = false;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   // Read directly (not via @Input) inside updateVoxelPreview() - see there
   // for why.
@@ -243,7 +247,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastWidth = 0;
   private lastHeight = 0;
   private onContextLost = (event: Event) => event.preventDefault();
-  private onContextRestored = () => this.checkResize();
+  // checkResize() alone is a no-op whenever the canvas's own CSS size
+  // hasn't changed (the common case for a context loss/restore, which
+  // isn't triggered by any resize) - meaning it did nothing useful here
+  // before, leaving this canvas showing nothing until the NEXT time
+  // something else happened to force a render. Forces one directly instead
+  // (same idiom as ngOnChanges' own immediate-repaint-on-activate), then
+  // still runs checkResize() in case the size DID also change while lost.
+  private onContextRestored = () => {
+    this.checkResize();
+    this.oitRenderer.render(this.scene, this.camera);
+  };
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
   };
@@ -1152,9 +1166,19 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // cleanly occluded. Toggled here (not inside updateImportedReference's
     // own rebuild logic) so flipping this on/off never triggers a pointless
     // reference rebuild/re-gizmo-attach cycle - same object, just hidden.
-    if (this.currentImportedReference) {
+    //
+    // Only touched right AT the shouldShow transition, not unconditionally
+    // every frame: this runs for all 3 Worlds, every frame, regardless of
+    // which one is actually active - forcing .visible=true every single
+    // tick whenever shouldShow is false would fight any OTHER mechanism
+    // that legitimately wants this object hidden for its own reasons
+    // (its own visibility checkbox, a different overlay's own toggling)
+    // by re-asserting an opinion here nobody asked for on ticks where
+    // nothing actually changed.
+    if (shouldShow !== this.surfaceZoneOverlayShown && this.currentImportedReference) {
       this.currentImportedReference.visible = !shouldShow;
     }
+    this.surfaceZoneOverlayShown = shouldShow;
     if (!shouldShow) {
       this.clearSurfaceZoneOverlay();
       return;

@@ -76,6 +76,12 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   private lastSessionId: number | null = null;
   private frameId = 0;
   private viewReady = false;
+  // Without preventDefault() here, a lost WebGL context on any of these 4
+  // canvases is PERMANENT - the browser only ever attempts to restore a
+  // context whose loss event was explicitly prevented. Matches
+  // WorldCanvasComponent's own long-standing handling, which these 4
+  // canvases never had.
+  private readonly onContextLost = (event: Event) => event.preventDefault();
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointerNdc = new THREE.Vector2();
@@ -130,6 +136,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (canvases.some(canvas => canvas.clientWidth === 0 || canvas.clientHeight === 0)) {
       return false;
     }
+    canvases.forEach(canvas => canvas.addEventListener('webglcontextlost', this.onContextLost, false));
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
     this.cameras = canvases.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
     this.controls = this.cameras.map((camera, i) => {
@@ -156,6 +163,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (this.renderers.length === 0) {
       return;
     }
+    this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
     this.renderers = [];
