@@ -247,22 +247,35 @@ export class WeightedOitRenderer {
     const prevClearColor = new THREE.Color();
     this.renderer.getClearColor(prevClearColor);
     const prevClearAlpha = this.renderer.getClearAlpha();
+    const prevBackground = scene.background;
     this.renderer.autoClear = false;
 
     try {
       // --- Pass 1: background (everything opaque, plus anything NOT
       // tagged for OIT) - also the pass that populates the shared depth
-      // texture the next two passes test (but don't write) against. ---
+      // texture the next two passes test (but don't write) against.
+      // `scene.background` is left as-is here - a plain THREE.Color
+      // background forces WebGLRenderer to clear color+depth+stencil on
+      // its own at the top of render() (see WebGLBackground.js: a Color
+      // background sets forceClear=true, bypassing `renderer.autoClear`
+      // entirely) - exactly the ordinary full clear this pass wants, so no
+      // manual clear() call is needed here. ---
       for (const leaf of oitLeaves) {
         leaf.visible = false;
       }
       this.renderer.setRenderTarget(this.backgroundTarget);
-      this.renderer.setClearColor(prevClearColor, prevClearAlpha);
-      this.renderer.clear(true, true, true);
       this.renderer.render(scene, camera);
 
       // --- Pass 2: accum - only the tagged objects, additive weighted
-      // blend into an HDR target. ---
+      // blend into an HDR target. `scene.background` is nulled for THIS
+      // pass and the next: that same forced-clear behavior would otherwise
+      // stomp the manual (0,0,0,0) clear below on every render() call AND
+      // wipe the shared depth texture (autoClearDepth defaults true) right
+      // before these fragments need to depth-test against pass 1's opaque
+      // depth - exactly the bug that made the very first version of this
+      // pipeline look worse than no OIT at all (verified against
+      // WebGLBackground.js's forceClear condition, not guessed). ---
+      scene.background = null;
       for (const leaf of oitLeaves) {
         leaf.visible = originalVisibility.get(leaf)!;
       }
@@ -287,12 +300,15 @@ export class WeightedOitRenderer {
       this.renderer.clear(true, false, false);
       this.renderer.render(scene, camera);
 
+      scene.background = prevBackground;
       for (const leaf of normalLeaves) {
         leaf.visible = originalVisibility.get(leaf)!;
       }
 
       // --- Pass 4: composite - a fullscreen quad blends the 3 targets
-      // straight onto the real backbuffer. ---
+      // straight onto the real backbuffer. compositeScene has no
+      // background of its own (plain `null`), so no forced-clear surprise
+      // here either. ---
       this.renderer.setRenderTarget(null);
       this.compositeMaterial.uniforms['tBackground'].value = this.backgroundTarget.texture;
       this.compositeMaterial.uniforms['tAccum'].value = this.accumTarget.texture;
@@ -305,6 +321,7 @@ export class WeightedOitRenderer {
       for (const leaf of leaves) {
         leaf.visible = originalVisibility.get(leaf)!;
       }
+      scene.background = prevBackground;
       this.renderer.setRenderTarget(null);
       this.renderer.autoClear = prevAutoClear;
       this.renderer.setClearColor(prevClearColor, prevClearAlpha);
