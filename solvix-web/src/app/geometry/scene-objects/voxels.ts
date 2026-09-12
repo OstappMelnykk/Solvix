@@ -3,6 +3,7 @@ import { VoxelGridDto } from '../voxel-grid-contract';
 import { VoxelCell, buildVoxelCells, collectUniqueNodes } from '../voxel-cell';
 import { EDGES, buildVoxelHexahedronFillGeometry } from '../voxel-hexahedron';
 import { disposeObject3D } from '../dispose-object3d';
+import { markForWeightedOit } from '../../rendering/weighted-oit';
 
 // Everything about the voxel preview - the cube fill, the edge wireframe,
 // the node spheres, and the click-to-select highlight - lives in this ONE
@@ -130,6 +131,11 @@ export function buildVoxelPreview(
     transparent: true,
     opacity: fillOpacity
   });
+  // Self-overlaps heavily (every internal shared face between adjacent
+  // solid voxels is drawn - see VERTICES_PER_VOXEL's comment above) and is
+  // frequently translucent alongside the STL reference - exactly the case
+  // weighted-oit.ts exists for.
+  markForWeightedOit(fillMaterial);
   // maxIndexCount is irrelevant here (buildVoxelHexahedronFillGeometry's
   // geometries are all non-indexed) - kept at 1 rather than 0 since
   // BatchedMesh treats 0 as "use the maxVertexCount*2 default".

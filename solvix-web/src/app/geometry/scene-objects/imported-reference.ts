@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { markForWeightedOit } from '../../rendering/weighted-oit';
 
 // Minimal shape ImportedReferenceDisplayService's own ImportedReferenceStyle
 // satisfies - kept separate (not imported from state/imported-reference-
@@ -36,6 +37,13 @@ export function buildImportedReferenceClone(source: THREE.Object3D, style: Impor
     mode === 'wireframe'
       ? new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity })
       : new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, flatShading: true, roughness: 0.6 });
+  if (mode === 'solid') {
+    // Only the solid mode genuinely self-overlaps in a way that fights
+    // with the voxel fill's own translucency (see weighted-oit.ts) -
+    // wireframe's sparse lines don't meaningfully occlude each other or
+    // the voxels, so they stay on the existing simple renderOrder scheme.
+    markForWeightedOit(material);
+  }
   clone.traverse(child => {
     if (child instanceof THREE.Mesh) {
       child.material = material;
