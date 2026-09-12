@@ -25,11 +25,6 @@ const EXCLUDED_FILL = 'rgba(10, 10, 12, 0.55)';
 const PANEL_COUNT = 4;
 const RESULT_PANEL_INDEX = 3;
 
-// How long the "все розмічено" completion message stays on screen before
-// the window closes itself and returns to the main screen - long enough to
-// actually read, short enough not to feel stuck.
-const ALL_ZONED_AUTO_CLOSE_MS = 2500;
-
 function eyeFor(axis: Axis, sign: AxisSign): THREE.Vector3 {
   if (axis === 'x') {
     return new THREE.Vector3(sign, 0, 0);
@@ -118,7 +113,6 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   // One InstancedMesh PER ZONE (not per-instance color on a single shared
   // mesh) - see rebuildZoneOverlayMesh's own comment for why.
   private zoneOverlayGroup: THREE.Group | null = null;
-  private autoCloseTimeout: ReturnType<typeof setTimeout> | null = null;
 
   ngAfterViewInit(): void {
     const canvases = this.canvasRefs.toArray().map(ref => ref.nativeElement);
@@ -155,9 +149,6 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.oitRenderers.forEach(renderer => renderer.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
     this.disposeZoneOverlayMesh();
-    if (this.autoCloseTimeout !== null) {
-      clearTimeout(this.autoCloseTimeout);
-    }
   }
 
   isHidden(): boolean {
@@ -201,10 +192,6 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
     this.zonePainting.resetZones(sessionId);
     this.commitMessage.set(null);
-    if (this.autoCloseTimeout !== null) {
-      clearTimeout(this.autoCloseTimeout);
-      this.autoCloseTimeout = null;
-    }
     this.refreshClassifications();
     this.rebuildZoneOverlayMesh();
   }
@@ -260,15 +247,39 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     const coverage = this.zonePainting.coverage(sessionId);
     if (coverage && coverage.assigned >= coverage.total) {
       // Every occupied voxel now belongs to some zone - nothing left to
-      // paint, so tell the user and return to the main screen on its own
-      // rather than leaving them staring at a window with no free cells.
-      this.commitMessage.set(`Зону створено: ${assigned} вокселів. Усі вокселі вже розмічені по зонах - повертаємось на головний екран.`);
-      if (this.autoCloseTimeout !== null) {
-        clearTimeout(this.autoCloseTimeout);
-      }
-      this.autoCloseTimeout = setTimeout(() => this.close(), ALL_ZONED_AUTO_CLOSE_MS);
+      // paint. Unlike before, this no longer closes the window on its own -
+      // the user decides when to leave (canSave()'s "Зберегти" button below
+      // just becomes available).
+      this.commitMessage.set(`Зону створено: ${assigned} вокселів. Усі вокселі вже розмічені по зонах.`);
     } else {
       this.commitMessage.set(`Зону створено: ${assigned} вокселів.`);
+    }
+  }
+
+  // Backing state + action for the "Зберегти" button - only appears once
+  // coverage() reports every occupied voxel assigned to some zone (see
+  // ZonePaintingService.save's own comment on what "saved" actually marks).
+  canSave(): boolean {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null || this.isSaved()) {
+      return false;
+    }
+    const coverage = this.zonePainting.coverage(sessionId);
+    return coverage !== null && coverage.total > 0 && coverage.assigned >= coverage.total;
+  }
+
+  isSaved(): boolean {
+    const sessionId = this.zonePainting.activeSessionId();
+    return sessionId !== null && this.zonePainting.isSaved(sessionId);
+  }
+
+  save(): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    if (this.zonePainting.save(sessionId)) {
+      this.commitMessage.set('Зони збережено.');
     }
   }
 
@@ -415,10 +426,6 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       this.lastSessionId = sessionId;
       this.panelSign = { x: 1, y: 1, z: 1 };
       this.commitMessage.set(null);
-      if (this.autoCloseTimeout !== null) {
-        clearTimeout(this.autoCloseTimeout);
-        this.autoCloseTimeout = null;
-      }
       this.rebuildFraming(source.framingObjects);
       this.refreshClassifications();
       this.rebuildZoneOverlayMesh();

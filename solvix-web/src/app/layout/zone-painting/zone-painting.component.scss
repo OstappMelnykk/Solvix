@@ -201,6 +201,27 @@
   color: #9aa0a6;
 }
 
+.zone-painting__save {
+  padding: 6px 14px;
+  background: rgba(42, 157, 143, 0.16);
+  border: 1px solid rgba(42, 157, 143, 0.55);
+  border-radius: 6px;
+  color: #7fe0d1;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: rgba(42, 157, 143, 0.28);
+  }
+}
+
+.zone-painting__saved {
+  margin: 0;
+  font-size: 11px;
+  color: #7fe0d1;
+}
+
 .zone-painting__opacity {
   display: flex;
   flex-direction: column;
