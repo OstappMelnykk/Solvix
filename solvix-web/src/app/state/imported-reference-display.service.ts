@@ -26,7 +26,7 @@ export interface ImportedReferenceStyle {
   // the rings (e.g. to inspect the geometry unobstructed) without losing
   // the reference itself.
   readonly rotateGizmoVisible: boolean;
-  // Whether the voxelization cube preview (VoxelizationService, geometry/voxel-preview.ts)
+  // Whether the voxelization cube preview (VoxelizationService, geometry/scene-objects/voxels.ts)
   // is shown - independent of `visible`, same reasoning as dimensionsVisible/
   // rulerVisible: the voxel result can be hidden to inspect the reference
   // unobstructed without losing the last computed result (VoxelizationService

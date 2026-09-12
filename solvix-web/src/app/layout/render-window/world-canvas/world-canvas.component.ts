@@ -10,16 +10,17 @@ import { ImportedReferenceRenderService } from '../../../state/imported-referenc
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { ZonePaintingService } from '../../../state/zone-painting.service';
 import { VoxelizationService } from '../../../state/voxelization.service';
-import { getVoxelCellByInstanceId } from '../../../geometry/voxel-preview';
+import { getVoxelCellByInstanceId } from '../../../geometry/scene-objects/voxels';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
-import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/zone-overlay';
+import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/scene-objects/zone-overlay';
+import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
+import { buildAxesHelper } from '../../../geometry/scene-objects/axes-helper';
+import { buildFloorGrid } from '../../../geometry/scene-objects/floor-grid';
+import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
-const AXES_LENGTH = 50;
-const GRID_SIZE = 50;
-const GRID_DIVISIONS = 50;
 const SETTLE_DURATION_MS = 180;
 // Above this many CSS pixels of movement between pointerdown and pointerup,
 // treat the gesture as an OrbitControls drag, not a click-to-select - the
@@ -291,7 +292,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('keydown', this.onKeyDown);
     if (this.currentImportedReference) {
-      this.disposeImportedReferenceClone(this.currentImportedReference);
+      disposeImportedReferenceClone(this.currentImportedReference);
     }
     this.clearZoneOverlay();
     this.controls?.dispose();
@@ -396,34 +397,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateRuler();
     this.updateVoxelPreview();
 
-    // Lower ambient than before, plus a key/fill pair of directional lights
-    // from opposite sides (instead of one) - a single light + strong ambient
-    // washes out shading almost evenly across a solid surface, making its
-    // facets/contours hard to read. Two lights of different strength from
-    // different angles give every face a distinct brightness, so shape and
-    // silhouette actually read at a glance.
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
-    this.scene.add(ambientLight);
+    // Each a fixed scene fixture (not per-session/model), same lifetime as
+    // the whole component, so none of them needs cleanup/disposal logic of
+    // its own - see their own files under geometry/scene-objects/ for why
+    // each looks the way it does.
+    this.scene.add(buildSceneLights());
+    this.scene.add(buildAxesHelper());
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    keyLight.position.set(5, 8, 5);
-    this.scene.add(keyLight);
-
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
-    fillLight.position.set(-5, 2, -5);
-    this.scene.add(fillLight);
-
-    // Standard THREE.js axis colors: X red, Y green, Z blue - a fixed scene
-    // fixture (not per-session/model), same lifetime as the lights above, so
-    // it needs no cleanup/disposal logic of its own either.
-    this.scene.add(new THREE.AxesHelper(AXES_LENGTH));
-
-    // Floor grid on the XZ plane (Y=0) - same fixed-fixture lifetime as
-    // AxesHelper above, purely a visual reference for scale/orientation.
     // Visibility is user-toggleable (see toggleGridVisible below), so this
     // stays visible by default and gets its own field instead of being
-    // added anonymously like AxesHelper.
-    this.gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS);
+    // added anonymously like the lights/axes above.
+    this.gridHelper = buildFloorGrid();
     this.gridHelper.visible = this.gridVisible;
     this.scene.add(this.gridHelper);
   }
@@ -471,7 +455,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.currentImportedReference) {
       this.rotateGizmo.detach();
       this.scene.remove(this.currentImportedReference);
-      this.disposeImportedReferenceClone(this.currentImportedReference);
+      disposeImportedReferenceClone(this.currentImportedReference);
       this.currentImportedReference = null;
     }
 
@@ -479,34 +463,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
 
-    const clone = source.clone();
-    // A visual guide for the imported reference, not the model being worked
-    // on - override materials so it never gets mistaken for the actual
-    // session model rendered in the same scene. 'solid' is a normal LIT
-    // material (MeshStandardMaterial, DoubleSide) so the scene's existing
-    // lights actually shade it and it reads as a real 3D shape - solid
-    // triangle fill is cheap on the GPU regardless of triangle count
-    // (ordinary rasterization). 'wireframe' draws every triangle edge every
-    // frame instead - fine for a light import, but measurably tanks FPS
-    // well past a few hundred thousand triangles, hence this being a user
-    // choice (ImportedReferenceDisplayService) rather than the only option.
-    const mode = style?.mode ?? 'solid';
-    const color = style?.color ?? 0xffffff;
-    const opacity = style?.opacity ?? 0.5;
-    // flatShading (solid mode only) - each triangle gets its own face
-    // normal instead of interpolating vertex normals, so adjacent facets at
-    // different angles pick up visibly different shading under the
-    // key/fill lights above. Without it, curved/faceted surfaces lit this
-    // way can look like a single smooth blob with no readable contours.
-    const material: THREE.Material =
-      mode === 'wireframe'
-        ? new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity })
-        : new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, flatShading: true, roughness: 0.6 });
-    clone.traverse(child => {
-      if (child instanceof THREE.Mesh) {
-        child.material = material;
-      }
-    });
+    const clone = buildImportedReferenceClone(source, style);
     this.currentImportedReference = clone;
     this.scene.add(clone);
     this.rotateGizmo.attach(clone);
@@ -848,19 +805,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return null;
     }
     return `Видалення заборонено: геометрія розпадеться на ${violation.componentSizes.length} частини (${violation.componentSizes.join(' + ')} кубів)`;
-  }
-
-  // Geometry is shared with the source object (ImportedGeometryService owns
-  // and disposes it) - only the material is unique to this clone (created
-  // above), so only that gets disposed here.
-  private disposeImportedReferenceClone(clone: THREE.Object3D): void {
-    clone.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) {
-        return;
-      }
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach(material => material.dispose());
-    });
   }
 
   private updateSession(): void {

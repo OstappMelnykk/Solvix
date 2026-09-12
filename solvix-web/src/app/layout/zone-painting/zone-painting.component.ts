@@ -4,8 +4,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Axis, AXES, ZoneCellState, ZonePaintingService, axisCoords, projectedCoords } from '../../state/zone-painting.service';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
-import { getVoxelCellByInstanceId } from '../../geometry/voxel-preview';
-import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity, darkenZoneColorCss } from '../../geometry/zone-overlay';
+import { getVoxelCellByInstanceId } from '../../geometry/scene-objects/voxels';
+import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity, darkenZoneColorCss } from '../../geometry/scene-objects/zone-overlay';
 
 type AxisSign = 1 | -1;
 
@@ -460,7 +460,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   // InstancedMesh PER ZONE (not one shared mesh with a per-instance color).
   // A per-instance color (InstancedMesh.setColorAt) rendered black/near-
   // black in practice; a plain `material.color` set directly in the
-  // constructor is exactly the pattern voxel-preview.ts's own edges/nodes/
+  // constructor is exactly the pattern scene-objects/voxels.ts's own edges/nodes/
   // highlight overlays already use successfully (EDGE_COLOR/NODE_COLOR/
   // HIGHLIGHT_COLOR), so each zone gets its own small InstancedMesh (one per
   // zone, not one per voxel) with a single solid color instead. Rebuilding

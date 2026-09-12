@@ -19,11 +19,11 @@ import {
   setVoxelNodeOpacity,
   setVoxelNodeSize,
   setVoxelPreviewOpacity
-} from '../geometry/voxel-preview';
+} from '../geometry/scene-objects/voxels';
 
 const DEFAULT_VOXEL_OPACITY = 0.55;
 const DEFAULT_VOXEL_EDGE_OPACITY = 1;
-// [0,1] slider value - see geometry/voxel-preview.ts's EDGE_RADIUS_MAX_FACTOR
+// [0,1] slider value - see geometry/scene-objects/voxels.ts's EDGE_RADIUS_MAX_FACTOR
 // for the cellSize-relative radius it maps onto. Deliberately thin by
 // default - a subtle wireframe accent, not a second layer of nodes.
 const DEFAULT_VOXEL_LINE_WIDTH = 0.25;
@@ -86,11 +86,11 @@ export class VoxelizationService {
   // versa).
   private readonly edgeOpacityBySession = new KeyedStore<number, number>();
   // Screen-space pixel width of the edge outline (LineSegments2/LineMaterial -
-  // see voxel-preview.ts's own comment on MIN/MAX_EDGE_WIDTH_PX), same [0,1]
+  // see scene-objects/voxels.ts's own comment on MIN/MAX_EDGE_WIDTH_PX), same [0,1]
   // slider convention as the opacity controls, independent of them.
   private readonly lineWidthBySession = new KeyedStore<number, number>();
   // Radius of the node spheres, relative to cellSize (see
-  // voxel-preview.ts's NODE_RADIUS_MAX_FACTOR) - same [0,1] slider
+  // scene-objects/voxels.ts's NODE_RADIUS_MAX_FACTOR) - same [0,1] slider
   // convention as the opacity controls above, independent of them.
   private readonly nodeSizeBySession = new KeyedStore<number, number>();
   // Same, but for the node spheres' opacity - independent of the fill and
@@ -319,7 +319,7 @@ export class VoxelizationService {
   // preview here, unlike the OLD InstancedMesh-based preview (which left
   // this to WorldCanvasComponent, since its clone() shared geometry by
   // reference with the source anyway - disposing either one broke both).
-  // BatchedMesh (see geometry/voxel-preview.ts) can't be cloned per canvas
+  // BatchedMesh (see geometry/scene-objects/voxels.ts) can't be cloned per canvas
   // at all, so voxelPreview has exactly one real owner now - this
   // service's cache. Safe to dispose immediately, synchronously, right
   // here: WorldCanvasComponent reads getVoxelPreview() DIRECTLY every

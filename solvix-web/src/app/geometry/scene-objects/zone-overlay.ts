@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { VoxelGridDto, isOccupied, voxelCenter } from './voxel-grid-contract';
+import { VoxelGridDto, isOccupied, voxelCenter } from '../voxel-grid-contract';
 
 // Minimal shape ZonePaintingService's own ZoneDefinition satisfies - kept
 // separate (not imported from state/zone-painting.service.ts) so this
 // geometry-layer file never depends on the state layer, matching how
-// voxel-preview.ts/voxel-cell.ts only ever take plain data (VoxelGridDto),
+// voxel-fill.ts/voxel-cell.ts only ever take plain data (VoxelGridDto),
 // never a service.
 export interface ZoneOverlayZone {
   readonly id: number;
@@ -15,10 +15,10 @@ export interface ZoneOverlayZone {
 // flat painting panels only (darkenZoneColorCss) - fixed, since that's a
 // small interaction cue, not a "see the model through it" viewing surface.
 // The two full-3D views (the zone-painting window's own result panel, and
-// WorldCanvasComponent's "Показати зони" button) instead take an explicit,
-// user-adjustable `opacity` (ZonePaintingService.getZoneOverlayOpacity) so
-// the user can turn zone colors down to see the underlying model's detail
-// through them - see buildZoneOverlayGroup/setZoneOverlayOpacity below.
+// WorldCanvasComponent's "Показати зони" button) instead take an explicit
+// `opacity` parameter (buildZoneOverlayGroup/setZoneOverlayOpacity below)
+// so the caller can turn zone colors down to see the underlying model's
+// detail through them.
 export const ZONED_DARKEN_FACTOR = 0.6;
 export const ZONED_ALPHA = 0.75;
 
@@ -49,10 +49,10 @@ export function darkenZoneColorHex(hexColor: string): string {
 // Builds ONE InstancedMesh PER ZONE (not one shared mesh with a per-instance
 // color - InstancedMesh.setColorAt rendered black/near-black in practice).
 // Each zone's mesh gets a plain `material.color` set directly in the
-// constructor, the same pattern voxel-preview.ts's own edges/nodes/
-// highlight overlays already use successfully (EDGE_COLOR/NODE_COLOR/
-// HIGHLIGHT_COLOR). Returns null when there's nothing zoned yet - the
-// caller should simply not add anything to its scene in that case.
+// constructor, the same pattern voxel-fill.ts/voxel-edges.ts/voxel-nodes.ts/
+// voxel-highlight.ts already use successfully. Returns null when there's
+// nothing zoned yet - the caller should simply not add anything to its
+// scene in that case.
 export function buildZoneOverlayGroup(
   grid: VoxelGridDto,
   zones: readonly ZoneOverlayZone[],
@@ -109,12 +109,12 @@ export function buildZoneOverlayGroup(
       mesh.setMatrixAt(i, matrix);
     });
     mesh.instanceMatrix.needsUpdate = true;
-    // Explicit renderOrder, same discipline voxel-preview.ts's own
-    // buildVoxelPreview already uses to keep its several translucent layers
-    // stable across camera angles (fill=1, edges/nodes=2, highlight=3) -
-    // without one, this mesh fell back to three.js's default per-object
-    // distance sort, which is exactly what made it flip/flicker while
-    // orbiting. Drawn last (after all of those).
+    // Explicit renderOrder, same discipline voxel-fill.ts/voxel-edges.ts/
+    // voxel-nodes.ts/voxel-highlight.ts already use to keep several
+    // translucent layers stable across camera angles (fill=1, edges/
+    // nodes=2, highlight=3) - without one, this mesh fell back to three.js's
+    // default per-object distance sort, which is exactly what made it
+    // flip/flicker while orbiting. Drawn last (after all of those).
     mesh.renderOrder = 4;
     group.add(mesh);
   }

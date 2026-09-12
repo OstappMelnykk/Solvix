@@ -7,7 +7,7 @@ import { ImportedGeometryService } from './imported-geometry.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { SessionsService } from './sessions.service';
 import { environment } from '../../environments/environment';
-import { getVoxelCellByInstanceId } from '../geometry/voxel-preview';
+import { getVoxelCellByInstanceId } from '../geometry/scene-objects/voxels';
 import { VoxelCell } from '../geometry/voxel-cell';
 
 function box(): THREE.Object3D {
@@ -241,7 +241,7 @@ describe('VoxelizationService', () => {
     expect(voxelization.getVoxelPreview(sessionId)).toBe(firstPreview);
   });
 
-  // Regression: BatchedMesh (the fill's renderer - see voxel-preview.ts)
+  // Regression: BatchedMesh (the fill's renderer - see scene-objects/voxels.ts)
   // can't be cloned per canvas, so WorldCanvasComponent now shows this
   // EXACT cached object rather than a clone of it - which means disposal
   // must happen in exactly one place, at the moment this service knows
