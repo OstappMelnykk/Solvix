@@ -15,126 +15,69 @@ canvas {
   height: 100%;
 }
 
-// Same overlay treatment as .camera-mode-toggle, top-LEFT instead of
-// top-right so it never collides with the camera-mode/reset buttons stacked
-// there - a dedicated, always-reachable way to fully drop the STL reference
-// out of the scene (world-canvas.component.ts's toggleImportedReferenceVisible)
-// without hunting for the settings panel's own "Показати" checkbox.
-.reference-visibility-toggle {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
-  }
-}
-
-// Overlay, like the ortho/persp toggle in Blender/CAD tools - sits directly
-// on the 3D view itself rather than in the settings panel, since the
-// camera (and its mode) belongs to this World's canvas, not to any session.
-.camera-mode-toggle {
+// A single flex-stacked container, grouped logically and ordered by how
+// often each group is actually needed - Вид (camera/scene, used constantly
+// regardless of world or model) first, Модель (STL visibility, Ideal World
+// only) next, Зони (the zone-painting tools, only relevant during that one
+// later workflow step) last. Replaces what used to be ~10 individually
+// position:absolute-stacked buttons/controls, each with its own hand-picked
+// `top: Npx` a fixed 34px past the previous one - fragile (a forgotten
+// offset either overlaps or leaves a gap) and exactly how a real bug
+// happened here before (a new button shipped with no CSS rule at all,
+// since there was no shared class to inherit from). Plain flexbox gap
+// stacking means a new tool button just needs the .tool-button class and
+// nothing else - it can never again go missing a position rule.
+.canvas-toolbar {
   position: absolute;
   top: 10px;
   right: 10px;
-  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 190px;
+}
+
+.canvas-toolbar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
   background: rgba(30, 31, 34, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  border-radius: 8px;
 
-  &:hover {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
+  // Without this, [hidden] does nothing here: it and this class's own
+  // `display: flex` above have EQUAL CSS specificity, and author styles
+  // apply after the browser's UA stylesheet - so `display: flex` wins even
+  // while [hidden] is set (the exact bug .zones-overlay-opacity/.tool-slider
+  // below were ALSO written defensively against).
+  &[hidden] {
+    display: none;
   }
 }
 
-// Same overlay treatment as .camera-mode-toggle, stacked directly below it.
-.camera-reset-button {
-  position: absolute;
-  top: 44px;
-  right: 10px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
+// Matches settings-panel's own .group-label visual language, so a group
+// header reads the same way here as it does in the sidebar.
+.canvas-toolbar__label {
+  color: #9aa0a6;
+  font-size: 10px;
   font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
-  }
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-// Same overlay treatment as .camera-mode-toggle, stacked directly below
-// .camera-reset-button.
-.grid-toggle {
-  position: absolute;
-  top: 78px;
-  right: 10px;
+// Every button in .canvas-toolbar shares this ONE rule - previously each
+// had its own copy-pasted, individually position:absolute'd block.
+.tool-button {
   padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 6px;
   color: #dfe1e5;
   font-size: 12px;
   font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
-  }
-}
-
-// Same overlay treatment as .camera-mode-toggle, stacked directly below
-// .grid-toggle.
-.six-view-toggle {
-  position: absolute;
-  top: 112px;
-  right: 10px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: sans-serif;
+  text-align: left;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 
@@ -153,136 +96,24 @@ canvas {
   }
 }
 
-// Same overlay treatment as .six-view-toggle, stacked directly below it -
-// only shown on the Ideal World canvas (isIdealWorldCanvas), same as
-// .reference-visibility-toggle above.
-.zone-painting-toggle {
-  position: absolute;
-  top: 146px;
-  right: 10px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover:not(:disabled) {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-}
-
-// Same overlay treatment as .zone-painting-toggle, stacked directly below
-// it - only enabled once every voxel has a zone (hasFullZoneCoverage).
-.zones-overlay-toggle {
-  position: absolute;
-  top: 180px;
-  right: 10px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover:not(:disabled) {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-}
-
-// Stacked directly below .zones-overlay-toggle - only shown while that
-// toggle is actually on (isZonesOverlayVisible), same [hidden] reasoning as
-// .voxel-rule-notice below.
-.zones-overlay-opacity {
-  position: absolute;
-  top: 214px;
-  right: 10px;
-  width: 160px;
+// The one non-button control in the toolbar (the zone-overlay opacity
+// slider) - same [hidden] specificity guard as .canvas-toolbar__group
+// above.
+.tool-slider {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
+  padding: 2px 2px 4px;
   color: #dfe1e5;
   font-size: 11px;
   font-family: sans-serif;
 
-  // Without this, the [hidden] attribute does nothing here: it and this
-  // class's own `display: flex` above have EQUAL CSS specificity, and
-  // author styles apply after the browser's UA stylesheet - so
-  // `display: flex` was winning even while [hidden] was set, and the
-  // slider stayed visible regardless of isZonesOverlayVisible().
   &[hidden] {
     display: none;
   }
 
   input[type='range'] {
     width: 100%;
-  }
-}
-
-// Same overlay treatment as .zones-overlay-toggle, stacked directly below
-// .zones-overlay-opacity - only enabled once step 2 (STL surface zoning)
-// is actually saved (hasSavedSurfaceZoning). This rule was MISSING
-// entirely for a while (the button existed in the template with no CSS at
-// all) - with every sibling here using manual position:absolute stacking,
-// an unstyled button just fell back to normal document flow instead of
-// this toolbar's own top-right corner, reading as "the button doesn't
-// exist" even though it was really in the DOM the whole time.
-.surface-zones-overlay-toggle {
-  position: absolute;
-  top: 258px;
-  right: 10px;
-  padding: 6px 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: sans-serif;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover:not(:disabled) {
-    border-color: #da680b;
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: #39c5f2;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 }
 
