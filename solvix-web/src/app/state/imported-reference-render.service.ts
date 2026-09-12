@@ -9,7 +9,7 @@ import { recenterAtOrigin } from '../geometry/recenter-object3d';
 import { buildDimensionLines, disposeDimensionLines } from '../geometry/dimension-lines';
 import { buildRulerPreview, disposeRulerPreview } from '../geometry/ruler-preview';
 
-const DEFAULT_DENSITY = 8;
+const DEFAULT_DENSITY = 10;
 const MIN_DENSITY = 1;
 const MAX_DENSITY = 90;
 

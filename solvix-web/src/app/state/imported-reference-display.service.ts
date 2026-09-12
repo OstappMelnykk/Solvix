@@ -40,8 +40,8 @@ const DEFAULT_STYLE: ImportedReferenceStyle = {
   mode: 'solid',
   color: 0xffffff,
   opacity: 0.5,
-  dimensionsVisible: true,
-  rulerVisible: true,
+  dimensionsVisible: false,
+  rulerVisible: false,
   rulerDistance: 1,
   rotateGizmoVisible: true,
   voxelPreviewVisible: true

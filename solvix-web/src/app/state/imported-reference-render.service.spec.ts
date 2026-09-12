@@ -30,10 +30,10 @@ describe('ImportedReferenceRenderService', () => {
     render = TestBed.inject(ImportedReferenceRenderService);
   });
 
-  it('defaults density to 8 and reports no scale/reference before anything is imported', () => {
+  it('defaults density to 10 and reports no scale/reference before anything is imported', () => {
     const sessionId = sessions.sessions()[0].id;
 
-    expect(render.getDensity(sessionId)).toBe(8);
+    expect(render.getDensity(sessionId)).toBe(10);
     expect(render.getScale(sessionId)).toBeNull();
     expect(render.getScaledReference(sessionId)).toBeNull();
   });

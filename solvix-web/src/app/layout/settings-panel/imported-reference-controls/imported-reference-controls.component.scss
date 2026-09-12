@@ -11,8 +11,8 @@ $accent-toggle: #da680b;
 // Same treatment as settings-panel.component.scss's h4 (Import) - every
 // section header in the panel reads as the same kind of thing.
 h4 {
-  margin: 20px 0 10px;
-  padding-bottom: 6px;
+  margin: 14px 0 8px;
+  padding-bottom: 4px;
   border-bottom: 1px solid $field-border;
   font-size: 12px;
   font-weight: 700;
@@ -24,8 +24,18 @@ h4 {
 // One visual cluster of related rows (e.g. "Показ", "Обертання",
 // "Вимірювання") under a single h4 section - smaller/quieter than h4 so the
 // hierarchy stays h4 (section) > group-label (sub-group) > row (control).
+// Boxed as its own subtle card (matching world-canvas.component.scss's own
+// .canvas-toolbar__group treatment, for the same reason: a group of related
+// controls should visually read as one unit at a glance, not just be
+// implied by whitespace and a small label above it) - a lighter tint here
+// than that overlay's own boxes, since this panel already sits on its own
+// solid dark background rather than floating over the 3D scene.
 .group {
-  margin-bottom: 14px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
 
   &:last-child {
     margin-bottom: 0;
@@ -49,13 +59,13 @@ h4 {
   justify-content: center;
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 12px;
-  margin-bottom: 6px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
   background: $field-bg;
   border: 1px solid $field-border;
   border-radius: 6px;
   color: #dfe1e5;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
@@ -73,15 +83,21 @@ h4 {
     outline: none;
     border-color: $accent;
   }
+
+  // Avoids doubling up with .group's own bottom padding when a button is
+  // the last thing in its card.
+  .group > &:last-child {
+    margin-bottom: 0;
+  }
 }
 
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-  padding: 5px 0;
+  gap: 10px;
+  font-size: 12px;
+  padding: 3px 0;
 
   > span:first-child {
     color: #b8bcc4;
@@ -93,10 +109,10 @@ h4 {
     color: #dfe1e5;
     border: 1px solid $field-border;
     border-radius: 4px;
-    padding: 3px 6px;
+    padding: 2px 5px;
     font-size: 12px;
     font-family: inherit;
-    width: 72px;
+    width: 64px;
     text-align: left;
 
     &:focus {
@@ -156,7 +172,7 @@ h4 {
   }
 
   input[type='range'] {
-    width: 110px;
+    width: 95px;
     accent-color: $accent-toggle;
     cursor: pointer;
   }
@@ -181,7 +197,7 @@ h4 {
 .voxelize-status {
   font-size: 11px;
   color: #8a8f98;
-  margin: -2px 0 8px;
+  margin: -2px 0 4px;
 }
 
 .voxelize-status--warning {
