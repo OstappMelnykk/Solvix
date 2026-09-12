@@ -1,0 +1,58 @@
+<div class="zone-painting__header">
+  <span class="zone-painting__title">Розмітка зон</span>
+  <button type="button" class="zone-painting__back" (click)="close()">Закрити</button>
+</div>
+
+<div class="zone-painting__body">
+  <div class="zone-painting__grid">
+    <div class="zone-painting__panel" *ngFor="let i of panelIndices" [class.zone-painting__panel--result]="isResultPanel(i)">
+      <canvas #canvas (pointerdown)="onPointerDown(i, $event)" (pointermove)="onPointerMove(i, $event)" (pointerup)="onPointerUp(i)"></canvas>
+      <canvas *ngIf="!isResultPanel(i)" #overlay class="zone-painting__overlay"></canvas>
+      <span class="zone-painting__label">{{ axisLabel(i) }}</span>
+      <button *ngIf="!isResultPanel(i)" type="button" class="zone-painting__flip" title="Змінити сторону цієї осі" (click)="flipSign(i)">⇄</button>
+    </div>
+  </div>
+
+  <div class="zone-painting__sidebar">
+    <div class="zone-painting__legend">
+      <div><span class="zone-painting__swatch" [style.background]="nextZoneColor()"></span> поточна зона (клікнуто)</div>
+      <div><span class="zone-painting__swatch zone-painting__swatch--available"></span> доступно</div>
+      <div><span class="zone-painting__swatch zone-painting__swatch--excluded"></span> виключено перетином</div>
+      <div><span class="zone-painting__swatch zone-painting__swatch--zoned"></span> вже в іншій зоні</div>
+    </div>
+
+    <button type="button" class="zone-painting__finish-zone" [style.border-color]="nextZoneColor()" (click)="finishZone()">
+      Завершити зону
+    </button>
+    <p class="zone-painting__message" *ngIf="commitMessage()">{{ commitMessage() }}</p>
+
+    <p class="zone-painting__coverage">{{ coverageText() }}</p>
+
+    <label class="zone-painting__opacity" *ngIf="zonesFor().length > 0">
+      Прозорість зон на 3D результаті
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        [value]="zoneOverlayOpacity()"
+        (input)="setZoneOverlayOpacityFromInput($any($event.target).value)"
+      />
+    </label>
+
+    <div class="zone-painting__zone-list">
+      <div class="zone-painting__zone-item" *ngFor="let zone of zonesFor()">
+        <input
+          type="color"
+          class="zone-painting__color-picker"
+          [value]="zone.color"
+          title="Обрати колір цієї зони"
+          (input)="setZoneColor(zone.id, $any($event.target).value)"
+        />
+        Зона {{ zone.id + 1 }} - {{ zone.voxelCount }} вокселів
+      </div>
+    </div>
+
+    <button type="button" class="zone-painting__reset" (click)="resetZones()">Скинути всі зони</button>
+  </div>
+</div>

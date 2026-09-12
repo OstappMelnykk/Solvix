@@ -8,11 +8,13 @@ import { WorldCameraMemoryService } from '../../../state/world-camera-memory.ser
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
+import { ZonePaintingService } from '../../../state/zone-painting.service';
 import { VoxelizationService } from '../../../state/voxelization.service';
 import { getVoxelCellByInstanceId } from '../../../geometry/voxel-preview';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
+import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/zone-overlay';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const AXES_LENGTH = 50;
@@ -135,12 +137,25 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // pass, before ngAfterViewInit (and initScene, which creates gridHelper)
   // has even run, so reading gridHelper.visible directly there would throw.
   private gridVisible = true;
+  // Backing state for the "Показати зони" toggle (see hasFullZoneCoverage/
+  // toggleZonesOverlay/updateZoneOverlay) - whether the user WANTS to see
+  // it, independent of whether it's currently allowed to show (full
+  // coverage). Rebuilt lazily in updateZoneOverlay whenever the session or
+  // ZonePaintingService.zonesRevision(sessionId) has changed since the last
+  // build (a per-zone color edit bumps this WITHOUT changing zones.length,
+  // so revision - not length - is what this must key on), same identity-
+  // cache reasoning as updateVoxelPreview above.
+  private zonesOverlayWanted = false;
+  private zoneOverlayGroup: THREE.Group | null = null;
+  private zoneOverlaySessionId: number | null = null;
+  private zoneOverlayRevision = -1;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   // Read directly (not via @Input) inside updateVoxelPreview() - see there
   // for why.
   private readonly voxelization = inject(VoxelizationService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
+  private readonly zonePainting = inject(ZonePaintingService);
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -278,6 +293,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.currentImportedReference) {
       this.disposeImportedReferenceClone(this.currentImportedReference);
     }
+    this.clearZoneOverlay();
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
     this.renderer?.dispose();
@@ -879,6 +895,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateVoxelPreview();
+    this.updateZoneOverlay();
     this.updateSession();
     this.updateSettleAnimation();
 
@@ -1007,6 +1024,119 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // all outside the Ideal World - here there's simply nothing to show.
   hasModel(): boolean {
     return this.modelPresent;
+  }
+
+  // Backing state + action for the on-canvas "Розмітка зон" button -
+  // docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант D. Gated to the
+  // Ideal World (same reasoning as isImportedReferenceVisible - zoning is
+  // about the shape itself, not a per-World display concern) AND to a
+  // successful voxelization, since the tool paints over that grid's own
+  // (ix,iy,iz) indices - there's nothing to paint before it exists.
+  hasVoxelization(): boolean {
+    return this.sessionId !== null && this.voxelization.getStatus(this.sessionId).kind === 'ok';
+  }
+
+  openZonePainting(): void {
+    if (this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.currentVoxelPreview) {
+      this.zonePainting.open(this.sessionId, {
+        scene: this.scene,
+        voxelPreview: this.currentVoxelPreview,
+        framingObjects: [this.currentVoxelPreview],
+        // Same fixtures SixViewOverlayComponent hides while open - clutter,
+        // not content, for a fixed-axis "just show me the voxels" view.
+        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper()]
+      });
+    }
+  }
+
+  // Backing state + action for the on-canvas "Показати зони" button - shows
+  // the same colored-zone overlay the zone-painting window's own 3D result
+  // panel shows (geometry/zone-overlay.ts, shared code), but directly on
+  // THIS canvas's normal, freely-orbitable view of the full-size model.
+  // Only enabled once every occupied voxel has been claimed by some zone -
+  // showing a PARTIAL result here (unlike the zone-painting window itself,
+  // which is explicitly about painting the not-yet-finished parts) would
+  // just look like missing/broken coverage rather than a deliberate choice.
+  hasFullZoneCoverage(): boolean {
+    if (this.sessionId === null) {
+      return false;
+    }
+    const coverage = this.zonePainting.coverage(this.sessionId);
+    return coverage !== null && coverage.total > 0 && coverage.assigned >= coverage.total;
+  }
+
+  isZonesOverlayVisible(): boolean {
+    return this.zonesOverlayWanted && this.hasFullZoneCoverage();
+  }
+
+  toggleZonesOverlay(): void {
+    this.zonesOverlayWanted = !this.zonesOverlayWanted;
+  }
+
+  // Lazily (re)builds the overlay group only when the session or the zone
+  // data itself has actually changed since the last build - called every
+  // frame from animate(), same pattern as updateVoxelPreview.
+  private updateZoneOverlay(): void {
+    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isZonesOverlayVisible();
+    if (!shouldShow) {
+      this.clearZoneOverlay();
+      return;
+    }
+
+    const sessionId = this.sessionId!;
+    const session = this.zonePainting.getSession(sessionId);
+    if (!session) {
+      this.clearZoneOverlay();
+      return;
+    }
+    const revision = this.zonePainting.zonesRevision(sessionId);
+    if (this.zoneOverlayGroup && this.zoneOverlaySessionId === sessionId && this.zoneOverlayRevision === revision) {
+      return; // already showing the current zone data - nothing to rebuild
+    }
+
+    if (this.zoneOverlayGroup) {
+      disposeZoneOverlayGroup(this.zoneOverlayGroup);
+      this.zoneOverlayGroup = null;
+    }
+    const opacity = this.zonePainting.getZoneOverlayOpacity(sessionId);
+    const group = buildZoneOverlayGroup(session.grid, session.zones, (ix, iy, iz) => this.zonePainting.zoneIdAt(sessionId, ix, iy, iz), opacity);
+    if (group) {
+      this.scene.add(group);
+    }
+    this.zoneOverlayGroup = group;
+    this.zoneOverlaySessionId = sessionId;
+    this.zoneOverlayRevision = revision;
+  }
+
+  private clearZoneOverlay(): void {
+    if (this.zoneOverlayGroup) {
+      disposeZoneOverlayGroup(this.zoneOverlayGroup);
+      this.zoneOverlayGroup = null;
+    }
+    this.zoneOverlaySessionId = null;
+    this.zoneOverlayRevision = -1;
+  }
+
+  // Backing value + action for the "Прозорість зон" slider next to
+  // "Показати зони" - cheap live update (setZoneOverlayOpacity just touches
+  // each material's opacity), not a full updateZoneOverlay rebuild, so
+  // dragging the slider stays smooth. Persisted per-session
+  // (ZonePaintingService.setZoneOverlayOpacity) - the SAME value the
+  // zone-painting window's own 3D result panel slider reads/writes, so
+  // adjusting it in either place carries over to the other.
+  zoneOverlayOpacity(): number {
+    return this.sessionId === null ? 0.75 : this.zonePainting.getZoneOverlayOpacity(this.sessionId);
+  }
+
+  setZoneOverlayOpacityFromInput(value: string): void {
+    if (this.sessionId === null) {
+      return;
+    }
+    const opacity = Number(value);
+    this.zonePainting.setZoneOverlayOpacity(this.sessionId, opacity);
+    if (this.zoneOverlayGroup) {
+      setZoneOverlayOpacity(this.zoneOverlayGroup, opacity);
+    }
   }
 
   openSixView(): void {
