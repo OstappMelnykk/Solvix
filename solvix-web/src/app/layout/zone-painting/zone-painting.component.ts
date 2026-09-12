@@ -317,8 +317,13 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  // Left button only - this used to react to EVERY pointer button, so a
+  // right-drag pan gesture (OrbitControls' mouseButtons.RIGHT = PAN, set
+  // above) was ALSO tracked as a paint attempt and fired a toggleCell/
+  // selectRect the instant the button was released, fighting with the pan
+  // itself instead of letting it through untouched.
   onPointerDown(index: number, event: PointerEvent): void {
-    if (index === RESULT_PANEL_INDEX) {
+    if (index === RESULT_PANEL_INDEX || event.button !== 0) {
       return;
     }
     this.dragPanelIndex = index;

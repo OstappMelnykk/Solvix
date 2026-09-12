@@ -82,10 +82,13 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointerNdc = new THREE.Vector2();
-  private dragPanelIndex: number | null = null;
-  private dragDownClient: { x: number; y: number } | null = null;
-  private dragStart: { u: number; v: number } | null = null;
-  private dragCurrent: { u: number; v: number } | null = null;
+  // Which painting panel is currently mid-stroke (left button held down),
+  // or null between strokes - a stroke never spans 2 panels even if the
+  // cursor somehow leaves one canvas and enters another while the button
+  // is still down.
+  private paintingPanelIndex: number | null = null;
+  // [0,1,2] shell cells - see brushSizes/setBrushRadius below.
+  private brushRadiusValue = 1;
 
   // The colored result overlay - rebuilt once, right after save() succeeds
   // (SurfaceZonePaintingService.save's triangleZone result never changes
@@ -278,53 +281,96 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.disposeResultOverlay();
   }
 
+  // Brush painting, not click/rectangle - drag continuously and every cell
+  // the cursor passes over (within the current brush radius) gets painted,
+  // like a paintbrush stroke. Left button only (event.button === 0): the
+  // OLD click/rectangle version reacted to EVERY pointer button, which
+  // meant a right-drag pan gesture was ALSO tracked as a paint attempt and
+  // fired a toggleCell/selectRect the instant the button was released -
+  // fighting with OrbitControls' own right-drag pan (mouseButtons.RIGHT =
+  // THREE.MOUSE.PAN, see ngAfterViewInit) rather than just letting it
+  // through untouched.
   onPointerDown(index: number, event: PointerEvent): void {
-    if (index === RESULT_PANEL_INDEX) {
+    if (index === RESULT_PANEL_INDEX || event.button !== 0) {
       return;
     }
-    this.dragPanelIndex = index;
-    this.dragDownClient = { x: event.clientX, y: event.clientY };
-    this.dragStart = null;
-    this.dragCurrent = null;
-    const cell = this.raycastCell(index, event);
-    if (cell) {
-      const axis = this.axes[index];
-      this.dragStart = projectedCoords(axis, cell.ix, cell.iy, cell.iz);
-      this.dragCurrent = this.dragStart;
-    }
+    this.paintingPanelIndex = index;
+    this.paintAt(index, event);
   }
 
   onPointerMove(index: number, event: PointerEvent): void {
-    if (this.dragPanelIndex !== index || !this.dragStart) {
+    if (this.paintingPanelIndex !== index) {
       return;
     }
-    const cell = this.raycastCell(index, event);
-    if (cell) {
-      this.dragCurrent = projectedCoords(this.axes[index], cell.ix, cell.iy, cell.iz);
-    }
+    this.paintAt(index, event);
   }
 
   onPointerUp(index: number): void {
-    const downClient = this.dragDownClient;
-    this.dragDownClient = null;
-    const sessionId = this.surfaceZonePainting.activeSessionId();
+    if (this.paintingPanelIndex === index) {
+      this.paintingPanelIndex = null;
+    }
+  }
 
-    if (this.dragPanelIndex === index && sessionId !== null && this.dragStart && this.dragCurrent && downClient) {
-      const axis = this.axes[index];
-      const { u: u0, v: v0 } = this.dragStart;
-      const { u: u1, v: v1 } = this.dragCurrent;
-      const ok =
-        u0 === u1 && v0 === v1
-          ? this.surfaceZonePainting.toggleCell(sessionId, axis, u0, v0)
-          : this.surfaceZonePainting.selectRect(sessionId, axis, u0, v0, u1, v1);
-      if (!ok) {
-        this.message.set('Нічого не змінено - ділянки вже зайняті іншою зоною, недоступні, або дія розірвала б область на 2+ частини.');
+  readonly brushSizes: readonly number[] = [0, 1, 2];
+
+  brushRadius(): number {
+    return this.brushRadiusValue;
+  }
+
+  setBrushRadius(radius: number): void {
+    this.brushRadiusValue = radius;
+  }
+
+  // Paints every cell within the current brush radius of wherever
+  // (index, event) raycasts to, ordered closest-to-center first so each
+  // new cell already touches one just added - the same 4-connectivity
+  // toggleCell enforces per cell would otherwise reject an outer-ring cell
+  // added before its inner neighbor. Only ever ADDS: a cell already
+  // pending (from earlier in this same stroke, OR a previous one) is
+  // skipped rather than re-toggled - a paint stroke that happens to cross
+  // back over its own earlier territory (or a previous session's pending
+  // selection) must not silently ERASE it.
+  private paintAt(index: number, event: PointerEvent): void {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    const cell = this.raycastCell(index, event);
+    if (sessionId === null || !cell) {
+      return;
+    }
+    const axis = this.axes[index];
+    const grid = this.surfaceZonePainting.getSession(sessionId)?.grid;
+    const mask = this.surfaceZonePainting.pendingMask(sessionId, axis);
+    if (!grid || !mask) {
+      return;
+    }
+    const width = axis === 'x' ? grid.countY : grid.countX;
+    const height = axis === 'x' ? grid.countZ : axis === 'y' ? grid.countZ : grid.countY;
+    const center = projectedCoords(axis, cell.ix, cell.iy, cell.iz);
+    const radius = this.brushRadiusValue;
+
+    const footprint: { u: number; v: number; distance: number }[] = [];
+    for (let dv = -radius; dv <= radius; dv++) {
+      for (let du = -radius; du <= radius; du++) {
+        const distance = Math.abs(du) + Math.abs(dv);
+        if (distance > radius) {
+          continue; // diamond-shaped brush, not square
+        }
+        footprint.push({ u: center.u + du, v: center.v + dv, distance });
       }
+    }
+    footprint.sort((a, b) => a.distance - b.distance);
+
+    let changedAny = false;
+    for (const { u, v } of footprint) {
+      if (u < 0 || v < 0 || u >= width || v >= height || mask[u + v * width] === 1) {
+        continue;
+      }
+      if (this.surfaceZonePainting.toggleCell(sessionId, axis, u, v)) {
+        changedAny = true;
+      }
+    }
+    if (changedAny) {
       this.refreshClassifications();
     }
-    this.dragPanelIndex = null;
-    this.dragStart = null;
-    this.dragCurrent = null;
   }
 
   // Raycasts against the REAL STL mesh geometry directly (unlike the voxel

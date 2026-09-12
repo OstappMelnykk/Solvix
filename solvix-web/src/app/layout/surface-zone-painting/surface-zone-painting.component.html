@@ -33,6 +33,19 @@
       </button>
     </div>
 
+    <div class="surface-zone-painting__brush-picker">
+      <div class="surface-zone-painting__zone-picker-label">Розмір кисті</div>
+      <button
+        type="button"
+        class="surface-zone-painting__brush-option"
+        *ngFor="let size of brushSizes"
+        [class.surface-zone-painting__brush-option--active]="size === brushRadius()"
+        (click)="setBrushRadius(size)"
+      >
+        <span class="surface-zone-painting__brush-dot" [style.width.px]="6 + size * 5" [style.height.px]="6 + size * 5"></span>
+      </button>
+    </div>
+
     <button type="button" class="surface-zone-painting__finish" (click)="finishSelection()">Завершити виділення</button>
     <p class="surface-zone-painting__message" *ngIf="message()">{{ message() }}</p>
 
