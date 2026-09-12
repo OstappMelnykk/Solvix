@@ -1,4 +1,5 @@
 <div class="surface-zone-painting__header">
+  <span class="surface-zone-painting__step">Крок 2 з 2 · STL-поверхня</span>
   <span class="surface-zone-painting__title">Розмітка зон на STL-поверхні</span>
   <button type="button" class="surface-zone-painting__back" (click)="close()">Закрити</button>
 </div>
@@ -34,7 +35,27 @@
     </div>
 
     <div class="surface-zone-painting__brush-picker">
-      <div class="surface-zone-painting__zone-picker-label">Розмір кисті</div>
+      <div class="surface-zone-painting__zone-picker-label">Інструмент</div>
+      <div class="surface-zone-painting__mode-row">
+        <button
+          type="button"
+          class="surface-zone-painting__mode-option"
+          [class.surface-zone-painting__mode-option--active]="brushMode() === 'brush'"
+          (click)="setBrushMode('brush')"
+        >
+          Кисть
+        </button>
+        <button
+          type="button"
+          class="surface-zone-painting__mode-option"
+          [class.surface-zone-painting__mode-option--active]="brushMode() === 'eraser'"
+          (click)="setBrushMode('eraser')"
+        >
+          Гумка
+        </button>
+      </div>
+
+      <div class="surface-zone-painting__zone-picker-label">Розмір</div>
       <button
         type="button"
         class="surface-zone-painting__brush-option"

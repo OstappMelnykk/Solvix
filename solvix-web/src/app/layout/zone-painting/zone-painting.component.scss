@@ -20,7 +20,27 @@
   flex: none;
   padding: 10px 14px;
   background: rgba(30, 31, 34, 0.95);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  // Blue accent = "step 1, voxels" - SurfaceZonePaintingComponent's own
+  // header uses a visually distinct amber accent for "step 2, STL", so
+  // which of the 2 sequential full-screen tools is open is unmistakable at
+  // a glance, not just from reading the title text.
+  border-bottom: 2px solid #39c5f2;
+}
+
+// A distinct step badge, not just the title text - the actual point of
+// this element per the user's own request: at a glance, tell "I'm
+// selecting voxels" apart from "I'm painting the STL surface"
+// (SurfaceZonePaintingComponent's matching step badge), not just by
+// reading the header text closely.
+.zone-painting__step {
+  padding: 3px 8px;
+  background: rgba(57, 197, 242, 0.16);
+  border: 1px solid rgba(57, 197, 242, 0.5);
+  border-radius: 4px;
+  color: #9fe3f7;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .zone-painting__title {

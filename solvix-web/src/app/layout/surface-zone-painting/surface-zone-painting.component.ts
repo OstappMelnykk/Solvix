@@ -11,11 +11,7 @@ import {
 import { SurfaceZoneCellState, SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
 import { worldPointToShellCell } from '../../geometry/surface-shell-grid';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
-import {
-  buildSurfaceZoneOverlay,
-  disposeSurfaceZoneOverlay,
-  setSurfaceZoneOverlayOpacity
-} from '../../geometry/scene-objects/surface-zone-overlay';
+import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
 import { darkenZoneColorCss } from '../../geometry/scene-objects/zone-overlay';
 
 type AxisSign = 1 | -1;
@@ -23,7 +19,12 @@ type AxisSign = 1 | -1;
 const AVAILABLE_FILL = 'rgba(180, 185, 190, 0.35)';
 const EXCLUDED_FILL = 'rgba(10, 10, 12, 0.55)';
 const PENDING_FILL = 'rgba(255, 255, 255, 0.55)';
-const DEFAULT_OVERLAY_OPACITY = 0.75;
+// Fully opaque - the result panel now hides the original STL reference
+// while showing this (see animate()'s stlMeshWasVisible handling), so
+// there's nothing underneath this needs to blend with any more; a crisp,
+// fully-colored view of the model itself was the actual point of this
+// panel.
+const DEFAULT_OVERLAY_OPACITY = 1;
 
 const PANEL_COUNT = 4;
 const RESULT_PANEL_INDEX = 3;
@@ -312,6 +313,23 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   }
 
   readonly brushSizes: readonly number[] = [0, 1, 2];
+  // 'brush' only ever ADDS cells to the pending selection, 'eraser' only
+  // ever REMOVES them - both share the exact same footprint/ordering logic
+  // in paintAt below, just filtered to the opposite mask state. Erasing
+  // only ever touches PENDING cells (not yet committed via
+  // finishSelection) - a cell already claimed by a finished zone can't be
+  // toggled at all (ZonePaintingService-style rule, enforced by
+  // toggleCell itself), matching how a single click could always remove a
+  // pending cell but never an already-zoned one.
+  private paintMode: 'brush' | 'eraser' = 'brush';
+
+  brushMode(): 'brush' | 'eraser' {
+    return this.paintMode;
+  }
+
+  setBrushMode(mode: 'brush' | 'eraser'): void {
+    this.paintMode = mode;
+  }
 
   brushRadius(): number {
     return this.brushRadiusValue;
@@ -321,15 +339,11 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.brushRadiusValue = radius;
   }
 
-  // Paints every cell within the current brush radius of wherever
-  // (index, event) raycasts to, ordered closest-to-center first so each
-  // new cell already touches one just added - the same 4-connectivity
-  // toggleCell enforces per cell would otherwise reject an outer-ring cell
-  // added before its inner neighbor. Only ever ADDS: a cell already
-  // pending (from earlier in this same stroke, OR a previous one) is
-  // skipped rather than re-toggled - a paint stroke that happens to cross
-  // back over its own earlier territory (or a previous session's pending
-  // selection) must not silently ERASE it.
+  // Paints (or erases) every cell within the current brush radius of
+  // wherever (index, event) raycasts to, ordered closest-to-center first so
+  // each new cell already touches one just added/removed - the same
+  // 4-connectivity toggleCell enforces per cell would otherwise reject an
+  // outer-ring cell handled before its inner neighbor.
   private paintAt(index: number, event: PointerEvent): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     const cell = this.raycastCell(index, event);
@@ -359,9 +373,16 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
     footprint.sort((a, b) => a.distance - b.distance);
 
+    const erasing = this.paintMode === 'eraser';
     let changedAny = false;
     for (const { u, v } of footprint) {
-      if (u < 0 || v < 0 || u >= width || v >= height || mask[u + v * width] === 1) {
+      if (u < 0 || v < 0 || u >= width || v >= height) {
+        continue;
+      }
+      const isPending = mask[u + v * width] === 1;
+      // Brush: skip cells already pending (never re-toggle them off).
+      // Eraser: skip cells that AREN'T pending (nothing there to remove).
+      if (erasing !== isPending) {
         continue;
       }
       if (this.surfaceZonePainting.toggleCell(sessionId, axis, u, v)) {
@@ -481,6 +502,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
 
     const previousVisibility = source.hiddenDuringView.map(object => object.visible);
     source.hiddenDuringView.forEach(object => (object.visible = false));
+    const stlMeshWasVisible = source.stlMesh.visible;
 
     const canvases = this.canvasRefs.toArray();
     for (let i = 0; i < canvases.length; i++) {
@@ -504,9 +526,16 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
         this.renderers[i].setSize(width, height);
       }
       this.controls[i].update();
+      const showingResult = i === RESULT_PANEL_INDEX && this.resultOverlay !== null;
       if (this.resultOverlay) {
-        this.resultOverlay.visible = i === RESULT_PANEL_INDEX;
+        this.resultOverlay.visible = showingResult;
       }
+      // The result panel shows ONLY the fully-opaque colored overlay, not
+      // the original (possibly translucent) STL reference underneath it at
+      // the exact same position - blending both together read as a faint,
+      // muddy wash rather than a crisp "here's the model, painted by
+      // zone" view, which was the actual point of this panel.
+      source.stlMesh.visible = stlMeshWasVisible && !showingResult;
       this.renderers[i].render(source.scene, camera);
       if (i !== RESULT_PANEL_INDEX) {
         this.drawOverlay(i, camera, width, height);
@@ -515,6 +544,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (this.resultOverlay) {
       this.resultOverlay.visible = false;
     }
+    source.stlMesh.visible = stlMeshWasVisible;
 
     source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
   };

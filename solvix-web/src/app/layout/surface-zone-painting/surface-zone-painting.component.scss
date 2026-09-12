@@ -20,7 +20,22 @@
   flex: none;
   padding: 10px 14px;
   background: rgba(30, 31, 34, 0.95);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  // Amber accent = "step 2, STL" - visually distinct from
+  // ZonePaintingComponent's own blue "step 1, voxels" header, so which of
+  // the 2 sequential full-screen tools is open is unmistakable at a
+  // glance.
+  border-bottom: 2px solid #f4a261;
+}
+
+.surface-zone-painting__step {
+  padding: 3px 8px;
+  background: rgba(244, 162, 97, 0.16);
+  border: 1px solid rgba(244, 162, 97, 0.5);
+  border-radius: 4px;
+  color: #f7c99f;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .surface-zone-painting__title {
@@ -45,7 +60,7 @@
 
   &:focus-visible {
     outline: none;
-    border-color: #39c5f2;
+    border-color: #f4a261;
   }
 }
 
@@ -72,7 +87,7 @@
 }
 
 .surface-zone-painting__panel--result {
-  outline: 1px solid rgba(57, 197, 242, 0.35);
+  outline: 1px solid rgba(244, 162, 97, 0.35);
   outline-offset: -1px;
 }
 
@@ -129,7 +144,7 @@
 
   &:focus-visible {
     outline: none;
-    border-color: #39c5f2;
+    border-color: #f4a261;
   }
 }
 
@@ -198,6 +213,32 @@
   gap: 6px;
 }
 
+.surface-zone-painting__mode-row {
+  display: flex;
+  gap: 6px;
+}
+
+.surface-zone-painting__mode-option {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &--active {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: #f4a261;
+  }
+}
+
 .surface-zone-painting__brush-option {
   display: inline-flex;
   align-items: center;
@@ -218,7 +259,7 @@
 
   &--active {
     background: rgba(255, 255, 255, 0.14);
-    border-color: #39c5f2;
+    border-color: #f4a261;
   }
 }
 
@@ -294,6 +335,6 @@
 
   &:focus-visible {
     outline: none;
-    border-color: #39c5f2;
+    border-color: #f4a261;
   }
 }
