@@ -24,8 +24,18 @@ h4 {
 // One visual cluster of related rows (e.g. "Показ", "Обертання",
 // "Вимірювання") under a single h4 section - smaller/quieter than h4 so the
 // hierarchy stays h4 (section) > group-label (sub-group) > row (control).
+// Boxed as its own subtle card (matching world-canvas.component.scss's own
+// .canvas-toolbar__group treatment, for the same reason: a group of related
+// controls should visually read as one unit at a glance, not just be
+// implied by whitespace and a small label above it) - a lighter tint here
+// than that overlay's own boxes, since this panel already sits on its own
+// solid dark background rather than floating over the 3D scene.
 .group {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
 
   &:last-child {
     margin-bottom: 0;
@@ -38,7 +48,7 @@ h4 {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #6f737a;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 // Same button treatment as settings-panel.component.scss's .tool (Import
@@ -72,6 +82,12 @@ h4 {
   &:focus-visible {
     outline: none;
     border-color: $accent;
+  }
+
+  // Avoids doubling up with .group's own bottom padding when a button is
+  // the last thing in its card.
+  .group > &:last-child {
+    margin-bottom: 0;
   }
 }
 
