@@ -91,6 +91,25 @@ function isWeightedOit(material: THREE.Material | readonly THREE.Material[]): bo
   return first?.userData?.[WEIGHTED_OIT_FLAG] === true;
 }
 
+// A tagged material currently sitting at opacity>=1 (the fill/reference
+// opacity sliders both allow this) must NOT go through the accum/reveal
+// passes: weighted OIT deliberately never depth-sorts or occludes between
+// the fragments it blends together, on the assumption every one of them is
+// genuinely translucent to some degree. Feed it a fully-opaque fragment
+// anyway (e.g. a voxel's front face at opacity=1, with its own back face or
+// a neighboring cube's face landing on the very same pixel) and it AVERAGES
+// them instead of letting the front one hide the back one outright - the
+// residual "still a little see-through even at max opacity" this was
+// reported to cause. So this is checked fresh every frame (never baked into
+// the material or its userData tag): at opacity>=1 the object is routed
+// into the ordinary opaque/background pass instead, where normal depth
+// writing gives it exactly the full, correct occlusion it's missing here.
+function isFullyOpaque(material: THREE.Material | readonly THREE.Material[]): boolean {
+  const first = Array.isArray(material) ? material[0] : material;
+  const opacity = (first as { opacity?: number })?.opacity;
+  return opacity === undefined || opacity >= 1;
+}
+
 type LeafObject = THREE.Mesh | THREE.Line | THREE.Points;
 
 function isRenderableLeaf(object: THREE.Object3D): object is LeafObject {
@@ -209,9 +228,21 @@ export class WeightedOitRenderer {
     this.compositeCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   }
 
+  // `width`/`height` are CSS pixels - the same values the caller already
+  // passes to `renderer.setSize(width, height)` at the same call site.
+  // THREE.WebGLRenderer.setSize() internally multiplies those by its own
+  // pixel ratio to get the canvas's real drawing-buffer size, but
+  // THREE.WebGLRenderTarget.setSize() does NOT - it takes literal device
+  // pixels. Without applying the same pixel ratio here, these offscreen
+  // targets end up rendered at a LOWER resolution than the canvas on any
+  // HiDPI/Retina display (pixelRatio > 1), then get upscaled by the
+  // composite pass's bilinear texture sampling - exactly the blurry,
+  // "old computer" look reported after the first working version of this
+  // pipeline.
   setSize(width: number, height: number): void {
-    const w = Math.max(1, Math.floor(width));
-    const h = Math.max(1, Math.floor(height));
+    const pixelRatio = this.renderer.getPixelRatio();
+    const w = Math.max(1, Math.round(width * pixelRatio));
+    const h = Math.max(1, Math.round(height * pixelRatio));
     this.backgroundTarget.setSize(w, h);
     this.accumTarget.setSize(w, h);
     this.revealTarget.setSize(w, h);
@@ -219,7 +250,7 @@ export class WeightedOitRenderer {
 
   render(scene: THREE.Scene, camera: THREE.Camera): void {
     const leaves = collectLeaves(scene);
-    const oitLeaves = leaves.filter(leaf => isWeightedOit(leaf.material));
+    const oitLeaves = leaves.filter(leaf => isWeightedOit(leaf.material) && !isFullyOpaque(leaf.material));
 
     if (oitLeaves.length === 0) {
       // Nothing tagged is even in the scene right now (e.g. no voxel
@@ -231,7 +262,12 @@ export class WeightedOitRenderer {
       return;
     }
 
-    const normalLeaves = leaves.filter(leaf => !isWeightedOit(leaf.material));
+    // Complement of oitLeaves, NOT just "untagged" - a tagged material
+    // currently at opacity>=1 belongs here too (see isFullyOpaque above),
+    // so it gets drawn in the opaque/background pass with real depth
+    // writing instead of the accum/reveal passes' occlusion-free blending.
+    const oitLeafSet = new Set<LeafObject>(oitLeaves);
+    const normalLeaves = leaves.filter(leaf => !oitLeafSet.has(leaf));
 
     // Snapshot every leaf's real visibility up front - some are already
     // hidden for unrelated reasons (the click-highlight mesh when nothing
