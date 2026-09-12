@@ -24,16 +24,12 @@ const EDGE_COLOR = 0xffffff;
 // practice read as detached from the actual edges (visibly shifted,
 // sometimes not depth-resolving correctly against the fill/nodes, flat
 // rather than tube-shaped). A real cylinder participates in the ordinary
-// depth buffer exactly like the fill and node spheres already do - no
-// special-casing, no resolution to keep in sync, and it actually looks
-// like a tube. radialSegments stays low (6) and openEnded skips cap
-// geometry entirely (the node sphere already sitting at each endpoint
-// covers the open end visually) specifically to keep the per-instance
-// vertex count down - edges aren't deduplicated between face-adjacent
-// cells (each cell contributes its own 12 regardless of sharing, same as
-// the old line-based version), so a large grid can still mean millions of
-// instances.
-const EDGE_RADIAL_SEGMENTS = 6;
+// depth buffer exactly like the fill and node spheres already do.
+// CylinderGeometry's own default radialSegments (32) - previously lowered
+// to 6 to cut per-instance vertex count (edges aren't deduplicated between
+// face-adjacent cells, so a large grid can still mean millions of
+// instances) - reset to the plain default per explicit request.
+const EDGE_RADIAL_SEGMENTS = 32;
 // edgeWidth is a [0,1] slider value (same convention as fillOpacity/
 // nodeSize) - this is the cylinder's radius, relative to cellSize, at
 // edgeWidth=1. Kept deliberately thinner than a node at its own max
@@ -121,33 +117,23 @@ export function buildVoxelPreview(
   // individually (BatchedMesh.setVisibleAt/setGeometryAt) without touching
   // any other cube - the seam a future per-voxel subdivision/recolor
   // feature would use.
-  // depthWrite off: with it on, even a near-invisible (low-opacity) cube
-  // still writes the depth buffer wherever it's drawn, so it can block
-  // whatever's meant to be seen through it (the imported mesh, or other
-  // cubes) at that pixel regardless of how transparent it looks - worse,
-  // WHICH overlapping cube face "wins" that write depends on draw order
-  // (BatchedMesh's own back-to-front sort, keyed off each instance's
-  // distance to the camera), which can flip unpredictably at some camera
-  // angles, reading as cubes suddenly turning into an opaque wall. With
-  // it off, every cube's color blends purely by alpha regardless of draw
-  // order - the tradeoff (documented on the pre-BatchedMesh version of
-  // this file) is that deeply overlapping translucent faces can drift in
-  // apparent color instead of cleanly occluding each other, but seeing
-  // through the fill is this control's entire purpose.
+  // material/geometry settings (side, depthWrite, renderOrder) reset to
+  // THREE.js's own plain defaults per explicit request - side defaults to
+  // THREE.FrontSide, depthWrite defaults to true, renderOrder defaults to
+  // 0. Earlier iterations had these tuned away from default specifically
+  // to fix real visual bugs (translucent cubes blocking what's behind them
+  // inconsistently across camera angles, z-fighting between the fill and
+  // the edges/nodes/highlight drawn on top of it) - resetting them can
+  // bring those symptoms back.
   const fillMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
     transparent: true,
-    opacity: fillOpacity,
-    side: THREE.DoubleSide,
-    depthWrite: false
+    opacity: fillOpacity
   });
   // maxIndexCount is irrelevant here (buildVoxelHexahedronFillGeometry's
   // geometries are all non-indexed) - kept at 1 rather than 0 since
   // BatchedMesh treats 0 as "use the maxVertexCount*2 default".
   const batched = new THREE.BatchedMesh(Math.max(1, cells.length), Math.max(1, cells.length * VERTICES_PER_VOXEL), 1, fillMaterial);
-  // See buildVoxelHexahedron's own comment - same transparent-overlap
-  // z-fight fix, now applied to the shared batch instead of a per-cube mesh.
-  batched.renderOrder = 1;
   // BatchedMesh's default per-instance frustum culling computes each
   // cube's bounding sphere from a shared internal buffer and re-evaluates
   // it against the camera every frame - at some camera angles this was
@@ -177,7 +163,7 @@ export function buildVoxelPreview(
   // aligned along local +Y - CylinderGeometry's own default), scaled/
   // rotated/translated per instance below - same "one shared geometry,
   // many instances" reasoning as the node spheres.
-  const edgeGeometry = new THREE.CylinderGeometry(1, 1, 1, EDGE_RADIAL_SEGMENTS, 1, true);
+  const edgeGeometry = new THREE.CylinderGeometry(1, 1, 1, EDGE_RADIAL_SEGMENTS);
   const edgeRadius = Math.max(MIN_EDGE_RADIUS, grid.cellSize * EDGE_RADIUS_MAX_FACTOR * lineWidth);
   const edgeMesh = new THREE.InstancedMesh(
     edgeGeometry,
@@ -214,7 +200,6 @@ export function buildVoxelPreview(
     });
   }
   edgeMesh.instanceMatrix.needsUpdate = true;
-  edgeMesh.renderOrder = 2; // same layer as the node spheres below - draw after the translucent fill (renderOrder 1) so neither z-fights it away
   group.add(edgeMesh);
 
   // --- Nodes (the shared lattice-point spheres) ---------------------------
@@ -224,7 +209,7 @@ export function buildVoxelPreview(
   // batched: a real grid can have tens of thousands of nodes.
   const nodes = collectUniqueNodes(cells);
   const nodeRadius = Math.max(MIN_NODE_RADIUS, grid.cellSize * NODE_RADIUS_MAX_FACTOR * nodeSize);
-  const nodeGeometry = new THREE.SphereGeometry(nodeRadius, 8, 6);
+  const nodeGeometry = new THREE.SphereGeometry(nodeRadius);
   const nodeMesh = new THREE.InstancedMesh(
     nodeGeometry,
     new THREE.MeshBasicMaterial({ color: NODE_COLOR, transparent: true, opacity: nodeOpacity }),
@@ -237,7 +222,6 @@ export function buildVoxelPreview(
     nodeMesh.setMatrixAt(index, nodeMatrix);
   });
   nodeMesh.instanceMatrix.needsUpdate = true;
-  nodeMesh.renderOrder = 2; // draw after the fill (renderOrder 1) so a node sitting on a face never z-fights it away
   group.add(nodeMesh);
 
   // --- Highlight (single reusable click-to-select overlay) ----------------
@@ -247,11 +231,10 @@ export function buildVoxelPreview(
   // geometry per click.
   const highlightMesh = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({ color: HIGHLIGHT_COLOR, transparent: true, opacity: HIGHLIGHT_OPACITY, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: HIGHLIGHT_COLOR, transparent: true, opacity: HIGHLIGHT_OPACITY })
   );
   highlightMesh.name = VOXEL_HIGHLIGHT_NAME;
   highlightMesh.visible = false;
-  highlightMesh.renderOrder = 3; // after the fill(1) and nodes(2), so the highlight is never hidden behind either
   group.add(highlightMesh);
 
   return group;
@@ -385,7 +368,7 @@ export function setVoxelNodeSize(object: THREE.Object3D, size: number, cellSize:
   object.traverse(child => {
     if (child instanceof THREE.InstancedMesh && child.name === VOXEL_NODE_NAME) {
       const oldGeometry = child.geometry;
-      child.geometry = new THREE.SphereGeometry(radius, 8, 6);
+      child.geometry = new THREE.SphereGeometry(radius);
       oldGeometry.dispose();
     }
   });

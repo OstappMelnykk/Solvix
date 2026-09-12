@@ -479,6 +479,31 @@ describe('VoxelizationService', () => {
     expect((nodesAfter.geometry as THREE.SphereGeometry).parameters.radius).toBeGreaterThan(radiusBefore);
   });
 
+  it('resetRenderSettings puts every render setting back to default without touching the voxelization result', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(), 'model.glb');
+    referenceRender.setDensity(sessionId, 10);
+    voxelization.run(sessionId);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+    const statusBefore = voxelization.getStatus(sessionId);
+
+    voxelization.setOpacity(sessionId, 0.1);
+    voxelization.setEdgeOpacity(sessionId, 0.1);
+    voxelization.setLineWidth(sessionId, 0.9);
+    voxelization.setNodeSize(sessionId, 0.9);
+    voxelization.setNodeOpacity(sessionId, 0.1);
+
+    voxelization.resetRenderSettings(sessionId);
+
+    expect(voxelization.getOpacity(sessionId)).toBeCloseTo(0.55, 5);
+    expect(voxelization.getEdgeOpacity(sessionId)).toBe(1);
+    expect(voxelization.getLineWidth(sessionId)).toBeCloseTo(0.25, 5);
+    expect(voxelization.getNodeSize(sessionId)).toBeCloseTo(0.5, 5);
+    expect(voxelization.getNodeOpacity(sessionId)).toBe(1);
+    // The data itself (the grid/occupancy result) is untouched - same object.
+    expect(voxelization.getStatus(sessionId)).toBe(statusBefore);
+  });
+
   describe('selectVoxelInstance', () => {
     function highlightOf(preview: THREE.Object3D): THREE.Mesh {
       return preview.children.find(child => child instanceof THREE.Mesh && child.name === 'voxel-highlight') as THREE.Mesh;

@@ -230,6 +230,20 @@ export class VoxelizationService {
     }
   }
 
+  // Puts every voxel RENDER setting (fill/edge/node opacity, line width,
+  // node size) back to its default - the actual voxelization DATA
+  // (statusBySession, the grid/occupancy result itself) is never touched,
+  // so this never re-voxelizes or loses the current result. Reuses the
+  // existing setters (each already does its own cheap live-mutation on the
+  // cached preview, per-field) rather than duplicating that logic here.
+  resetRenderSettings(sessionId: number): void {
+    this.setOpacity(sessionId, DEFAULT_VOXEL_OPACITY);
+    this.setEdgeOpacity(sessionId, DEFAULT_VOXEL_EDGE_OPACITY);
+    this.setLineWidth(sessionId, DEFAULT_VOXEL_LINE_WIDTH);
+    this.setNodeSize(sessionId, DEFAULT_VOXEL_NODE_SIZE);
+    this.setNodeOpacity(sessionId, DEFAULT_VOXEL_NODE_OPACITY);
+  }
+
   // Click-to-select a single voxel: `instanceId` is whatever a raycast
   // against the preview's BatchedMesh reported (Intersection.batchId - see
   // WorldCanvasComponent's click handler), or null for "clicked empty
