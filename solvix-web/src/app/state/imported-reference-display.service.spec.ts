@@ -21,8 +21,8 @@ describe('ImportedReferenceDisplayService', () => {
     expect(style.mode).toBe('solid');
     expect(style.color).toBe(0xffffff);
     expect(style.opacity).toBe(0.5);
-    expect(style.dimensionsVisible).toBe(true);
-    expect(style.rulerVisible).toBe(true);
+    expect(style.dimensionsVisible).toBe(false);
+    expect(style.rulerVisible).toBe(false);
     expect(style.rulerDistance).toBe(1);
     expect(style.rotateGizmoVisible).toBe(true);
     expect(style.voxelPreviewVisible).toBe(true);
