@@ -12,7 +12,7 @@
   display: none;
 }
 
-.zone-painting__header {
+.surface-zone-painting__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -23,14 +23,13 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.zone-painting__title {
+.surface-zone-painting__title {
   color: #dfe1e5;
   font-size: 13px;
   flex: 1;
 }
 
-.zone-painting__back,
-.zone-painting__finish-zone {
+.surface-zone-painting__back {
   padding: 6px 14px;
   background: rgba(30, 31, 34, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -50,13 +49,13 @@
   }
 }
 
-.zone-painting__body {
+.surface-zone-painting__body {
   flex: 1;
   min-height: 0;
   display: flex;
 }
 
-.zone-painting__grid {
+.surface-zone-painting__grid {
   flex: 1;
   min-width: 0;
   display: grid;
@@ -66,20 +65,18 @@
   background: #000;
 }
 
-.zone-painting__panel {
+.surface-zone-painting__panel {
   position: relative;
   overflow: hidden;
   background: #1e1f22;
 }
 
-// The free-orbit "3D result" panel - a faint border distinguishes it from
-// the 3 fixed painting views at a glance.
-.zone-painting__panel--result {
+.surface-zone-painting__panel--result {
   outline: 1px solid rgba(57, 197, 242, 0.35);
   outline-offset: -1px;
 }
 
-.zone-painting__panel canvas {
+.surface-zone-painting__panel canvas {
   display: block;
   position: absolute;
   inset: 0;
@@ -88,17 +85,12 @@
   touch-action: none;
 }
 
-// The 2D selection-state overlay - stacked directly on top of the real
-// WebGL render, drawn by projecting each cell through that SAME panel's
-// camera (ZonePaintingComponent.drawOverlay) so the colored squares line up
-// with the actual voxel cubes underneath rather than a separate schematic
-// grid.
-.zone-painting__overlay {
+.surface-zone-painting__overlay {
   pointer-events: none;
   z-index: 1;
 }
 
-.zone-painting__label {
+.surface-zone-painting__label {
   position: absolute;
   top: 6px;
   left: 8px;
@@ -111,10 +103,7 @@
   pointer-events: none;
 }
 
-// Flips which side of this panel's axis the camera looks from - stays
-// available at all times (not just before painting starts), same reasoning
-// as the whole "3 panels always, not a separate 6-then-3 screen" design.
-.zone-painting__flip {
+.surface-zone-painting__flip {
   position: absolute;
   top: 6px;
   right: 8px;
@@ -144,7 +133,7 @@
   }
 }
 
-.zone-painting__sidebar {
+.surface-zone-painting__sidebar {
   flex: none;
   width: 220px;
   padding: 14px;
@@ -158,50 +147,79 @@
   overflow-y: auto;
 }
 
-.zone-painting__legend {
+.surface-zone-painting__zone-picker {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.zone-painting__swatch {
+.surface-zone-painting__zone-picker-label {
+  color: #9aa0a6;
+  font-size: 11px;
+}
+
+// One button per already-decided voxel zone - the user explicitly picks
+// which one the NEXT committed selection belongs to (never inferred by
+// creation order - see SurfaceZonePaintingService's own file header for
+// why: one voxel zone can rightfully receive more than one separate STL
+// selection).
+.surface-zone-painting__zone-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &--active {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+.surface-zone-painting__swatch {
   display: inline-block;
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  margin-right: 6px;
-  vertical-align: middle;
+}
 
-  &--available {
-    background: rgba(180, 185, 190, 0.35);
-  }
+.surface-zone-painting__finish {
+  padding: 6px 14px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 
-  &--excluded {
-    background: rgba(10, 10, 12, 0.55);
-  }
-
-  &--zoned {
-    background: #555;
+  &:hover {
+    border-color: #da680b;
   }
 }
 
-.zone-painting__finish-zone {
-  border-width: 2px;
-}
-
-.zone-painting__message {
+.surface-zone-painting__message {
   margin: 0;
   font-size: 11px;
   color: #f4a261;
 }
 
-.zone-painting__coverage {
+.surface-zone-painting__coverage {
   margin: 0;
   font-size: 11px;
   color: #9aa0a6;
 }
 
-.zone-painting__save {
+.surface-zone-painting__save {
   padding: 6px 14px;
   background: rgba(42, 157, 143, 0.16);
   border: 1px solid rgba(42, 157, 143, 0.55);
@@ -216,74 +234,13 @@
   }
 }
 
-.zone-painting__saved {
+.surface-zone-painting__saved {
   margin: 0;
   font-size: 11px;
   color: #7fe0d1;
 }
 
-.zone-painting__surface {
-  padding: 6px 14px;
-  background: rgba(57, 197, 242, 0.14);
-  border: 1px solid rgba(57, 197, 242, 0.5);
-  border-radius: 6px;
-  color: #9fe3f7;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-
-  &:hover {
-    background: rgba(57, 197, 242, 0.26);
-  }
-}
-
-.zone-painting__opacity {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: #9aa0a6;
-
-  input[type='range'] {
-    width: 100%;
-  }
-}
-
-.zone-painting__zone-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.zone-painting__zone-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.zone-painting__color-picker {
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 3px;
-  background: none;
-  cursor: pointer;
-
-  &::-webkit-color-swatch-wrapper {
-    padding: 0;
-  }
-
-  &::-webkit-color-swatch {
-    border: none;
-    border-radius: 2px;
-  }
-}
-
-// Destructive - visually set apart (red-tinted border) from the ordinary
-// action buttons above, and always confirmed before it does anything
-// (ZonePaintingComponent.resetZones).
-.zone-painting__reset {
+.surface-zone-painting__reset {
   margin-top: auto;
   padding: 6px 14px;
   background: rgba(230, 57, 70, 0.12);

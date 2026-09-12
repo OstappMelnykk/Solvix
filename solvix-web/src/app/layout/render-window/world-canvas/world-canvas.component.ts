@@ -997,6 +997,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.zonePainting.open(this.sessionId, {
         scene: this.scene,
         voxelPreview: this.currentVoxelPreview,
+        stlMesh: this.currentImportedReference,
         framingObjects: [this.currentVoxelPreview],
         // Same fixtures SixViewOverlayComponent hides while open - clutter,
         // not content, for a fixed-axis "just show me the voxels" view.

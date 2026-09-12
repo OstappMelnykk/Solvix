@@ -40,6 +40,10 @@
     <button type="button" class="zone-painting__save" *ngIf="canSave()" (click)="save()">Зберегти</button>
     <p class="zone-painting__saved" *ngIf="isSaved()">Зони збережено.</p>
 
+    <button type="button" class="zone-painting__surface" *ngIf="canOpenSurfaceZonePainting()" (click)="openSurfaceZonePainting()">
+      Розмітити STL
+    </button>
+
     <label class="zone-painting__opacity" *ngIf="zonesFor().length > 0">
       Прозорість зон на 3D результаті
       <input

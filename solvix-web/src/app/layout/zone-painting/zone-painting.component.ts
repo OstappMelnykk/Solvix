@@ -9,6 +9,7 @@ import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity, 
 import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 import { VoxelizationService } from '../../state/voxelization.service';
 import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
+import { SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
 
 type AxisSign = 1 | -1;
 
@@ -74,6 +75,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly voxelization = inject(VoxelizationService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
+  private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
 
   readonly axes = AXES; // panels 0-2 always show axes[i] - fixed, only the side (sign) is switchable
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i); // 0-2 painting views, 3 the free-orbit result
@@ -280,6 +282,38 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
     if (this.zonePainting.save(sessionId)) {
       this.commitMessage.set('Зони збережено.');
+    }
+  }
+
+  // The explicit next step (per the user's own preference: a separate step
+  // AFTER save, not an automatic mode switch inside this same window) -
+  // hands the ALREADY-saved voxel zoning off to SurfaceZonePaintingService,
+  // then closes this window so only one full-screen tool is ever showing at
+  // once (SurfaceZonePaintingComponent isn't nested inside this one - it's
+  // a sibling, mounted once at app.component.html, same pattern as this
+  // component itself and SixViewOverlayComponent).
+  canOpenSurfaceZonePainting(): boolean {
+    return this.isSaved() && this.zonePainting.activeSource()?.stlMesh != null;
+  }
+
+  openSurfaceZonePainting(): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    const source = this.zonePainting.activeSource();
+    if (sessionId === null || !source || !source.stlMesh) {
+      return;
+    }
+    const opened = this.surfaceZonePainting.open(sessionId, {
+      scene: source.scene,
+      stlMesh: source.stlMesh,
+      framingObjects: [source.stlMesh],
+      // The voxel fill occupies roughly the same physical space as the STL
+      // surface being clicked on here - left visible, it would visually
+      // compete with (and occlude) the smooth surface the user is trying
+      // to precisely click on.
+      hiddenDuringView: [source.voxelPreview]
+    });
+    if (opened) {
+      this.zonePainting.close();
     }
   }
 
