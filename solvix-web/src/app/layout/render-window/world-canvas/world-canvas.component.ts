@@ -1096,13 +1096,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   openSixView(): void {
-    if (this.currentModel) {
+    if (this.currentModel && this.sessionId !== null) {
       const framingObjects: THREE.Object3D[] = [this.currentModel];
       if (this.currentImportedReference) {
         framingObjects.push(this.currentImportedReference);
       }
       this.sixViewOverlay.open({
         scene: this.scene,
+        sessionId: this.sessionId,
+        isIdealWorld: this.worldIndex === IDEAL_WORLD_INDEX,
         framingObjects,
         // Rings and floor grid only add clutter to a 6-way "just show me
         // the model" comparison - AxesHelper stays (not listed here) since

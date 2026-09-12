@@ -1,7 +1,11 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, QueryList, ViewChildren, inject } from '@angular/core';
+import { NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { SixViewOverlayService, SixViewSource } from '../../state/six-view-overlay.service';
+import { WeightedOitRenderer } from '../../rendering/weighted-oit';
+import { VoxelizationService } from '../../state/voxelization.service';
+import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
 
 interface ViewDirection {
   readonly label: string;
@@ -36,7 +40,7 @@ const VIEW_DIRECTIONS: ViewDirection[] = [
 @Component({
   selector: 'app-six-view-overlay',
   standalone: true,
-  imports: [],
+  imports: [NgIf],
   // Host-bound (not passed in by app.component.html) - this component reads
   // SixViewOverlayService directly, so any WorldCanvasComponent's "6 сторін"
   // button can drive it without app.component needing to plumb the service
@@ -49,8 +53,14 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('canvas') private canvasRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
 
   private readonly overlay = inject(SixViewOverlayService);
+  private readonly voxelization = inject(VoxelizationService);
+  private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
 
   private renderers: THREE.WebGLRenderer[] = [];
+  // Same stable STL+voxel transparency fix as WorldCanvasComponent's own
+  // main view (rendering/weighted-oit.ts) - one instance per panel, since
+  // each panel is its own WebGLRenderer/WebGL context.
+  private oitRenderers: WeightedOitRenderer[] = [];
   private cameras: THREE.OrthographicCamera[] = [];
   // Pan (screen-space, rotation disabled) + zoom per panel - independent
   // per camera, so dragging/scrolling one panel never affects the other 5.
@@ -87,6 +97,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     // clipping-plane miss. Same fix WorldCanvasComponent's own renderer
     // already uses, for the same reason.
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
+    this.oitRenderers = this.renderers.map(renderer => new WeightedOitRenderer(renderer));
     this.cameras = VIEW_DIRECTIONS.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
     this.cameraHalfHeights = VIEW_DIRECTIONS.map(() => 1);
     this.controls = this.cameras.map((camera, i) => {
@@ -109,6 +120,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     cancelAnimationFrame(this.frameId);
     this.controls.forEach(controls => controls.dispose());
+    this.oitRenderers.forEach(renderer => renderer.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
   }
 
@@ -118,6 +130,47 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
 
   isHidden(): boolean {
     return this.overlay.active() === null;
+  }
+
+  // Gates the voxel-fill/STL-reference opacity sliders (six-view-overlay.
+  // component.html) - meaningless outside the Ideal World (see SixViewSource's
+  // own doc comment), same as settings-panel.component.html's
+  // *ngIf="isIdealWorld()" for the identical pair of sliders there.
+  showModelOpacityControls(): boolean {
+    return this.overlay.active()?.isIdealWorld === true;
+  }
+
+  // Direct opacity passthrough (no [0,1]<->percent inversion) - matches
+  // imported-reference-controls.component.ts's own getVoxelOpacityPercent/
+  // onVoxelOpacityChange and getReferenceOpacityPercent/onReferenceOpacityChange,
+  // so the same slider position means the same thing here as it does on the
+  // main settings panel.
+  voxelOpacityPercent(): number {
+    const sessionId = this.overlay.active()?.sessionId;
+    return sessionId === undefined ? 0 : Math.round(this.voxelization.getOpacity(sessionId) * 100);
+  }
+
+  onVoxelOpacityChange(event: Event): void {
+    const sessionId = this.overlay.active()?.sessionId;
+    if (sessionId === undefined) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setOpacity(sessionId, percent / 100);
+  }
+
+  referenceOpacityPercent(): number {
+    const sessionId = this.overlay.active()?.sessionId;
+    return sessionId === undefined ? 50 : Math.round(this.referenceDisplay.getStyle(sessionId).opacity * 100);
+  }
+
+  onReferenceOpacityChange(event: Event): void {
+    const sessionId = this.overlay.active()?.sessionId;
+    if (sessionId === undefined) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.referenceDisplay.setOpacity(sessionId, percent / 100);
   }
 
   // Recomputes the COMBINED bounding sphere of every object in
@@ -232,9 +285,10 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
         camera.bottom = -halfHeight;
         camera.updateProjectionMatrix();
         this.renderers[i].setSize(width, height);
+        this.oitRenderers[i].setSize(width, height);
       }
       this.controls[i].update();
-      this.renderers[i].render(source.scene, camera);
+      this.oitRenderers[i].render(source.scene, camera);
     }
 
     source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));

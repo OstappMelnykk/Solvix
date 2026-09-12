@@ -6,6 +6,9 @@ import { Axis, AXES, ZoneCellState, ZonePaintingService, axisCoords, projectedCo
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
 import { getVoxelCellByInstanceId } from '../../geometry/scene-objects/voxels';
 import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity, darkenZoneColorCss } from '../../geometry/scene-objects/zone-overlay';
+import { WeightedOitRenderer } from '../../rendering/weighted-oit';
+import { VoxelizationService } from '../../state/voxelization.service';
+import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
 
 type AxisSign = 1 | -1;
 
@@ -74,6 +77,8 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('overlay') private overlayRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
 
   private readonly zonePainting = inject(ZonePaintingService);
+  private readonly voxelization = inject(VoxelizationService);
+  private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
 
   readonly axes = AXES; // panels 0-2 always show axes[i] - fixed, only the side (sign) is switchable
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i); // 0-2 painting views, 3 the free-orbit result
@@ -83,6 +88,11 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   private viewStateCache: Partial<Record<Axis, { width: number; height: number; cells: ZoneCellState[] }>> = {};
 
   private renderers: THREE.WebGLRenderer[] = [];
+  // Same stable STL+voxel transparency fix as WorldCanvasComponent's own
+  // main view (rendering/weighted-oit.ts) - one instance per panel (4 here:
+  // the 3 fixed-axis painting views plus the free-orbit 3D result), since
+  // each panel is its own WebGLRenderer/WebGL context.
+  private oitRenderers: WeightedOitRenderer[] = [];
   private cameras: THREE.OrthographicCamera[] = [];
   private controls: OrbitControls[] = [];
   private cameraHalfHeights: number[] = new Array(PANEL_COUNT).fill(1);
@@ -113,6 +123,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     const canvases = this.canvasRefs.toArray().map(ref => ref.nativeElement);
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
+    this.oitRenderers = this.renderers.map(renderer => new WeightedOitRenderer(renderer));
     this.cameras = canvases.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
     this.controls = this.cameras.map((camera, i) => {
       const controls = new OrbitControls(camera, canvases[i]);
@@ -141,6 +152,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     cancelAnimationFrame(this.frameId);
     this.controls.forEach(controls => controls.dispose());
+    this.oitRenderers.forEach(renderer => renderer.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
     this.disposeZoneOverlayMesh();
     if (this.autoCloseTimeout !== null) {
@@ -435,6 +447,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
         camera.bottom = -halfHeight;
         camera.updateProjectionMatrix();
         this.renderers[i].setSize(width, height);
+        this.oitRenderers[i].setSize(width, height);
       }
       this.controls[i].update();
       // The colored-zone overlay mesh lives in the shared Scene but must
@@ -444,7 +457,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       if (this.zoneOverlayGroup) {
         this.zoneOverlayGroup.visible = i === RESULT_PANEL_INDEX;
       }
-      this.renderers[i].render(source.scene, camera);
+      this.oitRenderers[i].render(source.scene, camera);
       if (i !== RESULT_PANEL_INDEX) {
         this.drawOverlay(i, camera, width, height);
       }
@@ -514,6 +527,42 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (this.zoneOverlayGroup) {
       setZoneOverlayOpacity(this.zoneOverlayGroup, opacity);
     }
+  }
+
+  // Direct opacity passthrough (no [0,1]<->percent inversion) - matches
+  // imported-reference-controls.component.ts's own getVoxelOpacityPercent/
+  // onVoxelOpacityChange and getReferenceOpacityPercent/onReferenceOpacityChange,
+  // so the same slider position means the same thing here as it does on the
+  // main settings panel. Zone painting only ever opens from the Ideal World
+  // (openZonePainting's own gate), so - unlike SixViewOverlayComponent's
+  // equivalent sliders - these never need an extra "is this the right
+  // world" check.
+  voxelOpacityPercent(): number {
+    const sessionId = this.zonePainting.activeSessionId();
+    return sessionId === null ? 0 : Math.round(this.voxelization.getOpacity(sessionId) * 100);
+  }
+
+  onVoxelOpacityChange(event: Event): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setOpacity(sessionId, percent / 100);
+  }
+
+  referenceOpacityPercent(): number {
+    const sessionId = this.zonePainting.activeSessionId();
+    return sessionId === null ? 50 : Math.round(this.referenceDisplay.getStyle(sessionId).opacity * 100);
+  }
+
+  onReferenceOpacityChange(event: Event): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.referenceDisplay.setOpacity(sessionId, percent / 100);
   }
 
   // The colored selection overlay - a plain 2D canvas stacked on top of the

@@ -14,6 +14,15 @@
   </div>
 
   <div class="zone-painting__sidebar">
+    <label class="zone-painting__opacity">
+      Прозорість вокселів
+      <input type="range" min="0" max="100" [value]="voxelOpacityPercent()" (input)="onVoxelOpacityChange($event)" />
+    </label>
+    <label class="zone-painting__opacity">
+      Прозорість STL
+      <input type="range" min="0" max="100" [value]="referenceOpacityPercent()" (input)="onReferenceOpacityChange($event)" />
+    </label>
+
     <div class="zone-painting__legend">
       <div><span class="zone-painting__swatch" [style.background]="nextZoneColor()"></span> поточна зона (клікнуто)</div>
       <div><span class="zone-painting__swatch zone-painting__swatch--available"></span> доступно</div>

@@ -9,6 +9,15 @@ import * as THREE from 'three';
 // bare re-lit copy of just the model.
 export interface SixViewSource {
   readonly scene: THREE.Scene;
+  // Which session this came from, and whether that's the Ideal World's own
+  // canvas - the "6 сторін" button exists on all 3 worlds, but the voxel
+  // fill/STL reference opacity sliders the overlay itself adds only mean
+  // anything for the Ideal World (Real/Solver are read-only and never carry
+  // a voxelization or imported reference), same gating
+  // settings-panel.component.html already applies to those same controls
+  // (*ngIf="isIdealWorld()").
+  readonly sessionId: number;
+  readonly isIdealWorld: boolean;
   // Everything the 6 cameras should frame themselves on - the session
   // model, plus the imported STL reference when the Ideal World has one
   // shown. Framed as their COMBINED bounding box (not just the first
