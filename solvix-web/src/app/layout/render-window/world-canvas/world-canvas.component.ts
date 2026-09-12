@@ -19,6 +19,7 @@ import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
 import { buildAxesHelper } from '../../../geometry/scene-objects/axes-helper';
 import { buildFloorGrid } from '../../../geometry/scene-objects/floor-grid';
 import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
+import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
@@ -93,6 +94,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   private renderer!: THREE.WebGLRenderer;
+  // Every actual draw of `scene` goes through this instead of calling
+  // `this.renderer.render()` directly - see rendering/weighted-oit.ts for
+  // why (stable transparency between the STL reference and the voxel fill,
+  // regardless of camera angle). It falls back to a plain direct render on
+  // its own when nothing in the scene is tagged for it, so this is safe to
+  // use unconditionally rather than branching here.
+  private oitRenderer!: WeightedOitRenderer;
   private scene!: THREE.Scene;
   // Both cameras exist for the lifetime of this component (never recreated
   // per toggle) - `camera` is whichever one is currently active, swapped by
@@ -279,7 +287,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateRuler();
     this.updateVoxelPreview();
     this.updateSession();
-    this.renderer.render(this.scene, this.camera);
+    this.oitRenderer.render(this.scene, this.camera);
   }
 
   ngOnDestroy(): void {
@@ -297,6 +305,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.clearZoneOverlay();
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
+    this.oitRenderer?.dispose();
     this.renderer?.dispose();
   }
 
@@ -328,6 +337,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.oitRenderer = new WeightedOitRenderer(this.renderer);
+    this.oitRenderer.setSize(width, height);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     // No inertia - the camera stops the instant the drag/scroll gesture
@@ -856,7 +867,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.update();
 
     if (this.active) {
-      this.renderer.render(this.scene, this.camera);
+      this.oitRenderer.render(this.scene, this.camera);
     }
   };
 
@@ -872,6 +883,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.lastHeight = height;
     this.updateCameraFrustum(width, height);
     this.renderer.setSize(width, height);
+    this.oitRenderer.setSize(width, height);
   }
 
   // Keeps BOTH cameras' frustums matching the canvas's current aspect ratio,
