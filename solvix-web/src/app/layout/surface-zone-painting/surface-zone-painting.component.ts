@@ -93,8 +93,43 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   // call, same idiom as ZonePaintingComponent's own zoneOverlayGroup.
   private resultOverlay: THREE.Object3D | null = null;
 
+  // Deliberately does NOT create the 4 WebGLRenderers here (unlike
+  // SixViewOverlayComponent/ZonePaintingComponent, which both do create
+  // theirs eagerly, always-mounted at app.component.html) - this component
+  // is the 4th such always-mounted overlay, and creating its 4 contexts
+  // unconditionally on every app load pushed the app's total WebGL context
+  // count (3 worlds + 6 six-view + 4 zone-painting + 4 here = 17) past
+  // Chrome's default per-page limit (commonly 16), which silently lost an
+  // EARLIER context instead (the Ideal World canvas going blank - a real
+  // regression this caused). ensureRenderersReady()/teardownRenderers()
+  // below create and free these 4 contexts only while this tool is
+  // actually open, keeping the steady-state total back at the previously
+  // safe 13.
   ngAfterViewInit(): void {
+    this.viewReady = true;
+    this.animate();
+  }
+
+  ngOnDestroy(): void {
+    cancelAnimationFrame(this.frameId);
+    this.teardownRenderers();
+    this.disposeResultOverlay();
+  }
+
+  private ensureRenderersReady(): boolean {
+    if (this.renderers.length > 0) {
+      return true;
+    }
     const canvases = this.canvasRefs.toArray().map(ref => ref.nativeElement);
+    // The host only just stopped being [hidden] (isHidden() flips the
+    // instant activeSessionId() becomes non-null, in the SAME tick this
+    // checks it) - Angular's own change detection hasn't necessarily run
+    // yet by the time this rAF-driven animate() loop gets here, so the
+    // canvases can still measure 0x0 for a frame or two. Wait for real
+    // dimensions before creating anything sized off them.
+    if (canvases.some(canvas => canvas.clientWidth === 0 || canvas.clientHeight === 0)) {
+      return false;
+    }
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
     this.cameras = canvases.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
     this.controls = this.cameras.map((camera, i) => {
@@ -110,15 +145,22 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
       return controls;
     });
-    this.viewReady = true;
-    this.animate();
+    this.lastPanelSizes.forEach(size => {
+      size.width = 0;
+      size.height = 0;
+    });
+    return true;
   }
 
-  ngOnDestroy(): void {
-    cancelAnimationFrame(this.frameId);
+  private teardownRenderers(): void {
+    if (this.renderers.length === 0) {
+      return;
+    }
     this.controls.forEach(controls => controls.dispose());
     this.renderers.forEach(renderer => renderer.dispose());
-    this.disposeResultOverlay();
+    this.renderers = [];
+    this.cameras = [];
+    this.controls = [];
   }
 
   isHidden(): boolean {
@@ -374,7 +416,11 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     const source = this.surfaceZonePainting.activeSource();
     if (sessionId === null || !source) {
       this.lastSessionId = null;
+      this.teardownRenderers();
       return;
+    }
+    if (!this.ensureRenderersReady()) {
+      return; // canvases not measurable yet - retry next frame
     }
     if (sessionId !== this.lastSessionId) {
       this.lastSessionId = sessionId;
