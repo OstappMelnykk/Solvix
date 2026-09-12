@@ -1,4 +1,5 @@
 <div class="surface-zone-painting__header">
+  <button type="button" class="surface-zone-painting__prev-step" (click)="goToStep1()">← Крок 1: Вокселі</button>
   <span class="surface-zone-painting__step">Крок 2 з 2 · STL-поверхня</span>
   <span class="surface-zone-painting__title">Розмітка зон на STL-поверхні</span>
   <button type="button" class="surface-zone-painting__back" (click)="close()">Закрити</button>
@@ -19,19 +20,20 @@
   </div>
 
   <div class="surface-zone-painting__sidebar">
-    <div class="surface-zone-painting__zone-picker">
-      <div class="surface-zone-painting__zone-picker-label">Активна зона (куди зберігати виділення)</div>
+    <!-- The ONE thing the user asked to be unmissable: which zone is
+         currently active. A single big banner, not a list to scan. -->
+    <div class="surface-zone-painting__current-zone" [style.border-color]="currentZoneColor()">
       <button
         type="button"
-        class="surface-zone-painting__zone-option"
-        *ngFor="let zone of voxelZones()"
-        [class.surface-zone-painting__zone-option--active]="zone.voxelZoneId === activeVoxelZoneId()"
-        [style.border-color]="zone.color"
-        (click)="setActiveVoxelZoneId(zone.voxelZoneId)"
+        class="surface-zone-painting__zone-nav"
+        [disabled]="!canGoToPreviousZone()"
+        title="Повернутись до попередньої зони"
+        (click)="goToPreviousZone()"
       >
-        <span class="surface-zone-painting__swatch" [style.background]="zone.color"></span>
-        Зона {{ zone.voxelZoneId + 1 }}
+        ←
       </button>
+      <span class="surface-zone-painting__current-zone-swatch" [style.background]="currentZoneColor()"></span>
+      <span class="surface-zone-painting__current-zone-label">{{ currentZoneLabel() }}</span>
     </div>
 
     <div class="surface-zone-painting__brush-picker">
@@ -72,7 +74,19 @@
 
     <p class="surface-zone-painting__coverage">{{ coverageText() }}</p>
 
-    <button type="button" class="surface-zone-painting__save" *ngIf="canSave()" (click)="save()">Зберегти</button>
+    <!-- THE primary action - big, bold, impossible to miss (per explicit
+         feedback that the old "Зберегти" button was buried). Drives the
+         whole flow: confirms the current zone and moves to the next one,
+         relabeling itself to the real, final "Зберегти" on the last zone. -->
+    <button
+      type="button"
+      class="surface-zone-painting__primary-action"
+      *ngIf="!isSaved()"
+      [disabled]="!canRunPrimaryAction()"
+      (click)="runPrimaryAction()"
+    >
+      {{ primaryActionLabel() }}
+    </button>
     <p class="surface-zone-painting__saved" *ngIf="isSaved()">Розмітку STL збережено.</p>
 
     <button type="button" class="surface-zone-painting__reset" (click)="resetSelections()">Скинути розмітку STL</button>

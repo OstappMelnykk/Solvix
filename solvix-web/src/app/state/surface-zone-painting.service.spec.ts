@@ -92,7 +92,7 @@ describe('SurfaceZonePaintingService', () => {
     zonePainting.save(1);
 
     stlMesh = buildFourPatchMesh();
-    source = { scene: new THREE.Scene(), stlMesh, framingObjects: [], hiddenDuringView: [] };
+    source = { scene: new THREE.Scene(), stlMesh, framingObjects: [], hiddenDuringView: [], step1Source: fakeZonePaintingSource };
   });
 
   it('refuses to open before the voxel zoning is saved', () => {
@@ -208,5 +208,71 @@ describe('SurfaceZonePaintingService', () => {
     service.resetSelections(1);
     expect(service.coverage(1)!.assigned).toBe(0);
     expect(service.allVoxelZonesUsed(1)).toBe(false);
+  });
+
+  describe('sequential zone navigation', () => {
+    it('starts on the first zone', () => {
+      service.open(1, source);
+      expect(service.currentZoneIndex(1)).toBe(0);
+      expect(service.zoneCount(1)).toBe(2);
+      expect(service.isFirstZone(1)).toBe(true);
+      expect(service.isLastZone(1)).toBe(false);
+    });
+
+    it('refuses to advance until the current zone has at least one committed cell', () => {
+      service.open(1, source);
+      expect(service.advanceToNextZone(1)).toBe(false);
+      expect(service.currentZoneIndex(1)).toBe(0);
+    });
+
+    it('advances to the next zone once the current one is used', () => {
+      service.open(1, source);
+      const halfway = service.getSession(1)!.grid.countX / 2;
+      assignAllAvailableCells(0, halfway, 'left', 0); // uses zone 0
+
+      expect(service.advanceToNextZone(1)).toBe(true);
+      expect(service.currentZoneIndex(1)).toBe(1);
+      expect(service.isLastZone(1)).toBe(true);
+      expect(service.getActiveVoxelZoneId(1)).toBe(1);
+    });
+
+    it('refuses to advance past the last zone', () => {
+      service.open(1, source);
+      const halfway = service.getSession(1)!.grid.countX / 2;
+      assignAllAvailableCells(0, halfway, 'left', 0);
+      service.advanceToNextZone(1);
+      assignAllAvailableCells(0, halfway, 'right', 1); // uses zone 1 (now last)
+
+      expect(service.advanceToNextZone(1)).toBe(false);
+      expect(service.currentZoneIndex(1)).toBe(1);
+    });
+
+    it('goToPreviousZone moves back without requiring the current zone to be used', () => {
+      service.open(1, source);
+      const halfway = service.getSession(1)!.grid.countX / 2;
+      assignAllAvailableCells(0, halfway, 'left', 0);
+      service.advanceToNextZone(1);
+      expect(service.currentZoneIndex(1)).toBe(1);
+
+      expect(service.goToPreviousZone(1)).toBe(true);
+      expect(service.currentZoneIndex(1)).toBe(0);
+      expect(service.getActiveVoxelZoneId(1)).toBe(0);
+    });
+
+    it('refuses to go back before the first zone', () => {
+      service.open(1, source);
+      expect(service.goToPreviousZone(1)).toBe(false);
+      expect(service.currentZoneIndex(1)).toBe(0);
+    });
+
+    it('isCurrentZoneUsed reflects only the ACTIVE zone, not zones visited earlier', () => {
+      service.open(1, source);
+      const halfway = service.getSession(1)!.grid.countX / 2;
+      assignAllAvailableCells(0, halfway, 'left', 0);
+      expect(service.isCurrentZoneUsed(1)).toBe(true);
+
+      service.advanceToNextZone(1);
+      expect(service.isCurrentZoneUsed(1)).toBe(false); // zone 1 not painted yet
+    });
   });
 });

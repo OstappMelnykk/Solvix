@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import * as THREE from 'three';
-import { ZonePaintingService, Axis, AXES, axisCoords, projectedCoords } from './zone-painting.service';
+import { ZonePaintingService, ZonePaintingSource, Axis, AXES, axisCoords, projectedCoords } from './zone-painting.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { isSingleConnectedComponent } from './mask-connectivity';
 import { buildSurfaceShellGrid, assignTriangleZones } from '../geometry/surface-shell-grid';
@@ -20,13 +20,14 @@ import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-
 //
 // Differs from the voxel tool in 3 ways, all per the user's explicit
 // request:
-// 1. A committed selection here does NOT create a new zone - it's
-//    committed into whichever EXISTING voxel zone the user picked from a
-//    list before painting (setActiveVoxelZoneId). One voxel zone can
-//    receive multiple separate committed selections (e.g. a thin root's
-//    front and back surface, physically disjoint but the same logical
-//    zone) - this is exactly why pairing can't just be "1st STL selection
-//    = 1st voxel zone" by creation order alone.
+// 1. A committed selection here does NOT create a new zone - the UI walks
+//    the ALREADY-DECIDED voxel zones one at a time, in order
+//    (advanceToNextZone/goToPreviousZone), and every selection committed
+//    during a zone's turn goes into THAT zone. One voxel zone can still
+//    receive multiple separate committed selections within its own turn
+//    (e.g. a thin root's front and back surface, physically disjoint but
+//    the same logical zone) - finishSelection can be called any number of
+//    times before advancing.
 // 2. Completion requires BOTH full coverage (no unassigned occupied shell
 //    cell left) AND every voxel zone actually used at least once - not the
 //    voxel tool's "partial coverage is fine, unassigned falls back to
@@ -46,6 +47,12 @@ export interface SurfaceZonePaintingSource {
   readonly stlMesh: THREE.Object3D;
   readonly framingObjects: readonly THREE.Object3D[];
   readonly hiddenDuringView: readonly THREE.Object3D[];
+  // The ORIGINAL step-1 source, kept verbatim - the "← Крок 1" back button
+  // (SurfaceZonePaintingComponent.goToStep1) re-opens ZonePaintingService
+  // with this exact object, since it carries fields (voxelPreview,
+  // gridHelper/rotateGizmo in hiddenDuringView) this component has no other
+  // way to reconstruct on its own.
+  readonly step1Source: ZonePaintingSource;
 }
 
 export interface SurfaceZoneOption {
@@ -198,14 +205,85 @@ export class SurfaceZonePaintingService {
   }
 
   // Which EXISTING voxel zone the next finishSelection() call commits the
-  // pending mask into - picked explicitly by the user (a dropdown/list of
-  // the voxel zones), never inferred, since one voxel zone can rightfully
-  // receive more than one separate STL selection (file header point 1).
+  // pending mask into - moved only by advanceToNextZone/goToPreviousZone
+  // below (the UI walks the zones in order, one at a time, rather than
+  // letting the user free-pick from a list - real user feedback: a picker
+  // made it unclear which zone was "active" and how to know when to move
+  // on). One voxel zone can still receive more than one separate STL
+  // selection within its own turn (file header point 1) - finishSelection
+  // can be called any number of times before advancing.
   setActiveVoxelZoneId(sessionId: number, voxelZoneId: number): void {
     const session = this.sessionsByKey.get(sessionId);
     if (session && session.voxelZones.some(zone => zone.voxelZoneId === voxelZoneId)) {
       session.activeVoxelZoneId = voxelZoneId;
     }
+  }
+
+  private currentZoneIndexOf(session: SurfacePaintingSession): number {
+    return session.voxelZones.findIndex(zone => zone.voxelZoneId === session.activeVoxelZoneId);
+  }
+
+  // 0-based position of the active zone within voxelZones - for a "Зона N з
+  // M" indicator.
+  currentZoneIndex(sessionId: number): number {
+    const session = this.sessionsByKey.get(sessionId);
+    return session ? Math.max(0, this.currentZoneIndexOf(session)) : 0;
+  }
+
+  zoneCount(sessionId: number): number {
+    return this.sessionsByKey.get(sessionId)?.voxelZones.length ?? 0;
+  }
+
+  isFirstZone(sessionId: number): boolean {
+    return this.currentZoneIndex(sessionId) === 0;
+  }
+
+  isLastZone(sessionId: number): boolean {
+    const session = this.sessionsByKey.get(sessionId);
+    return session ? this.currentZoneIndexOf(session) === session.voxelZones.length - 1 : true;
+  }
+
+  // Whether the CURRENTLY active zone has received at least one committed
+  // selection yet - advanceToNextZone refuses to move on until this is
+  // true, so the user can't accidentally skip a zone with nothing painted
+  // for it at all.
+  isCurrentZoneUsed(sessionId: number): boolean {
+    const session = this.sessionsByKey.get(sessionId);
+    return session ? session.usedVoxelZoneIds.has(session.activeVoxelZoneId) : false;
+  }
+
+  // Moves to the next zone in sequence - refuses (false, no-op) if the
+  // current zone hasn't been used yet, or if already on the last zone (the
+  // component's primary action button switches to "Зберегти"/save() at
+  // that point instead of calling this).
+  advanceToNextZone(sessionId: number): boolean {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session || !session.usedVoxelZoneIds.has(session.activeVoxelZoneId)) {
+      return false;
+    }
+    const index = this.currentZoneIndexOf(session);
+    if (index === -1 || index >= session.voxelZones.length - 1) {
+      return false;
+    }
+    session.activeVoxelZoneId = session.voxelZones[index + 1].voxelZoneId;
+    return true;
+  }
+
+  // Moves back to the previous zone - always allowed (no "used" precondition,
+  // unlike advancing forward) so the user can revisit an earlier zone to
+  // patch up any coverage gaps discovered later, once free zone-picking was
+  // replaced by this sequential flow.
+  goToPreviousZone(sessionId: number): boolean {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return false;
+    }
+    const index = this.currentZoneIndexOf(session);
+    if (index <= 0) {
+      return false;
+    }
+    session.activeVoxelZoneId = session.voxelZones[index - 1].voxelZoneId;
+    return true;
   }
 
   // "assigned" is every shell cell already committed to some zone -

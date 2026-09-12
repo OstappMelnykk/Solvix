@@ -64,6 +64,26 @@
   }
 }
 
+// The wizard's "go back to step 1" link - blue (step 1's own accent), so
+// it visually reads as "leads back to the OTHER screen", mirroring
+// ZonePaintingComponent's own amber "Далі: розмітка STL-поверхні →".
+.surface-zone-painting__prev-step {
+  padding: 6px 14px;
+  background: rgba(57, 197, 242, 0.14);
+  border: 1px solid #39c5f2;
+  border-radius: 6px;
+  color: #9fe3f7;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: rgba(57, 197, 242, 0.26);
+  }
+}
+
 .surface-zone-painting__body {
   flex: 1;
   min-height: 0;
@@ -162,49 +182,59 @@
   overflow-y: auto;
 }
 
-.surface-zone-painting__zone-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .surface-zone-painting__zone-picker-label {
   color: #9aa0a6;
   font-size: 11px;
 }
 
-// One button per already-decided voxel zone - the user explicitly picks
-// which one the NEXT committed selection belongs to (never inferred by
-// creation order - see SurfaceZonePaintingService's own file header for
-// why: one voxel zone can rightfully receive more than one separate STL
-// selection).
-.surface-zone-painting__zone-option {
+// The single, unmissable "which zone am I painting right now" banner -
+// replaces an earlier list-of-buttons design real feedback said made the
+// active zone unclear. A thick colored border (the zone's own color) plus
+// a large swatch, not just a small icon buried among other controls.
+.surface-zone-painting__current-zone {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 10px;
+  padding: 10px;
   background: rgba(30, 31, 34, 0.75);
-  border: 2px solid transparent;
+  border: 3px solid;
+  border-radius: 8px;
+}
+
+.surface-zone-painting__zone-nav {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 6px;
   color: #dfe1e5;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
   transition: background-color 0.15s ease;
 
-  &:hover {
-    background: rgba(255, 255, 255, 0.08);
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
   }
 
-  &--active {
-    background: rgba(255, 255, 255, 0.14);
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
   }
 }
 
-.surface-zone-painting__swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
+.surface-zone-painting__current-zone-swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+
+.surface-zone-painting__current-zone-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f2f3f5;
 }
 
 .surface-zone-painting__brush-picker {
@@ -296,18 +326,27 @@
   color: #9aa0a6;
 }
 
-.surface-zone-painting__save {
-  padding: 6px 14px;
-  background: rgba(42, 157, 143, 0.16);
-  border: 1px solid rgba(42, 157, 143, 0.55);
-  border-radius: 6px;
-  color: #7fe0d1;
-  font-size: 12px;
+// THE primary action of this whole screen - explicitly made big/bold/
+// impossible-to-miss per real feedback that the earlier "Зберегти" button
+// was too easy to lose among the other sidebar controls.
+.surface-zone-painting__primary-action {
+  padding: 12px 14px;
+  background: rgba(42, 157, 143, 0.22);
+  border: 2px solid #2a9d8f;
+  border-radius: 8px;
+  color: #a8f0e3;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease;
 
-  &:hover {
-    background: rgba(42, 157, 143, 0.28);
+  &:hover:not(:disabled) {
+    background: rgba(42, 157, 143, 0.34);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 }
 

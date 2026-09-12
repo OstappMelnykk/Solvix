@@ -2,12 +2,7 @@ import { AfterViewInit, Component, ElementRef, OnDestroy, QueryList, ViewChildre
 import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import {
-  Axis,
-  AXES,
-  axisCoords,
-  projectedCoords
-} from '../../state/zone-painting.service';
+import { Axis, AXES, ZonePaintingService, axisCoords, projectedCoords } from '../../state/zone-painting.service';
 import { SurfaceZoneCellState, SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
 import { worldPointToShellCell } from '../../geometry/surface-shell-grid';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
@@ -62,6 +57,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('overlay') private overlayRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
 
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
+  private readonly zonePainting = inject(ZonePaintingService);
 
   readonly axes = AXES;
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i);
@@ -196,25 +192,65 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.surfaceZonePainting.close();
   }
 
-  voxelZones(): { readonly voxelZoneId: number; readonly color: string }[] {
+  // Re-opens step 1 (ZonePaintingService) with the ORIGINAL source this
+  // step was opened from - see SurfaceZonePaintingSource.step1Source's own
+  // comment for why that has to be carried through rather than
+  // reconstructed here. Always available (going back never loses step 2's
+  // own progress - it's only discarded if the voxel zoning itself actually
+  // changes, per ZonePaintingService.open's own "grid identity changed"
+  // rule).
+  goToStep1(): void {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    const source = this.surfaceZonePainting.activeSource();
+    if (sessionId === null || !source) {
+      return;
+    }
+    this.zonePainting.open(sessionId, source.step1Source);
+    this.surfaceZonePainting.close();
+  }
+
+  // The ONE zone the user is currently painting into - shown as a single,
+  // unmissable banner (color swatch + "Зона N з M") rather than a list of
+  // buttons to scan: real user feedback was that a list made it unclear
+  // which zone was actually active. Only ever changed by
+  // goBack()/runPrimaryAction() below, never picked freely.
+  currentZoneLabel(): string {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     if (sessionId === null) {
-      return [];
+      return '';
     }
-    return [...(this.surfaceZonePainting.getSession(sessionId)?.voxelZones ?? [])];
+    const index = this.surfaceZonePainting.currentZoneIndex(sessionId);
+    const count = this.surfaceZonePainting.zoneCount(sessionId);
+    return `Зона ${index + 1} з ${count}`;
   }
 
-  activeVoxelZoneId(): number | null {
+  currentZoneColor(): string {
     const sessionId = this.surfaceZonePainting.activeSessionId();
-    return sessionId === null ? null : this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
+    if (sessionId === null) {
+      return '#888';
+    }
+    const activeId = this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
+    const zones = this.surfaceZonePainting.getSession(sessionId)?.voxelZones ?? [];
+    return zones.find(zone => zone.voxelZoneId === activeId)?.color ?? '#888';
   }
 
-  setActiveVoxelZoneId(voxelZoneId: number): void {
+  canGoToPreviousZone(): boolean {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    return sessionId !== null && !this.surfaceZonePainting.isFirstZone(sessionId) && !this.isSaved();
+  }
+
+  // Auto-commits whatever's still pending first (same reasoning as
+  // runPrimaryAction below) - leaving a zone's turn should never silently
+  // lose in-progress painting.
+  goToPreviousZone(): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     if (sessionId === null) {
       return;
     }
-    this.surfaceZonePainting.setActiveVoxelZoneId(sessionId, voxelZoneId);
+    this.finishSelection();
+    if (this.surfaceZonePainting.goToPreviousZone(sessionId)) {
+      this.message.set(null);
+    }
   }
 
   coverageText(): string {
@@ -237,7 +273,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  canSave(): boolean {
+  private canSave(): boolean {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     if (sessionId === null || this.isSaved()) {
       return false;
@@ -256,7 +292,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     return sessionId !== null && this.surfaceZonePainting.isSaved(sessionId);
   }
 
-  save(): void {
+  private save(): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     const source = this.surfaceZonePainting.activeSource();
     if (sessionId === null || !source) {
@@ -265,6 +301,57 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (this.surfaceZonePainting.save(sessionId, source.stlMesh)) {
       this.message.set('Розмітку STL збережено.');
       this.rebuildResultOverlay();
+    }
+  }
+
+  // The ONE primary action button, driving the whole sequential flow (per
+  // explicit user feedback: pressing "Зберегти" should both confirm the
+  // current zone's work AND move on to the next one, repeating until the
+  // very last zone, where the SAME button does the real, final save). Auto-
+  // commits any still-pending brush strokes first, same reasoning as
+  // goToPreviousZone.
+  primaryActionLabel(): string {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    if (sessionId !== null && this.surfaceZonePainting.isLastZone(sessionId)) {
+      return 'Зберегти';
+    }
+    return 'Зберегти зону і перейти далі →';
+  }
+
+  canRunPrimaryAction(): boolean {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    if (sessionId === null || this.isSaved()) {
+      return false;
+    }
+    if (this.surfaceZonePainting.isLastZone(sessionId)) {
+      return this.canSave();
+    }
+    // Either something's already committed for this zone, OR there's a
+    // pending (not yet committed) brush stroke - runPrimaryAction commits
+    // it automatically before advancing, so the button shouldn't read as
+    // disabled right up until the user makes one extra, redundant click on
+    // "Завершити виділення" first.
+    return this.surfaceZonePainting.isCurrentZoneUsed(sessionId) || this.hasPendingSelection(sessionId);
+  }
+
+  private hasPendingSelection(sessionId: number): boolean {
+    return AXES.some(axis => this.surfaceZonePainting.pendingMask(sessionId, axis)?.includes(1) ?? false);
+  }
+
+  runPrimaryAction(): void {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.finishSelection();
+    if (this.surfaceZonePainting.isLastZone(sessionId)) {
+      this.save();
+      return;
+    }
+    if (this.surfaceZonePainting.advanceToNextZone(sessionId)) {
+      this.message.set(null);
+    } else {
+      this.message.set("Спочатку виділіть хоч одну ділянку для поточної зони.");
     }
   }
 

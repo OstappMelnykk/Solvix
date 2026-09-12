@@ -310,7 +310,11 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       // surface being clicked on here - left visible, it would visually
       // compete with (and occlude) the smooth surface the user is trying
       // to precisely click on.
-      hiddenDuringView: [source.voxelPreview]
+      hiddenDuringView: [source.voxelPreview],
+      // Kept verbatim so SurfaceZonePaintingComponent's own "← Крок 1" back
+      // button can re-open this exact same window later, without this
+      // component needing to still be around to hand it over again.
+      step1Source: source
     });
     if (opened) {
       this.zonePainting.close();
