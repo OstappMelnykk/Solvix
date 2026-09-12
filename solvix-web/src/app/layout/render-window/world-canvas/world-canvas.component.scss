@@ -249,6 +249,43 @@ canvas {
   }
 }
 
+// Same overlay treatment as .zones-overlay-toggle, stacked directly below
+// .zones-overlay-opacity - only enabled once step 2 (STL surface zoning)
+// is actually saved (hasSavedSurfaceZoning). This rule was MISSING
+// entirely for a while (the button existed in the template with no CSS at
+// all) - with every sibling here using manual position:absolute stacking,
+// an unstyled button just fell back to normal document flow instead of
+// this toolbar's own top-right corner, reading as "the button doesn't
+// exist" even though it was really in the DOM the whole time.
+.surface-zones-overlay-toggle {
+  position: absolute;
+  top: 248px;
+  right: 10px;
+  padding: 6px 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: sans-serif;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: #da680b;
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: #39c5f2;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
 // GEOMETRY_RULES.md R2 refusal notice (VoxelizationService.
 // getDeletionViolation) - bottom-center over the canvas, near where the
 // user is actually deleting voxels, unlike the settings-panel's
