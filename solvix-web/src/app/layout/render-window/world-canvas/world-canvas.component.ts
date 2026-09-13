@@ -333,14 +333,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
     this.oitRenderer?.dispose();
-    // dispose() alone doesn't guarantee the browser actually frees the
-    // underlying WebGL context (see the same fix in SixViewOverlayComponent/
-    // ZonePaintingComponent/SurfaceZonePaintingComponent's teardownRenderers)
-    // - forceContextLoss() is the synchronous release. This component is
-    // normally never destroyed (app-level, mounted once for its lifetime),
-    // but should still free its context properly on the rare occasions it is.
     this.renderer?.dispose();
-    this.renderer?.forceContextLoss();
   }
 
   private initScene(): void {
@@ -885,31 +878,53 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private animate = (): void => {
     this.frameId = requestAnimationFrame(this.animate);
-    this.checkResize();
-    this.updateModel();
-    this.updateImportedReference();
-    this.updateDimensionLines();
-    this.updateRuler();
-    this.updateVoxelPreview();
-    this.updateZoneOverlay();
-    this.updateSurfaceZoneOverlay();
-    this.updateSession();
-    this.updateSettleAnimation();
+    // Every per-frame update below runs in a single try/catch, and the
+    // render() call further down runs in its OWN, separate one - so a
+    // throwing update (a stale/disposed reference reached mid-scene-graph,
+    // some future regression, whatever) can't silently stop render() from
+    // ever being called again. Without this, a single bad frame would
+    // repeat-throw forever (same state, same error, every tick) while never
+    // rendering again - and since WebGLRenderer defaults to NOT preserving
+    // the drawing buffer, the browser is free to clear an un-rendered-to
+    // canvas to blank on its own, which is exactly what "canvas goes white"
+    // looks like from a stuck update, as opposed to an actual lost WebGL
+    // context (handled separately by onContextLost/onContextRestored
+    // above). This can't fix whatever the underlying bug is, but it keeps
+    // THIS World's last good frame on screen (or later frames working
+    // again, if the bad state was transient) instead of a dead canvas.
+    try {
+      this.checkResize();
+      this.updateModel();
+      this.updateImportedReference();
+      this.updateDimensionLines();
+      this.updateRuler();
+      this.updateVoxelPreview();
+      this.updateZoneOverlay();
+      this.updateSurfaceZoneOverlay();
+      this.updateSession();
+      this.updateSettleAnimation();
 
-    // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
-    // show/hide toggle for the rings, independent of whether a reference is
-    // even attached (rotateGizmo.object stays undefined until one is).
-    const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined;
-    this.rotateGizmo.getHelper().visible = this.active && gizmoWanted;
-    this.rotateGizmo.enabled = this.active && gizmoWanted;
-    // Suppress orbiting while a ring is actively being dragged - otherwise
-    // OrbitControls' own pointer handling fights the gizmo's for the same
-    // mouse drag.
-    this.controls.enabled = this.active && !this.rotateGizmo.dragging;
-    this.controls.update();
+      // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
+      // show/hide toggle for the rings, independent of whether a reference is
+      // even attached (rotateGizmo.object stays undefined until one is).
+      const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined;
+      this.rotateGizmo.getHelper().visible = this.active && gizmoWanted;
+      this.rotateGizmo.enabled = this.active && gizmoWanted;
+      // Suppress orbiting while a ring is actively being dragged - otherwise
+      // OrbitControls' own pointer handling fights the gizmo's for the same
+      // mouse drag.
+      this.controls.enabled = this.active && !this.rotateGizmo.dragging;
+      this.controls.update();
+    } catch (error) {
+      console.error(`[WorldCanvasComponent] world ${this.worldIndex}: per-frame update failed, skipping this tick`, error);
+    }
 
     if (this.active) {
-      this.oitRenderer.render(this.scene, this.camera);
+      try {
+        this.oitRenderer.render(this.scene, this.camera);
+      } catch (error) {
+        console.error(`[WorldCanvasComponent] world ${this.worldIndex}: render() failed`, error);
+      }
     }
   };
 
