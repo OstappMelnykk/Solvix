@@ -65,7 +65,7 @@
         [class.surface-zone-painting__brush-option--active]="size === brushRadius()"
         (click)="setBrushRadius(size)"
       >
-        <span class="surface-zone-painting__brush-dot" [style.width.px]="6 + size * 5" [style.height.px]="6 + size * 5"></span>
+        <span class="surface-zone-painting__brush-dot" [style.width.px]="dotSizeFor(size)" [style.height.px]="dotSizeFor(size)"></span>
       </button>
     </div>
 

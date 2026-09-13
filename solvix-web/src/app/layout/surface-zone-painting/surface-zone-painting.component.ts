@@ -165,7 +165,18 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
     this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
-    this.renderers.forEach(renderer => renderer.dispose());
+    // dispose() alone only frees three.js's own CPU-side bookkeeping
+    // (compiled programs, its internal caches) - it does NOT ask the
+    // browser to actually free the underlying WebGL context, so the
+    // browser may keep it alive well past this call. forceContextLoss()
+    // is the actual, synchronous release - without it, repeatedly
+    // opening/closing this tool can accumulate zombie contexts that
+    // eventually evict WorldCanvasComponent's own always-open ones (which,
+    // unlike this tool, never recreate themselves afterward).
+    this.renderers.forEach(renderer => {
+      renderer.dispose();
+      renderer.forceContextLoss();
+    });
     this.renderers = [];
     this.cameras = [];
     this.controls = [];
@@ -407,7 +418,22 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  readonly brushSizes: readonly number[] = [0, 1, 2];
+  // [0, 1, 2] were the original 3 - the 3 added on top (4, 8, 16) are the
+  // previous largest (2) times the powers of two 2/4/8, for quickly
+  // covering much bigger areas on large/dense grids without needing many
+  // separate strokes at radius 2.
+  readonly brushSizes: readonly number[] = [0, 1, 2, 4, 8, 16];
+
+  // The dot icon's diameter for a given brush radius (surface-zone-painting.
+  // component.html) - sqrt-scaled and capped rather than the old linear `6 +
+  // size * 5`, which was fine up to size 2 (16px) but would blow past the
+  // 32px button box entirely at size 16 (86px). Still strictly increasing
+  // and visually distinct across the whole [0, 16] range, just compressed
+  // at the top end where the ACTUAL painted area (proportional to radius²)
+  // is already growing much faster than any dot could show anyway.
+  dotSizeFor(size: number): number {
+    return Math.min(26, 6 + Math.sqrt(size) * 6);
+  }
   // 'brush' only ever ADDS cells to the pending selection, 'eraser' only
   // ever REMOVES them - both share the exact same footprint/ordering logic
   // in paintAt below, just filtered to the opposite mask state. Erasing
