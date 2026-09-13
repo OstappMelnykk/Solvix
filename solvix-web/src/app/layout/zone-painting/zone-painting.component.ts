@@ -197,17 +197,16 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
-    // dispose() alone only frees three.js's own CPU-side bookkeeping - it
-    // does NOT ask the browser to actually free the underlying WebGL
-    // context, so the browser may keep it alive well past this call.
-    // forceContextLoss() is the actual, synchronous release - without it,
-    // repeatedly opening/closing this tool can accumulate zombie contexts
-    // that eventually evict WorldCanvasComponent's own always-open ones
-    // (which, unlike this tool, never recreate themselves afterward).
-    this.renderers.forEach(renderer => {
-      renderer.dispose();
-      renderer.forceContextLoss();
-    });
+    // dispose() only, deliberately NOT forceContextLoss() - these 4
+    // <canvas> elements are never removed from the DOM (this component is
+    // mounted once and only ever [hidden]), so the SAME canvas gets reused
+    // on the next open. forceContextLoss() permanently kills a canvas's
+    // context, which made a later `new THREE.WebGLRenderer({ canvas })` on
+    // reopen read capabilities off a dead context and throw. dispose()
+    // alone doesn't lose the context - a canvas that already has one just
+    // hands the SAME live context back to the next WebGLRenderer created
+    // on it, so reopening stays safe.
+    this.renderers.forEach(renderer => renderer.dispose());
     this.renderers = [];
     this.oitRenderers = [];
     this.cameras = [];
@@ -539,49 +538,61 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       this.rebuildZoneOverlayMesh();
     }
 
+    // Restored in a `finally` below - see SixViewOverlayComponent's animate()
+    // for why (a panel throwing mid-loop must never leave the source
+    // World's grid/gizmo permanently hidden).
     const previousVisibility = source.hiddenDuringView.map(object => object.visible);
     source.hiddenDuringView.forEach(object => (object.visible = false));
 
-    const canvases = this.canvasRefs.toArray();
-    for (let i = 0; i < canvases.length; i++) {
-      const canvas = canvases[i].nativeElement;
-      const { clientWidth: width, clientHeight: height } = canvas;
-      if (width === 0 || height === 0) {
-        continue;
+    try {
+      const canvases = this.canvasRefs.toArray();
+      for (let i = 0; i < canvases.length; i++) {
+        // Each panel in its own try/catch - see SixViewOverlayComponent's
+        // animate() for why (one bad panel shouldn't stop the other 3, or
+        // repeat-throw forever without ever painting anything).
+        try {
+          const canvas = canvases[i].nativeElement;
+          const { clientWidth: width, clientHeight: height } = canvas;
+          if (width === 0 || height === 0) {
+            continue;
+          }
+          const camera = this.cameras[i];
+          const size = this.lastPanelSizes[i];
+          if (size.width !== width || size.height !== height) {
+            size.width = width;
+            size.height = height;
+            const aspect = width / height;
+            const halfHeight = this.cameraHalfHeights[i];
+            camera.left = -halfHeight * aspect;
+            camera.right = halfHeight * aspect;
+            camera.top = halfHeight;
+            camera.bottom = -halfHeight;
+            camera.updateProjectionMatrix();
+            this.renderers[i].setSize(width, height);
+            this.oitRenderers[i].setSize(width, height);
+          }
+          this.controls[i].update();
+          // The colored-zone overlay mesh lives in the shared Scene but must
+          // only be visible for the result panel's OWN render() call - panels
+          // 0-2 show their flat 2D projection instead (drawOverlay below) and
+          // would otherwise show the 3D boxes doubled up underneath it.
+          if (this.zoneOverlayGroup) {
+            this.zoneOverlayGroup.visible = i === RESULT_PANEL_INDEX;
+          }
+          this.oitRenderers[i].render(source.scene, camera);
+          if (i !== RESULT_PANEL_INDEX) {
+            this.drawOverlay(i, camera, width, height);
+          }
+        } catch (error) {
+          console.error(`[ZonePaintingComponent] panel ${i} failed to render, skipping it this frame`, error);
+        }
       }
-      const camera = this.cameras[i];
-      const size = this.lastPanelSizes[i];
-      if (size.width !== width || size.height !== height) {
-        size.width = width;
-        size.height = height;
-        const aspect = width / height;
-        const halfHeight = this.cameraHalfHeights[i];
-        camera.left = -halfHeight * aspect;
-        camera.right = halfHeight * aspect;
-        camera.top = halfHeight;
-        camera.bottom = -halfHeight;
-        camera.updateProjectionMatrix();
-        this.renderers[i].setSize(width, height);
-        this.oitRenderers[i].setSize(width, height);
-      }
-      this.controls[i].update();
-      // The colored-zone overlay mesh lives in the shared Scene but must
-      // only be visible for the result panel's OWN render() call - panels
-      // 0-2 show their flat 2D projection instead (drawOverlay below) and
-      // would otherwise show the 3D boxes doubled up underneath it.
       if (this.zoneOverlayGroup) {
-        this.zoneOverlayGroup.visible = i === RESULT_PANEL_INDEX;
+        this.zoneOverlayGroup.visible = false;
       }
-      this.oitRenderers[i].render(source.scene, camera);
-      if (i !== RESULT_PANEL_INDEX) {
-        this.drawOverlay(i, camera, width, height);
-      }
+    } finally {
+      source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
     }
-    if (this.zoneOverlayGroup) {
-      this.zoneOverlayGroup.visible = false;
-    }
-
-    source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
   };
 
   // Rebuilds the result panel's colored-zone overlay from scratch - ONE

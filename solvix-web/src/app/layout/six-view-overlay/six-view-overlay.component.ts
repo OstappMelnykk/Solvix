@@ -173,19 +173,19 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
-    // dispose() alone only frees three.js's own CPU-side bookkeeping - it
-    // does NOT ask the browser to actually free the underlying WebGL
-    // context, so the browser can keep all 6 of these alive well past this
-    // call. forceContextLoss() is the actual, synchronous release -
-    // without it, opening/closing "6 сторін" enough times accumulates
-    // zombie contexts that eventually evict WorldCanvasComponent's own
-    // always-open ones (which, unlike this overlay, never recreate
-    // themselves afterward - hence the Ideal World canvas going blank
-    // after switching back from this overlay).
-    this.renderers.forEach(renderer => {
-      renderer.dispose();
-      renderer.forceContextLoss();
-    });
+    // dispose() only, deliberately NOT forceContextLoss() - these 6
+    // <canvas> elements are never removed from the DOM (this component is
+    // mounted once and only ever [hidden]), so the SAME canvas gets reused
+    // on the next open. forceContextLoss() permanently kills a canvas's
+    // context (only reachable again via forceContextRestore(), which this
+    // code never calls) - a later `new THREE.WebGLRenderer({ canvas })` on
+    // that same canvas would then read capabilities off a dead context and
+    // throw ("Cannot read properties of null (reading 'precision')"),
+    // which is exactly what happened when this called forceContextLoss()
+    // here. dispose() alone doesn't lose the context - a canvas that
+    // already has one just hands the SAME live context back to the next
+    // WebGLRenderer created on it, so reopening stays safe.
+    this.renderers.forEach(renderer => renderer.dispose());
     this.renderers = [];
     this.oitRenderers = [];
     this.cameras = [];
@@ -333,36 +333,51 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     // Hidden only for the duration of THIS component's own render() calls
     // below, then restored - the source World's own canvas keeps rendering
     // these with whatever visibility it actually has (see SixViewSource's
-    // doc comment).
+    // doc comment). The restore is in a `finally`, not just after the loop,
+    // so a panel throwing mid-loop (below) can never leave the source
+    // World's grid/gizmo permanently hidden - without that, the ONE bad
+    // panel would silently break the main canvas's own visuals well after
+    // this overlay is closed again.
     const previousVisibility = source.hiddenDuringView.map(object => object.visible);
     source.hiddenDuringView.forEach(object => (object.visible = false));
 
-    const canvases = this.canvasRefs.toArray();
-    for (let i = 0; i < canvases.length; i++) {
-      const canvas = canvases[i].nativeElement;
-      const { clientWidth: width, clientHeight: height } = canvas;
-      if (width === 0 || height === 0) {
-        continue;
+    try {
+      const canvases = this.canvasRefs.toArray();
+      for (let i = 0; i < canvases.length; i++) {
+        // Each panel renders in its own try/catch - one panel's bad frame
+        // (a stale/disposed reference, some future regression) shouldn't
+        // stop the other 5 from rendering, and shouldn't repeat-throw
+        // forever without ever painting anything (see WorldCanvasComponent's
+        // animate() for why that reads as "canvas goes white").
+        try {
+          const canvas = canvases[i].nativeElement;
+          const { clientWidth: width, clientHeight: height } = canvas;
+          if (width === 0 || height === 0) {
+            continue;
+          }
+          const camera = this.cameras[i];
+          const size = this.lastPanelSizes[i];
+          if (size.width !== width || size.height !== height) {
+            size.width = width;
+            size.height = height;
+            const aspect = width / height;
+            const halfHeight = this.cameraHalfHeights[i];
+            camera.left = -halfHeight * aspect;
+            camera.right = halfHeight * aspect;
+            camera.top = halfHeight;
+            camera.bottom = -halfHeight;
+            camera.updateProjectionMatrix();
+            this.renderers[i].setSize(width, height);
+            this.oitRenderers[i].setSize(width, height);
+          }
+          this.controls[i].update();
+          this.oitRenderers[i].render(source.scene, camera);
+        } catch (error) {
+          console.error(`[SixViewOverlayComponent] panel ${i} failed to render, skipping it this frame`, error);
+        }
       }
-      const camera = this.cameras[i];
-      const size = this.lastPanelSizes[i];
-      if (size.width !== width || size.height !== height) {
-        size.width = width;
-        size.height = height;
-        const aspect = width / height;
-        const halfHeight = this.cameraHalfHeights[i];
-        camera.left = -halfHeight * aspect;
-        camera.right = halfHeight * aspect;
-        camera.top = halfHeight;
-        camera.bottom = -halfHeight;
-        camera.updateProjectionMatrix();
-        this.renderers[i].setSize(width, height);
-        this.oitRenderers[i].setSize(width, height);
-      }
-      this.controls[i].update();
-      this.oitRenderers[i].render(source.scene, camera);
+    } finally {
+      source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
     }
-
-    source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
   };
 }
