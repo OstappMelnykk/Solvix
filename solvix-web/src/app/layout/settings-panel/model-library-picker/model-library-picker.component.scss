@@ -1,0 +1,156 @@
+// Same tokens as settings-panel.component.scss - duplicated for the same
+// encapsulation reason as every other component in this panel (see that
+// file's own top-of-file comment).
+$field-bg: #1e1f22;
+$field-border: rgba(255, 255, 255, 0.18);
+$accent: #39c5f2;
+$accent-toggle: #da680b;
+
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.dialog {
+  background: #2b2d30;
+  border: 1px solid $field-border;
+  border-radius: 10px;
+  padding: 16px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  color: #dfe1e5;
+  font-family: sans-serif;
+  box-sizing: border-box;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9096a0;
+}
+
+.close {
+  background: none;
+  border: none;
+  color: #9096a0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+
+  &:hover {
+    color: #dfe1e5;
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.05s ease;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: $accent;
+  }
+}
+
+.preview {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #17181a;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 6px;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+}
+
+.preview-placeholder {
+  font-size: 20px;
+  color: #6f737a;
+}
+
+.preview-placeholder--error {
+  color: #e05252;
+}
+
+.meta-name {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta-sub {
+  font-size: 10px;
+  color: #8a8f98;
+  margin-top: 2px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #8a8f98;
+  padding: 20px 0;
+  text-align: center;
+}
+
+// Never shown to the user - a real (laid-out, not display:none) canvas
+// parked off-screen so the shared WebGLRenderer always has somewhere valid
+// to render into regardless of browser quirks around display:none canvases.
+.offscreen-canvas {
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+}

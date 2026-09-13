@@ -8,8 +8,10 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
 import { ModelImportService } from '../../geometry/model-import.service';
+import { ModelLibraryApiService, ModelLibraryEntryDto } from '../../api/model-library-api.service';
 import { disposeObject3D } from '../../geometry/dispose-object3d';
 import { ImportedReferenceControlsComponent } from './imported-reference-controls/imported-reference-controls.component';
+import { ModelLibraryPickerComponent } from './model-library-picker/model-library-picker.component';
 
 type ImportDisplayStatus =
   | { kind: 'loading' }
@@ -17,6 +19,8 @@ type ImportDisplayStatus =
   | { kind: 'success'; fileName: string }
   | { kind: 'not-watertight'; fileName: string }
   | { kind: 'none' };
+
+type UploadDisplayStatus = { kind: 'idle' } | { kind: 'uploading' } | { kind: 'error' } | { kind: 'done'; fileName: string };
 
 // (sessionId, worldIndex) together identify which World's settings this
 // panel shows - both are read directly from the currently active session,
@@ -26,7 +30,7 @@ type ImportDisplayStatus =
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [NgIf, ImportedReferenceControlsComponent],
+  imports: [NgIf, ImportedReferenceControlsComponent, ModelLibraryPickerComponent],
   templateUrl: './settings-panel.component.html',
   styleUrl: './settings-panel.component.scss'
 })
@@ -36,6 +40,7 @@ export class SettingsPanelComponent {
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   private readonly modelImport = inject(ModelImportService);
+  private readonly modelLibraryApi = inject(ModelLibraryApiService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly sessionId = computed(() => this.sessions.activeSessionId());
@@ -54,6 +59,21 @@ export class SettingsPanelComponent {
   // DIFFERENT session's import.
   private readonly transientStatus = signal<'idle' | 'loading' | 'error'>('idle');
 
+  // The server-side model library (Solvix.Api's ModelLibraryController) -
+  // one shared list across all sessions/worlds, unlike transientStatus
+  // above which is per-session. "Надіслати файл на сервер" adds to it,
+  // "Обрати сітку" opens ModelLibraryPickerComponent to pick the "active
+  // mesh" out of it, and "Імпортувати" feeds the picked entry's downloaded
+  // bytes through the exact same loadFromFile/onFileLoaded/onFileLoadError
+  // path as a direct local import.
+  readonly libraryEntries = signal<ModelLibraryEntryDto[]>([]);
+  readonly selectedLibraryId = signal<string | null>(null);
+  // "Обрати сітку" opens ModelLibraryPickerComponent (a grid of preview
+  // cards) instead of a plain <select> - this just tracks whether that
+  // modal is currently open.
+  readonly isPickerOpen = signal(false);
+  private readonly uploadStatus = signal<UploadDisplayStatus>({ kind: 'idle' });
+
   constructor() {
     effect(
       () => {
@@ -62,6 +82,113 @@ export class SettingsPanelComponent {
       },
       { allowSignalWrites: true }
     );
+    this.refreshLibrary();
+  }
+
+  private refreshLibrary(): void {
+    this.modelLibraryApi
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({ next: entries => this.libraryEntries.set(entries) });
+  }
+
+  // Uploads the picked file to the server library - a separate action from
+  // onImportFile above, which loads a file straight into the current
+  // session without ever touching the server. This one does the opposite:
+  // it reaches the library, not the session, so a later "Імпортувати" can
+  // load the same bytes into ANY session/world, not just this one.
+  onUploadFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) {
+      return;
+    }
+
+    this.uploadStatus.set({ kind: 'uploading' });
+    file
+      .arrayBuffer()
+      .then(bytes =>
+        this.modelLibraryApi
+          .upload(file.name, bytes)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: entry => {
+              this.uploadStatus.set({ kind: 'done', fileName: entry.fileName });
+              this.selectedLibraryId.set(entry.id);
+              this.refreshLibrary();
+            },
+            error: () => this.uploadStatus.set({ kind: 'error' })
+          })
+      )
+      .catch(() => this.uploadStatus.set({ kind: 'error' }));
+  }
+
+  getUploadStatusText(): string | null {
+    const status = this.uploadStatus();
+    switch (status.kind) {
+      case 'uploading':
+        return 'Надсилання…';
+      case 'done':
+        return `${status.fileName} — надіслано ✓`;
+      case 'error':
+        return 'Не вдалось надіслати файл';
+      case 'idle':
+        return null;
+    }
+  }
+
+  isUploadError(): boolean {
+    return this.uploadStatus().kind === 'error';
+  }
+
+  getSelectedLibraryFileName(): string | null {
+    return this.libraryEntries().find(entry => entry.id === this.selectedLibraryId())?.fileName ?? null;
+  }
+
+  openLibraryPicker(): void {
+    this.isPickerOpen.set(true);
+  }
+
+  onLibraryPicked(entry: ModelLibraryEntryDto): void {
+    this.selectedLibraryId.set(entry.id);
+    this.isPickerOpen.set(false);
+  }
+
+  onLibraryPickerClosed(): void {
+    this.isPickerOpen.set(false);
+  }
+
+  // Downloads the picker-selected library entry's bytes and feeds them
+  // through the SAME loadFromFile/onFileLoaded/onFileLoadError path as
+  // onImportFile - reconstructing a File from the downloaded bytes plus
+  // the entry's remembered original fileName is enough for
+  // ModelImportService's extension-based loader dispatch to work
+  // unchanged (it matches purely on File.name).
+  onImportFromLibrary(): void {
+    const entry = this.libraryEntries().find(candidate => candidate.id === this.selectedLibraryId());
+    const sessionId = this.sessionId();
+    if (!entry || sessionId === null) {
+      return;
+    }
+
+    this.transientStatus.set('loading');
+    this.modelLibraryApi
+      .download(entry.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: bytes => {
+          const file = new File([bytes], entry.fileName);
+          this.modelImport
+            .loadFromFile(file)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe({
+              next: object => this.onFileLoaded(sessionId, entry.fileName, object),
+              error: () => this.onFileLoadError(sessionId)
+            });
+        },
+        error: () => this.onFileLoadError(sessionId)
+      });
   }
 
   // Recommended path: export from Blender as glTF 2.0 / "glTF Binary"
