@@ -173,7 +173,19 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
-    this.renderers.forEach(renderer => renderer.dispose());
+    // dispose() alone only frees three.js's own CPU-side bookkeeping - it
+    // does NOT ask the browser to actually free the underlying WebGL
+    // context, so the browser can keep all 6 of these alive well past this
+    // call. forceContextLoss() is the actual, synchronous release -
+    // without it, opening/closing "6 сторін" enough times accumulates
+    // zombie contexts that eventually evict WorldCanvasComponent's own
+    // always-open ones (which, unlike this overlay, never recreate
+    // themselves afterward - hence the Ideal World canvas going blank
+    // after switching back from this overlay).
+    this.renderers.forEach(renderer => {
+      renderer.dispose();
+      renderer.forceContextLoss();
+    });
     this.renderers = [];
     this.oitRenderers = [];
     this.cameras = [];

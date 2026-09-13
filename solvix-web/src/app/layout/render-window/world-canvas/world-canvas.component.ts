@@ -333,7 +333,14 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
     this.oitRenderer?.dispose();
+    // dispose() alone doesn't guarantee the browser actually frees the
+    // underlying WebGL context (see the same fix in SixViewOverlayComponent/
+    // ZonePaintingComponent/SurfaceZonePaintingComponent's teardownRenderers)
+    // - forceContextLoss() is the synchronous release. This component is
+    // normally never destroyed (app-level, mounted once for its lifetime),
+    // but should still free its context properly on the rare occasions it is.
     this.renderer?.dispose();
+    this.renderer?.forceContextLoss();
   }
 
   private initScene(): void {
