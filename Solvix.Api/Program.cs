@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Solvix.Api.ModelLibrary;
 using Solvix.Contracts.Facades;
 using Solvix.Data;
 using Solvix.MeshBuilder;
@@ -25,6 +26,9 @@ builder.Services.AddDbContext<SolvixDbContext>(options =>
 builder.Services.AddMeshBuilder();
 builder.Services.AddScoped<ISolverFacade, Solvix.Solver.SolverFacade>();
 builder.Services.AddScoped<Solvix.Bridge.Bridge>();
+
+builder.Services.Configure<ModelLibraryStorageOptions>(builder.Configuration.GetSection("ModelLibrary"));
+builder.Services.AddSingleton<ModelLibraryStorage>();
 
 var app = builder.Build();
 
