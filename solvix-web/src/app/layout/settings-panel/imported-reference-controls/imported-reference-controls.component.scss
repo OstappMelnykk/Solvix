@@ -191,6 +191,39 @@ h4 {
   }
 }
 
+// The ×2/×4/×8 quick density-multiplier row - same "chip" language as the
+// checkbox/range controls above, just for a plain click action instead of a
+// persistent value.
+.multiplier-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.chip {
+  background: $field-bg;
+  color: #dfe1e5;
+  border: 1px solid $field-border;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.05s ease;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-color: $accent;
+  }
+}
+
 // Same visual language as settings-panel.component.scss's .import-status
 // (duplicated for the same encapsulation reason as everything else in this
 // file - see the top-of-file comment).
