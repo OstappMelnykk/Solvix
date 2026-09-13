@@ -31,18 +31,9 @@ Solvix.Api         ← Contracts, Solver, MeshBuilder, Bridge, Data
 - **`Solvix.Solver.Tests`** — unit tests for `Solvix.Solver` (NUnit).
 - **`Solvix.MeshBuilder.Tests`** — unit tests for `Solvix.MeshBuilder` (NUnit).
 
-## Docker
+## Running locally
 
-Run the full stack locally:
-
-```
-cp .env.example .env
-docker compose up --build
-```
-
-- `web` (Angular via Nginx) → http://localhost:8081, proxies `/api/` to `api`.
-- `api` (.NET) — internal only, reachable at `http://api:8080` inside the compose network.
-- `postgres` — internal only, data persisted in the `postgres_data` volume.
+See [`docs/RUNNING.md`](docs/RUNNING.md) for how to start the full stack (dev mode with hot reload, or full Docker mode), including Colima/Docker setup and troubleshooting.
 
 ## Branching strategy
 
