@@ -25,6 +25,14 @@
     <span>Розмір (найдовша сторона)</span>
     <input type="number" min="1" max="90" [value]="getReferenceDensity()" (change)="onReferenceDensityChange($event)" />
   </label>
+  <div class="row">
+    <span>Швидко</span>
+    <div class="multiplier-buttons">
+      <button class="chip" type="button" (click)="onDensityMultiply(2)">×2</button>
+      <button class="chip" type="button" (click)="onDensityMultiply(4)">×4</button>
+      <button class="chip" type="button" (click)="onDensityMultiply(8)">×8</button>
+    </div>
+  </div>
 </div>
 
 <div class="group">

@@ -6,6 +6,29 @@
     Import model ({{ acceptedExtensions }})
     <input type="file" [attr.accept]="acceptedExtensions" hidden (change)="onImportFile($event)" />
   </label>
+
+  <div class="group">
+    <div class="group-label">Бібліотека моделей (сервер)</div>
+    <label class="tool">
+      Надіслати файл на сервер
+      <input type="file" [attr.accept]="acceptedExtensions" hidden (change)="onUploadFile($event)" />
+    </label>
+    <div class="import-status" *ngIf="getUploadStatusText() as uploadText" [class.import-status--error]="isUploadError()">{{ uploadText }}</div>
+
+    <button class="tool" type="button" (click)="openLibraryPicker()">
+      <ng-container *ngIf="getSelectedLibraryFileName() as fileName; else noModelSelected">Сітка: {{ fileName }}</ng-container>
+      <ng-template #noModelSelected>Обрати сітку</ng-template>
+    </button>
+    <button class="tool" type="button" [disabled]="!selectedLibraryId()" (click)="onImportFromLibrary()">Імпортувати</button>
+  </div>
+
+  <app-model-library-picker
+    *ngIf="isPickerOpen()"
+    [entries]="libraryEntries()"
+    (picked)="onLibraryPicked($event)"
+    (closed)="onLibraryPickerClosed()"
+  />
+
   <ng-container *ngIf="getImportDisplayStatus() as status">
     <div class="import-status" *ngIf="status.kind !== 'none'" [class.import-status--warning]="status.kind === 'not-watertight'" [class.import-status--error]="status.kind === 'error'">
       <span *ngIf="status.kind === 'loading'">Завантаження…</span>

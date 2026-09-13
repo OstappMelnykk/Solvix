@@ -24,6 +24,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-solvix};Username=${POSTGRES_USER:-solvix};Password=${POSTGRES_PASSWORD}
+      ModelLibrary__DirectoryPath: /app/model-library
+    volumes:
+      - model_library_data:/app/model-library
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,3 +43,4 @@ services:
 
 volumes:
   postgres_data:
+  model_library_data:

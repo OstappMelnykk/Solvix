@@ -197,7 +197,17 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
     this.controls.forEach(controls => controls.dispose());
     this.oitRenderers.forEach(renderer => renderer.dispose());
-    this.renderers.forEach(renderer => renderer.dispose());
+    // dispose() alone only frees three.js's own CPU-side bookkeeping - it
+    // does NOT ask the browser to actually free the underlying WebGL
+    // context, so the browser may keep it alive well past this call.
+    // forceContextLoss() is the actual, synchronous release - without it,
+    // repeatedly opening/closing this tool can accumulate zombie contexts
+    // that eventually evict WorldCanvasComponent's own always-open ones
+    // (which, unlike this tool, never recreate themselves afterward).
+    this.renderers.forEach(renderer => {
+      renderer.dispose();
+      renderer.forceContextLoss();
+    });
     this.renderers = [];
     this.oitRenderers = [];
     this.cameras = [];

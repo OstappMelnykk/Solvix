@@ -82,6 +82,36 @@ h4 {
   }
 }
 
+// Boxes the server model-library controls (upload button, dropdown,
+// Import button) as one visual unit - same treatment as
+// imported-reference-controls.component.scss's own .group/.group-label/.row
+// (duplicated rather than shared, same encapsulation reason as that file).
+.group {
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $field-border;
+  border-radius: 8px;
+}
+
+.group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6f737a;
+  margin-bottom: 4px;
+}
+
+.tool:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+
+  &:hover {
+    border-color: $field-border;
+  }
+}
+
 .import-status {
   font-size: 11px;
   color: #8a8f98;

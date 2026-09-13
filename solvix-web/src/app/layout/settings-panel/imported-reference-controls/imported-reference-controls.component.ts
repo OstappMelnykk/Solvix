@@ -111,6 +111,20 @@ export class ImportedReferenceControlsComponent {
     }
   }
 
+  // Quick ×2/×4/×8 presets next to the density input - multiplies the
+  // CURRENT density rather than setting an absolute value, so the same 3
+  // buttons stay useful regardless of whatever the density already is.
+  // setDensity's own [1, 90] clamp (imported-reference-render.service.ts)
+  // handles the case where the result would overflow the max.
+  onDensityMultiply(multiplier: number): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const current = this.referenceRender.getDensity(sessionId);
+    this.referenceRender.setDensity(sessionId, current * multiplier);
+  }
+
   isDimensionsVisible(): boolean {
     const sessionId = this.sessionId;
     return sessionId !== null && this.referenceDisplay.getStyle(sessionId).dimensionsVisible;

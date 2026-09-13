@@ -1,0 +1,27 @@
+<div class="backdrop" (click)="onBackdropClick()">
+  <div class="dialog" (click)="$event.stopPropagation()">
+    <div class="dialog-header">
+      <span>Оберіть сітку</span>
+      <button class="close" type="button" (click)="onBackdropClick()">×</button>
+    </div>
+
+    <div class="grid" *ngIf="entries.length > 0; else empty">
+      <button class="card" type="button" *ngFor="let entry of entries" (click)="onPick(entry)">
+        <ng-container *ngIf="getThumbnail(entry.id) as thumb">
+          <div class="preview">
+            <img *ngIf="thumb.kind === 'ready'" [src]="thumb.dataUrl" [alt]="entry.fileName" />
+            <span *ngIf="thumb.kind === 'loading'" class="preview-placeholder">…</span>
+            <span *ngIf="thumb.kind === 'error'" class="preview-placeholder preview-placeholder--error">!</span>
+          </div>
+        </ng-container>
+        <div class="meta-name" [title]="entry.fileName">{{ entry.fileName }}</div>
+        <div class="meta-sub">{{ formatSize(entry.sizeBytes) }} · {{ formatDate(entry.uploadedAt) }}</div>
+      </button>
+    </div>
+    <ng-template #empty>
+      <div class="hint">Бібліотека порожня — спочатку надішліть файл на сервер.</div>
+    </ng-template>
+  </div>
+</div>
+
+<canvas #thumbCanvas class="offscreen-canvas" width="140" height="140"></canvas>
