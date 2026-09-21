@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ZonePaintingService } from '../../state/zone-painting.service';
 import { SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
@@ -9,6 +9,14 @@ interface ZoneRow {
   readonly color: string;
   readonly voxelCount: number;
   readonly stlCount: number;
+}
+
+// Which zone's row is currently showing an inline "Точно?" prompt, and for
+// which action - see ZoneListComponent's own comment on why this exists
+// instead of window.confirm.
+interface PendingConfirmation {
+  readonly zoneId: number;
+  readonly kind: 'delete' | 'edit';
 }
 
 // The persistent home of "Розмітка зон" (docs/local-refinement/PROBLEMS.md,
@@ -108,17 +116,60 @@ export class ZoneListComponent {
     this.zonePainting.showStep1();
   }
 
+  // Which row is currently showing an inline "Точно?" prompt, if any -
+  // deliberately NOT window.confirm(): a real native dialog can end up
+  // permanently, silently auto-dismissed by the browser itself (Chrome's
+  // own "prevent this page from creating additional dialogs" after a
+  // couple of confirm()/alert() calls, or several automation/embedding
+  // contexts) - window.confirm then returns false instantly with NOTHING
+  // visible at all, which reads exactly like "I clicked and nothing
+  // happened" from the outside. An in-app prompt can never be silently
+  // suppressed like that.
+  private readonly pendingConfirmation = signal<PendingConfirmation | null>(null);
+
+  isConfirming(zoneId: number, kind: 'delete' | 'edit'): boolean {
+    const pending = this.pendingConfirmation();
+    return pending !== null && pending.zoneId === zoneId && pending.kind === kind;
+  }
+
+  requestDelete(zoneId: number): void {
+    this.pendingConfirmation.set({ zoneId, kind: 'delete' });
+  }
+
+  requestEdit(zoneId: number): void {
+    if (!this.isLastZone(zoneId)) {
+      return;
+    }
+    this.pendingConfirmation.set({ zoneId, kind: 'edit' });
+  }
+
+  cancelConfirmation(): void {
+    this.pendingConfirmation.set(null);
+  }
+
+  // The inline prompt's own "Так" button - dispatches to whichever action
+  // was actually requested.
+  confirmPendingAction(): void {
+    const pending = this.pendingConfirmation();
+    if (!pending) {
+      return;
+    }
+    this.pendingConfirmation.set(null);
+    if (pending.kind === 'delete') {
+      this.performDelete(pending.zoneId);
+    } else {
+      this.performEdit(pending.zoneId);
+    }
+  }
+
   // "Редагувати" the last zone - deletes it (freeing its voxels/STL cells)
   // and immediately reopens the wizard, which then commits a brand-new zone
   // into that exact same, now-vacant slot (finishZone's own `zoneId =
   // zones.length` naturally re-lands on it). Always starts from an empty
   // selection, per explicit request - not a pre-filled edit.
-  editLastZone(zoneId: number): void {
+  private performEdit(zoneId: number): void {
     const sessionId = this.zonePainting.activeSessionId();
     if (sessionId === null || !this.isLastZone(zoneId)) {
-      return;
-    }
-    if (!window.confirm('Редагувати цю зону? Поточне виділення (вокселі та STL) для неї буде видалено, і ви розмалюєте її заново.')) {
       return;
     }
     this.zonePainting.deleteZone(sessionId, zoneId);
@@ -133,12 +184,9 @@ export class ZoneListComponent {
   // SurfaceZonePaintingService.deleteZone's own comment) - this is the one
   // place in the app that ever deletes a zone, so there's no other call
   // site to keep in sync.
-  deleteZone(zoneId: number): void {
+  private performDelete(zoneId: number): void {
     const sessionId = this.zonePainting.activeSessionId();
     if (sessionId === null) {
-      return;
-    }
-    if (!window.confirm('Видалити цю зону? Її вокселі та розмітку STL буде звільнено. Це незворотно.')) {
       return;
     }
     this.zonePainting.deleteZone(sessionId, zoneId);

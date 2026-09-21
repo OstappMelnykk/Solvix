@@ -200,6 +200,49 @@
   }
 }
 
+// The inline "Точно?" prompt replacing a row's normal contents - see
+// ZoneListComponent's own comment on why this exists instead of
+// window.confirm (a native dialog can end up silently, permanently
+// auto-suppressed by the browser, which then reads as "nothing happens").
+.zone-list__confirm-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #f0d3a8;
+  line-height: 1.4;
+}
+
+.zone-list__confirm-yes,
+.zone-list__confirm-no {
+  flex: none;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.zone-list__confirm-yes {
+  background: rgba(230, 57, 70, 0.18);
+  border: 1px solid #e63946;
+  color: #f4a8ad;
+
+  &:hover {
+    background: rgba(230, 57, 70, 0.32);
+  }
+}
+
+.zone-list__confirm-no {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #dfe1e5;
+
+  &:hover {
+    border-color: #39c5f2;
+  }
+}
+
 .zone-list__add {
   padding: 12px 14px;
   background: rgba(57, 197, 242, 0.16);
