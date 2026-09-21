@@ -7,6 +7,7 @@ import { FooterComponent } from './layout/footer/footer.component';
 import { SixViewOverlayComponent } from './layout/six-view-overlay/six-view-overlay.component';
 import { ZonePaintingComponent } from './layout/zone-painting/zone-painting.component';
 import { SurfaceZonePaintingComponent } from './layout/surface-zone-painting/surface-zone-painting.component';
+import { ToastContainerComponent } from './layout/toast-container/toast-container.component';
 import { WorkspaceViewService } from './state/workspace-view.service';
 import { WORKSPACE_VIEWS } from './layout/workspace-views';
 
@@ -26,7 +27,8 @@ import { WORKSPACE_VIEWS } from './layout/workspace-views';
     FooterComponent,
     SixViewOverlayComponent,
     ZonePaintingComponent,
-    SurfaceZonePaintingComponent
+    SurfaceZonePaintingComponent,
+    ToastContainerComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
