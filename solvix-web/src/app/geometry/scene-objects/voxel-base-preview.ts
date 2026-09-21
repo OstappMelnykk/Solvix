@@ -1,42 +1,77 @@
 import * as THREE from 'three';
-import { VoxelGridDto, isOccupied, voxelCenter } from '../voxel-grid-contract';
+import { VoxelGridDto } from '../voxel-grid-contract';
+import { buildVoxelCells } from '../voxel-cell';
+import { EDGES, buildVoxelHexahedronFillGeometry } from '../voxel-hexahedron';
 
-// A plain, unlit, single-color box per occupied cell - the base layer for
-// ZonePreviewComponent's own small, read-only 3D preview panel. Deliberately
-// NOT the shared, vertex-colored, click-to-select buildVoxelPreview
-// (voxels.ts): that one is built for interactive editing (raycasting,
-// per-voxel highlight, edge/node overlays) in the main World view, while
-// this preview is passive - no picking, no highlight - and the user
-// explicitly asked for a plain white base here, distinct from the main
-// view's own color scheme.
-export function buildVoxelBasePreview(grid: VoxelGridDto, color = 0xffffff): THREE.InstancedMesh | null {
-  const positions: { x: number; y: number; z: number }[] = [];
-  for (let iz = 0; iz < grid.countZ; iz++) {
-    for (let iy = 0; iy < grid.countY; iy++) {
-      for (let ix = 0; ix < grid.countX; ix++) {
-        if (isOccupied(grid, ix, iy, iz)) {
-          positions.push(voxelCenter(grid, ix, iy, iz));
-        }
-      }
-    }
-  }
-  if (positions.length === 0) {
+// The base layer for ZonePreviewComponent's own small, read-only 3D preview
+// panel - same fill+edge TECHNIQUE (hexahedron fill geometry, cylinder edge
+// instances) as the shared, interactive buildVoxelPreview (voxels.ts) uses
+// for the real editing views, so this preview reads as "the same voxels,
+// just white" rather than a visibly different, flatter placeholder. Left
+// out on purpose, unlike buildVoxelPreview: per-instance cell tracking (no
+// raycasting/click-to-select here), node spheres and the click highlight
+// mesh (nothing to highlight in a passive preview).
+const EDGE_RADIUS_FACTOR = 0.02;
+
+export function buildVoxelBasePreview(grid: VoxelGridDto, fillColor: THREE.ColorRepresentation = 0xffffff, edgeColor: THREE.ColorRepresentation = 0xffffff): THREE.Group | null {
+  const cells = buildVoxelCells(grid);
+  if (cells.length === 0) {
     return null;
   }
 
-  const geometry = new THREE.BoxGeometry(grid.cellSize, grid.cellSize, grid.cellSize);
-  const material = new THREE.MeshBasicMaterial({ color });
-  const mesh = new THREE.InstancedMesh(geometry, material, positions.length);
-  const matrix = new THREE.Matrix4();
-  positions.forEach((position, i) => {
-    matrix.setPosition(position.x, position.y, position.z);
-    mesh.setMatrixAt(i, matrix);
-  });
-  mesh.instanceMatrix.needsUpdate = true;
-  return mesh;
+  const group = new THREE.Group();
+
+  // --- Fill ----------------------------------------------------------------
+  const VERTICES_PER_VOXEL = 36; // 6 faces x 2 triangles x 3 vertices - matches buildVoxelHexahedronFillGeometry
+  const fillMaterial = new THREE.MeshStandardMaterial({ vertexColors: true });
+  const batched = new THREE.BatchedMesh(cells.length, cells.length * VERTICES_PER_VOXEL, 1, fillMaterial);
+  batched.perObjectFrustumCulled = false;
+  for (const cell of cells) {
+    const fillGeometry = buildVoxelHexahedronFillGeometry(cell, { fillColor });
+    const geometryId = batched.addGeometry(fillGeometry);
+    batched.addInstance(geometryId);
+    fillGeometry.dispose();
+  }
+  group.add(batched);
+
+  // --- Edges -----------------------------------------------------------------
+  const edgeGeometry = new THREE.CylinderGeometry(1, 1, 1, 8);
+  const edgeRadius = Math.max(0.001, grid.cellSize * EDGE_RADIUS_FACTOR);
+  const edgeMesh = new THREE.InstancedMesh(edgeGeometry, new THREE.MeshBasicMaterial({ color: edgeColor }), cells.length * EDGES.length);
+  const edgeMatrix = new THREE.Matrix4();
+  const edgeQuaternion = new THREE.Quaternion();
+  const edgeScale = new THREE.Vector3();
+  const edgeMidpoint = new THREE.Vector3();
+  const edgeDirection = new THREE.Vector3();
+  const CYLINDER_UP = new THREE.Vector3(0, 1, 0);
+  let edgeInstanceIndex = 0;
+  for (const cell of cells) {
+    EDGES.forEach(([i, j]) => {
+      const p0 = cell.corners[i];
+      const p1 = cell.corners[j];
+      edgeMidpoint.set((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2);
+      edgeDirection.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+      const length = edgeDirection.length();
+      edgeDirection.normalize();
+      edgeQuaternion.setFromUnitVectors(CYLINDER_UP, edgeDirection);
+      edgeScale.set(edgeRadius, length, edgeRadius);
+      edgeMatrix.compose(edgeMidpoint, edgeQuaternion, edgeScale);
+      edgeMesh.setMatrixAt(edgeInstanceIndex, edgeMatrix);
+      edgeInstanceIndex++;
+    });
+  }
+  edgeMesh.instanceMatrix.needsUpdate = true;
+  group.add(edgeMesh);
+
+  return group;
 }
 
-export function disposeVoxelBasePreview(mesh: THREE.InstancedMesh): void {
-  mesh.geometry.dispose();
-  (mesh.material as THREE.Material).dispose();
+export function disposeVoxelBasePreview(group: THREE.Group): void {
+  group.traverse(child => {
+    if (child instanceof THREE.BatchedMesh || child instanceof THREE.InstancedMesh) {
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+    }
+  });
 }
+

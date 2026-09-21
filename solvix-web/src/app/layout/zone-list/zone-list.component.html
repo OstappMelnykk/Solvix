@@ -4,9 +4,13 @@
 </div>
 
 <!-- The left half is deliberately left empty - ZonePreviewComponent (a
-     separate, globally-mounted overlay sitting one z-index behind this one)
-     shows through untouched there. See that component's own header comment. -->
+     separate, globally-mounted overlay sitting one z-index behind this one,
+     itself exactly 50% wide) shows through untouched there. .zone-list__panel
+     opaquely covers the other 50% so nothing bleeds through past the list's
+     own actual content, which stays its original, comfortable reading width
+     rather than stretching across the whole half. -->
 <div class="zone-list__row">
+  <div class="zone-list__panel">
   <div class="zone-list__body">
     <div class="zone-list__status">
       <div class="zone-list__status-row">
@@ -72,5 +76,6 @@
 
     <button type="button" class="zone-list__add" [disabled]="!canAddZone()" (click)="addZone()">+ Додати зону</button>
     <p class="zone-list__add-hint" *ngIf="addZoneDisabledReason() as reason">{{ reason }}</p>
+  </div>
   </div>
 </div>

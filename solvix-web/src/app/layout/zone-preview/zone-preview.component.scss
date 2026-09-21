@@ -1,14 +1,19 @@
 // Sits one z-index BELOW the zone list (1000) and clearly below the 2-step
-// wizard (1100) - see this component's own header comment for how the
-// list's own empty left half lets this show through untouched, with no
-// pixel-coordinate duplication between the two components' stylesheets.
+// wizard (1100), occupying exactly the left half of the screen - the list's
+// own right-hand panel (.zone-list__panel, its own .scss) independently
+// covers the other 50% with an opaque background, so the 2 components only
+// ever need to agree on the number "50%", not on each other's exact pixel
+// layout.
 :host {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
   z-index: 999;
   display: flex;
   flex-direction: column;
-  background: #17181a;
+  background: #000;
 }
 
 :host([hidden]) {

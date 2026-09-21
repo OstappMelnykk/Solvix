@@ -60,7 +60,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   private readonly voxelScene = new THREE.Scene();
   private readonly voxelCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
   private voxelControls: OrbitControls | null = null;
-  private voxelBaseMesh: THREE.InstancedMesh | null = null;
+  private voxelBaseMesh: THREE.Group | null = null;
   private voxelOverlayGroup: THREE.Group | null = null;
   private lastVoxelGrid: VoxelGridDto | null = null;
   private lastVoxelRevision = -1;
@@ -81,13 +81,19 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   private stlFramingRadius = 1;
 
   constructor() {
-    // buildSurfaceZoneOverlay's MeshStandardMaterial is lit (unlike the
-    // MeshBasicMaterial everything else here uses) - without a light it
-    // renders pure black regardless of vertex color.
+    // Both buildVoxelBasePreview's fill and buildSurfaceZoneOverlay's mesh
+    // use a lit MeshStandardMaterial (matching the real editing views'
+    // own technique - see each builder's own header comment) - without a
+    // light either renders pure black regardless of vertex color.
+    this.voxelScene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const voxelDirectional = new THREE.DirectionalLight(0xffffff, 0.9);
+    voxelDirectional.position.set(1, 1, 1);
+    this.voxelScene.add(voxelDirectional);
+
     this.stlScene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const directional = new THREE.DirectionalLight(0xffffff, 0.9);
-    directional.position.set(1, 1, 1);
-    this.stlScene.add(directional);
+    const stlDirectional = new THREE.DirectionalLight(0xffffff, 0.9);
+    stlDirectional.position.set(1, 1, 1);
+    this.stlScene.add(stlDirectional);
   }
 
   ngAfterViewInit(): void {
@@ -135,9 +141,9 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     }
     this.voxelRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.voxelRenderer.setPixelRatio(window.devicePixelRatio);
+    this.voxelRenderer.setClearColor(0x000000, 1);
     this.voxelControls = new OrbitControls(this.voxelCamera, canvas);
-    this.voxelControls.screenSpacePanning = true;
-    this.voxelControls.enableDamping = false;
+    this.configureTurntable(this.voxelControls);
     this.voxelLastSize.width = 0;
     this.voxelLastSize.height = 0;
     return true;
@@ -152,12 +158,23 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     }
     this.stlRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.stlRenderer.setPixelRatio(window.devicePixelRatio);
+    this.stlRenderer.setClearColor(0x000000, 1);
     this.stlControls = new OrbitControls(this.stlCamera, canvas);
-    this.stlControls.screenSpacePanning = true;
-    this.stlControls.enableDamping = false;
+    this.configureTurntable(this.stlControls);
     this.stlLastSize.width = 0;
     this.stlLastSize.height = 0;
     return true;
+  }
+
+  // A passive, always-spinning turntable - no manual interaction (this is a
+  // small glance-at-it preview, not an inspection tool; the wizard's own
+  // "3D результат" panel already covers manual orbiting).
+  private configureTurntable(controls: OrbitControls): void {
+    controls.enableRotate = false;
+    controls.enableZoom = false;
+    controls.enablePan = false;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 4;
   }
 
   private teardownVoxelRenderer(): void {
