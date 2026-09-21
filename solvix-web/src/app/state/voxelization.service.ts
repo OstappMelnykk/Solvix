@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
+import { ImportedReferenceDisplayService } from './imported-reference-display.service';
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto, countOccupied, withCellSet } from '../geometry/voxel-grid-contract';
 import { FACE_DIRECTIONS, VoxelCell, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
@@ -65,6 +66,7 @@ export type VoxelizationStatus =
 export class VoxelizationService {
   private readonly sessions = inject(SessionsService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly meshApi = inject(MeshApiService);
   private readonly statusBySession = new KeyedStore<number, VoxelizationStatus>();
   // The rendered voxel-cube preview for the LAST successful run - kept
@@ -350,6 +352,14 @@ export class VoxelizationService {
   // construction, before that component's next read of this service.
   private applyEditedGrid(sessionId: number, grid: VoxelGridDto): void {
     this.statusBySession.set(sessionId, { kind: 'ok', result: grid });
+    // Rotating the reference AFTER voxelizing just discards this very
+    // result (referenceChanged$ above treats a rotate-gizmo drag the same
+    // as a density change or a new import) - hiding the ring the moment a
+    // grid becomes 'ok' removes the accidental-bump-loses-my-voxelization
+    // trap instead of relying on the user remembering to turn it off
+    // themselves first. onResetRotation/re-importing don't reverse this -
+    // the user can always turn it back on via the same checkbox.
+    this.referenceDisplay.setRotateGizmoVisible(sessionId, false);
     // A successful edit (add, permitted delete, or a fresh run()) means
     // whatever R2 notice was showing no longer describes the current
     // geometry - drop it immediately rather than leaving it to expire on
