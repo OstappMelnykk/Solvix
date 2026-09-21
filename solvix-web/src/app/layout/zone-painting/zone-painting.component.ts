@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, OnDestroy, QueryList, ViewChildren, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, QueryList, ViewChildren, inject } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -10,6 +10,7 @@ import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 import { VoxelizationService } from '../../state/voxelization.service';
 import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
 import { SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
+import { NotificationService } from '../../state/notification.service';
 
 type AxisSign = 1 | -1;
 
@@ -76,10 +77,10 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   private readonly voxelization = inject(VoxelizationService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
+  private readonly notifications = inject(NotificationService);
 
   readonly axes = AXES; // panels 0-2 always show axes[i] - fixed, only the side (sign) is switchable
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i); // 0-2 painting views, 3 the free-orbit result
-  readonly commitMessage = signal<string | null>(null);
 
   private panelSign: Record<Axis, AxisSign> = { x: 1, y: 1, z: 1 };
   private viewStateCache: Partial<Record<Axis, { width: number; height: number; cells: ZoneCellState[] }>> = {};
@@ -253,7 +254,6 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.zonePainting.resetZones(sessionId);
-    this.commitMessage.set(null);
     this.refreshClassifications();
     this.rebuildZoneOverlayMesh();
   }
@@ -302,7 +302,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.rebuildZoneOverlayMesh();
 
     if (assigned === 0) {
-      this.commitMessage.set("Перетин 3 областей порожній - жодного вокселя не додано. Зона не створена.");
+      this.notifications.error('Перетин 3 областей порожній - жодного вокселя не додано. Зона не створена.');
       return;
     }
 
@@ -312,9 +312,9 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       // paint. Unlike before, this no longer closes the window on its own -
       // the user decides when to leave (canSave()'s "Зберегти" button below
       // just becomes available).
-      this.commitMessage.set(`Зону створено: ${assigned} вокселів. Усі вокселі вже розмічені по зонах.`);
+      this.notifications.success(`Зону створено: ${assigned} вокселів. Усі вокселі вже розмічені по зонах.`);
     } else {
-      this.commitMessage.set(`Зону створено: ${assigned} вокселів.`);
+      this.notifications.success(`Зону створено: ${assigned} вокселів.`);
     }
   }
 
@@ -341,7 +341,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     if (this.zonePainting.save(sessionId)) {
-      this.commitMessage.set('Зони збережено.');
+      this.notifications.success('Зони збережено.');
     }
   }
 
@@ -425,9 +425,9 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
         u0 === u1 && v0 === v1
           ? this.zonePainting.toggleCell(sessionId, axis, u0, v0)
           : this.zonePainting.selectRect(sessionId, axis, u0, v0, u1, v1);
-      this.commitMessage.set(
-        ok ? null : "Нічого не змінено - клітинки вже зайняті іншою зоною, недоступні, або дія розірвала б область на 2+ частини."
-      );
+      if (!ok) {
+        this.notifications.error('Нічого не змінено - клітинки вже зайняті іншою зоною або недоступні.');
+      }
       this.refreshClassifications();
     }
     this.dragPanelIndex = null;
@@ -532,7 +532,6 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (sessionId !== this.lastSessionId) {
       this.lastSessionId = sessionId;
       this.panelSign = { x: 1, y: 1, z: 1 };
-      this.commitMessage.set(null);
       this.rebuildFraming(source.framingObjects);
       this.refreshClassifications();
       this.rebuildZoneOverlayMesh();

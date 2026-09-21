@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, OnDestroy, QueryList, ViewChildren, inject, signal } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnDestroy, QueryList, ViewChildren, inject } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -8,6 +8,7 @@ import { worldPointToShellCell } from '../../geometry/surface-shell-grid';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
 import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
 import { darkenZoneColorCss } from '../../geometry/scene-objects/zone-overlay';
+import { NotificationService } from '../../state/notification.service';
 
 type AxisSign = 1 | -1;
 
@@ -58,10 +59,10 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
 
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
   private readonly zonePainting = inject(ZonePaintingService);
+  private readonly notifications = inject(NotificationService);
 
   readonly axes = AXES;
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i);
-  readonly message = signal<string | null>(null);
 
   private panelSign: Record<Axis, AxisSign> = { x: 1, y: 1, z: 1 };
   private viewStateCache: Partial<Record<Axis, { width: number; height: number; cells: SurfaceZoneCellState[] }>> = {};
@@ -265,9 +266,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.finishSelection();
-    if (this.surfaceZonePainting.goToPreviousZone(sessionId)) {
-      this.message.set(null);
-    }
+    this.surfaceZonePainting.goToPreviousZone(sessionId);
   }
 
   coverageText(): string {
@@ -284,9 +283,9 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     const assigned = this.surfaceZonePainting.finishSelection(sessionId);
     this.refreshClassifications();
     if (assigned === 0) {
-      this.message.set('Перетин 3 областей порожній - жодної ділянки не додано.');
+      this.notifications.error('Перетин 3 областей порожній - жодної ділянки не додано.');
     } else {
-      this.message.set(`Додано ${assigned} ділянок до обраної зони.`);
+      this.notifications.success(`Додано ${assigned} ділянок до обраної зони.`);
     }
   }
 
@@ -316,7 +315,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     if (this.surfaceZonePainting.save(sessionId, source.stlMesh)) {
-      this.message.set('Розмітку STL збережено.');
+      this.notifications.success('Розмітку STL збережено.');
       this.rebuildResultOverlay();
     }
   }
@@ -365,10 +364,8 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       this.save();
       return;
     }
-    if (this.surfaceZonePainting.advanceToNextZone(sessionId)) {
-      this.message.set(null);
-    } else {
-      this.message.set("Спочатку виділіть хоч одну ділянку для поточної зони.");
+    if (!this.surfaceZonePainting.advanceToNextZone(sessionId)) {
+      this.notifications.error('Спочатку виділіть хоч одну ділянку для поточної зони.');
     }
   }
 
@@ -381,7 +378,6 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.surfaceZonePainting.resetSelections(sessionId);
-    this.message.set(null);
     this.refreshClassifications();
     this.disposeResultOverlay();
   }
@@ -611,7 +607,6 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (sessionId !== this.lastSessionId) {
       this.lastSessionId = sessionId;
       this.panelSign = { x: 1, y: 1, z: 1 };
-      this.message.set(null);
       this.rebuildFraming(source.framingObjects);
       this.refreshClassifications();
       if (this.surfaceZonePainting.isSaved(sessionId)) {
