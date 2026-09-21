@@ -280,9 +280,11 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (sessionId === null) {
       return;
     }
-    const assigned = this.surfaceZonePainting.finishSelection(sessionId);
+    const { assigned, disconnected } = this.surfaceZonePainting.finishSelection(sessionId);
     this.refreshClassifications();
-    if (assigned === 0) {
+    if (disconnected) {
+      this.notifications.error('Виділення розірвано на кілька ділянок - з\'єднайте їх або завершіть частинами.');
+    } else if (assigned === 0) {
       this.notifications.error('Перетин 3 областей порожній - жодної ділянки не додано.');
     } else {
       this.notifications.success(`Додано ${assigned} ділянок до обраної зони.`);

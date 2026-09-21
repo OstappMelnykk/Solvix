@@ -53,6 +53,12 @@ export interface ZoneDefinition {
   readonly voxelCount: number;
 }
 
+// finishZone's own result - see that method's doc comment.
+export interface FinishZoneResult {
+  readonly assigned: number;
+  readonly disconnected: boolean;
+}
+
 // What a cell on one of the 3 views renders as - purely a display/interaction
 // classification, never stored: recomputed on demand from the grid, the
 // zone assignment, and the OTHER 2 axes' pending masks (see viewState).
@@ -363,9 +369,11 @@ export class ZonePaintingService {
   // occupied-and-unassigned voxel at all, can never be painted into a new
   // zone (docs/local-refinement/PROBLEMS.md's "вже готові області не можна
   // перемальовувати" requirement). REMOVING a cell (it was already pending)
-  // has no such restriction. Either way, the edit is also rejected if it
-  // would leave the mask split across 2+ disconnected pieces - "не
-  // допускаються розірвані площі".
+  // has no such restriction. Connectivity is NOT enforced here (used to be,
+  // on every edit) - see finishZone's own comment for why that moved to
+  // commit time instead: it let a user paint 2 separate "islands" and join
+  // them later, rather than forcing every intermediate step to already be
+  // one connected blob.
   toggleCell(sessionId: number, axis: Axis, u: number, v: number): boolean {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
@@ -382,10 +390,6 @@ export class ZonePaintingService {
       return false;
     }
     mask[index] = previous ? 0 : 1;
-    if (!isSingleConnectedComponent(mask, width, height)) {
-      mask[index] = previous;
-      return false;
-    }
     return true;
   }
 
@@ -394,10 +398,8 @@ export class ZonePaintingService {
   // what's already there) - cells already claimed by an earlier zone, or
   // with no occupied-and-unassigned voxel, are silently skipped rather than
   // failing the whole rectangle (dragging a rectangle that merely grazes an
-  // old zone should still pick up the free part of it). Rejected as a whole
-  // (no partial application) if the result would be disconnected - e.g. the
-  // free cells the rectangle actually touched don't form one connected
-  // piece, or don't touch the existing selection.
+  // old zone should still pick up the free part of it). Connectivity is not
+  // enforced here either - see toggleCell's own comment.
   selectRect(sessionId: number, axis: Axis, u0: number, v0: number, u1: number, v1: number): boolean {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
@@ -420,7 +422,6 @@ export class ZonePaintingService {
     const maskAHasAny = maskA.includes(1);
     const maskBHasAny = maskB.includes(1);
 
-    const previous = mask.slice();
     let addedAny = false;
     for (let v = minV; v <= maxV; v++) {
       for (let u = minU; u <= maxU; u++) {
@@ -437,14 +438,7 @@ export class ZonePaintingService {
     // Nothing in the rectangle was actually addable (every cell in it was
     // already zoned/excluded/empty) - report this the same way a rejected
     // edit is reported, rather than silently succeeding at doing nothing.
-    if (!addedAny) {
-      return false;
-    }
-    if (!isSingleConnectedComponent(mask, width, height)) {
-      mask.set(previous);
-      return false;
-    }
-    return true;
+    return addedAny;
   }
 
   // Whether (u,v) on `axis`'s view currently classifies as 'available' -
@@ -563,15 +557,34 @@ export class ZonePaintingService {
 
   // Commits the current pending selection (intersection of the 3 masks) as
   // a new zone, then clears the pending masks so the next zone starts blank.
-  // Returns how many voxels actually got assigned - 0 means the 3 masks'
-  // intersection was empty (a caller should warn, not silently accept it as
-  // a real zone).
-  finishZone(sessionId: number): number {
+  // `assigned` is how many voxels actually got assigned - 0 means either the
+  // 3 masks' intersection was empty, or (`disconnected: true`) at least one
+  // of them was split into 2+ disconnected pieces (see this method's own
+  // connectivity-check comment below) - a caller should warn either way,
+  // not silently accept 0 as a real zone.
+  finishZone(sessionId: number): FinishZoneResult {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
-      return 0;
+      return { assigned: 0, disconnected: false };
     }
     const { grid, maskX, maskY, maskZ, voxelZone } = session;
+    // Connectivity is enforced HERE, at commit time, not on every
+    // intermediate toggleCell/selectRect edit (see those methods' own
+    // comments) - each of the 3 pending masks must be one connected blob
+    // once the user is done painting, even though they were free to build
+    // it up out of disconnected "islands" along the way. A zone this
+    // committed as fragmented wouldn't have a coherent single patch for
+    // isoparametric snapping to target (docs/local-refinement/PROBLEMS.md).
+    const xDims = maskDims(grid, 'x');
+    const yDims = maskDims(grid, 'y');
+    const zDims = maskDims(grid, 'z');
+    if (
+      !isSingleConnectedComponent(maskX, xDims.width, xDims.height) ||
+      !isSingleConnectedComponent(maskY, yDims.width, yDims.height) ||
+      !isSingleConnectedComponent(maskZ, zDims.width, zDims.height)
+    ) {
+      return { assigned: 0, disconnected: true };
+    }
     const zoneId = session.zones.length;
     // Same "empty mask = no constraint on that axis" rule as viewState -
     // required for consistency: what looked "available" while painting must
@@ -607,7 +620,7 @@ export class ZonePaintingService {
       maskY.fill(0);
       maskZ.fill(0);
     }
-    return assigned;
+    return { assigned, disconnected: false };
   }
 
   // The zone a voxel was manually assigned to, or null if unassigned - the

@@ -116,7 +116,7 @@ describe('SurfaceZonePaintingService', () => {
 
     service.setActiveVoxelZoneId(1, 0);
     expect(service.toggleCell(1, 'y', cell.u, cell.v)).toBe(true);
-    const assigned = service.finishSelection(1);
+    const { assigned } = service.finishSelection(1);
 
     expect(assigned).toBeGreaterThan(0);
     expect(service.viewState(1, 'y').cells[cell.u + cell.v * service.getSession(1)!.grid.countX]).toEqual({
@@ -132,7 +132,7 @@ describe('SurfaceZonePaintingService', () => {
 
     const first = firstAvailableCell(service.viewState(1, 'y'), u => u < halfway)!;
     expect(service.toggleCell(1, 'y', first.u, first.v)).toBe(true);
-    const firstAssigned = service.finishSelection(1);
+    const { assigned: firstAssigned } = service.finishSelection(1);
     expect(firstAssigned).toBeGreaterThan(0);
 
     // A second, disjoint patch on the SAME (zone 0) side - buildFourPatchMesh
@@ -140,19 +140,19 @@ describe('SurfaceZonePaintingService', () => {
     const second = firstAvailableCell(service.viewState(1, 'y'), u => u < halfway)!;
     expect(second).toBeTruthy();
     expect(service.toggleCell(1, 'y', second.u, second.v)).toBe(true);
-    const secondAssigned = service.finishSelection(1);
+    const { assigned: secondAssigned } = service.finishSelection(1);
 
     expect(secondAssigned).toBeGreaterThan(0);
     expect(service.allVoxelZonesUsed(1)).toBe(false); // zone 1 still untouched
   });
 
   // buildFourPatchMesh's 2 triangles per side are spatially FAR apart (not
-  // 4-connected to each other) - selecting both in one rectangle would
-  // violate the "must stay one connected piece" rule and get rejected
-  // outright, so each available cell is committed in its OWN toggleCell +
-  // finishSelection pair instead (each a trivially-connected single cell) -
-  // exactly the "one voxel zone, several separate commits" workflow this
-  // tool is meant to support (file header point 1).
+  // 4-connected to each other) - committing both in one finishSelection
+  // would violate the "must be one connected piece" rule enforced there and
+  // get refused outright (0 assigned), so each available cell is committed
+  // in its OWN toggleCell + finishSelection pair instead (each a trivially-
+  // connected single cell) - exactly the "one voxel zone, several separate
+  // commits" workflow this tool is meant to support (file header point 1).
   function assignAllAvailableCells(u: number, halfway: number, side: 'left' | 'right', voxelZoneId: number): void {
     service.setActiveVoxelZoneId(1, voxelZoneId);
     const matchesSide = (cellU: number): boolean => (side === 'left' ? cellU < halfway : cellU >= halfway);
@@ -163,6 +163,26 @@ describe('SurfaceZonePaintingService', () => {
       cell = firstAvailableCell(service.viewState(1, 'y'), matchesSide);
     }
   }
+
+  it('refuses to commit a disconnected pending selection, leaving it pending for the user to fix', () => {
+    service.open(1, source);
+    const halfway = service.getSession(1)!.grid.countX / 2;
+    service.setActiveVoxelZoneId(1, 0);
+
+    // Both available cells on the left side, toggled together without
+    // bridging the gap between them - a disconnected pending mask.
+    const first = firstAvailableCell(service.viewState(1, 'y'), u => u < halfway)!;
+    service.toggleCell(1, 'y', first.u, first.v);
+    const second = firstAvailableCell(service.viewState(1, 'y'), u => u < halfway)!;
+    expect(second).toBeTruthy();
+    service.toggleCell(1, 'y', second.u, second.v);
+
+    const result = service.finishSelection(1);
+
+    expect(result).toEqual({ assigned: 0, disconnected: true });
+    expect(service.coverage(1)!.assigned).toBe(0);
+    expect(service.pendingMask(1, 'y')![first.u + first.v * service.getSession(1)!.grid.countX]).toBe(1);
+  });
 
   it('requires full coverage AND every voxel zone used before it can be saved', () => {
     service.open(1, source);

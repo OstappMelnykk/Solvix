@@ -297,10 +297,14 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (sessionId === null) {
       return;
     }
-    const assigned = this.zonePainting.finishZone(sessionId);
+    const { assigned, disconnected } = this.zonePainting.finishZone(sessionId);
     this.refreshClassifications();
     this.rebuildZoneOverlayMesh();
 
+    if (disconnected) {
+      this.notifications.error('Виділення розірвано на кілька ділянок - з\'єднайте їх або завершіть частинами. Зона не створена.');
+      return;
+    }
     if (assigned === 0) {
       this.notifications.error('Перетин 3 областей порожній - жодного вокселя не додано. Зона не створена.');
       return;

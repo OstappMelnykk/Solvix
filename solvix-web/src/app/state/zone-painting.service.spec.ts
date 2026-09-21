@@ -56,7 +56,11 @@ describe('ZonePaintingService', () => {
     expect(service.getSession(1)?.zones).toEqual([]);
   });
 
-  describe('connectivity', () => {
+  // Connectivity is enforced at finishZone (commit) time, not on
+  // individual edits - see the 'finishZone connectivity' describe block
+  // below. toggleCell/selectRect only ever refuse a cell that isn't
+  // 'available' (already zoned, or no unassigned occupied voxel behind it).
+  describe('painting (no connectivity restriction on individual edits)', () => {
     beforeEach(() => {
       statuses.set(1, { kind: 'ok', result: buildGrid(3, 1, 1) });
       service.open(1, fakeSource);
@@ -67,23 +71,23 @@ describe('ZonePaintingService', () => {
       expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 0]);
     });
 
-    it('rejects a cell that would split the selection into 2 components', () => {
+    it('accepts a cell that leaves the pending mask split into 2 components', () => {
       service.toggleCell(1, 'y', 0, 0);
-      expect(service.toggleCell(1, 'y', 2, 0)).toBe(false);
-      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 0]);
+      expect(service.toggleCell(1, 'y', 2, 0)).toBe(true);
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 1]);
     });
 
-    it('accepts the same cell once it bridges the gap', () => {
+    it('accepts a later cell that bridges an existing gap', () => {
       service.toggleCell(1, 'y', 0, 0);
-      service.toggleCell(1, 'y', 1, 0);
-      expect(service.toggleCell(1, 'y', 2, 0)).toBe(true);
+      service.toggleCell(1, 'y', 2, 0);
+      expect(service.toggleCell(1, 'y', 1, 0)).toBe(true);
       expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 1, 1]);
     });
 
-    it('selectRect rejects a rectangle disconnected from the existing mask', () => {
+    it('selectRect accepts a rectangle disconnected from the existing mask', () => {
       service.toggleCell(1, 'y', 0, 0);
-      expect(service.selectRect(1, 'y', 2, 0, 2, 0)).toBe(false);
-      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 0]);
+      expect(service.selectRect(1, 'y', 2, 0, 2, 0)).toBe(true);
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 1]);
     });
 
     it('selectRect accepts a rectangle union that stays connected', () => {
@@ -98,7 +102,36 @@ describe('ZonePaintingService', () => {
     });
   });
 
-  describe('finishZone', () => {
+  describe('finishZone connectivity', () => {
+    beforeEach(() => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(3, 1, 1) });
+      service.open(1, fakeSource);
+    });
+
+    it('refuses to commit a disconnected pending mask, and leaves it untouched for the user to fix', () => {
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'y', 2, 0); // leaves a gap at y=1 - disconnected
+
+      const result = service.finishZone(1);
+
+      expect(result).toEqual({ assigned: 0, disconnected: true });
+      expect(service.getSession(1)?.zones).toEqual([]);
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 1]);
+    });
+
+    it('commits once the gap is bridged into one connected mask', () => {
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'y', 2, 0);
+      service.toggleCell(1, 'y', 1, 0); // bridges the gap
+
+      const result = service.finishZone(1);
+
+      expect(result).toEqual({ assigned: 3, disconnected: false });
+      expect(service.getSession(1)?.zones.length).toBe(1);
+    });
+  });
+
+  describe('finishZone assignment', () => {
     beforeEach(() => {
       statuses.set(1, { kind: 'ok', result: buildGrid(2, 2, 1) });
       service.open(1, fakeSource);
@@ -109,7 +142,7 @@ describe('ZonePaintingService', () => {
       service.selectRect(1, 'y', 0, 0, 1, 0); // both ix on the y-view
       service.toggleCell(1, 'z', 0, 0); // just (ix=0, iy=0) on the z-view
 
-      const assigned = service.finishZone(1);
+      const { assigned } = service.finishZone(1);
 
       expect(assigned).toBe(1);
       expect(service.zoneIdAt(1, 0, 0, 0)).toBe(0);
@@ -122,7 +155,7 @@ describe('ZonePaintingService', () => {
     it('treats an untouched axis (x and y left blank) as unconstrained, so only the z-mask restricts the result', () => {
       service.toggleCell(1, 'z', 0, 0); // z-view: only (ix=0, iy=0) selected
 
-      const assigned = service.finishZone(1);
+      const { assigned } = service.finishZone(1);
 
       expect(assigned).toBe(1);
       expect(service.zoneIdAt(1, 0, 0, 0)).toBe(0);
@@ -156,21 +189,13 @@ describe('ZonePaintingService', () => {
       expect(Array.from(service.pendingMask(1, 'x')!)).toEqual([0, 0]);
     });
 
-    // A 3-way mask contradiction (masks that individually looked fine but
-    // share no common voxel) is no longer reachable through toggleCell/
-    // selectRect at all: both now refuse to ADD a cell unless it already
-    // classifies as 'available', and by construction the voxel that made it
-    // available is a live witness that the intersection stays non-empty
-    // after every single successful add. The only way `finishZone` still
-    // returns 0 is the degenerate case below - nothing pending, and every
-    // voxel already belongs to an earlier zone.
     it('returns 0 and creates no new zone when finishing with nothing pending and everything already zoned', () => {
       service.selectRect(1, 'x', 0, 0, 1, 0);
       service.selectRect(1, 'y', 0, 0, 1, 0);
       service.selectRect(1, 'z', 0, 0, 1, 1);
-      expect(service.finishZone(1)).toBe(4); // first zone claims the whole grid
+      expect(service.finishZone(1).assigned).toBe(4); // first zone claims the whole grid
 
-      const assigned = service.finishZone(1); // nothing pending this time
+      const { assigned } = service.finishZone(1); // nothing pending this time
 
       expect(assigned).toBe(0);
       expect(service.getSession(1)?.zones.length).toBe(1);
@@ -185,7 +210,7 @@ describe('ZonePaintingService', () => {
       service.selectRect(1, 'x', 0, 0, 1, 0);
       service.selectRect(1, 'y', 0, 0, 1, 0);
       service.selectRect(1, 'z', 0, 0, 1, 1);
-      expect(service.finishZone(1)).toBe(4);
+      expect(service.finishZone(1).assigned).toBe(4);
     });
 
     it('refuses to toggle a cell whose entire column is already zoned', () => {
