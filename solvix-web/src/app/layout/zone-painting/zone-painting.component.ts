@@ -106,6 +106,11 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   private controls: OrbitControls[] = [];
   private cameraHalfHeights: number[] = new Array(PANEL_COUNT).fill(1);
   private readonly lastPanelSizes: { width: number; height: number }[] = Array.from({ length: PANEL_COUNT }, () => ({ width: 0, height: 0 }));
+  // 0, not window.devicePixelRatio, deliberately - these renderers are
+  // created lazily (ensureRenderersReady, only once this tool is actually
+  // open), so a mismatching sentinel here just means "not set up yet",
+  // same reasoning as lastPanelSizes starting at 0.
+  private lastPixelRatio = 0;
   private readonly framingCenter = new THREE.Vector3();
   private framingRadius = 1;
   private lastSessionId: number | null = null;
@@ -173,6 +178,12 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
     canvases.forEach(canvas => canvas.addEventListener('webglcontextlost', this.onContextLost, false));
     this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
+    // Without this, three.js defaults every renderer to a pixel ratio of 1
+    // regardless of the actual display - sharp on a plain 1x monitor, but
+    // visibly soft/pixelated on anything HiDPI (Retina, most modern
+    // external monitors too).
+    this.lastPixelRatio = window.devicePixelRatio;
+    this.renderers.forEach(renderer => renderer.setPixelRatio(this.lastPixelRatio));
     this.oitRenderers = this.renderers.map(renderer => new WeightedOitRenderer(renderer));
     this.cameras = canvases.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
     this.controls = this.cameras.map((camera, i) => {
@@ -582,6 +593,23 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     source.hiddenDuringView.forEach(object => (object.visible = false));
 
     try {
+      // Same "monitor's own pixel ratio changed underneath us" check as
+      // WorldCanvasComponent.checkResize's own comment - dragging the
+      // window to a display with a different scale factor doesn't
+      // necessarily change any panel's CSS width/height at all, so the
+      // per-panel size-diff check below would never notice on its own.
+      // Resetting lastPanelSizes here forces every panel through that
+      // check again this frame, picking up the new pixel ratio.
+      const pixelRatio = window.devicePixelRatio;
+      if (pixelRatio !== this.lastPixelRatio) {
+        this.lastPixelRatio = pixelRatio;
+        this.renderers.forEach(renderer => renderer.setPixelRatio(pixelRatio));
+        this.lastPanelSizes.forEach(size => {
+          size.width = 0;
+          size.height = 0;
+        });
+      }
+
       const canvases = this.canvasRefs.toArray();
       for (let i = 0; i < canvases.length; i++) {
         // Each panel in its own try/catch - see SixViewOverlayComponent's
