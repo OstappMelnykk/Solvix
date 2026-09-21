@@ -53,12 +53,6 @@
 
     <div class="zone-painting__group">
       <div class="zone-painting__group-label">Малювання</div>
-      <div class="zone-painting__legend">
-        <div><span class="zone-painting__swatch" [style.background]="nextZoneColor()"></span> поточна зона (клікнуто)</div>
-        <div><span class="zone-painting__swatch zone-painting__swatch--available"></span> доступно</div>
-        <div><span class="zone-painting__swatch zone-painting__swatch--excluded"></span> виключено перетином</div>
-        <div><span class="zone-painting__swatch zone-painting__swatch--zoned"></span> вже в іншій зоні</div>
-      </div>
       <button type="button" class="zone-painting__finish-zone" [style.border-color]="nextZoneColor()" (click)="finishZone()">
         Завершити зону
       </button>
