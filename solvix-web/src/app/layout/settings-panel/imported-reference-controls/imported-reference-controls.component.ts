@@ -196,6 +196,25 @@ export class ImportedReferenceControlsComponent {
     this.referenceRender.refreshScaledReference(sessionId);
   }
 
+  // Backs the "Вокселізувати" button's [disabled] - nothing to send while no
+  // reference is imported, no reason to allow re-clicking while a previous
+  // call is still in flight, and no reason to re-run once this exact
+  // reference already has a successful result ('ok'): re-enables itself the
+  // moment that stops being true, since VoxelizationService.clearResult
+  // drops the result back to 'idle' the instant the reference actually
+  // changes underneath it (density, rotation, reset, a new import - see its
+  // own referenceChanged$ subscription). Failure states ('too-large',
+  // 'invalid-mesh', 'error') deliberately stay clickable so the user can
+  // just retry without first having to touch the reference at all.
+  canVoxelize(): boolean {
+    const sessionId = this.sessionId;
+    if (sessionId === null || !this.importedGeometry.get(sessionId)) {
+      return false;
+    }
+    const status = this.getVoxelizationStatus();
+    return status.kind !== 'loading' && status.kind !== 'ok';
+  }
+
   // Sends the currently-shown scaled reference (ImportedReferenceRenderService)
   // to Solvix.Api for voxelization.
   runVoxelization(): void {
