@@ -19,7 +19,6 @@
       <ng-container *ngIf="getSelectedLibraryFileName() as fileName; else noModelSelected">Сітка: {{ fileName }}</ng-container>
       <ng-template #noModelSelected>Обрати сітку</ng-template>
     </button>
-    <button class="tool" type="button" [disabled]="!selectedLibraryId()" (click)="onImportFromLibrary()">Імпортувати</button>
   </div>
 
   <app-model-library-picker

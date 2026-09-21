@@ -152,25 +152,29 @@ export class SettingsPanelComponent {
     this.isPickerOpen.set(true);
   }
 
+  // Picking a card in the modal imports it immediately - no separate
+  // "Імпортувати" click needed anymore (explicit user request: selecting a
+  // mesh from the library should behave the same as picking a local file
+  // in the plain <input type="file"> above, which also imports on pick).
   onLibraryPicked(entry: ModelLibraryEntryDto): void {
     this.selectedLibraryId.set(entry.id);
     this.isPickerOpen.set(false);
+    this.importLibraryEntry(entry);
   }
 
   onLibraryPickerClosed(): void {
     this.isPickerOpen.set(false);
   }
 
-  // Downloads the picker-selected library entry's bytes and feeds them
-  // through the SAME loadFromFile/onFileLoaded/onFileLoadError path as
-  // onImportFile - reconstructing a File from the downloaded bytes plus
-  // the entry's remembered original fileName is enough for
-  // ModelImportService's extension-based loader dispatch to work
-  // unchanged (it matches purely on File.name).
-  onImportFromLibrary(): void {
-    const entry = this.libraryEntries().find(candidate => candidate.id === this.selectedLibraryId());
+  // Downloads `entry`'s bytes and feeds them through the SAME
+  // loadFromFile/onFileLoaded/onFileLoadError path as onImportFile -
+  // reconstructing a File from the downloaded bytes plus the entry's
+  // remembered original fileName is enough for ModelImportService's
+  // extension-based loader dispatch to work unchanged (it matches purely
+  // on File.name).
+  private importLibraryEntry(entry: ModelLibraryEntryDto): void {
     const sessionId = this.sessionId();
-    if (!entry || sessionId === null) {
+    if (sessionId === null) {
       return;
     }
 
