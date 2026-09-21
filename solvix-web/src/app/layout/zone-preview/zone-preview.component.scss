@@ -4,12 +4,20 @@
 // covers the other 50% with an opaque background, so the 2 components only
 // ever need to agree on the number "50%", not on each other's exact pixel
 // layout.
+//
+// top/height ARE the one exception to that - they must match
+// .zone-list__header's own explicit height (48px, that file's own comment)
+// exactly, or this starts at the screen's very top and the header (opaque,
+// z-index 1000) draws over its top 48px, leaving less of the voxel panel
+// actually visible than the STL panel below it (a lopsided, "header on top
+// of the preview" look instead of the preview cleanly starting right below
+// the header).
 :host {
   position: fixed;
-  top: 0;
+  top: 48px;
   left: 0;
   width: 50%;
-  height: 100%;
+  height: calc(100% - 48px);
   z-index: 999;
   display: flex;
   flex-direction: column;

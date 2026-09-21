@@ -5,9 +5,20 @@
 //
 // No background here (deliberately) - ZonePreviewComponent sits one z-index
 // behind this (999) and shows through wherever THIS host has no opaque
-// content of its own. The header below and .zone-list__body each carry
+// content of its own. The header below and .zone-list__panel each carry
 // their own explicit background instead, covering exactly the regions that
 // are actually this component's own UI.
+//
+// pointer-events:none is REQUIRED here, not cosmetic - same idiom as
+// ToastContainerComponent's own :host. Without it, this host's own box (and
+// .zone-list__row's, which stretches full-width via flex's default
+// align-items:stretch) is a plain, invisible-but-still-hit-testable
+// rectangle covering the WHOLE screen, including the left half with no
+// actual content of ours in it - it silently absorbed every click/drag
+// meant for ZonePreviewComponent underneath, which is exactly why its
+// panels were reported as completely non-interactive (no orbit, nothing).
+// .zone-list__header and .zone-list__panel opt back into pointer-events:auto
+// since those ARE this component's real, interactive UI.
 :host {
   position: fixed;
   inset: 0;
@@ -16,13 +27,21 @@
   flex-direction: column;
   font-family: sans-serif;
   color: #dfe1e5;
+  pointer-events: none;
 }
 
 :host([hidden]) {
   display: none;
 }
 
+// height is EXPLICIT and fixed (not left to intrinsic content sizing) so
+// ZonePreviewComponent's own :host can offset itself by this exact same
+// number (its own .scss, cross-referenced there) and start right below
+// this header instead of underneath it - see that component's own comment.
 .zone-list__header {
+  pointer-events: auto;
+  height: 48px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -78,6 +97,7 @@
 // actual content stays at its original ~520px reading width, centered
 // within this panel rather than stretched across the full half.
 .zone-list__panel {
+  pointer-events: auto;
   flex: 0 0 50%;
   max-width: 50%;
   min-height: 0;
