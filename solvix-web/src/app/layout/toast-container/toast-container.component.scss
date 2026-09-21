@@ -1,8 +1,17 @@
+// Above the zone list (1000) AND the 2-step wizard
+// (ZonePaintingComponent/SurfaceZonePaintingComponent, 1100) - notifications
+// must always float on top of every full-screen tool. Previously tied with
+// the zone list at 1000: with equal z-index, later DOM order wins the
+// stack, and this component is mounted last in app.component.html, so any
+// toast still on screen (error toasts last 25s) sat on top of the zone
+// list's own buttons in that same bottom-left region, silently eating
+// clicks there even after the toast's own opaque background would suggest
+// otherwise to a quick glance.
 :host {
   position: fixed;
   left: 16px;
   bottom: 16px;
-  z-index: 1000;
+  z-index: 1200;
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
