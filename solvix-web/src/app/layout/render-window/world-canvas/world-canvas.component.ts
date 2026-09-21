@@ -254,6 +254,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private frameId = 0;
   private lastWidth = 0;
   private lastHeight = 0;
+  // Read once here (construction time) rather than a fixed sentinel like
+  // lastWidth/lastHeight's 0 - checkResize below only needs to react to it
+  // actually CHANGING (e.g. the browser window dragged to a monitor with a
+  // different scale factor), not to treat the very first frame as a change
+  // when initScene has already set the renderer up with this same value.
+  private lastPixelRatio = window.devicePixelRatio;
   private onContextLost = (event: Event) => event.preventDefault();
   // checkResize() alone is a no-op whenever the canvas's own CSS size
   // hasn't changed (the common case for a context loss/restore, which
@@ -988,12 +994,22 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (width === 0 || height === 0) {
       return;
     }
-    if (width === this.lastWidth && height === this.lastHeight) {
+    // window.devicePixelRatio is a per-MONITOR value, not per-window - it
+    // can change without any CSS width/height change at all (dragging the
+    // window to a display with a different scale factor), which the old
+    // width/height-only check below would never notice, leaving the
+    // renderer's internal drawing buffer sized for whichever monitor the
+    // app happened to start on - the actual cause of the reported
+    // pixelation on a bigger/different monitor.
+    const pixelRatio = window.devicePixelRatio;
+    if (width === this.lastWidth && height === this.lastHeight && pixelRatio === this.lastPixelRatio) {
       return;
     }
     this.lastWidth = width;
     this.lastHeight = height;
+    this.lastPixelRatio = pixelRatio;
     this.updateCameraFrustum(width, height);
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height);
     this.oitRenderer.setSize(width, height);
     // The hole highlight's own LineMaterial (geometry/scene-objects/
