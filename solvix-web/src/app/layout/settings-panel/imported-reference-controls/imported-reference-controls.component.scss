@@ -91,6 +91,36 @@ h4 {
   }
 }
 
+.tool:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+
+  &:hover {
+    border-color: $field-border;
+  }
+}
+
+// The one mandatory step in this whole panel - without it nothing
+// downstream (zone painting, etc.) works, so it gets a filled accent
+// background instead of the flat dark look every other .tool button uses,
+// same weight as the top-level "Import model" action in settings-panel.
+.tool--primary {
+  background: $accent-toggle;
+  border-color: $accent-toggle;
+  color: #fff;
+  font-weight: 700;
+  padding: 9px 10px;
+
+  &:hover {
+    background: darken($accent-toggle, 6%);
+    border-color: darken($accent-toggle, 6%);
+  }
+}
+
+.group--voxelize {
+  border-color: rgba($accent-toggle, 0.4);
+}
+
 .row {
   display: flex;
   align-items: center;

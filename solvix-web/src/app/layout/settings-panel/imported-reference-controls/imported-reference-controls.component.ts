@@ -196,6 +196,25 @@ export class ImportedReferenceControlsComponent {
     this.referenceRender.refreshScaledReference(sessionId);
   }
 
+  // Backs the "Вокселізувати" button's [disabled] - nothing to send while no
+  // reference is imported, no reason to allow re-clicking while a previous
+  // call is still in flight, and no reason to re-run once this exact
+  // reference already has a successful result ('ok'): re-enables itself the
+  // moment that stops being true, since VoxelizationService.clearResult
+  // drops the result back to 'idle' the instant the reference actually
+  // changes underneath it (density, rotation, reset, a new import - see its
+  // own referenceChanged$ subscription). Failure states ('too-large',
+  // 'invalid-mesh', 'error') deliberately stay clickable so the user can
+  // just retry without first having to touch the reference at all.
+  canVoxelize(): boolean {
+    const sessionId = this.sessionId;
+    if (sessionId === null || !this.importedGeometry.get(sessionId)) {
+      return false;
+    }
+    const status = this.getVoxelizationStatus();
+    return status.kind !== 'loading' && status.kind !== 'ok';
+  }
+
   // Sends the currently-shown scaled reference (ImportedReferenceRenderService)
   // to Solvix.Api for voxelization.
   runVoxelization(): void {
@@ -204,6 +223,28 @@ export class ImportedReferenceControlsComponent {
       return;
     }
     this.voxelization.run(sessionId);
+  }
+
+  // Backs "Скинути вокселізацію" - nothing to reset from 'idle' (matches
+  // canVoxelize's own "nothing to send" guard in spirit).
+  canResetVoxelization(): boolean {
+    const sessionId = this.sessionId;
+    return sessionId !== null && this.getVoxelizationStatus().kind !== 'idle';
+  }
+
+  // Deletes every voxel (and any manual add/remove edits on top of them),
+  // putting "Вокселізувати" back to clickable without first having to
+  // change the reference itself - destructive and irreversible, hence the
+  // confirm, same as zone-painting's own "Скинути всі зони".
+  resetVoxelization(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    if (!window.confirm('Скинути вокселізацію? Усі вокселі та ручні правки буде видалено. Це незворотно.')) {
+      return;
+    }
+    this.voxelization.resetVoxelization(sessionId);
   }
 
   isVoxelPreviewVisible(): boolean {
