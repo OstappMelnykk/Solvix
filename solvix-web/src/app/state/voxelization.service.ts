@@ -377,6 +377,17 @@ export class VoxelizationService {
     }
   }
 
+  // "Скинути вокселізацію" - the explicit, user-driven equivalent of
+  // clearResult below (which only ever fires automatically, off the
+  // reference actually changing). Exists because canVoxelize() disables
+  // "Вокселізувати" once a result exists for the CURRENT reference - this
+  // is how a user redoes it (a bad result, or manual voxel edits they want
+  // to abandon) without first having to nudge the reference just to trigger
+  // the automatic invalidation.
+  resetVoxelization(sessionId: number): void {
+    this.clearResult(sessionId);
+  }
+
   // Drops a session's result the moment its geometry changes underneath it
   // (see the referenceChanged$ subscription above) - back to idle, no
   // preview, so the old cubes never linger next to (or inside) geometry

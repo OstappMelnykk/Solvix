@@ -18,6 +18,15 @@
       <span *ngIf="voxelStatus.kind === 'error'">Не вдалось виконати вокселізацію</span>
     </div>
   </ng-container>
+  <button
+    class="tool"
+    type="button"
+    [disabled]="!canResetVoxelization()"
+    title="Видалити всі вокселі й ручні правки, щоб можна було зробити нову вокселізацію"
+    (click)="resetVoxelization()"
+  >
+    Скинути вокселізацію
+  </button>
 </div>
 
 <h4>Вигляд геометрії</h4>

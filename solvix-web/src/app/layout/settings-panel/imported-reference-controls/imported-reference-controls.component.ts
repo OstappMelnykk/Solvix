@@ -225,6 +225,28 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.run(sessionId);
   }
 
+  // Backs "Скинути вокселізацію" - nothing to reset from 'idle' (matches
+  // canVoxelize's own "nothing to send" guard in spirit).
+  canResetVoxelization(): boolean {
+    const sessionId = this.sessionId;
+    return sessionId !== null && this.getVoxelizationStatus().kind !== 'idle';
+  }
+
+  // Deletes every voxel (and any manual add/remove edits on top of them),
+  // putting "Вокселізувати" back to clickable without first having to
+  // change the reference itself - destructive and irreversible, hence the
+  // confirm, same as zone-painting's own "Скинути всі зони".
+  resetVoxelization(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    if (!window.confirm('Скинути вокселізацію? Усі вокселі та ручні правки буде видалено. Це незворотно.')) {
+      return;
+    }
+    this.voxelization.resetVoxelization(sessionId);
+  }
+
   isVoxelPreviewVisible(): boolean {
     const sessionId = this.sessionId;
     return sessionId !== null && this.referenceDisplay.getStyle(sessionId).voxelPreviewVisible;

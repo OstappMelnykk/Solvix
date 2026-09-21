@@ -732,6 +732,53 @@ describe('VoxelizationService', () => {
     });
   });
 
+  describe('resetVoxelization', () => {
+    it('drops the result, the preview, and disposes it', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      const preview = voxelization.getVoxelPreview(sessionId)!;
+      const fill = preview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      const disposeSpy = spyOn(fill, 'dispose').and.callThrough();
+
+      voxelization.resetVoxelization(sessionId);
+
+      expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'idle' });
+      expect(voxelization.getVoxelPreview(sessionId)).toBeNull();
+      expect(disposeSpy).toHaveBeenCalled();
+    });
+
+    it('lets a fresh run() start again for the same reference afterward', () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      voxelization.resetVoxelization(sessionId);
+
+      voxelization.run(sessionId);
+
+      expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'loading' });
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      expect(voxelization.getStatus(sessionId).kind).toBe('ok');
+    });
+
+    it("discards a run that was still in flight when reset happened", () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      const inFlight = httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`);
+
+      voxelization.resetVoxelization(sessionId);
+      inFlight.flush(encodeGrid(1));
+
+      expect(voxelization.getStatus(sessionId)).toEqual({ kind: 'idle' });
+    });
+  });
+
   it("discards a superseded run's response instead of letting it clobber a newer result", () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(), 'model.glb');
