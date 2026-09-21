@@ -20,6 +20,17 @@
   </div>
 
   <div class="surface-zone-painting__sidebar">
+    <!-- Status - always visible at the top, same idiom as step 1. -->
+    <div class="surface-zone-painting__status">
+      <div class="surface-zone-painting__status-row">
+        <span>{{ coverageText() }}</span>
+        <span>{{ coveragePercent() }}%</span>
+      </div>
+      <div class="surface-zone-painting__progress-bar">
+        <div class="surface-zone-painting__progress-fill" [style.width.%]="coveragePercent()"></div>
+      </div>
+    </div>
+
     <!-- The ONE thing the user asked to be unmissable: which zone is
          currently active. A single big banner, not a list to scan. -->
     <div class="surface-zone-painting__current-zone" [style.border-color]="currentZoneColor()">
@@ -36,7 +47,8 @@
       <span class="surface-zone-painting__current-zone-label">{{ currentZoneLabel() }}</span>
     </div>
 
-    <div class="surface-zone-painting__brush-picker">
+
+    <div class="surface-zone-painting__group">
       <div class="surface-zone-painting__zone-picker-label">Інструмент</div>
       <div class="surface-zone-painting__mode-row">
         <button
@@ -67,27 +79,22 @@
       >
         <span class="surface-zone-painting__brush-dot" [style.width.px]="dotSizeFor(size)" [style.height.px]="dotSizeFor(size)"></span>
       </button>
+
+      <button type="button" class="surface-zone-painting__finish" (click)="finishSelection()">Завершити виділення</button>
     </div>
 
-    <button type="button" class="surface-zone-painting__finish" (click)="finishSelection()">Завершити виділення</button>
-
-    <p class="surface-zone-painting__coverage">{{ coverageText() }}</p>
-
-    <!-- THE primary action - big, bold, impossible to miss (per explicit
-         feedback that the old "Зберегти" button was buried). Drives the
-         whole flow: confirms the current zone and moves to the next one,
-         relabeling itself to the real, final "Зберегти" on the last zone. -->
-    <button
-      type="button"
-      class="surface-zone-painting__primary-action"
-      *ngIf="!isSaved()"
-      [disabled]="!canRunPrimaryAction()"
-      (click)="runPrimaryAction()"
-    >
-      {{ primaryActionLabel() }}
-    </button>
-    <p class="surface-zone-painting__saved" *ngIf="isSaved()">Розмітку STL збережено.</p>
-
-    <button type="button" class="surface-zone-painting__reset" (click)="resetSelections()">Скинути розмітку STL</button>
+    <!-- Pushed to the bottom and visually the loudest thing in the panel -
+         per explicit user request that Save shouldn't be lost among the
+         brush tools/subdivisions input. -->
+    <div class="surface-zone-painting__primary-action">
+      <p class="surface-zone-painting__saved" *ngIf="isSaved()">Розмітку STL збережено.</p>
+      <ng-container *ngIf="!isSaved()">
+        <button type="button" class="surface-zone-painting__primary-button" [disabled]="!canRunPrimaryAction()" (click)="runPrimaryAction()">
+          {{ primaryActionLabel() }}
+        </button>
+        <p class="surface-zone-painting__save-hint" *ngIf="saveDisabledReason() as reason">{{ reason }}</p>
+      </ng-container>
+      <button type="button" class="surface-zone-painting__reset-link" (click)="resetSelections()">Скинути всю розмітку STL</button>
+    </div>
   </div>
 </div>

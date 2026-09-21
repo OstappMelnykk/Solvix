@@ -187,6 +187,48 @@
   font-size: 11px;
 }
 
+// Always-visible top status - same idiom as zone-painting.component.scss's
+// own .zone-painting__status (duplicated for the same encapsulation
+// reason as everything else in this file).
+.surface-zone-painting__status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.surface-zone-painting__status-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #9aa0a6;
+}
+
+.surface-zone-painting__progress-bar {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.surface-zone-painting__progress-fill {
+  height: 100%;
+  background: #f4a261;
+  transition: width 0.15s ease;
+}
+
+// One visual card per sidebar section - same "group" idiom as
+// zone-painting.component.scss/settings-panel.component.scss elsewhere.
+.surface-zone-painting__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
 // The single, unmissable "which zone am I painting right now" banner -
 // replaces an earlier list-of-buttons design real feedback said made the
 // active zone unclear. A thick colored border (the zone's own color) plus
@@ -235,12 +277,6 @@
   font-size: 14px;
   font-weight: 700;
   color: #f2f3f5;
-}
-
-.surface-zone-painting__brush-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .surface-zone-painting__mode-row {
@@ -314,16 +350,21 @@
   }
 }
 
-.surface-zone-painting__coverage {
-  margin: 0;
-  font-size: 11px;
-  color: #9aa0a6;
+// The bottom-anchored block (margin-top: auto pushes it down within the
+// sidebar's own flex column) holding the primary action - the loudest
+// thing in the panel by design, per explicit user request that Save
+// shouldn't be lost among the brush tools/subdivisions input.
+.surface-zone-painting__primary-action {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 // THE primary action of this whole screen - explicitly made big/bold/
 // impossible-to-miss per real feedback that the earlier "Зберегти" button
 // was too easy to lose among the other sidebar controls.
-.surface-zone-painting__primary-action {
+.surface-zone-painting__primary-button {
   padding: 12px 14px;
   background: rgba(42, 157, 143, 0.22);
   border: 2px solid #2a9d8f;
@@ -344,30 +385,42 @@
   }
 }
 
-.surface-zone-painting__saved {
+.surface-zone-painting__save-hint {
   margin: 0;
   font-size: 11px;
+  color: #9aa0a6;
+  line-height: 1.4;
+}
+
+.surface-zone-painting__saved {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
   color: #7fe0d1;
 }
 
-.surface-zone-painting__reset {
-  margin-top: auto;
-  padding: 6px 14px;
-  background: rgba(230, 57, 70, 0.12);
-  border: 1px solid rgba(230, 57, 70, 0.45);
-  border-radius: 6px;
-  color: #f2b8bd;
-  font-size: 12px;
+// Destructive AND rare - deliberately understated (plain text, no border/
+// background) so it never competes visually with .surface-zone-painting__primary-button
+// right above it. Always confirmed before it does anything
+// (SurfaceZonePaintingComponent.resetSelections).
+.surface-zone-painting__reset-link {
+  padding: 4px 0;
+  background: none;
+  border: none;
+  color: #b8747b;
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  align-self: flex-start;
+  transition: color 0.15s ease;
 
   &:hover {
-    background: rgba(230, 57, 70, 0.22);
-    border-color: #e63946;
+    color: #e63946;
   }
 
   &:focus-visible {
     outline: none;
-    border-color: #f4a261;
+    color: #e63946;
   }
 }

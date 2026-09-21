@@ -283,6 +283,29 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     return coverage ? `Розмічено: ${coverage.assigned} / ${coverage.total} вокселів` : '';
   }
 
+  // The sidebar's top status bar (zone-painting.component.html) - 0 rather
+  // than NaN/100 when there's nothing occupied yet (coverage.total === 0),
+  // so the bar starts empty instead of misleadingly full.
+  coveragePercent(): number {
+    const sessionId = this.zonePainting.activeSessionId();
+    const coverage = sessionId === null ? null : this.zonePainting.coverage(sessionId);
+    return coverage && coverage.total > 0 ? Math.round((coverage.assigned / coverage.total) * 100) : 0;
+  }
+
+  // Explains why "Зберегти" is disabled - shown right under it instead of
+  // leaving the user to guess from a plain disabled button.
+  saveDisabledReason(): string | null {
+    if (this.isSaved() || this.canSave()) {
+      return null;
+    }
+    const sessionId = this.zonePainting.activeSessionId();
+    const coverage = sessionId === null ? null : this.zonePainting.coverage(sessionId);
+    if (!coverage || coverage.total === 0) {
+      return null;
+    }
+    return `Ще не всі вокселі розмічені по зонах (${coverage.assigned} / ${coverage.total}). Домалюйте решту або натисніть "Завершити зону" для поточного виділення.`;
+  }
+
   nextZoneColor(): string {
     const sessionId = this.zonePainting.activeSessionId();
     return sessionId === null ? '#888' : this.zonePainting.nextZoneColor(sessionId);
