@@ -7,6 +7,7 @@ import { ActiveWorldService } from '../../state/active-world.service';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
 import { ModelImportService } from '../../geometry/model-import.service';
 import { ModelLibraryApiService, ModelLibraryEntryDto } from '../../api/model-library-api.service';
 import { disposeObject3D } from '../../geometry/dispose-object3d';
@@ -39,6 +40,7 @@ export class SettingsPanelComponent {
   private readonly activeWorld = inject(ActiveWorldService);
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly modelImport = inject(ModelImportService);
   private readonly modelLibraryApi = inject(ModelLibraryApiService);
   private readonly destroyRef = inject(DestroyRef);
@@ -266,5 +268,38 @@ export class SettingsPanelComponent {
       return { kind: 'none' };
     }
     return info.watertight ? { kind: 'success', fileName: info.fileName } : { kind: 'not-watertight', fileName: info.fileName };
+  }
+
+  // Backs the "Показати/Приховати дірки" toggle next to the not-watertight
+  // status - only ever shown for a not-watertight import in the first
+  // place, so no extra guard needed here beyond the usual null sessionId.
+  isHolesVisible(): boolean {
+    const sessionId = this.sessionId();
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).holesVisible;
+  }
+
+  toggleHolesVisible(): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setHolesVisible(sessionId, !this.isHolesVisible());
+  }
+
+  // Backs the "Мітки '!' на дірках" checkbox - independent of the outline/
+  // fill toggle above, since the marker pins sit on top of the geometry at
+  // a fixed screen size and get in the way once the user zooms in close
+  // enough to actually inspect a hole (they'd rather see just the outline).
+  isHoleMarkersVisible(): boolean {
+    const sessionId = this.sessionId();
+    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).holeMarkersVisible;
+  }
+
+  toggleHoleMarkersVisible(): void {
+    const sessionId = this.sessionId();
+    if (sessionId === null) {
+      return;
+    }
+    this.referenceDisplay.setHoleMarkersVisible(sessionId, !this.isHoleMarkersVisible());
   }
 }

@@ -103,6 +103,19 @@ export class RenderWindowComponent {
     return this.importedReferenceRender.getRuler(sessionId);
   }
 
+  // Ideal-World-only, independent of getImportedReference's own visibility
+  // (ImportedReferenceStyle.holesVisible) - same reasoning as getDimensionLines.
+  getHoleHighlight(worldIndex: number): THREE.Object3D | null {
+    if (worldIndex !== IDEAL_WORLD_INDEX) {
+      return null;
+    }
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null || !this.importedReferenceDisplay.getStyle(sessionId).holesVisible) {
+      return null;
+    }
+    return this.importedReferenceRender.getHoleHighlight(sessionId);
+  }
+
   // No getVoxelPreview() here, unlike the overlays above - WorldCanvasComponent
   // computes voxel preview visibility itself, reading VoxelizationService/
   // ImportedReferenceDisplayService directly every frame instead of

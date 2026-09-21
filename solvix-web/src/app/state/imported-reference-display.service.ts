@@ -33,6 +33,19 @@ export interface ImportedReferenceStyle {
   // keeps it cached either way - this only gates whether RenderWindowComponent
   // hands it to WorldCanvasComponent).
   readonly voxelPreviewVisible: boolean;
+  // Whether the not-watertight highlight (geometry/scene-objects/hole-highlight.ts)
+  // is shown on top of the reference - only meaningful when the import
+  // actually has boundary edges (ImportedGeometryService.watertight === false);
+  // off by default so a perfectly fine import never shows an empty toggle
+  // doing nothing.
+  readonly holesVisible: boolean;
+  // Whether the constant-screen-size "!" marker pins (geometry/scene-objects/hole-highlight.ts)
+  // are shown - independent of `holesVisible`, so the precise outline/fill
+  // can stay on while the marker (which sits ON TOP of the geometry and can
+  // get in the way of inspecting a hole up close) is turned off. On by
+  // default, matching holesVisible's own off-by-default reasoning for the
+  // opposite case (nothing to toggle until there's a hole at all).
+  readonly holeMarkersVisible: boolean;
 }
 
 const DEFAULT_STYLE: ImportedReferenceStyle = {
@@ -44,7 +57,9 @@ const DEFAULT_STYLE: ImportedReferenceStyle = {
   rulerVisible: false,
   rulerDistance: 1,
   rotateGizmoVisible: true,
-  voxelPreviewVisible: true
+  voxelPreviewVisible: true,
+  holesVisible: false,
+  holeMarkersVisible: true
 };
 
 // How the imported reference geometry (ImportedGeometryService) should be
@@ -101,6 +116,14 @@ export class ImportedReferenceDisplayService {
 
   setVoxelPreviewVisible(sessionId: number, visible: boolean): void {
     this.update(sessionId, { voxelPreviewVisible: visible });
+  }
+
+  setHolesVisible(sessionId: number, visible: boolean): void {
+    this.update(sessionId, { holesVisible: visible });
+  }
+
+  setHoleMarkersVisible(sessionId: number, visible: boolean): void {
+    this.update(sessionId, { holeMarkersVisible: visible });
   }
 
   private update(sessionId: number, patch: Partial<ImportedReferenceStyle>): void {

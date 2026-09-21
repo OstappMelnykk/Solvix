@@ -8,6 +8,8 @@ import { ImportedReferenceDisplayService } from './imported-reference-display.se
 import { recenterAtOrigin } from '../geometry/recenter-object3d';
 import { buildDimensionLines, disposeDimensionLines } from '../geometry/dimension-lines';
 import { buildRulerPreview, disposeRulerPreview } from '../geometry/ruler-preview';
+import { buildHoleHighlight, disposeHoleHighlight } from '../geometry/scene-objects/hole-highlight';
+import { findHoleBoundaryClusters, findHoleBoundaryEdges, findHoleBoundaryLoops } from '../geometry/watertight-check';
 
 const DEFAULT_DENSITY = 10;
 const MIN_DENSITY = 1;
@@ -49,6 +51,13 @@ export class ImportedReferenceRenderService {
   // - owns its own geometry/materials same as dimensionLinesBySession, so
   // also needs disposing on prune/rebuild.
   private readonly rulerBySession = new KeyedStore<number, THREE.Object3D>();
+  // Bright highlight tubes on exactly the boundary edges a hole punches into
+  // the surface (geometry/scene-objects/hole-highlight.ts) - same
+  // recompute-on-rebuild, dispose-on-swap lifecycle as dimensionLines/ruler
+  // above (own geometry/material, not shared with ImportedGeometryService).
+  // Rebuilt from the CURRENT scaled clone rather than cached from import
+  // time, so it always matches whatever density/rotation is actually shown.
+  private readonly holeHighlightBySession = new KeyedStore<number, THREE.Object3D>();
   // User-driven rotation of the reference (rotate gizmo, WorldCanvasComponent) -
   // applied around the pivot's local origin, which ImportedGeometryService
   // arranges to be the object's own geometric center. Absent = identity
@@ -77,6 +86,7 @@ export class ImportedReferenceRenderService {
       this.scaledReferenceBySession.pruneTo(ids);
       this.dimensionLinesBySession.pruneTo(ids, lines => disposeDimensionLines(lines));
       this.rulerBySession.pruneTo(ids, ruler => disposeRulerPreview(ruler));
+      this.holeHighlightBySession.pruneTo(ids, highlight => disposeHoleHighlight(highlight));
       this.rotationBySession.pruneTo(ids);
     });
   }
@@ -121,6 +131,14 @@ export class ImportedReferenceRenderService {
   // tick-mark ruler matching whatever's currently shown.
   getRuler(sessionId: number): THREE.Object3D | null {
     return this.rulerBySession.get(sessionId) ?? null;
+  }
+
+  // Same identity-cache reasoning as getScaledReference - the hole-boundary
+  // highlight (geometry/scene-objects/hole-highlight.ts). null both when
+  // nothing's imported AND when the current import is actually watertight
+  // (nothing to highlight).
+  getHoleHighlight(sessionId: number): THREE.Object3D | null {
+    return this.holeHighlightBySession.get(sessionId) ?? null;
   }
 
   // User-driven rotation (rotate gizmo) applied around the reference's own
@@ -171,6 +189,7 @@ export class ImportedReferenceRenderService {
     if (!info || scale === null) {
       this.scaledReferenceBySession.delete(sessionId);
       this.rulerBySession.delete(sessionId);
+      this.holeHighlightBySession.delete(sessionId);
       // Still emits, even though there's no new reference to show - a
       // consumer that cached something computed from the PREVIOUS
       // reference (VoxelizationService's voxel preview) needs to know
@@ -202,6 +221,43 @@ export class ImportedReferenceRenderService {
     dimensionLines.position.copy(clone.position);
     dimensionLines.quaternion.copy(clone.quaternion);
     this.dimensionLinesBySession.set(sessionId, dimensionLines);
+
+    // Same "not disposed here" reasoning as dimensionLines above - whatever
+    // was previously cached is only ever freed once WorldCanvasComponent
+    // actually swaps it out of the scene (updateHoleHighlight), never here.
+    if (info.watertight) {
+      this.holeHighlightBySession.delete(sessionId);
+    } else {
+      // Must land in the SAME local, pivot-centered frame as dimensionLines/
+      // localBox above (not clone's own world-baked positions) - clone
+      // ALREADY has scale+rotation+position applied, so computing edges off
+      // clone.matrixWorld and then ALSO copying clone.position/quaternion
+      // onto the result (like below) would apply that same transform
+      // twice, which is exactly what put the highlight nowhere near the
+      // actual mesh. info.object (the un-rotated, un-scaled pivot) has a
+      // fixed, translation-only offset of its own (info.object.position,
+      // set once at import time by recenterAtOrigin grounding it to the
+      // floor) relative to the true object-centered origin dimensionLines'
+      // localBox assumes - subtracting it here recovers that frame, then
+      // `* scale` matches localBox's own scaling.
+      info.object.updateMatrixWorld(true);
+      const pivotOffset = info.object.position;
+      const toLocalFrame = (point: THREE.Vector3) => point.clone().sub(pivotOffset).multiplyScalar(scale);
+      const holeEdges = findHoleBoundaryEdges(info.object).map(edge => ({
+        a: toLocalFrame(edge.a),
+        b: toLocalFrame(edge.b)
+      }));
+      const holeLoops = findHoleBoundaryLoops(info.object).map(loop => loop.map(toLocalFrame));
+      const holeClusters = findHoleBoundaryClusters(info.object).map(cluster => cluster.map(toLocalFrame));
+      const highlight = buildHoleHighlight(holeEdges, holeLoops, holeClusters);
+      if (highlight) {
+        highlight.position.copy(clone.position);
+        highlight.quaternion.copy(clone.quaternion);
+        this.holeHighlightBySession.set(sessionId, highlight);
+      } else {
+        this.holeHighlightBySession.delete(sessionId);
+      }
+    }
 
     this.refreshRuler(sessionId);
     this.referenceChanged.next(sessionId);
