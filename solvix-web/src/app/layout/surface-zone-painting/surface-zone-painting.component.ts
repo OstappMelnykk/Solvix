@@ -445,6 +445,15 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     return this.surfaceZonePainting.subdivisions();
   }
 
+  // Bound as the number input's real `max` attribute (surface-zone-painting.
+  // component.html) - see maxSubdivisionsForSession's own comment for why a
+  // real HTML max, not just a post-hoc JS clamp, is what actually stops the
+  // browser's spinner/scroll from visibly outrunning the clamped value.
+  maxShellSubdivisions(): number {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    return sessionId === null ? this.shellSubdivisions() : this.surfaceZonePainting.maxSubdivisionsForSession(sessionId);
+  }
+
   // Rebuilds the CURRENT session's shell grid at the new resolution, live,
   // with no confirmation - changing this mid-session does discard whatever
   // was already painted here (the grid's own cell layout changes), but the

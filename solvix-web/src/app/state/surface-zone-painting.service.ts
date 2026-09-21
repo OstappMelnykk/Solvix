@@ -194,6 +194,28 @@ export class SurfaceZonePaintingService {
     this.subdivisions.set(Math.min(SAFETY_MAX_SHELL_SUBDIVISIONS, Math.max(MIN_SHELL_SUBDIVISIONS, Math.round(value))));
   }
 
+  // The actual ceiling `subdivisions` gets clamped against for THIS
+  // session (open()'s own comment) - exposed so the component can bind it
+  // as the number input's real `max` attribute instead of only enforcing
+  // it after the fact. Without a bound `max`, the browser's own spinner/
+  // scroll increments keep advancing the DISPLAYED value past whatever
+  // open() actually clamped `subdivisions` back down to, since Angular's
+  // [value] binding skips re-writing the DOM when the bound expression
+  // happens to already equal what it last wrote - a real max attribute
+  // stops the browser incrementing past it in the first place, so the two
+  // can never visibly disagree.
+  maxSubdivisionsForSession(sessionId: number): number {
+    const voxelSession = this.zonePainting.getSession(sessionId);
+    if (!voxelSession) {
+      return SAFETY_MAX_SHELL_SUBDIVISIONS;
+    }
+    return this.maxSubdivisionsForVoxelCellCount(voxelSession.grid.countX * voxelSession.grid.countY * voxelSession.grid.countZ);
+  }
+
+  private maxSubdivisionsForVoxelCellCount(voxelCellCount: number): number {
+    return Math.max(MIN_SHELL_SUBDIVISIONS, Math.floor(Math.cbrt(MAX_TOTAL_SHELL_CELLS / Math.max(1, voxelCellCount))));
+  }
+
   // Opens the window for `sessionId` - refuses unless the voxel zoning is
   // both successful AND explicitly saved (see the file header's point 3).
   // Rebuilds the shell grid + a fresh session whenever the voxel zone LIST
@@ -223,10 +245,7 @@ export class SurfaceZonePaintingService {
     // what this one open() call uses) so the displayed value never lies
     // about what the grid actually got built with.
     const voxelCellCount = voxelSession.grid.countX * voxelSession.grid.countY * voxelSession.grid.countZ;
-    const maxSubdivisionsForGrid = Math.max(
-      MIN_SHELL_SUBDIVISIONS,
-      Math.floor(Math.cbrt(MAX_TOTAL_SHELL_CELLS / Math.max(1, voxelCellCount)))
-    );
+    const maxSubdivisionsForGrid = this.maxSubdivisionsForVoxelCellCount(voxelCellCount);
     if (this.subdivisions() > maxSubdivisionsForGrid) {
       this.subdivisions.set(maxSubdivisionsForGrid);
     }
