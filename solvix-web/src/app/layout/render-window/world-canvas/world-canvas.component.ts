@@ -895,6 +895,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!violation) {
       return null;
     }
+    if (violation.kind === 'last-cube') {
+      return 'Видалення заборонено: це останній воксель - вокселізація не може бути порожньою';
+    }
     return `Видалення заборонено: геометрія розпадеться на ${violation.componentSizes.length} частини (${violation.componentSizes.join(' + ')} кубів)`;
   }
 

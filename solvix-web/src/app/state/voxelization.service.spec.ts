@@ -621,13 +621,13 @@ describe('VoxelizationService', () => {
       expect(voxelization.getVoxelPreview(sessionId)).toBe(preview); // untouched, no rebuild happened
     });
 
-    it('removes the currently selected cell', () => {
+    it('removes the currently selected cell, leaving the rest of the model behind', () => {
       const sessionId = sessions.sessions()[0].id;
       importedGeometry.set(sessionId, box(), 'model.glb');
       referenceRender.setDensity(sessionId, 10);
       voxelization.run(sessionId);
-      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
-      voxelization.selectVoxelInstance(sessionId, 0);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeChain(2));
+      voxelization.selectVoxelInstance(sessionId, 1); // the end link - keeps the rest connected
 
       voxelization.removeSelectedVoxel(sessionId);
 
@@ -636,7 +636,7 @@ describe('VoxelizationService', () => {
       const newFill = voxelization
         .getVoxelPreview(sessionId)!
         .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
-      expect(newFill.instanceCount).toBe(0);
+      expect(newFill.instanceCount).toBe(1);
     });
 
     it('disposes the outgoing preview when replacing it', () => {
@@ -644,8 +644,8 @@ describe('VoxelizationService', () => {
       importedGeometry.set(sessionId, box(), 'model.glb');
       referenceRender.setDensity(sessionId, 10);
       voxelization.run(sessionId);
-      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
-      voxelization.selectVoxelInstance(sessionId, 0);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeChain(2));
+      voxelization.selectVoxelInstance(sessionId, 1);
       const firstPreview = voxelization.getVoxelPreview(sessionId)!;
       const firstFill = firstPreview.children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
       const disposeSpy = spyOn(firstFill, 'dispose').and.callThrough();
@@ -654,6 +654,25 @@ describe('VoxelizationService', () => {
 
       expect(disposeSpy).toHaveBeenCalled();
       expect(voxelization.getVoxelPreview(sessionId)).not.toBe(firstPreview);
+    });
+
+    // The model can never usefully be empty - removing its very last
+    // occupied cell is refused outright, same as an R2 split would be.
+    it("refuses to remove the model's last occupied cell", () => {
+      const sessionId = sessions.sessions()[0].id;
+      importedGeometry.set(sessionId, box(), 'model.glb');
+      referenceRender.setDensity(sessionId, 10);
+      voxelization.run(sessionId);
+      httpMock.expectOne(`${environment.apiBaseUrl}/api/meshes/voxelize`).flush(encodeGrid(1));
+      voxelization.selectVoxelInstance(sessionId, 0);
+
+      voxelization.removeSelectedVoxel(sessionId);
+
+      const fill = voxelization
+        .getVoxelPreview(sessionId)!
+        .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
+      expect(fill.instanceCount).toBe(1); // unchanged - refused, not committed
+      expect(voxelization.getDeletionViolation(sessionId)).toEqual({ kind: 'last-cube' });
     });
 
     // GEOMETRY_RULES.md R2.
@@ -676,7 +695,7 @@ describe('VoxelizationService', () => {
         .getVoxelPreview(sessionId)!
         .children.find(child => child instanceof THREE.BatchedMesh) as THREE.BatchedMesh;
       expect(fill.instanceCount).toBe(3); // unchanged - refused, not committed
-      expect(voxelization.getDeletionViolation(sessionId)).toEqual({ componentSizes: [1, 1] });
+      expect(voxelization.getDeletionViolation(sessionId)).toEqual({ kind: 'split', componentSizes: [1, 1] });
     });
 
     it('allows removing a chain\'s end link, which keeps the rest connected (R2-T1)', () => {

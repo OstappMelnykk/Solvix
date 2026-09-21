@@ -5,7 +5,7 @@ import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
-import { VoxelGridDto, withCellSet } from '../geometry/voxel-grid-contract';
+import { VoxelGridDto, countOccupied, withCellSet } from '../geometry/voxel-grid-contract';
 import { FACE_DIRECTIONS, VoxelCell, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
 import { toMeshBinary } from '../geometry/mesh-contract';
 import {
@@ -36,13 +36,14 @@ const DEFAULT_VOXEL_NODE_OPACITY = 1;
 // user has since moved on from.
 const DELETION_VIOLATION_DISPLAY_MS = 6000;
 
-// Reported by removeSelectedVoxel when GEOMETRY_RULES.md's R2 blocks a
-// deletion - carries enough detail (the size of every group the remaining
-// geometry would split into) for the UI to explain exactly what would have
-// happened, not just that the action was refused.
-export interface VoxelDeletionViolation {
-  readonly componentSizes: readonly number[];
-}
+// Reported by removeSelectedVoxel when a deletion is blocked - either
+// GEOMETRY_RULES.md's R2 (the remaining geometry would split into 2+
+// disconnected groups - `split` carries the size of each so the UI can
+// explain exactly what would have happened) or the model would end up with
+// zero voxels at all (`last-cube` - a voxelization can't ever be usefully
+// empty, so removing its very last occupied cell is refused outright,
+// same as R2 rather than silently allowed through).
+export type VoxelDeletionViolation = { readonly kind: 'split'; readonly componentSizes: readonly number[] } | { readonly kind: 'last-cube' };
 
 export type VoxelizationStatus =
   | { kind: 'idle' }
@@ -282,10 +283,12 @@ export class VoxelizationService {
   // cell is currently selected (getSelectedVoxelCell - the same selection
   // selectVoxelInstance sets, kept on the preview itself) - see
   // WorldCanvasComponent's Delete/Backspace key handler. A no-op without a
-  // successful result, or without anything currently selected. Enforces
-  // GEOMETRY_RULES.md's R2 first: if removing this cell would split the
-  // remaining geometry into more than one connected group, the deletion is
-  // refused and reported via reportDeletionViolation instead of committed.
+  // successful result, or without anything currently selected. Refuses 2
+  // things before committing: removing the model's very last occupied cell
+  // (a voxelization can't usefully be empty), and - GEOMETRY_RULES.md's R2 -
+  // splitting the remaining geometry into more than one connected group.
+  // Either refusal is reported via reportDeletionViolation instead of
+  // committed.
   removeSelectedVoxel(sessionId: number): void {
     const status = this.statusBySession.get(sessionId);
     const preview = this.voxelPreviewBySession.get(sessionId);
@@ -296,9 +299,13 @@ export class VoxelizationService {
     if (!cell) {
       return;
     }
+    if (countOccupied(status.result) <= 1) {
+      this.reportDeletionViolation(sessionId, { kind: 'last-cube' });
+      return;
+    }
     const componentSizes = connectedComponentSizes(status.result, cell.ix, cell.iy, cell.iz);
     if (componentSizes.length > 1) {
-      this.reportDeletionViolation(sessionId, componentSizes);
+      this.reportDeletionViolation(sessionId, { kind: 'split', componentSizes });
       return;
     }
     this.applyEditedGrid(sessionId, withCellSet(status.result, cell.ix, cell.iy, cell.iz, false));
@@ -308,18 +315,18 @@ export class VoxelizationService {
     return this.deletionViolationBySession.get(sessionId) ?? null;
   }
 
-  // Records an R2 refusal for removeSelectedVoxel to surface in the UI
+  // Records a refusal for removeSelectedVoxel to surface in the UI
   // (WorldCanvasComponent's deletion-notice overlay), self-clearing after
   // DELETION_VIOLATION_DISPLAY_MS. Restarts the clock rather than letting a
   // second violation race the first one's timeout - otherwise a quick
   // second blocked delete could get wiped by the FIRST notice's timer
   // firing right after.
-  private reportDeletionViolation(sessionId: number, componentSizes: number[]): void {
+  private reportDeletionViolation(sessionId: number, violation: VoxelDeletionViolation): void {
     const existingTimeout = this.deletionViolationTimeoutBySession.get(sessionId);
     if (existingTimeout !== undefined) {
       clearTimeout(existingTimeout);
     }
-    this.deletionViolationBySession.set(sessionId, { componentSizes });
+    this.deletionViolationBySession.set(sessionId, violation);
     const timeout = setTimeout(() => {
       this.deletionViolationBySession.delete(sessionId);
       this.deletionViolationTimeoutBySession.delete(sessionId);
