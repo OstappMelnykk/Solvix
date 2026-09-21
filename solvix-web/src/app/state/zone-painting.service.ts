@@ -433,15 +433,12 @@ export class ZonePaintingService {
   // finishZone's own `zoneId = zones.length` and buildZoneOverlayGroup's
   // zoneIdAt lookup both depend on.
   deleteZone(sessionId: number, zoneId: number): void {
-    console.log('[ZonePaintingService.deleteZone] called', { sessionId, zoneId });
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
-      console.log('[ZonePaintingService.deleteZone] no session for', sessionId);
       return;
     }
     const index = session.zones.findIndex(zone => zone.id === zoneId);
     if (index === -1) {
-      console.log('[ZonePaintingService.deleteZone] no zone with id', zoneId, 'in', session.zones.map(z => z.id));
       return;
     }
     const { voxelZone } = session;
@@ -458,7 +455,6 @@ export class ZonePaintingService {
       zones[i] = { ...zones[i], id: zones[i].id - 1 };
     }
     session.zonesRevision++;
-    console.log('[ZonePaintingService.deleteZone] done, remaining zones:', zones.map(z => z.id));
   }
 
   // Toggles ONE cell in `axis`'s pending mask. ADDING a cell is refused
@@ -717,7 +713,6 @@ export class ZonePaintingService {
         }
       }
     }
-    console.log('[ZonePaintingService.finishZone]', { sessionId, zoneId, assigned, maskXHasAny, maskYHasAny, maskZHasAny });
     // Only an actual commit clears the pending masks - an empty intersection
     // leaves the user's in-progress selection untouched so they can adjust
     // and retry, instead of silently losing it on a failed attempt.

@@ -254,22 +254,9 @@ export class SurfaceZonePaintingService {
     const subdivisions = this.subdivisions();
     const existing = this.sessionsByKey.get(sessionId);
     const alreadyMatches = existing && existing.subdivisions === subdivisions && existing.voxelGrid === voxelSession.grid;
-    console.log('[SurfaceZonePaintingService.open]', {
-      sessionId,
-      subdivisions,
-      alreadyMatches,
-      existingSubdivisions: existing?.subdivisions,
-      existingVoxelGridSameRef: existing ? existing.voxelGrid === voxelSession.grid : null,
-      existingAssignedCount: existing?.assignedCount,
-      existingTotalOccupied: existing?.totalOccupied
-    });
     if (!alreadyMatches) {
       const grid = buildSurfaceShellGrid(source.stlMesh, voxelSession.grid, subdivisions);
       const fresh = this.createSession(grid, voxelSession.grid, subdivisions);
-      console.log('[SurfaceZonePaintingService.open] rebuilding shell grid', {
-        sessionId,
-        newTotalOccupied: fresh.totalOccupied
-      });
       this.sessionsByKey.set(sessionId, fresh);
     }
     this.activeSource.set(source);
@@ -419,7 +406,6 @@ export class SurfaceZonePaintingService {
   deleteZone(sessionId: number, voxelZoneId: number): void {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
-      console.log('[SurfaceZonePaintingService.deleteZone] no session for', { sessionId, voxelZoneId });
       return;
     }
     const { cellZone } = session;
@@ -432,16 +418,7 @@ export class SurfaceZonePaintingService {
         cellZone[i]--;
       }
     }
-    const before = session.assignedCount;
     session.assignedCount -= removed;
-    console.log('[SurfaceZonePaintingService.deleteZone]', {
-      sessionId,
-      voxelZoneId,
-      removed,
-      assignedCountBefore: before,
-      assignedCountAfter: session.assignedCount,
-      totalOccupied: session.totalOccupied
-    });
     const renumberedUsed = new Set<number>();
     session.usedVoxelZoneIds.forEach(id => {
       if (id !== voxelZoneId) {
@@ -696,23 +673,6 @@ export class SurfaceZonePaintingService {
       maskY.fill(0);
       maskZ.fill(0);
       this.recomputeTriangleZones(sessionId);
-    }
-    console.log('[SurfaceZonePaintingService.finishSelection]', {
-      sessionId,
-      activeVoxelZoneId,
-      assigned,
-      maskXHasAny,
-      maskYHasAny,
-      maskZHasAny,
-      assignedCount: session.assignedCount,
-      totalOccupied: session.totalOccupied
-    });
-    if (session.assignedCount > session.totalOccupied) {
-      console.error('[SurfaceZonePaintingService.finishSelection] INVARIANT VIOLATED: assignedCount > totalOccupied', {
-        sessionId,
-        assignedCount: session.assignedCount,
-        totalOccupied: session.totalOccupied
-      });
     }
     return { assigned, disconnected: false };
   }

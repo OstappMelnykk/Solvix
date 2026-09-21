@@ -128,7 +128,6 @@ export class ZoneListComponent {
 
   // Opens the 2-step wizard for a brand-new zone, on top of this list.
   addZone(): void {
-    console.log('[ZoneListComponent.addZone] clicked');
     if (this.zonePainting.activeSessionId() === null) {
       return;
     }
@@ -152,12 +151,10 @@ export class ZoneListComponent {
   }
 
   requestDelete(zoneId: number): void {
-    console.log('[ZoneListComponent.requestDelete] clicked', { zoneId });
     this.pendingConfirmation.set({ zoneId, kind: 'delete' });
   }
 
   requestEdit(zoneId: number): void {
-    console.log('[ZoneListComponent.requestEdit] clicked', { zoneId, isLastZone: this.isLastZone(zoneId) });
     if (!this.isLastZone(zoneId)) {
       return;
     }
@@ -165,7 +162,6 @@ export class ZoneListComponent {
   }
 
   cancelConfirmation(): void {
-    console.log('[ZoneListComponent.cancelConfirmation] clicked');
     this.pendingConfirmation.set(null);
   }
 
@@ -173,7 +169,6 @@ export class ZoneListComponent {
   // was actually requested.
   confirmPendingAction(): void {
     const pending = this.pendingConfirmation();
-    console.log('[ZoneListComponent.confirmPendingAction] clicked', { pending });
     if (!pending) {
       return;
     }
@@ -192,7 +187,6 @@ export class ZoneListComponent {
   // selection, per explicit request - not a pre-filled edit.
   private performEdit(zoneId: number): void {
     const sessionId = this.zonePainting.activeSessionId();
-    console.log('[ZoneListComponent.performEdit]', { sessionId, zoneId, isLastZone: this.isLastZone(zoneId) });
     if (sessionId === null || !this.isLastZone(zoneId)) {
       return;
     }
@@ -210,7 +204,6 @@ export class ZoneListComponent {
   // site to keep in sync.
   private performDelete(zoneId: number): void {
     const sessionId = this.zonePainting.activeSessionId();
-    console.log('[ZoneListComponent.performDelete]', { sessionId, zoneId });
     if (sessionId === null) {
       return;
     }
