@@ -20,7 +20,8 @@ import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity }
 import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../../geometry/scene-objects/surface-zone-overlay';
 import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
 import { buildAxesHelper } from '../../../geometry/scene-objects/axes-helper';
-import { buildFloorGrid } from '../../../geometry/scene-objects/floor-grid';
+import { buildFloorGrid, updateGridResolution } from '../../../geometry/scene-objects/floor-grid';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
 
@@ -146,7 +147,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Floor grid on the XZ plane - kept by reference (not just added and
   // forgotten, like AxesHelper) so its `visible` flag can be flipped from
   // the on-canvas toggle button below, independently per World.
-  private gridHelper!: THREE.GridHelper;
+  private gridHelper!: LineSegments2;
   // Mirrors gridHelper.visible for the template - a real default from
   // construction, same reasoning as `cameraMode` above: the template can
   // read isGridVisible() during Angular's very first change detection
@@ -463,6 +464,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // added anonymously like the lights/axes above.
     this.gridHelper = buildFloorGrid();
     this.gridHelper.visible = this.gridVisible;
+    updateGridResolution(this.gridHelper, width, height);
     this.scene.add(this.gridHelper);
   }
 
@@ -1012,6 +1014,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height);
     this.oitRenderer.setSize(width, height);
+    // The floor grid's LineMaterial needs the CURRENT canvas size to
+    // convert its pixel linewidth into the right screen-space quad extrusion
+    // (see floor-grid.ts's own comment) - stale otherwise on any resize.
+    updateGridResolution(this.gridHelper, width, height);
     // The hole highlight's own LineMaterial (geometry/scene-objects/
     // hole-highlight.ts) needs the current canvas size, whenever there is
     // one - stale otherwise on any resize.
