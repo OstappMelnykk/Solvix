@@ -23,58 +23,83 @@
   </div>
 
   <div class="zone-painting__sidebar">
-    <label class="zone-painting__opacity">
-      Прозорість вокселів
-      <input type="range" min="0" max="100" [value]="voxelOpacityPercent()" (input)="onVoxelOpacityChange($event)" />
-    </label>
-    <label class="zone-painting__opacity">
-      Прозорість STL
-      <input type="range" min="0" max="100" [value]="referenceOpacityPercent()" (input)="onReferenceOpacityChange($event)" />
-    </label>
-
-    <div class="zone-painting__legend">
-      <div><span class="zone-painting__swatch" [style.background]="nextZoneColor()"></span> поточна зона (клікнуто)</div>
-      <div><span class="zone-painting__swatch zone-painting__swatch--available"></span> доступно</div>
-      <div><span class="zone-painting__swatch zone-painting__swatch--excluded"></span> виключено перетином</div>
-      <div><span class="zone-painting__swatch zone-painting__swatch--zoned"></span> вже в іншій зоні</div>
-    </div>
-
-    <button type="button" class="zone-painting__finish-zone" [style.border-color]="nextZoneColor()" (click)="finishZone()">
-      Завершити зону
-    </button>
-
-    <p class="zone-painting__coverage">{{ coverageText() }}</p>
-
-    <button type="button" class="zone-painting__save" *ngIf="canSave()" (click)="save()">Зберегти</button>
-    <p class="zone-painting__saved" *ngIf="isSaved()">
-      Зони збережено. Натисніть "Далі" вгорі, щоб перейти до розмітки STL-поверхні.
-    </p>
-
-    <label class="zone-painting__opacity" *ngIf="zonesFor().length > 0">
-      Прозорість зон на 3D результаті
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.01"
-        [value]="zoneOverlayOpacity()"
-        (input)="setZoneOverlayOpacityFromInput($any($event.target).value)"
-      />
-    </label>
-
-    <div class="zone-painting__zone-list">
-      <div class="zone-painting__zone-item" *ngFor="let zone of zonesFor()">
-        <input
-          type="color"
-          class="zone-painting__color-picker"
-          [value]="zone.color"
-          title="Обрати колір цієї зони"
-          (input)="setZoneColor(zone.id, $any($event.target).value)"
-        />
-        Зона {{ zone.id + 1 }} - {{ zone.voxelCount }} вокселів
+    <!-- Status - always visible at the top, answers "where am I" at a
+         glance before anything else in the panel. -->
+    <div class="zone-painting__status">
+      <div class="zone-painting__status-row">
+        <span>{{ coverageText() }}</span>
+        <span>{{ coveragePercent() }}%</span>
+      </div>
+      <div class="zone-painting__progress-bar">
+        <div class="zone-painting__progress-fill" [style.width.%]="coveragePercent()"></div>
       </div>
     </div>
 
-    <button type="button" class="zone-painting__reset" (click)="resetZones()">Скинути всі зони</button>
+    <div class="zone-painting__group" *ngIf="zonesFor().length > 0">
+      <div class="zone-painting__group-label">Зони ({{ zonesFor().length }})</div>
+      <div class="zone-painting__zone-list">
+        <div class="zone-painting__zone-item" *ngFor="let zone of zonesFor()">
+          <input
+            type="color"
+            class="zone-painting__color-picker"
+            [value]="zone.color"
+            title="Обрати колір цієї зони"
+            (input)="setZoneColor(zone.id, $any($event.target).value)"
+          />
+          <span class="zone-painting__zone-label">Зона {{ zone.id + 1 }} — {{ zone.voxelCount }} вокселів</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="zone-painting__group">
+      <div class="zone-painting__group-label">Малювання</div>
+      <div class="zone-painting__legend">
+        <div><span class="zone-painting__swatch" [style.background]="nextZoneColor()"></span> поточна зона (клікнуто)</div>
+        <div><span class="zone-painting__swatch zone-painting__swatch--available"></span> доступно</div>
+        <div><span class="zone-painting__swatch zone-painting__swatch--excluded"></span> виключено перетином</div>
+        <div><span class="zone-painting__swatch zone-painting__swatch--zoned"></span> вже в іншій зоні</div>
+      </div>
+      <button type="button" class="zone-painting__finish-zone" [style.border-color]="nextZoneColor()" (click)="finishZone()">
+        Завершити зону
+      </button>
+    </div>
+
+    <div class="zone-painting__group">
+      <div class="zone-painting__group-label">Відображення</div>
+      <label class="zone-painting__opacity">
+        Прозорість вокселів
+        <input type="range" min="0" max="100" [value]="voxelOpacityPercent()" (input)="onVoxelOpacityChange($event)" />
+      </label>
+      <label class="zone-painting__opacity">
+        Прозорість STL
+        <input type="range" min="0" max="100" [value]="referenceOpacityPercent()" (input)="onReferenceOpacityChange($event)" />
+      </label>
+      <label class="zone-painting__opacity" *ngIf="zonesFor().length > 0">
+        Прозорість зон на 3D результаті
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          [value]="zoneOverlayOpacity()"
+          (input)="setZoneOverlayOpacityFromInput($any($event.target).value)"
+        />
+      </label>
+    </div>
+
+    <!-- Pushed to the bottom (flex spacer) and visually the loudest thing
+         in the panel - the primary "I'm done" action, per explicit user
+         request that Save shouldn't be just another button lost among the
+         opacity sliders and zone list. -->
+    <div class="zone-painting__primary-action">
+      <p class="zone-painting__saved" *ngIf="isSaved()">
+        Зони збережено. Натисніть "Далі" вгорі, щоб перейти до розмітки STL-поверхні.
+      </p>
+      <ng-container *ngIf="!isSaved()">
+        <button type="button" class="zone-painting__save" [disabled]="!canSave()" (click)="save()">Зберегти</button>
+        <p class="zone-painting__save-hint" *ngIf="saveDisabledReason() as reason">{{ reason }}</p>
+      </ng-container>
+      <button type="button" class="zone-painting__reset-link" (click)="resetZones()">Скинути всі зони</button>
+    </div>
   </div>
 </div>

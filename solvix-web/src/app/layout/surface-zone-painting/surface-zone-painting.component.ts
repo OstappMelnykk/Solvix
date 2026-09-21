@@ -284,6 +284,34 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     return coverage ? `Розмічено: ${coverage.assigned} / ${coverage.total} ділянок сітки` : '';
   }
 
+  // The sidebar's top status bar - same idea as ZonePaintingComponent's own
+  // coveragePercent.
+  coveragePercent(): number {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    const coverage = sessionId === null ? null : this.surfaceZonePainting.coverage(sessionId);
+    return coverage && coverage.total > 0 ? Math.round((coverage.assigned / coverage.total) * 100) : 0;
+  }
+
+  // Explains why the primary action button is disabled - shown right under
+  // it instead of leaving the user to guess from a plain disabled button.
+  saveDisabledReason(): string | null {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    if (sessionId === null || this.isSaved() || this.canRunPrimaryAction()) {
+      return null;
+    }
+    if (!this.surfaceZonePainting.isLastZone(sessionId)) {
+      return 'Спочатку виділіть хоч одну ділянку для поточної зони, щоб перейти далі.';
+    }
+    if (!this.surfaceZonePainting.allVoxelZonesUsed(sessionId)) {
+      return 'Ще не для всіх зон розмічено хоча б одну ділянку.';
+    }
+    const coverage = this.surfaceZonePainting.coverage(sessionId);
+    if (coverage && coverage.assigned < coverage.total) {
+      return `Ще не всю поверхню розмічено (${coverage.assigned} / ${coverage.total} ділянок).`;
+    }
+    return null;
+  }
+
   finishSelection(): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     if (sessionId === null) {
