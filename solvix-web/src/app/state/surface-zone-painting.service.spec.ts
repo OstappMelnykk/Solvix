@@ -214,6 +214,27 @@ describe('SurfaceZonePaintingService', () => {
     expect(service.isZoneUsed(1, 0)).toBe(false);
   });
 
+  // Regression test: activeVoxelZoneId defaults to -1 (createSession's own
+  // starting value, also restored whenever open() rebuilds the shell grid -
+  // e.g. a subdivisions change - without a caller re-applying it). Painting
+  // and committing while it's still -1 must never actually write cells,
+  // since -1 reads back identically to "unassigned" everywhere else -
+  // assignedCount would go up while no real zone's own cellCountForZone
+  // ever reflected it, a silent mismatch a reported case actually hit.
+  it('refuses to commit while no zone is active (activeVoxelZoneId still -1)', () => {
+    service.open(1, source);
+    // Deliberately no setActiveVoxelZoneId call - session just opened.
+
+    const cell = firstAvailableCell(service.viewState(1, 'y'), () => true)!;
+    expect(cell).toBeTruthy();
+    service.toggleCell(1, 'y', cell.u, cell.v);
+    const { assigned, disconnected } = service.finishSelection(1);
+
+    expect(assigned).toBe(0);
+    expect(disconnected).toBe(false);
+    expect(service.coverage(1)!.assigned).toBe(0);
+  });
+
   it('recomputes the triangle->zone mapping after a single zone commit, with no coverage requirement', () => {
     service.open(1, source);
     const halfway = service.getSession(1)!.grid.countX / 2;

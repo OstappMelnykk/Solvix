@@ -1,0 +1,22 @@
+<div class="zone-preview__pane zone-preview__pane--voxels">
+  <span class="zone-preview__label">Вокселі</span>
+  <canvas #voxelCanvas></canvas>
+  <div class="zone-preview__opacity-group">
+    <label class="zone-preview__opacity">
+      Прозорість вокселів
+      <input type="range" min="0" max="100" [value]="voxelFillOpacityPercent()" (input)="onVoxelFillOpacityChange($event)" />
+      <span>{{ voxelFillOpacityPercent() }}%</span>
+    </label>
+    <label class="zone-preview__opacity">
+      Прозорість зон
+      <input type="range" min="0" max="100" [value]="voxelOverlayOpacityPercent()" (input)="onVoxelOverlayOpacityChange($event)" />
+      <span>{{ voxelOverlayOpacityPercent() }}%</span>
+    </label>
+  </div>
+</div>
+
+<div class="zone-preview__pane zone-preview__pane--stl">
+  <span class="zone-preview__label">STL-поверхня</span>
+  <canvas #stlCanvas [hidden]="!hasStlReference()"></canvas>
+  <p class="zone-preview__empty" *ngIf="!hasStlReference()">Немає STL-референсу</p>
+</div>

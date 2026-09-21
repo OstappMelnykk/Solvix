@@ -388,8 +388,21 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (sessionId === null || !source || !Number.isFinite(value)) {
       return;
     }
+    // open() rebuilds the WHOLE shell grid whenever subdivisions actually
+    // change (a fresh session, per its own comment on discarding whatever
+    // was painted here) - createSession always starts activeVoxelZoneId at
+    // -1, so without re-applying it here, the very next finishSelection
+    // silently commits under "-1" (indistinguishable from unassigned):
+    // assignedCount goes up, but no real zone's own count ever reflects it,
+    // a hard-to-notice data-corruption bug (a reported case had a zone's
+    // list row showing 0 STL cells while the overall progress bar counted
+    // thousands more than any zone actually had).
+    const activeZoneId = this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
     this.surfaceZonePainting.setSubdivisions(value);
     this.surfaceZonePainting.open(sessionId, source);
+    if (activeZoneId !== null) {
+      this.surfaceZonePainting.setActiveVoxelZoneId(sessionId, activeZoneId);
+    }
     this.refreshClassifications();
     this.disposeResultOverlay();
   }
