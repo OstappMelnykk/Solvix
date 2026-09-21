@@ -36,6 +36,18 @@
       <span *ngIf="status.kind === 'not-watertight'">{{ status.fileName }} — НЕ watertight (є діри в поверхні)</span>
       <span *ngIf="status.kind === 'error'">Не вдалось завантажити файл</span>
     </div>
+    <button
+      class="tool"
+      type="button"
+      *ngIf="status.kind === 'not-watertight'"
+      (click)="toggleHolesVisible()"
+    >
+      {{ isHolesVisible() ? 'Приховати дірки' : 'Показати дірки' }}
+    </button>
+    <label class="hole-markers-toggle" *ngIf="status.kind === 'not-watertight' && isHolesVisible()">
+      <input type="checkbox" [checked]="isHoleMarkersVisible()" (change)="toggleHoleMarkersVisible()" />
+      Мітки "!" на дірках
+    </label>
   </ng-container>
 </ng-container>
 <ng-template #importElsewhere>

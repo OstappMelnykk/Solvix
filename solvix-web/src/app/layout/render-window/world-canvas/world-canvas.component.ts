@@ -15,6 +15,7 @@ import { getVoxelCellByInstanceId } from '../../../geometry/scene-objects/voxels
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
+import { disposeHoleHighlight, setHoleMarkersVisible, updateHoleHighlightResolution } from '../../../geometry/scene-objects/hole-highlight';
 import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/scene-objects/zone-overlay';
 import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../../geometry/scene-objects/surface-zone-overlay';
 import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
@@ -89,6 +90,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // geometry/ruler-preview.ts) - a separate overlay, independently
   // toggleable (ImportedReferenceDisplayService.rulerVisible).
   @Input() ruler: THREE.Object3D | null = null;
+  // Bright highlight tubes on exactly the boundary edges a hole punches into
+  // the surface (ImportedReferenceRenderService, geometry/scene-objects/hole-highlight.ts) -
+  // a separate overlay, independently toggleable (ImportedReferenceDisplayService.holesVisible).
+  @Input() holeHighlight: THREE.Object3D | null = null;
   // Voxel preview is deliberately NOT an @Input like the overlays above -
   // see updateVoxelPreview() for why (a disposal race that was a real,
   // confirmed crash for this specific resource).
@@ -227,6 +232,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Same sharing model as currentDimensionLines/lastDimensionLines.
   private currentRuler: THREE.Object3D | null = null;
   private lastRuler: THREE.Object3D | null = null;
+  // Same sharing model as currentDimensionLines/lastDimensionLines.
+  private currentHoleHighlight: THREE.Object3D | null = null;
+  private lastHoleHighlight: THREE.Object3D | null = null;
   // Same sharing model as currentDimensionLines/lastDimensionLines - owned
   // and disposed by VoxelizationService, not here.
   private currentVoxelPreview: THREE.Object3D | null = null;
@@ -311,6 +319,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateImportedReference();
     this.updateDimensionLines();
     this.updateRuler();
+    this.updateHoleHighlight();
     this.updateVoxelPreview();
     this.updateSession();
     this.oitRenderer.render(this.scene, this.camera);
@@ -433,6 +442,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateImportedReference();
     this.updateDimensionLines();
     this.updateRuler();
+    this.updateHoleHighlight();
     this.updateVoxelPreview();
 
     // Each a fixed scene fixture (not per-session/model), same lifetime as
@@ -572,6 +582,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.currentDimensionLines?.quaternion.copy(this.currentImportedReference.quaternion);
     this.currentRuler?.quaternion.copy(this.currentImportedReference.quaternion);
+    this.currentHoleHighlight?.quaternion.copy(this.currentImportedReference.quaternion);
   }
 
   // Keeps the dimension-lines/ruler overlays rigidly attached to the
@@ -590,6 +601,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.currentRuler) {
       this.currentRuler.position.copy(this.currentImportedReference.position);
       this.currentRuler.quaternion.copy(this.currentImportedReference.quaternion);
+    }
+    if (this.currentHoleHighlight) {
+      this.currentHoleHighlight.position.copy(this.currentImportedReference.position);
+      this.currentHoleHighlight.quaternion.copy(this.currentImportedReference.quaternion);
     }
   }
 
@@ -643,6 +658,37 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     this.currentRuler = source.clone();
     this.scene.add(this.currentRuler);
+    this.renderer.compile(this.scene, this.camera);
+  }
+
+  private updateHoleHighlight(): void {
+    const source = this.holeHighlight;
+    if (this.lastHoleHighlight === source) {
+      return;
+    }
+    this.lastHoleHighlight = source;
+
+    if (this.currentHoleHighlight) {
+      this.scene.remove(this.currentHoleHighlight);
+      // See updateDimensionLines' comment - disposed here, not by
+      // ImportedReferenceRenderService, for the same shared-geometry
+      // race reasoning.
+      disposeHoleHighlight(this.currentHoleHighlight);
+      this.currentHoleHighlight = null;
+    }
+
+    if (source === null) {
+      return;
+    }
+
+    this.currentHoleHighlight = source.clone();
+    // Freshly cloned, so its LineMaterial's resolution uniform starts at
+    // whatever LineMaterial defaults to (not this canvas's actual size) -
+    // checkResize() only re-sets it on an ACTUAL resize, which may not
+    // happen for a while (or ever) after this clone lands, so it needs
+    // this canvas's current size set explicitly right here too.
+    updateHoleHighlightResolution(this.currentHoleHighlight, this.lastWidth, this.lastHeight);
+    this.scene.add(this.currentHoleHighlight);
     this.renderer.compile(this.scene, this.camera);
   }
 
@@ -898,6 +944,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.updateImportedReference();
       this.updateDimensionLines();
       this.updateRuler();
+      this.updateHoleHighlight();
       this.updateVoxelPreview();
       this.updateZoneOverlay();
       this.updateSurfaceZoneOverlay();
@@ -910,6 +957,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined;
       this.rotateGizmo.getHelper().visible = this.active && gizmoWanted;
       this.rotateGizmo.enabled = this.active && gizmoWanted;
+      // ImportedReferenceDisplayService.holeMarkersVisible - independent of
+      // whether the outline/fill are shown at all, so a user zoomed in to
+      // actually inspect a hole can hide just the marker pin sitting on top
+      // of it without losing the precise outline underneath.
+      setHoleMarkersVisible(this.currentHoleHighlight, this.importedReferenceStyle?.holeMarkersVisible ?? true);
       // Suppress orbiting while a ring is actively being dragged - otherwise
       // OrbitControls' own pointer handling fights the gizmo's for the same
       // mouse drag.
@@ -941,6 +993,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateCameraFrustum(width, height);
     this.renderer.setSize(width, height);
     this.oitRenderer.setSize(width, height);
+    // The hole highlight's own LineMaterial (geometry/scene-objects/
+    // hole-highlight.ts) needs the current canvas size, whenever there is
+    // one - stale otherwise on any resize.
+    updateHoleHighlightResolution(this.currentHoleHighlight, width, height);
   }
 
   // Keeps BOTH cameras' frustums matching the canvas's current aspect ratio,
@@ -1058,7 +1114,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         framingObjects: [this.currentVoxelPreview],
         // Same fixtures SixViewOverlayComponent hides while open - clutter,
         // not content, for a fixed-axis "just show me the voxels" view.
-        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper()]
+        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper(), ...(this.currentHoleHighlight ? [this.currentHoleHighlight] : [])]
       });
     }
   }
@@ -1248,7 +1304,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         // Rings and floor grid only add clutter to a 6-way "just show me
         // the model" comparison - AxesHelper stays (not listed here) since
         // orientation is exactly what these 6 fixed-axis panels are about.
-        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper()]
+        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper(), ...(this.currentHoleHighlight ? [this.currentHoleHighlight] : [])]
       });
     }
   }
