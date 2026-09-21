@@ -1,5 +1,5 @@
 import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ZonePaintingService, ZonePaintingSource } from '../../state/zone-painting.service';
@@ -8,6 +8,7 @@ import { VoxelizationService } from '../../state/voxelization.service';
 import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../geometry/scene-objects/zone-overlay';
 import { SurfaceZoneOverlayZone, buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
 import { WeightedOitRenderer } from '../../rendering/weighted-oit';
+import { WebglContextBudgetService } from '../../state/webgl-context-budget.service';
 
 // A separate, globally-mounted overlay (app.component.html), NOT nested
 // inside ZoneListComponent's own template - ZoneListComponent explicitly
@@ -36,7 +37,7 @@ import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 @Component({
   selector: 'app-zone-preview',
   standalone: true,
-  imports: [NgIf],
+  imports: [NgFor, NgIf],
   host: { '[hidden]': 'isHidden()' },
   templateUrl: './zone-preview.component.html',
   styleUrl: './zone-preview.component.scss'
@@ -48,9 +49,37 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
   private readonly voxelization = inject(VoxelizationService);
+  private readonly webglBudget = inject(WebglContextBudgetService);
 
   private frameId = 0;
   private viewReady = false;
+  // Without preventDefault() here, a lost WebGL context on either of these 2
+  // canvases is PERMANENT - the browser only ever attempts to restore a
+  // context whose loss event was explicitly prevented. Matches
+  // WorldCanvasComponent's/the 4-panel tools' own long-standing handling,
+  // which this component never had - so a context this browser evicted
+  // (too many WebGL contexts open across the app at once) stayed dead here
+  // until a full page reload, even after the pressure that caused the
+  // eviction was gone.
+  private readonly onContextLost = (event: Event) => event.preventDefault();
+  // Three.js's own WebGLRenderer re-initializes its internal GL state
+  // automatically on 'webglcontextrestored' (see restoreVoxelPanelAfterContextLoss/
+  // restoreStlPanelAfterContextLoss below), but never repaints or reapplies
+  // size on its own - without an explicit handler, this panel stayed a
+  // frozen/blank frame after a restore until some unrelated trigger forced
+  // a render (which may never happen for the STL panel once its own zone
+  // data stops changing).
+  private readonly onVoxelContextRestored = () => this.restoreVoxelPanelAfterContextLoss();
+  private readonly onStlContextRestored = () => this.restoreStlPanelAfterContextLoss();
+  // Same reasoning as ZonePaintingComponent's own recreatingPanel/
+  // lastAttemptedCanvas - set when a canvas's context was evicted and never
+  // came back, cleared once ensureVoxelRenderer/ensureStlRenderer notices
+  // Angular has actually swapped in the fresh <canvas> bumped generation
+  // triggered.
+  private voxelRecreating = false;
+  private lastAttemptedVoxelCanvas: HTMLCanvasElement | null = null;
+  private stlRecreating = false;
+  private lastAttemptedStlCanvas: HTMLCanvasElement | null = null;
 
   // --- Top panel: same technique as ZonePaintingComponent's own "3D
   // результат" panel - the real, live voxelPreview (purple fill + white
@@ -99,19 +128,48 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  // Whether the WHOLE zone-painting feature is open - gates both canvases'
+  // *ngFor presence (voxelCanvasKeys/stlCanvasKeys below), same idea as the
+  // plain *ngIf this replaced elsewhere in this app: a canvas element only
+  // exists (and so only ever holds a real WebGL context) while this is
+  // true, so closing the whole zone list is what actually lets the browser
+  // reclaim these 2 contexts - not isHidden() below, which flips
+  // constantly during normal use (every wizard-step open/close, i.e. every
+  // zone add/edit/delete) and must never tear the canvas elements down
+  // that often.
+  hasActiveSession(): boolean {
+    return this.zonePainting.activeSessionId() !== null;
+  }
+
   // Frontmost only while the LIST itself is on screen - both wizard steps
   // (z-index 1100) draw fully on top of this (999) and of the list (1000)
   // alike, so there is no point spending GPU time on either panel while
-  // they're up.
+  // they're up - but the canvas/renderer/context themselves stay alive
+  // (see hasActiveSession's own comment for why this must stay separate).
   isHidden(): boolean {
-    return (
-      this.zonePainting.activeSessionId() === null || this.zonePainting.step1Visible() || this.surfaceZonePainting.activeSessionId() !== null
-    );
+    return !this.hasActiveSession() || this.zonePainting.step1Visible() || this.surfaceZonePainting.activeSessionId() !== null;
   }
 
   hasStlReference(): boolean {
     return this.zonePainting.activeSource()?.stlMesh != null;
   }
+
+  // *ngFor over a 0-or-1-item array, keyed by a generation number - the
+  // template's own way of getting a genuinely fresh <canvas> element on
+  // demand (bumped by ensureVoxelRenderer/ensureStlRenderer's own catch
+  // block below, on an unrecoverable context loss), while still gating
+  // presence on hasActiveSession()/hasStlReference() exactly like the plain
+  // *ngIf this replaced. See ZonePaintingComponent's own panelGeneration
+  // comment for the full reasoning against a manual DOM replaceWith().
+  private voxelCanvasGeneration = 0;
+  private stlCanvasGeneration = 0;
+  voxelCanvasKeys(): number[] {
+    return this.hasActiveSession() ? [this.voxelCanvasGeneration] : [];
+  }
+  stlCanvasKeys(): number[] {
+    return this.hasActiveSession() && this.hasStlReference() ? [this.stlCanvasGeneration] : [];
+  }
+  trackGeneration = (_: number, gen: number): number => gen;
 
   // Same value the wizard's own "3D результат" panel already exposes via
   // its "Прозорість зон" slider - this is the on-canvas equivalent for the
@@ -157,12 +215,50 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
       return false;
     }
-    this.voxelRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+    if (this.voxelRecreating) {
+      if (canvas === this.lastAttemptedVoxelCanvas) {
+        return false; // still the old element - Angular hasn't swapped it in yet
+      }
+      this.voxelRecreating = false;
+    }
+    this.lastAttemptedVoxelCanvas = canvas;
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', this.onVoxelContextRestored, false);
+    try {
+      this.voxelRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+    } catch (error) {
+      // The browser doesn't always fire webglcontextrestored for an evicted
+      // context (the spec never guarantees it) - see ZonePaintingComponent's
+      // own ensureRenderersReady comment for the full reasoning. Bumping
+      // voxelCanvasGeneration forces Angular to hand this panel a genuinely
+      // new <canvas> element next change detection pass.
+      console.error(
+        '[ZonePreviewComponent] failed to create the voxel renderer - its context was evicted and never restored by the browser - recreating its <canvas> element',
+        error
+      );
+      canvas.removeEventListener('webglcontextlost', this.onContextLost);
+      canvas.removeEventListener('webglcontextrestored', this.onVoxelContextRestored);
+      this.evictVoxelPanel();
+      return false;
+    }
     this.voxelRenderer.setPixelRatio(window.devicePixelRatio);
+    // See WebglContextBudgetService's own header comment - may proactively
+    // evict some OTHER, currently-idle canvas (this component's own STL one,
+    // or a different tool's panel) to stay under the app-wide context cap.
+    this.webglBudget.register('zone-preview-voxel', () => this.evictVoxelPanel());
     this.voxelOit = new WeightedOitRenderer(this.voxelRenderer);
     this.voxelControls = new OrbitControls(this.voxelCamera, canvas);
     this.voxelControls.screenSpacePanning = true;
     this.voxelControls.enableDamping = false;
+    // A brand-new OrbitControls always defaults its own target to (0,0,0) -
+    // voxelCamera itself is a persistent field (never recreated, so its
+    // position/zoom already survive a hide/show cycle untouched), and
+    // voxelFramingCenter/voxelFramingRadius are ALSO persistent - restoring
+    // just the target here reproduces the exact same view the user last had
+    // (including any manual rotate/zoom), rather than recomputing a fresh
+    // default framing from the model's bounding box every time.
+    this.voxelControls.target.copy(this.voxelFramingCenter);
+    this.voxelControls.update();
     this.voxelLastSize.width = 0;
     this.voxelLastSize.height = 0;
     return true;
@@ -175,47 +271,100 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
       return false;
     }
-    this.stlRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    if (this.stlRecreating) {
+      if (canvas === this.lastAttemptedStlCanvas) {
+        return false;
+      }
+      this.stlRecreating = false;
+    }
+    this.lastAttemptedStlCanvas = canvas;
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    canvas.addEventListener('webglcontextrestored', this.onStlContextRestored, false);
+    try {
+      this.stlRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    } catch (error) {
+      // Same reasoning as ensureVoxelRenderer's own comment.
+      console.error(
+        '[ZonePreviewComponent] failed to create the STL renderer - its context was evicted and never restored by the browser - recreating its <canvas> element',
+        error
+      );
+      canvas.removeEventListener('webglcontextlost', this.onContextLost);
+      canvas.removeEventListener('webglcontextrestored', this.onStlContextRestored);
+      this.evictStlPanel();
+      return false;
+    }
     this.stlRenderer.setPixelRatio(window.devicePixelRatio);
+    // See WebglContextBudgetService's own header comment.
+    this.webglBudget.register('zone-preview-stl', () => this.evictStlPanel());
     this.stlControls = new OrbitControls(this.stlCamera, canvas);
     this.stlControls.screenSpacePanning = true;
     this.stlControls.enableDamping = false;
+    // Same reasoning as ensureVoxelRenderer's own comment.
+    this.stlControls.target.copy(this.stlFramingCenter);
+    this.stlControls.update();
     this.stlLastSize.width = 0;
     this.stlLastSize.height = 0;
     return true;
+  }
+
+  // Forces the voxel panel to give up its real WebGL context right now -
+  // either reactively (ensureVoxelRenderer's own catch, above) or proactively
+  // (WebglContextBudgetService, when the app-wide context cap is reached and
+  // this is the least-recently-used registered canvas). Unlike the 4-panel
+  // tools, this one's canvas genuinely IS destroyed (hasActiveSession()'s
+  // *ngIf in the template) - teardownVoxelRenderer already does the real
+  // release via that, so this only needs to also flag it for a fresh
+  // <canvas> element on the next reveal.
+  private evictVoxelPanel(): void {
+    this.teardownVoxelRenderer();
+    this.voxelRecreating = true;
+    this.voxelCanvasGeneration++;
+  }
+
+  // Same reasoning as evictVoxelPanel, for the STL panel.
+  private evictStlPanel(): void {
+    this.teardownStlRenderer();
+    this.stlRecreating = true;
+    this.stlCanvasGeneration++;
   }
 
   private teardownVoxelRenderer(): void {
     if (!this.voxelRenderer) {
       return;
     }
+    this.voxelCanvasRef?.nativeElement.removeEventListener('webglcontextlost', this.onContextLost);
+    this.voxelCanvasRef?.nativeElement.removeEventListener('webglcontextrestored', this.onVoxelContextRestored);
     this.voxelControls?.dispose();
     this.voxelOit?.dispose();
     this.voxelRenderer.dispose();
     this.voxelRenderer = null;
     this.voxelOit = null;
     this.voxelControls = null;
-    // A brand-new OrbitControls defaults its own target to (0,0,0), not to
-    // wherever this session's model actually sits - resetting the cache key
-    // here forces rebuildVoxelFraming to run again against the NEXT fresh
-    // controls instance instead of skipping it as "already framed this
-    // session" (sessionId itself never changed across a hide/show cycle,
-    // which is exactly what happens every time a zone's 2-step wizard opens
-    // and closes). Without this, the preview silently orbited the world
-    // origin instead of the model after finishing any zone.
-    this.lastVoxelSessionId = null;
+    this.webglBudget.unregister('zone-preview-voxel');
+    // lastVoxelSessionId is deliberately left untouched - it used to be
+    // reset here to force a full rebuildVoxelFraming (recomputed default
+    // camera position/zoom from the model's bounding box) on the next
+    // reveal, which fixed an old "orbits the world origin" bug but
+    // introduced a worse one: it silently threw away the user's own
+    // rotate/zoom every single time this panel was merely covered by a
+    // wizard step and uncovered again (i.e. on every zone add/edit/delete).
+    // ensureVoxelRenderer now restores just the NEW OrbitControls' target
+    // from the persistent voxelFramingCenter field instead, which
+    // reproduces the exact same view without recomputing it.
   }
 
   private teardownStlRenderer(): void {
     if (!this.stlRenderer) {
       return;
     }
+    this.stlCanvasRef?.nativeElement.removeEventListener('webglcontextlost', this.onContextLost);
+    this.stlCanvasRef?.nativeElement.removeEventListener('webglcontextrestored', this.onStlContextRestored);
     this.stlControls?.dispose();
     this.stlRenderer.dispose();
     this.stlRenderer = null;
     this.stlControls = null;
+    this.webglBudget.unregister('zone-preview-stl');
     // Same reasoning as teardownVoxelRenderer's own comment.
-    this.lastStlMesh = null;
   }
 
   // Same isometric-ish free-orbit framing every "3D результат" panel in
@@ -267,6 +416,39 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     if (this.stlControls) {
       this.applyFraming(this.stlCamera, this.stlControls, this.stlFramingCenter, this.stlFramingRadius, this.stlCanvasRef?.nativeElement);
     }
+  }
+
+  // Fired when the browser actually restores a lost context on the voxel
+  // panel - see ZonePaintingComponent's own restorePanelAfterContextLoss for
+  // the full reasoning. voxelCamera/voxelControls are persistent fields
+  // (never recreated), so there's no plain-data snapshot to reapply here -
+  // just a forced resize + render so the panel doesn't stay a frozen/blank
+  // frame until some unrelated trigger repaints it.
+  private restoreVoxelPanelAfterContextLoss(): void {
+    const canvas = this.voxelCanvasRef?.nativeElement;
+    const source = this.zonePainting.activeSource();
+    if (!this.voxelRenderer || !this.voxelOit || !this.voxelControls || !canvas || !source || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+      return;
+    }
+    this.voxelLastSize.width = 0;
+    this.voxelLastSize.height = 0;
+    this.resizeVoxelIfNeeded(canvas);
+    this.voxelControls.update();
+    this.voxelOit.render(source.scene, this.voxelCamera);
+  }
+
+  // Same reasoning as restoreVoxelPanelAfterContextLoss, for the STL panel.
+  private restoreStlPanelAfterContextLoss(): void {
+    const canvas = this.stlCanvasRef?.nativeElement;
+    const source = this.zonePainting.activeSource();
+    if (!this.stlRenderer || !this.stlControls || !canvas || !source || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+      return;
+    }
+    this.stlLastSize.width = 0;
+    this.stlLastSize.height = 0;
+    this.resizeStlIfNeeded(canvas);
+    this.stlControls.update();
+    this.stlRenderer.render(source.scene, this.stlCamera);
   }
 
   private rebuildVoxelOverlay(sessionId: number): void {
@@ -368,9 +550,23 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
 
   private animate = (): void => {
     this.frameId = requestAnimationFrame(this.animate);
-    if (!this.viewReady || this.isHidden()) {
+    if (!this.viewReady) {
+      return;
+    }
+    if (!this.hasActiveSession()) {
+      // The canvases are *ngIf-gated on this same condition, so they're
+      // already gone (or about to be) - free whatever this component still
+      // holds itself (renderer/controls/context) in step.
       this.teardownVoxelRenderer();
       this.teardownStlRenderer();
+      return;
+    }
+    if (this.isHidden()) {
+      // Only covered by a wizard step - skip rendering this frame, but
+      // deliberately do NOT tear anything down: the canvases are still
+      // there, still worth keeping warm for when the wizard step closes
+      // again, which happens far too often per session to pay a full
+      // context create/destroy for every time.
       return;
     }
     const sessionId = this.zonePainting.activeSessionId();
@@ -410,6 +606,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
       }
       try {
         this.voxelControls!.update();
+        this.webglBudget.touch('zone-preview-voxel');
         this.voxelOit!.render(source.scene, this.voxelCamera);
       } finally {
         source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
@@ -444,6 +641,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
         }
         try {
           this.stlControls!.update();
+          this.webglBudget.touch('zone-preview-stl');
           this.stlRenderer!.render(source.scene, this.stlCamera);
         } finally {
           source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));

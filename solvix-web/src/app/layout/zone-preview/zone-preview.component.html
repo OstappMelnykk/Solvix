@@ -1,6 +1,22 @@
+<!-- *ngIf, not just the host's own [hidden] - dispose() alone never actually
+     frees the underlying WebGL context (deliberately, to avoid a past
+     regression), so a canvas that stays in the DOM forever (merely
+     CSS-hidden) keeps its context permanently reserved against the page's
+     total budget the moment it's ever first created. *ngIf actually
+     removes the element, letting the browser reclaim the real context once
+     it's GC'd; the next open creates a genuinely fresh canvas + context.
+
+     Keyed on hasActiveSession() specifically, NOT isHidden() - isHidden()
+     flips constantly during normal use (every wizard-step open/close, i.e.
+     every zone add/edit/delete), and destroying+recreating a real WebGL
+     context that often turned out to be its own bug. hasActiveSession()
+     only changes once per "closed the whole zone list" - rare enough that
+     a fresh context each time is no real cost, and while merely covered by
+     a wizard step the canvas/renderer/context stay alive, just not
+     rendered to (see the component's own animate()). -->
 <div class="zone-preview__pane zone-preview__pane--voxels">
   <span class="zone-preview__label">Вокселі</span>
-  <canvas #voxelCanvas></canvas>
+  <canvas #voxelCanvas *ngFor="let g of voxelCanvasKeys(); trackBy: trackGeneration"></canvas>
   <div class="zone-preview__opacity-group">
     <label class="zone-preview__opacity">
       Прозорість вокселів
@@ -17,6 +33,6 @@
 
 <div class="zone-preview__pane zone-preview__pane--stl">
   <span class="zone-preview__label">STL-поверхня</span>
-  <canvas #stlCanvas [hidden]="!hasStlReference()"></canvas>
+  <canvas #stlCanvas *ngFor="let g of stlCanvasKeys(); trackBy: trackGeneration"></canvas>
   <p class="zone-preview__empty" *ngIf="!hasStlReference()">Немає STL-референсу</p>
 </div>
