@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { ZonePaintingService, ZonePaintingSource, Axis, AXES, axisCoords, projectedCoords } from './zone-painting.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { isSingleConnectedComponent } from './mask-connectivity';
-import { buildSurfaceShellGrid, assignTriangleZones } from '../geometry/surface-shell-grid';
+import { SHELL_SUBDIVISIONS, buildSurfaceShellGrid, assignTriangleZones } from '../geometry/surface-shell-grid';
 import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-contract';
 
 // The second, later step of Проблема 2 Варіант D (docs/local-refinement/
@@ -55,6 +55,28 @@ export interface SurfaceZonePaintingSource {
   readonly step1Source: ZonePaintingSource;
 }
 
+// How many shell cells each voxel cell is subdivided into per axis (see
+// geometry/surface-shell-grid.ts's own SHELL_SUBDIVISIONS doc comment for
+// why this exists at all: a coarse voxel grid can't separate 2 physically
+// distinct surface patches sharing one voxel, a finer shell grid can).
+// User-adjustable, deliberately with no UI-facing upper bound - the
+// component's own number input has no `max`. 1 is the only real floor
+// (0 or negative subdivisions can't describe a grid at all).
+export const MIN_SHELL_SUBDIVISIONS = 1;
+// Not a UI limit (never shown to the user, never bound to the input's `max`)
+// - a last-resort safety ceiling purely against the shell grid's own cell
+// count (voxel grid cells * subdivisions^3) growing so large it could hang
+// or crash the tab from a typo/paste. High enough that it should never
+// actually bind during normal use.
+const SAFETY_MAX_SHELL_SUBDIVISIONS = 50;
+// The actual safety net in practice (open() below) - caps the shell grid's
+// total cell count regardless of how big the voxel grid it's built from
+// is, rather than one fixed subdivisions ceiling that would be way too
+// restrictive for a small grid and still not enough for a huge one. 20M
+// cells is a ~2.5MB occupancy bitmask - comfortably safe, not a number the
+// user will ever see.
+const MAX_TOTAL_SHELL_CELLS = 20_000_000;
+
 export interface SurfaceZoneOption {
   readonly voxelZoneId: number;
   readonly color: string;
@@ -75,6 +97,11 @@ export interface FinishSelectionResult {
 
 interface SurfacePaintingSession {
   readonly grid: VoxelGridDto; // the fine shell grid, not the solid voxel grid
+  // What `subdivisions` was set to when THIS session's grid was built - open()
+  // compares this against the CURRENT subdivisions() to decide whether a
+  // slider change since the last open means the shell grid needs rebuilding,
+  // the same way it already compares voxel zone ids for that purpose.
+  readonly subdivisions: number;
   readonly totalOccupied: number;
   readonly voxelZones: readonly SurfaceZoneOption[]; // snapshot of the voxel session's zones at open() time
   // -1 = unassigned, else one of voxelZones' own voxelZoneId - deliberately
@@ -130,6 +157,13 @@ export class SurfaceZonePaintingService {
 
   readonly activeSessionId = signal<number | null>(null);
   readonly activeSource = signal<SurfaceZonePaintingSource | null>(null);
+  // How finely to subdivide each voxel cell for the shell grid (geometry/
+  // surface-shell-grid.ts) - user-adjustable via a slider
+  // (ZonePaintingComponent, shown before "Далі: розмітка STL-поверхні"),
+  // read fresh by open() below rather than baked in at construction, so
+  // dragging the slider before the NEXT open takes effect without needing
+  // this service recreated.
+  readonly subdivisions = signal(SHELL_SUBDIVISIONS);
 
   private readonly sessionsByKey = new Map<number, SurfacePaintingSession>();
 
@@ -151,13 +185,47 @@ export class SurfaceZonePaintingService {
     }
   }
 
+  // Only floors at MIN_SHELL_SUBDIVISIONS and caps at the internal safety
+  // ceiling above (never MAX_SHELL_SUBDIVISIONS - there isn't one) -
+  // otherwise takes whatever the user typed, including values open() will
+  // later need to itself scale down against the CURRENT voxel grid's own
+  // cell count (see open()'s own comment).
+  setSubdivisions(value: number): void {
+    this.subdivisions.set(Math.min(SAFETY_MAX_SHELL_SUBDIVISIONS, Math.max(MIN_SHELL_SUBDIVISIONS, Math.round(value))));
+  }
+
+  // The actual ceiling `subdivisions` gets clamped against for THIS
+  // session (open()'s own comment) - exposed so the component can bind it
+  // as the number input's real `max` attribute instead of only enforcing
+  // it after the fact. Without a bound `max`, the browser's own spinner/
+  // scroll increments keep advancing the DISPLAYED value past whatever
+  // open() actually clamped `subdivisions` back down to, since Angular's
+  // [value] binding skips re-writing the DOM when the bound expression
+  // happens to already equal what it last wrote - a real max attribute
+  // stops the browser incrementing past it in the first place, so the two
+  // can never visibly disagree.
+  maxSubdivisionsForSession(sessionId: number): number {
+    const voxelSession = this.zonePainting.getSession(sessionId);
+    if (!voxelSession) {
+      return SAFETY_MAX_SHELL_SUBDIVISIONS;
+    }
+    return this.maxSubdivisionsForVoxelCellCount(voxelSession.grid.countX * voxelSession.grid.countY * voxelSession.grid.countZ);
+  }
+
+  private maxSubdivisionsForVoxelCellCount(voxelCellCount: number): number {
+    return Math.max(MIN_SHELL_SUBDIVISIONS, Math.floor(Math.cbrt(MAX_TOTAL_SHELL_CELLS / Math.max(1, voxelCellCount))));
+  }
+
   // Opens the window for `sessionId` - refuses unless the voxel zoning is
   // both successful AND explicitly saved (see the file header's point 3).
   // Rebuilds the shell grid + a fresh session whenever the voxel zone LIST
   // itself has changed since the last time this was open (same "grid
   // identity changed -> fresh session" rule as ZonePaintingService.open) -
   // comparing zone ids, since resetZones/further painting on the voxel side
-  // would otherwise leave this pointing at zones that no longer exist.
+  // would otherwise leave this pointing at zones that no longer exist - OR
+  // whenever `subdivisions` has changed since THIS session's grid was built
+  // (a slider drag between closing and reopening the tool for the same
+  // zones should still take effect, not silently keep the old grid).
   open(sessionId: number, source: SurfaceZonePaintingSource): boolean {
     if (!this.zonePainting.isSaved(sessionId)) {
       return false;
@@ -167,12 +235,30 @@ export class SurfaceZonePaintingService {
       return false;
     }
     const voxelZoneIds = voxelSession.zones.map(zone => zone.id);
+    // The user's requested subdivisions has no fixed ceiling of its own -
+    // this is the actual safety net, scaled to what the CURRENT voxel grid
+    // can afford rather than one fixed number for every grid: the shell
+    // grid's own cell count is voxelCellCount * subdivisions^3, so this
+    // caps subdivisions at whatever keeps that product under
+    // MAX_TOTAL_SHELL_CELLS regardless of how big or small the voxel grid
+    // itself happens to be. Silently lowers `subdivisions` itself (not just
+    // what this one open() call uses) so the displayed value never lies
+    // about what the grid actually got built with.
+    const voxelCellCount = voxelSession.grid.countX * voxelSession.grid.countY * voxelSession.grid.countZ;
+    const maxSubdivisionsForGrid = this.maxSubdivisionsForVoxelCellCount(voxelCellCount);
+    if (this.subdivisions() > maxSubdivisionsForGrid) {
+      this.subdivisions.set(maxSubdivisionsForGrid);
+    }
+    const subdivisions = this.subdivisions();
     const existing = this.sessionsByKey.get(sessionId);
-    const alreadyMatches = existing && existing.voxelZones.map(zone => zone.voxelZoneId).join(',') === voxelZoneIds.join(',');
+    const alreadyMatches =
+      existing &&
+      existing.subdivisions === subdivisions &&
+      existing.voxelZones.map(zone => zone.voxelZoneId).join(',') === voxelZoneIds.join(',');
     if (!alreadyMatches) {
-      const grid = buildSurfaceShellGrid(source.stlMesh, voxelSession.grid);
+      const grid = buildSurfaceShellGrid(source.stlMesh, voxelSession.grid, subdivisions);
       const voxelZones = voxelSession.zones.map(zone => ({ voxelZoneId: zone.id, color: zone.color }));
-      this.sessionsByKey.set(sessionId, this.createSession(grid, voxelZones));
+      this.sessionsByKey.set(sessionId, this.createSession(grid, voxelZones, subdivisions));
     }
     this.activeSource.set(source);
     this.activeSessionId.set(sessionId);
@@ -184,9 +270,10 @@ export class SurfaceZonePaintingService {
     this.activeSource.set(null);
   }
 
-  private createSession(grid: VoxelGridDto, voxelZones: readonly SurfaceZoneOption[]): SurfacePaintingSession {
+  private createSession(grid: VoxelGridDto, voxelZones: readonly SurfaceZoneOption[], subdivisions: number): SurfacePaintingSession {
     return {
       grid,
+      subdivisions,
       totalOccupied: countOccupied(grid),
       voxelZones,
       cellZone: new Int16Array(grid.countX * grid.countY * grid.countZ).fill(-1),
@@ -359,7 +446,7 @@ export class SurfaceZonePaintingService {
     if (!session) {
       return;
     }
-    this.sessionsByKey.set(sessionId, this.createSession(session.grid, session.voxelZones));
+    this.sessionsByKey.set(sessionId, this.createSession(session.grid, session.voxelZones, session.subdivisions));
   }
 
   // Connectivity is NOT enforced here (used to be, on every edit) - see

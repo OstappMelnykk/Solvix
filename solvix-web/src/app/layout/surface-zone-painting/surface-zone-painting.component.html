@@ -47,6 +47,19 @@
       <span class="surface-zone-painting__current-zone-label">{{ currentZoneLabel() }}</span>
     </div>
 
+    <div class="surface-zone-painting__group">
+      <label class="surface-zone-painting__subdivisions" title="На скільки дрібно ділити кожен воксель для вибору зон на STL-поверхні">
+        Деталізація сітки (÷N)
+        <input
+          type="number"
+          [attr.min]="minShellSubdivisions"
+          [attr.max]="maxShellSubdivisions()"
+          step="1"
+          [value]="shellSubdivisions()"
+          (input)="onShellSubdivisionsChange($event)"
+        />
+      </label>
+    </div>
 
     <div class="surface-zone-painting__group">
       <div class="surface-zone-painting__zone-picker-label">Інструмент</div>

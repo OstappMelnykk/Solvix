@@ -3,7 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Axis, AXES, ZonePaintingService, axisCoords, projectedCoords } from '../../state/zone-painting.service';
-import { SurfaceZoneCellState, SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
+import { MIN_SHELL_SUBDIVISIONS, SurfaceZoneCellState, SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
 import { labelConnectedComponents } from '../../state/mask-connectivity';
 import { worldPointToShellCell } from '../../geometry/surface-shell-grid';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
@@ -428,6 +428,46 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.surfaceZonePainting.resetSelections(sessionId);
+    this.refreshClassifications();
+    this.disposeResultOverlay();
+  }
+
+  readonly minShellSubdivisions = MIN_SHELL_SUBDIVISIONS;
+
+  // How finely each voxel cell is subdivided for THIS shell grid
+  // (geometry/surface-shell-grid.ts) - shown here, on step 2 itself, since
+  // this is what the grid the user is currently painting on was actually
+  // built with. May read back LOWER than what was last typed if
+  // SurfaceZonePaintingService.open silently capped it against the current
+  // voxel grid's own size (see that method's own comment) - always the
+  // truth about the grid actually in use, never the raw input value.
+  shellSubdivisions(): number {
+    return this.surfaceZonePainting.subdivisions();
+  }
+
+  // Bound as the number input's real `max` attribute (surface-zone-painting.
+  // component.html) - see maxSubdivisionsForSession's own comment for why a
+  // real HTML max, not just a post-hoc JS clamp, is what actually stops the
+  // browser's spinner/scroll from visibly outrunning the clamped value.
+  maxShellSubdivisions(): number {
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    return sessionId === null ? this.shellSubdivisions() : this.surfaceZonePainting.maxSubdivisionsForSession(sessionId);
+  }
+
+  // Rebuilds the CURRENT session's shell grid at the new resolution, live,
+  // with no confirmation - changing this mid-session does discard whatever
+  // was already painted here (the grid's own cell layout changes), but the
+  // user explicitly asked for immediate, no-prompt feedback while adjusting
+  // this value, not a dialog on every change.
+  onShellSubdivisionsChange(event: Event): void {
+    const value = Number((event.target as HTMLInputElement).value);
+    const sessionId = this.surfaceZonePainting.activeSessionId();
+    const source = this.surfaceZonePainting.activeSource();
+    if (sessionId === null || !source || !Number.isFinite(value)) {
+      return;
+    }
+    this.surfaceZonePainting.setSubdivisions(value);
+    this.surfaceZonePainting.open(sessionId, source);
     this.refreshClassifications();
     this.disposeResultOverlay();
   }
