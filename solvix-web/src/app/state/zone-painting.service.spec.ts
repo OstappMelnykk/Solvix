@@ -287,6 +287,104 @@ describe('ZonePaintingService', () => {
       service.setZoneColor(1, 99, '#123456');
       expect(service.getSession(1)?.zones[0].color).toBe(before);
     });
+
+  });
+
+  describe('color uniqueness', () => {
+    beforeEach(() => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(2, 1, 1) });
+      service.open(1, fakeSource);
+      // Zone 0: voxel (0,0,0).
+      service.toggleCell(1, 'x', 0, 0);
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'z', 0, 0);
+      service.finishZone(1);
+      // Zone 1: voxel (1,0,0).
+      service.toggleCell(1, 'x', 0, 0);
+      service.toggleCell(1, 'y', 0, 0);
+      service.toggleCell(1, 'z', 1, 0);
+      service.finishZone(1);
+    });
+
+    it('isColorTaken reports true for a color another zone already has', () => {
+      const zone0Color = service.getSession(1)!.zones[0].color;
+      expect(service.isColorTaken(1, zone0Color)).toBe(true);
+    });
+
+    it('isColorTaken excludes the zone checking its own current color', () => {
+      const zone0Color = service.getSession(1)!.zones[0].color;
+      expect(service.isColorTaken(1, zone0Color, 0)).toBe(false);
+    });
+
+    it('isColorTaken is case-insensitive', () => {
+      const zone0Color = service.getSession(1)!.zones[0].color.toUpperCase();
+      expect(service.isColorTaken(1, zone0Color)).toBe(true);
+    });
+
+    it('setZoneColor refuses to give a zone a color another zone already has', () => {
+      const zone0Color = service.getSession(1)!.zones[0].color;
+      const zone1ColorBefore = service.getSession(1)!.zones[1].color;
+      service.setZoneColor(1, 1, zone0Color);
+      expect(service.getSession(1)!.zones[1].color).toBe(zone1ColorBefore);
+    });
+
+    it('nextZoneColor never suggests a color already in use', () => {
+      const used = new Set(service.getSession(1)!.zones.map(zone => zone.color));
+      expect(used.has(service.nextZoneColor(1))).toBe(false);
+    });
+  });
+
+  describe('deleteZone', () => {
+    beforeEach(() => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(3, 1, 1) });
+      service.open(1, fakeSource);
+      // Zone 0: voxel (0,0,0). Zone 1: voxel (1,0,0). Zone 2: voxel (2,0,0).
+      for (let ix = 0; ix < 3; ix++) {
+        service.toggleCell(1, 'x', 0, 0);
+        service.toggleCell(1, 'y', 0, 0);
+        service.toggleCell(1, 'z', ix, 0);
+        service.finishZone(1);
+      }
+    });
+
+    it('removes the zone and frees its voxels back to unassigned', () => {
+      service.deleteZone(1, 1); // the middle zone
+      expect(service.zoneIdAt(1, 1, 0, 0)).toBeNull();
+      expect(service.toggleCell(1, 'x', 0, 0)).toBe(true); // freed cell is paintable again
+    });
+
+    it('renumbers every zone after the deleted one to stay contiguous', () => {
+      const zone2ColorBefore = service.getSession(1)!.zones[2].color;
+      service.deleteZone(1, 1); // delete the middle zone (id 1)
+
+      const zones = service.getSession(1)!.zones;
+      expect(zones.length).toBe(2);
+      expect(zones[0].id).toBe(0); // untouched
+      expect(zones[1].id).toBe(1); // was 2, renumbered down
+      expect(zones[1].color).toBe(zone2ColorBefore);
+      // The voxel that used to belong to zone 2 now reports the renumbered id.
+      expect(service.zoneIdAt(1, 2, 0, 0)).toBe(1);
+    });
+
+    it('deleting the last zone renumbers nothing', () => {
+      service.deleteZone(1, 2);
+      const zones = service.getSession(1)!.zones;
+      expect(zones.length).toBe(2);
+      expect(zones[0].id).toBe(0);
+      expect(zones[1].id).toBe(1);
+    });
+
+    it('does nothing for an unknown zone id', () => {
+      const before = service.getSession(1)!.zones.length;
+      service.deleteZone(1, 99);
+      expect(service.getSession(1)!.zones.length).toBe(before);
+    });
+
+    it('bumps zonesRevision', () => {
+      const before = service.zonesRevision(1);
+      service.deleteZone(1, 0);
+      expect(service.zonesRevision(1)).toBeGreaterThan(before);
+    });
   });
 
   describe('viewState', () => {
@@ -316,45 +414,6 @@ describe('ZonePaintingService', () => {
       expect(view.cells[1]).toEqual({ kind: 'excluded' }); // (ix=1, iy=0)
       expect(view.cells[2]).toEqual({ kind: 'excluded' }); // (ix=0, iy=1)
       expect(view.cells[3]).toEqual({ kind: 'excluded' }); // (ix=1, iy=1)
-    });
-  });
-
-  describe('save', () => {
-    it('refuses to save while coverage is partial', () => {
-      statuses.set(1, { kind: 'ok', result: buildGrid(2, 1, 1) });
-      service.open(1, fakeSource);
-      service.toggleCell(1, 'x', 0, 0);
-      service.toggleCell(1, 'y', 0, 0);
-      service.toggleCell(1, 'z', 0, 0);
-      service.finishZone(1); // claims only (0,0,0) - the grid has 2 occupied cells
-
-      expect(service.save(1)).toBe(false);
-      expect(service.isSaved(1)).toBe(false);
-    });
-
-    it('saves once every occupied voxel is assigned to some zone', () => {
-      statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });
-      service.open(1, fakeSource);
-      service.toggleCell(1, 'x', 0, 0);
-      service.toggleCell(1, 'y', 0, 0);
-      service.toggleCell(1, 'z', 0, 0);
-      service.finishZone(1);
-
-      expect(service.save(1)).toBe(true);
-      expect(service.isSaved(1)).toBe(true);
-    });
-
-    it('resetZones clears the saved flag along with the zones', () => {
-      statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });
-      service.open(1, fakeSource);
-      service.toggleCell(1, 'x', 0, 0);
-      service.toggleCell(1, 'y', 0, 0);
-      service.toggleCell(1, 'z', 0, 0);
-      service.finishZone(1);
-      service.save(1);
-
-      service.resetZones(1);
-      expect(service.isSaved(1)).toBe(false);
     });
   });
 

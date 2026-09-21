@@ -1,10 +1,17 @@
+// The single-zone wizard's step 2 (ZonePaintingComponent's step 1 matches
+// this exactly) - see that component's own :host comment for why this is
+// inset 5% / z-index 1100 rather than a full-screen takeover.
 :host {
   position: fixed;
-  inset: 0;
-  z-index: 1000;
+  inset: 5%;
+  z-index: 1100;
   display: flex;
   flex-direction: column;
   background: #1e1f22;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
   font-family: sans-serif;
 }
 
@@ -229,6 +236,33 @@
   border-radius: 8px;
 }
 
+// The single, unmissable "which zone am I painting right now" banner -
+// replaces an earlier list-of-buttons design real feedback said made the
+// active zone unclear. A thick colored border (the zone's own color) plus
+// a large swatch, not just a small icon buried among other controls.
+.surface-zone-painting__current-zone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(30, 31, 34, 0.75);
+  border: 3px solid;
+  border-radius: 8px;
+}
+
+.surface-zone-painting__current-zone-swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+
+.surface-zone-painting__current-zone-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f2f3f5;
+}
+
 // Same shape as zone-painting.component.scss's own .zone-painting__opacity
 // (duplicated for the same encapsulation reason as everywhere else in this
 // panel - Angular's emulated style encapsulation never lets a sibling
@@ -251,56 +285,6 @@
     font-size: 12px;
     font-family: inherit;
   }
-}
-
-// The single, unmissable "which zone am I painting right now" banner -
-// replaces an earlier list-of-buttons design real feedback said made the
-// active zone unclear. A thick colored border (the zone's own color) plus
-// a large swatch, not just a small icon buried among other controls.
-.surface-zone-painting__current-zone {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  background: rgba(30, 31, 34, 0.75);
-  border: 3px solid;
-  border-radius: 8px;
-}
-
-.surface-zone-painting__zone-nav {
-  flex: none;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-
-  &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.16);
-  }
-
-  &:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-}
-
-.surface-zone-painting__current-zone-swatch {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-}
-
-.surface-zone-painting__current-zone-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: #f2f3f5;
 }
 
 .surface-zone-painting__mode-row {
@@ -416,35 +400,3 @@
   line-height: 1.4;
 }
 
-.surface-zone-painting__saved {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #7fe0d1;
-}
-
-// Destructive AND rare - deliberately understated (plain text, no border/
-// background) so it never competes visually with .surface-zone-painting__primary-button
-// right above it. Always confirmed before it does anything
-// (SurfaceZonePaintingComponent.resetSelections).
-.surface-zone-painting__reset-link {
-  padding: 4px 0;
-  background: none;
-  border: none;
-  color: #b8747b;
-  font-size: 11px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  align-self: flex-start;
-  transition: color 0.15s ease;
-
-  &:hover {
-    color: #e63946;
-  }
-
-  &:focus-visible {
-    outline: none;
-    color: #e63946;
-  }
-}

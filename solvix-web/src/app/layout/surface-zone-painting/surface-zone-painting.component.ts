@@ -48,12 +48,11 @@ function upFor(axis: Axis, sign: AxisSign): THREE.Vector3 {
   return axis === 'y' ? new THREE.Vector3(0, 0, -sign) : new THREE.Vector3(0, 1, 0);
 }
 
-// The second step of Проблема 2 Варіант D (see SurfaceZonePaintingService's
-// own header comment) - opens only once the voxel zoning is saved, and
-// paints the SAME 3-axis mask mechanism directly onto a finer grid built
-// from the STL surface, tying each committed selection to one of the
-// already-decided voxel zones (picked explicitly, not by creation order -
-// see the service's file header for why).
+// The second step of each zone's 2-step wizard (see SurfaceZonePaintingService's
+// own header comment) - opens right after ZonePaintingComponent commits one
+// voxel zone, and paints the SAME 3-axis mask mechanism directly onto a
+// finer grid built from the STL surface, tying that one zone to its own
+// patch of the actual surface.
 @Component({
   selector: 'app-surface-zone-painting',
   standalone: true,
@@ -108,10 +107,11 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   // [0,1,2] shell cells - see brushSizes/setBrushRadius below.
   private brushRadiusValue = 1;
 
-  // The colored result overlay - rebuilt once, right after save() succeeds
-  // (SurfaceZonePaintingService.save's triangleZone result never changes
-  // afterward), kept hidden except during the result panel's own render()
-  // call, same idiom as ZonePaintingComponent's own zoneOverlayGroup.
+  // The colored result overlay - rebuilt after every successful
+  // finishSelection commit (SurfaceZonePaintingService keeps its
+  // triangle->zone dictionary current the same way), kept hidden except
+  // during the result panel's own render() call, same idiom as
+  // ZonePaintingComponent's own zoneOverlayGroup.
   private resultOverlay: THREE.Object3D | null = null;
 
   // Deliberately does NOT create the 4 WebGLRenderers here (unlike
@@ -233,10 +233,9 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   // Re-opens step 1 (ZonePaintingService) with the ORIGINAL source this
   // step was opened from - see SurfaceZonePaintingSource.step1Source's own
   // comment for why that has to be carried through rather than
-  // reconstructed here. Always available (going back never loses step 2's
-  // own progress - it's only discarded if the voxel zoning itself actually
-  // changes, per ZonePaintingService.open's own "grid identity changed"
-  // rule).
+  // reconstructed here. Lets the user redo THIS zone's voxels before
+  // finishing it - it is never "the previous zone in a list" anymore, only
+  // ever the one this wizard invocation is for.
   goToStep1(): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     const source = this.surfaceZonePainting.activeSource();
@@ -247,19 +246,20 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.surfaceZonePainting.close();
   }
 
-  // The ONE zone the user is currently painting into - shown as a single,
-  // unmissable banner (color swatch + "Зона N з M") rather than a list of
-  // buttons to scan: real user feedback was that a list made it unclear
-  // which zone was actually active. Only ever changed by
-  // goBack()/runPrimaryAction() below, never picked freely.
+  // The ONE zone this wizard invocation is painting into - shown as a
+  // single, unmissable banner (color swatch + "Зона N з M"). N/M are still
+  // meaningful even though this step no longer walks a sequence itself:
+  // ZonePaintingService's own zone list gives the total, and this session's
+  // activeVoxelZoneId (set once, by ZonePaintingComponent, right before
+  // this step opened) gives which one.
   currentZoneLabel(): string {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     if (sessionId === null) {
       return '';
     }
-    const index = this.surfaceZonePainting.currentZoneIndex(sessionId);
-    const count = this.surfaceZonePainting.zoneCount(sessionId);
-    return `Зона ${index + 1} з ${count}`;
+    const activeId = this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
+    const total = this.zonePainting.getSession(sessionId)?.zones.length ?? 0;
+    return activeId === null ? '' : `Зона ${activeId + 1} з ${total}`;
   }
 
   currentZoneColor(): string {
@@ -270,23 +270,6 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     const activeId = this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
     const zones = this.surfaceZonePainting.getSession(sessionId)?.voxelZones ?? [];
     return zones.find(zone => zone.voxelZoneId === activeId)?.color ?? '#888';
-  }
-
-  canGoToPreviousZone(): boolean {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    return sessionId !== null && !this.surfaceZonePainting.isFirstZone(sessionId) && !this.isSaved();
-  }
-
-  // Auto-commits whatever's still pending first (same reasoning as
-  // runPrimaryAction below) - leaving a zone's turn should never silently
-  // lose in-progress painting.
-  goToPreviousZone(): void {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId === null) {
-      return;
-    }
-    this.finishSelection();
-    this.surfaceZonePainting.goToPreviousZone(sessionId);
   }
 
   coverageText(): string {
@@ -303,26 +286,21 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     return coverage && coverage.total > 0 ? Math.round((coverage.assigned / coverage.total) * 100) : 0;
   }
 
-  // Explains why the primary action button is disabled - shown right under
-  // it instead of leaving the user to guess from a plain disabled button.
-  saveDisabledReason(): string | null {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId === null || this.isSaved() || this.canRunPrimaryAction()) {
+  // Explains why "Завершити зону" is disabled - shown right under it
+  // instead of leaving the user to guess from a plain disabled button.
+  finishZoneDisabledReason(): string | null {
+    if (this.canFinishZone()) {
       return null;
     }
-    if (!this.surfaceZonePainting.isLastZone(sessionId)) {
-      return 'Спочатку виділіть хоч одну ділянку для поточної зони, щоб перейти далі.';
-    }
-    if (!this.surfaceZonePainting.allVoxelZonesUsed(sessionId)) {
-      return 'Ще не для всіх зон розмічено хоча б одну ділянку.';
-    }
-    const coverage = this.surfaceZonePainting.coverage(sessionId);
-    if (coverage && coverage.assigned < coverage.total) {
-      return `Ще не всю поверхню розмічено (${coverage.assigned} / ${coverage.total} ділянок).`;
-    }
-    return null;
+    return 'Спочатку виділіть хоч одну ділянку для поточної зони.';
   }
 
+  // Commits whatever's currently pending into the active zone - can be
+  // called any number of times per zone (a thin root's front and back
+  // surface, physically disjoint but the same logical zone, each need
+  // their own commit). Also refreshes the live 3D result preview so newly
+  // committed cells show up in it immediately, not just after "Завершити
+  // зону".
   finishSelection(): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
     if (sessionId === null) {
@@ -336,100 +314,44 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       this.notifications.error('Перетин 3 областей порожній - жодної ділянки не додано.');
     } else {
       this.notifications.success(`Додано ${assigned} ділянок до обраної зони.`);
-    }
-  }
-
-  private canSave(): boolean {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId === null || this.isSaved()) {
-      return false;
-    }
-    const coverage = this.surfaceZonePainting.coverage(sessionId);
-    return (
-      coverage !== null &&
-      coverage.total > 0 &&
-      coverage.assigned >= coverage.total &&
-      this.surfaceZonePainting.allVoxelZonesUsed(sessionId)
-    );
-  }
-
-  isSaved(): boolean {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    return sessionId !== null && this.surfaceZonePainting.isSaved(sessionId);
-  }
-
-  private save(): void {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    const source = this.surfaceZonePainting.activeSource();
-    if (sessionId === null || !source) {
-      return;
-    }
-    if (this.surfaceZonePainting.save(sessionId, source.stlMesh)) {
-      this.notifications.success('Розмітку STL збережено.');
       this.rebuildResultOverlay();
     }
   }
 
-  // The ONE primary action button, driving the whole sequential flow (per
-  // explicit user feedback: pressing "Зберегти" should both confirm the
-  // current zone's work AND move on to the next one, repeating until the
-  // very last zone, where the SAME button does the real, final save). Auto-
-  // commits any still-pending brush strokes first, same reasoning as
-  // goToPreviousZone.
-  primaryActionLabel(): string {
+  // Whether this zone has received at least one committed selection (or has
+  // one still pending that "Завершити зону" will auto-commit) - the only
+  // requirement to finish it now, unlike the old global "every zone used,
+  // 100% covered" gate.
+  canFinishZone(): boolean {
     const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId !== null && this.surfaceZonePainting.isLastZone(sessionId)) {
-      return 'Зберегти';
-    }
-    return 'Зберегти зону і перейти далі →';
-  }
-
-  canRunPrimaryAction(): boolean {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId === null || this.isSaved()) {
+    const activeZoneId = sessionId === null ? null : this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
+    if (sessionId === null || activeZoneId === null) {
       return false;
     }
-    if (this.surfaceZonePainting.isLastZone(sessionId)) {
-      return this.canSave();
-    }
-    // Either something's already committed for this zone, OR there's a
-    // pending (not yet committed) brush stroke - runPrimaryAction commits
-    // it automatically before advancing, so the button shouldn't read as
-    // disabled right up until the user makes one extra, redundant click on
-    // "Завершити виділення" first.
-    return this.surfaceZonePainting.isCurrentZoneUsed(sessionId) || this.hasPendingSelection(sessionId);
+    return this.surfaceZonePainting.isZoneUsed(sessionId, activeZoneId) || this.hasPendingSelection(sessionId);
   }
 
   private hasPendingSelection(sessionId: number): boolean {
     return AXES.some(axis => this.surfaceZonePainting.pendingMask(sessionId, axis)?.includes(1) ?? false);
   }
 
-  runPrimaryAction(): void {
+  // "Завершити зону" - auto-commits any still-pending stroke, then closes
+  // this step (and so the whole 2-step wizard for this zone) straight back
+  // to the zone list. No separate save(): SurfaceZonePaintingService
+  // already keeps its triangle->zone dictionary current after every
+  // finishSelection commit.
+  finishZoneStep2(): void {
     const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId === null) {
+    const activeZoneId = sessionId === null ? null : this.surfaceZonePainting.getActiveVoxelZoneId(sessionId);
+    if (sessionId === null || activeZoneId === null) {
       return;
     }
     this.finishSelection();
-    if (this.surfaceZonePainting.isLastZone(sessionId)) {
-      this.save();
-      return;
-    }
-    if (!this.surfaceZonePainting.advanceToNextZone(sessionId)) {
+    if (this.surfaceZonePainting.isZoneUsed(sessionId, activeZoneId)) {
+      this.surfaceZonePainting.close();
+    } else {
       this.notifications.error('Спочатку виділіть хоч одну ділянку для поточної зони.');
     }
-  }
-
-  resetSelections(): void {
-    const sessionId = this.surfaceZonePainting.activeSessionId();
-    if (sessionId === null) {
-      return;
-    }
-    if (!window.confirm('Скинути всю розмітку STL-поверхні? Це незворотно.')) {
-      return;
-    }
-    this.surfaceZonePainting.resetSelections(sessionId);
-    this.refreshClassifications();
-    this.disposeResultOverlay();
   }
 
   readonly minShellSubdivisions = MIN_SHELL_SUBDIVISIONS;
@@ -699,7 +621,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       this.panelSign = { x: 1, y: 1, z: 1 };
       this.rebuildFraming(source.framingObjects);
       this.refreshClassifications();
-      if (this.surfaceZonePainting.isSaved(sessionId)) {
+      if (this.surfaceZonePainting.getTriangleZones(sessionId)) {
         this.rebuildResultOverlay();
       }
     }

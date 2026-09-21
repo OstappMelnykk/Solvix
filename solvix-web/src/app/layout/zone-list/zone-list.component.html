@@ -1,0 +1,57 @@
+<div class="zone-list__header">
+  <span class="zone-list__title">Розмітка зон</span>
+  <button type="button" class="zone-list__back" (click)="close()">Закрити</button>
+</div>
+
+<div class="zone-list__body">
+  <div class="zone-list__status">
+    <div class="zone-list__status-row">
+      <span>{{ voxelCoverageText() }}</span>
+      <span>{{ voxelCoveragePercent() }}%</span>
+    </div>
+    <div class="zone-list__progress-bar">
+      <div class="zone-list__progress-fill" [style.width.%]="voxelCoveragePercent()"></div>
+    </div>
+    <div class="zone-list__status-row">
+      <span>{{ stlCoverageText() }}</span>
+      <span>{{ stlCoveragePercent() }}%</span>
+    </div>
+    <div class="zone-list__progress-bar">
+      <div class="zone-list__progress-fill zone-list__progress-fill--stl" [style.width.%]="stlCoveragePercent()"></div>
+    </div>
+  </div>
+
+  <div class="zone-list__zones">
+    <p class="zone-list__empty" *ngIf="zones().length === 0">
+      Зон ще немає. Натисни "Додати зону", щоб розмалювати першу - спочатку вокселі, потім одразу її ж ділянку на STL-поверхні.
+    </p>
+
+    <div class="zone-list__zone-row" *ngFor="let zone of zones()">
+      <input
+        type="color"
+        class="zone-list__color-picker"
+        [value]="zone.color"
+        title="Обрати колір цієї зони"
+        (change)="onColorInput(zone.id, $any($event.target).value)"
+      />
+      <div class="zone-list__zone-info">
+        <span class="zone-list__zone-title">Зона {{ zone.id + 1 }}</span>
+        <span class="zone-list__zone-stats">{{ zone.voxelCount }} вокселів · {{ zone.stlCount }} ділянок STL</span>
+      </div>
+      <button
+        *ngIf="isLastZone(zone.id)"
+        type="button"
+        class="zone-list__zone-action"
+        title="Розмалювати цю зону заново (вокселі та STL)"
+        (click)="editLastZone(zone.id)"
+      >
+        Редагувати
+      </button>
+      <button type="button" class="zone-list__zone-action zone-list__zone-action--danger" title="Видалити цю зону" (click)="deleteZone(zone.id)">
+        Видалити
+      </button>
+    </div>
+  </div>
+
+  <button type="button" class="zone-list__add" (click)="addZone()">+ Додати зону</button>
+</div>

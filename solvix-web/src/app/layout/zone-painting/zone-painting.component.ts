@@ -237,7 +237,7 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
   }
 
   isHidden(): boolean {
-    return this.zonePainting.activeSessionId() === null;
+    return this.zonePainting.activeSessionId() === null || !this.zonePainting.step1Visible();
   }
 
   isResultPanel(index: number): boolean {
@@ -261,31 +261,10 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.applyFraming(index);
   }
 
+  // Cancels this zone attempt - back to the list, not a full close (the
+  // list's own session data is untouched, only step 1's canvas hides).
   close(): void {
-    this.zonePainting.close();
-  }
-
-  // "Скинути всі зони" - destructive (loses every committed zone AND
-  // whatever's currently pending), so confirm before actually doing it.
-  resetZones(): void {
-    const sessionId = this.zonePainting.activeSessionId();
-    if (sessionId === null) {
-      return;
-    }
-    if (!window.confirm('Скинути всі зони й почати розмітку заново? Це незворотно.')) {
-      return;
-    }
-    this.zonePainting.resetZones(sessionId);
-    this.refreshClassifications();
-    this.rebuildZoneOverlayMesh();
-  }
-
-  zonesFor(): { readonly id: number; readonly color: string; readonly voxelCount: number }[] {
-    const sessionId = this.zonePainting.activeSessionId();
-    if (sessionId === null) {
-      return [];
-    }
-    return [...(this.zonePainting.getSession(sessionId)?.zones ?? [])];
+    this.zonePainting.hideStep1();
   }
 
   coverageText(): string {
@@ -303,40 +282,16 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     return coverage && coverage.total > 0 ? Math.round((coverage.assigned / coverage.total) * 100) : 0;
   }
 
-  // Explains why "Зберегти" is disabled - shown right under it instead of
-  // leaving the user to guess from a plain disabled button.
-  saveDisabledReason(): string | null {
-    if (this.isSaved() || this.canSave()) {
-      return null;
-    }
-    const sessionId = this.zonePainting.activeSessionId();
-    const coverage = sessionId === null ? null : this.zonePainting.coverage(sessionId);
-    if (!coverage || coverage.total === 0) {
-      return null;
-    }
-    return `Ще не всі вокселі розмічені по зонах (${coverage.assigned} / ${coverage.total}). Домалюйте решту або натисніть "Завершити зону" для поточного виділення.`;
-  }
-
   nextZoneColor(): string {
     const sessionId = this.zonePainting.activeSessionId();
     return sessionId === null ? '#888' : this.zonePainting.nextZoneColor(sessionId);
   }
 
-  // The color picker next to each zone in the list - cosmetic only, never
-  // changes which voxels belong to the zone. Refreshes both places the
-  // color is actually drawn: the 3 flat panels' 'zoned' cell fill
-  // (refreshClassifications, cached in viewStateCache) and the 3D result
-  // panel (rebuildZoneOverlayMesh).
-  setZoneColor(zoneId: number, color: string): void {
-    const sessionId = this.zonePainting.activeSessionId();
-    if (sessionId === null) {
-      return;
-    }
-    this.zonePainting.setZoneColor(sessionId, zoneId, color);
-    this.refreshClassifications();
-    this.rebuildZoneOverlayMesh();
-  }
-
+  // Commits the current pending selection as this wizard invocation's ONE
+  // zone. On success, hands off straight to step 2 (STL painting) for that
+  // SAME zone and closes this step - there is no separate "Зберегти"/list
+  // here anymore (ZoneListComponent owns the list of already-completed
+  // zones; this view only ever has one zone in progress at a time).
   finishZone(): void {
     const sessionId = this.zonePainting.activeSessionId();
     if (sessionId === null) {
@@ -355,60 +310,26 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
-    const coverage = this.zonePainting.coverage(sessionId);
-    if (coverage && coverage.assigned >= coverage.total) {
-      // Every occupied voxel now belongs to some zone - nothing left to
-      // paint. Unlike before, this no longer closes the window on its own -
-      // the user decides when to leave (canSave()'s "Зберегти" button below
-      // just becomes available).
-      this.notifications.success(`Зону створено: ${assigned} вокселів. Усі вокселі вже розмічені по зонах.`);
-    } else {
-      this.notifications.success(`Зону створено: ${assigned} вокселів.`);
-    }
-  }
-
-  // Backing state + action for the "Зберегти" button - only appears once
-  // coverage() reports every occupied voxel assigned to some zone (see
-  // ZonePaintingService.save's own comment on what "saved" actually marks).
-  canSave(): boolean {
-    const sessionId = this.zonePainting.activeSessionId();
-    if (sessionId === null || this.isSaved()) {
-      return false;
-    }
-    const coverage = this.zonePainting.coverage(sessionId);
-    return coverage !== null && coverage.total > 0 && coverage.assigned >= coverage.total;
-  }
-
-  isSaved(): boolean {
-    const sessionId = this.zonePainting.activeSessionId();
-    return sessionId !== null && this.zonePainting.isSaved(sessionId);
-  }
-
-  save(): void {
-    const sessionId = this.zonePainting.activeSessionId();
-    if (sessionId === null) {
+    // finishZone always appends the new zone at the end of a contiguous
+    // 0..N-1 array (ZonePaintingService.deleteZone is the only other thing
+    // that ever touches zone ids, and nothing can run concurrently with
+    // this call), so the last entry is exactly the zone just committed.
+    const zones = this.zonePainting.getSession(sessionId)?.zones ?? [];
+    const newZoneId = zones[zones.length - 1]?.id;
+    if (newZoneId === undefined) {
       return;
     }
-    if (this.zonePainting.save(sessionId)) {
-      this.notifications.success('Зони збережено.');
-    }
+    this.openStep2ForZone(sessionId, newZoneId);
   }
 
-  // The explicit next step (per the user's own preference: a separate step
-  // AFTER save, not an automatic mode switch inside this same window) -
-  // hands the ALREADY-saved voxel zoning off to SurfaceZonePaintingService,
-  // then closes this window so only one full-screen tool is ever showing at
-  // once (SurfaceZonePaintingComponent isn't nested inside this one - it's
-  // a sibling, mounted once at app.component.html, same pattern as this
-  // component itself and SixViewOverlayComponent).
-  canOpenSurfaceZonePainting(): boolean {
-    return this.isSaved() && this.zonePainting.activeSource()?.stlMesh != null;
-  }
-
-  openSurfaceZonePainting(): void {
-    const sessionId = this.zonePainting.activeSessionId();
+  // Hands the just-committed zone off to SurfaceZonePaintingComponent (step
+  // 2 of this same wizard) and closes this step, so only one full-screen
+  // tool is ever showing at once (SurfaceZonePaintingComponent isn't nested
+  // inside this one - it's a sibling, mounted once at app.component.html,
+  // same pattern as this component itself and SixViewOverlayComponent).
+  private openStep2ForZone(sessionId: number, voxelZoneId: number): void {
     const source = this.zonePainting.activeSource();
-    if (sessionId === null || !source || !source.stlMesh) {
+    if (!source || !source.stlMesh) {
       return;
     }
     const opened = this.surfaceZonePainting.open(sessionId, {
@@ -430,7 +351,10 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       step1Source: source
     });
     if (opened) {
-      this.zonePainting.close();
+      this.surfaceZonePainting.setActiveVoxelZoneId(sessionId, voxelZoneId);
+      // Hides step 1's canvas, NOT a full close - the list underneath stays
+      // open with its session data intact, ready for the next zone.
+      this.zonePainting.hideStep1();
     }
   }
 
@@ -574,7 +498,14 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     }
     const sessionId = this.zonePainting.activeSessionId();
     const source = this.zonePainting.activeSource();
-    if (sessionId === null || !source) {
+    // step1Visible false means the list is showing instead (same sessionId,
+    // same source, just this canvas hidden) - resetting lastSessionId here
+    // (not just on an actual session change) forces the "just became
+    // visible" branch below to re-run next time step 1 reopens for a NEW
+    // zone, so it always picks up whatever the list did to the zone data
+    // while this was hidden (a delete, a color edit, ...) instead of
+    // drawing from a stale viewStateCache/zoneOverlayGroup.
+    if (sessionId === null || !source || !this.zonePainting.step1Visible()) {
       this.lastSessionId = null;
       this.teardownRenderers();
       return;

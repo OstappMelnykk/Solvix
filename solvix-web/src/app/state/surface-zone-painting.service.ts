@@ -6,35 +6,34 @@ import { isSingleConnectedComponent } from './mask-connectivity';
 import { SHELL_SUBDIVISIONS, buildSurfaceShellGrid, assignTriangleZones } from '../geometry/surface-shell-grid';
 import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-contract';
 
-// The second, later step of Проблема 2 Варіант D (docs/local-refinement/
-// PROBLEMS.md): once the voxel zones are painted AND explicitly saved
-// (ZonePaintingService.save), each of those zones must ALSO be tied to its
-// OWN patch of the actual STL surface - otherwise a zone's boundary
-// vertices could isoparametric-snap onto a NEIGHBORING zone's surface
-// instead of their own, self-intersecting the element (see PROBLEMS.md's
-// isoparametric-mapping example). This paints that correspondence on a
-// second, much finer grid built directly over the STL triangles
-// (geometry/surface-shell-grid.ts) using the exact same 3-axis mask-
-// painting/connectivity mechanics as the voxel tool - see
-// ZonePaintingService for the shared reasoning behind that mechanism.
+// The second half of each zone's 2-step wizard (Проблема 2 Варіант D,
+// docs/local-refinement/PROBLEMS.md): right after a voxel zone is committed
+// (ZonePaintingService.finishZone), it must ALSO be tied to its OWN patch of
+// the actual STL surface - otherwise a zone's boundary vertices could
+// isoparametric-snap onto a NEIGHBORING zone's surface instead of their own,
+// self-intersecting the element (see PROBLEMS.md's isoparametric-mapping
+// example). This paints that correspondence on a second, much finer grid
+// built directly over the STL triangles (geometry/surface-shell-grid.ts)
+// using the exact same 3-axis mask-painting/connectivity mechanics as the
+// voxel tool - see ZonePaintingService for the shared reasoning behind that
+// mechanism.
 //
 // Differs from the voxel tool in 3 ways, all per the user's explicit
 // request:
-// 1. A committed selection here does NOT create a new zone - the UI walks
-//    the ALREADY-DECIDED voxel zones one at a time, in order
-//    (advanceToNextZone/goToPreviousZone), and every selection committed
-//    during a zone's turn goes into THAT zone. One voxel zone can still
-//    receive multiple separate committed selections within its own turn
-//    (e.g. a thin root's front and back surface, physically disjoint but
-//    the same logical zone) - finishSelection can be called any number of
-//    times before advancing.
-// 2. Completion requires BOTH full coverage (no unassigned occupied shell
-//    cell left) AND every voxel zone actually used at least once - not the
-//    voxel tool's "partial coverage is fine, unassigned falls back to
-//    Варіант B" rule.
-// 3. Opens as an explicit separate step, only once the voxel zoning itself
-//    is ZonePaintingService.isSaved() - the whole reason to run this at all
-//    is to pin down a surface patch for each ALREADY-DECIDED voxel zone.
+// 1. A committed selection here does NOT create a new zone - it's always
+//    committed into whichever voxel zone the wizard explicitly set as
+//    active (setActiveVoxelZoneId), right before opening this step. One
+//    voxel zone can still receive multiple separate committed selections
+//    within its own turn (e.g. a thin root's front and back surface,
+//    physically disjoint but the same logical zone) - finishSelection can
+//    be called any number of times before the wizard moves on.
+// 2. Like the voxel tool, partial coverage is fine - an unclaimed shell
+//    cell simply has no STL patch recorded for it. Nothing requires every
+//    zone to be used or the whole surface covered.
+// 3. Opens right after ZonePaintingService.finishZone commits ONE zone (not
+//    after the whole voxel zoning is "done" - there's no such moment
+//    anymore): the wizard interleaves one zone's voxels, then immediately
+//    that same zone's STL patch, before moving to the next zone.
 
 export interface SurfaceZonePaintingSource {
   readonly scene: THREE.Scene;
@@ -97,28 +96,35 @@ export interface FinishSelectionResult {
 
 interface SurfacePaintingSession {
   readonly grid: VoxelGridDto; // the fine shell grid, not the solid voxel grid
+  // The SOLID voxel grid this shell grid was built from - open()'s actual
+  // cache key, alongside `subdivisions` (see open()'s own comment for why
+  // that's the right key now: rebuilding the shell grid only needs to
+  // happen when the underlying geometry or subdivision count changes,
+  // never just because a zone was added/deleted).
+  readonly voxelGrid: VoxelGridDto;
   // What `subdivisions` was set to when THIS session's grid was built - open()
   // compares this against the CURRENT subdivisions() to decide whether a
-  // slider change since the last open means the shell grid needs rebuilding,
-  // the same way it already compares voxel zone ids for that purpose.
+  // slider change since the last open means the shell grid needs rebuilding.
   readonly subdivisions: number;
   readonly totalOccupied: number;
-  readonly voxelZones: readonly SurfaceZoneOption[]; // snapshot of the voxel session's zones at open() time
-  // -1 = unassigned, else one of voxelZones' own voxelZoneId - deliberately
+  // -1 = unassigned, else a voxelZoneId from ZonePaintingService - deliberately
   // NOT a separate id space (see the file header's point 1): a shell cell
   // belongs directly to a voxel zone, with no extra indirection table.
   readonly cellZone: Int16Array;
-  // Running total of assigned cells - kept incrementally (finishSelection)
-  // rather than rescanned, same reasoning as ZonePaintingService's own
-  // zones[].reduce (cheap because it never needs a full grid scan).
+  // Running total of assigned cells - kept incrementally (finishSelection/
+  // deleteZone) rather than rescanned, same reasoning as ZonePaintingService's
+  // own zones[].reduce (cheap because it never needs a full grid scan).
   assignedCount: number;
   readonly usedVoxelZoneIds: Set<number>;
+  // Which voxel zone the next finishSelection() commits into - explicitly
+  // set by the wizard (setActiveVoxelZoneId) before painting starts for a
+  // given zone; -1 until then (nothing paintable yet).
   activeVoxelZoneId: number;
-  saved: boolean;
-  // Computed once, in save() - which zone (a voxelZoneId, or -1) each STL
-  // triangle belongs to. This is the actual "dictionary" a downstream
-  // refinement pass would read: given a triangle, which zone's boundary it
-  // may snap to.
+  // Computed fresh after every finishSelection/deleteZone (recomputeTriangleZones) -
+  // which zone (a voxelZoneId, or -1) each STL triangle belongs to. This is
+  // the actual "dictionary" a downstream refinement pass would read: given a
+  // triangle, which zone's boundary it may snap to. null until the first
+  // successful commit.
   triangleZone: Int16Array | null;
   readonly maskX: Uint8Array;
   readonly maskY: Uint8Array;
@@ -216,25 +222,21 @@ export class SurfaceZonePaintingService {
     return Math.max(MIN_SHELL_SUBDIVISIONS, Math.floor(Math.cbrt(MAX_TOTAL_SHELL_CELLS / Math.max(1, voxelCellCount))));
   }
 
-  // Opens the window for `sessionId` - refuses unless the voxel zoning is
-  // both successful AND explicitly saved (see the file header's point 3).
-  // Rebuilds the shell grid + a fresh session whenever the voxel zone LIST
-  // itself has changed since the last time this was open (same "grid
-  // identity changed -> fresh session" rule as ZonePaintingService.open) -
-  // comparing zone ids, since resetZones/further painting on the voxel side
-  // would otherwise leave this pointing at zones that no longer exist - OR
-  // whenever `subdivisions` has changed since THIS session's grid was built
-  // (a slider drag between closing and reopening the tool for the same
-  // zones should still take effect, not silently keep the old grid).
+  // Opens the window for `sessionId` - refuses unless at least one voxel
+  // zone exists (the wizard only ever opens this right after step 1 commits
+  // one, so in practice there always is by the time this is called).
+  // Rebuilds the shell grid + a fresh session only when the SOLID voxel
+  // grid's own identity has changed (a brand new voxelization run - already
+  // invalidated separately via referenceChanged$/discardSession, so this is
+  // mostly defensive) or `subdivisions` changed since this session's grid
+  // was built - deliberately NOT when the zone list changes: adding or
+  // deleting a zone must never wipe previously-painted STL selections for
+  // OTHER zones, which a fresh session would do.
   open(sessionId: number, source: SurfaceZonePaintingSource): boolean {
-    if (!this.zonePainting.isSaved(sessionId)) {
-      return false;
-    }
     const voxelSession = this.zonePainting.getSession(sessionId);
     if (!voxelSession || voxelSession.zones.length === 0) {
       return false;
     }
-    const voxelZoneIds = voxelSession.zones.map(zone => zone.id);
     // The user's requested subdivisions has no fixed ceiling of its own -
     // this is the actual safety net, scaled to what the CURRENT voxel grid
     // can afford rather than one fixed number for every grid: the shell
@@ -251,14 +253,10 @@ export class SurfaceZonePaintingService {
     }
     const subdivisions = this.subdivisions();
     const existing = this.sessionsByKey.get(sessionId);
-    const alreadyMatches =
-      existing &&
-      existing.subdivisions === subdivisions &&
-      existing.voxelZones.map(zone => zone.voxelZoneId).join(',') === voxelZoneIds.join(',');
+    const alreadyMatches = existing && existing.subdivisions === subdivisions && existing.voxelGrid === voxelSession.grid;
     if (!alreadyMatches) {
       const grid = buildSurfaceShellGrid(source.stlMesh, voxelSession.grid, subdivisions);
-      const voxelZones = voxelSession.zones.map(zone => ({ voxelZoneId: zone.id, color: zone.color }));
-      this.sessionsByKey.set(sessionId, this.createSession(grid, voxelZones, subdivisions));
+      this.sessionsByKey.set(sessionId, this.createSession(grid, voxelSession.grid, subdivisions));
     }
     this.activeSource.set(source);
     this.activeSessionId.set(sessionId);
@@ -270,17 +268,16 @@ export class SurfaceZonePaintingService {
     this.activeSource.set(null);
   }
 
-  private createSession(grid: VoxelGridDto, voxelZones: readonly SurfaceZoneOption[], subdivisions: number): SurfacePaintingSession {
+  private createSession(grid: VoxelGridDto, voxelGrid: VoxelGridDto, subdivisions: number): SurfacePaintingSession {
     return {
       grid,
+      voxelGrid,
       subdivisions,
       totalOccupied: countOccupied(grid),
-      voxelZones,
       cellZone: new Int16Array(grid.countX * grid.countY * grid.countZ).fill(-1),
       assignedCount: 0,
       usedVoxelZoneIds: new Set(),
-      activeVoxelZoneId: voxelZones[0].voxelZoneId,
-      saved: false,
+      activeVoxelZoneId: -1,
       triangleZone: null,
       maskX: new Uint8Array(grid.countY * grid.countZ),
       maskY: new Uint8Array(grid.countX * grid.countZ),
@@ -288,142 +285,72 @@ export class SurfaceZonePaintingService {
     };
   }
 
+  // `voxelZones` is computed fresh from ZonePaintingService's OWN current
+  // list every call (not cached) - see open()'s own comment on why this
+  // service no longer keeps its own snapshot of it.
   getSession(sessionId: number): { readonly grid: VoxelGridDto; readonly voxelZones: readonly SurfaceZoneOption[] } | null {
     const session = this.sessionsByKey.get(sessionId);
-    return session ? { grid: session.grid, voxelZones: session.voxelZones } : null;
+    if (!session) {
+      return null;
+    }
+    const voxelZones = (this.zonePainting.getSession(sessionId)?.zones ?? []).map(zone => ({ voxelZoneId: zone.id, color: zone.color }));
+    return { grid: session.grid, voxelZones };
   }
 
   getActiveVoxelZoneId(sessionId: number): number | null {
     return this.sessionsByKey.get(sessionId)?.activeVoxelZoneId ?? null;
   }
 
-  // Which EXISTING voxel zone the next finishSelection() call commits the
-  // pending mask into - moved only by advanceToNextZone/goToPreviousZone
-  // below (the UI walks the zones in order, one at a time, rather than
-  // letting the user free-pick from a list - real user feedback: a picker
-  // made it unclear which zone was "active" and how to know when to move
-  // on). One voxel zone can still receive more than one separate STL
-  // selection within its own turn (file header point 1) - finishSelection
-  // can be called any number of times before advancing.
+  // Which voxel zone the next finishSelection() call commits the pending
+  // mask into - set explicitly by the wizard right before it opens step 2
+  // for a given zone (there is only ever ONE zone being painted per wizard
+  // invocation now, no sequence to walk). Refuses an id that isn't one of
+  // ZonePaintingService's own current zones.
   setActiveVoxelZoneId(sessionId: number, voxelZoneId: number): void {
     const session = this.sessionsByKey.get(sessionId);
-    if (session && session.voxelZones.some(zone => zone.voxelZoneId === voxelZoneId)) {
+    const voxelZoneExists = this.zonePainting.getSession(sessionId)?.zones.some(zone => zone.id === voxelZoneId) ?? false;
+    if (session && voxelZoneExists) {
       session.activeVoxelZoneId = voxelZoneId;
     }
   }
 
-  private currentZoneIndexOf(session: SurfacePaintingSession): number {
-    return session.voxelZones.findIndex(zone => zone.voxelZoneId === session.activeVoxelZoneId);
+  // Whether `voxelZoneId` has received at least one committed selection yet -
+  // the wizard's "Завершити зону" button requires this for the zone it's
+  // currently working on before it'll close back to the list.
+  isZoneUsed(sessionId: number, voxelZoneId: number): boolean {
+    return this.sessionsByKey.get(sessionId)?.usedVoxelZoneIds.has(voxelZoneId) ?? false;
   }
 
-  // 0-based position of the active zone within voxelZones - for a "Зона N з
-  // M" indicator.
-  currentZoneIndex(sessionId: number): number {
-    const session = this.sessionsByKey.get(sessionId);
-    return session ? Math.max(0, this.currentZoneIndexOf(session)) : 0;
-  }
-
-  zoneCount(sessionId: number): number {
-    return this.sessionsByKey.get(sessionId)?.voxelZones.length ?? 0;
-  }
-
-  isFirstZone(sessionId: number): boolean {
-    return this.currentZoneIndex(sessionId) === 0;
-  }
-
-  isLastZone(sessionId: number): boolean {
-    const session = this.sessionsByKey.get(sessionId);
-    return session ? this.currentZoneIndexOf(session) === session.voxelZones.length - 1 : true;
-  }
-
-  // Whether the CURRENTLY active zone has received at least one committed
-  // selection yet - advanceToNextZone refuses to move on until this is
-  // true, so the user can't accidentally skip a zone with nothing painted
-  // for it at all.
-  isCurrentZoneUsed(sessionId: number): boolean {
-    const session = this.sessionsByKey.get(sessionId);
-    return session ? session.usedVoxelZoneIds.has(session.activeVoxelZoneId) : false;
-  }
-
-  // Moves to the next zone in sequence - refuses (false, no-op) if the
-  // current zone hasn't been used yet, or if already on the last zone (the
-  // component's primary action button switches to "Зберегти"/save() at
-  // that point instead of calling this).
-  advanceToNextZone(sessionId: number): boolean {
-    const session = this.sessionsByKey.get(sessionId);
-    if (!session || !session.usedVoxelZoneIds.has(session.activeVoxelZoneId)) {
-      return false;
-    }
-    const index = this.currentZoneIndexOf(session);
-    if (index === -1 || index >= session.voxelZones.length - 1) {
-      return false;
-    }
-    session.activeVoxelZoneId = session.voxelZones[index + 1].voxelZoneId;
-    return true;
-  }
-
-  // Moves back to the previous zone - always allowed (no "used" precondition,
-  // unlike advancing forward) so the user can revisit an earlier zone to
-  // patch up any coverage gaps discovered later, once free zone-picking was
-  // replaced by this sequential flow.
-  goToPreviousZone(sessionId: number): boolean {
+  // How many shell cells `voxelZoneId` currently claims - the zone list's
+  // own per-zone STL count, alongside ZonePaintingService's own
+  // zones[].voxelCount for the voxel side.
+  cellCountForZone(sessionId: number, voxelZoneId: number): number {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
-      return false;
+      return 0;
     }
-    const index = this.currentZoneIndexOf(session);
-    if (index <= 0) {
-      return false;
+    let count = 0;
+    for (let i = 0; i < session.cellZone.length; i++) {
+      if (session.cellZone[i] === voxelZoneId) {
+        count++;
+      }
     }
-    session.activeVoxelZoneId = session.voxelZones[index - 1].voxelZoneId;
-    return true;
+    return count;
   }
 
   // "assigned" is every shell cell already committed to some zone -
-  // "total" is every shell cell the STL surface actually touches. Unlike
-  // ZonePaintingService's own coverage, reaching assigned === total is a
-  // REQUIREMENT here (see save()), not just an informational stat.
+  // "total" is every shell cell the STL surface actually touches. Purely
+  // informational (the zone list's own STL progress bar) - nothing requires
+  // this to ever reach 100%, unclaimed shell cells simply have no STL patch
+  // recorded for them.
   coverage(sessionId: number): { readonly assigned: number; readonly total: number } | null {
     const session = this.sessionsByKey.get(sessionId);
     return session ? { assigned: session.assignedCount, total: session.totalOccupied } : null;
   }
 
-  // True once every voxel zone this session started with has received at
-  // least one committed selection - the other half of save()'s
-  // requirement, alongside full coverage.
-  allVoxelZonesUsed(sessionId: number): boolean {
-    const session = this.sessionsByKey.get(sessionId);
-    if (!session) {
-      return false;
-    }
-    return session.voxelZones.every(zone => session.usedVoxelZoneIds.has(zone.voxelZoneId));
-  }
-
-  isSaved(sessionId: number): boolean {
-    return this.sessionsByKey.get(sessionId)?.saved ?? false;
-  }
-
-  // Computes the actual triangle -> zone assignment (geometry/surface-
-  // shell-grid.ts's assignTriangleZones) and freezes the session - refuses
-  // (same defensive backstop as ZonePaintingService.save) unless coverage
-  // is complete AND every voxel zone was used, even though the component
-  // itself already gates the button on both.
-  save(sessionId: number, stlMesh: THREE.Object3D): boolean {
-    const session = this.sessionsByKey.get(sessionId);
-    if (!session) {
-      return false;
-    }
-    if (session.assignedCount < session.totalOccupied || !this.allVoxelZonesUsed(sessionId)) {
-      return false;
-    }
-    session.triangleZone = assignTriangleZones(stlMesh, session.grid, (ix, iy, iz) => this.zoneIdAt(sessionId, ix, iy, iz));
-    session.saved = true;
-    return true;
-  }
-
   // The final "dictionary" a downstream refinement pass reads - which
   // zone (a voxelZoneId, or null) triangle `triangleIndex` belongs to.
-  // null until save() has actually run.
+  // null until the first successful finishSelection/deleteZone has run.
   zoneIdOfTriangle(sessionId: number, triangleIndex: number): number | null {
     const zoneId = this.sessionsByKey.get(sessionId)?.triangleZone?.[triangleIndex];
     return zoneId === undefined || zoneId === -1 ? null : zoneId;
@@ -433,9 +360,64 @@ export class SurfaceZonePaintingService {
   // overlay over every triangle at once (SurfaceZonePaintingComponent's own
   // result panel, WorldCanvasComponent's "Показати зони на STL" button),
   // reading it directly is simpler and cheaper than looping
-  // zoneIdOfTriangle one call per triangle. null until save() has run.
+  // zoneIdOfTriangle one call per triangle. null until a commit has run.
   getTriangleZones(sessionId: number): Int16Array | null {
     return this.sessionsByKey.get(sessionId)?.triangleZone ?? null;
+  }
+
+  // Recomputes the triangle -> zone dictionary (geometry/surface-shell-grid.ts's
+  // assignTriangleZones) from the CURRENT cellZone data - called after every
+  // successful finishSelection and deleteZone, so getTriangleZones/
+  // zoneIdOfTriangle are always current with no separate "save" step.
+  // Needs the actual STL mesh object, which is only guaranteed available
+  // through ImportedReferenceRenderService (the tool itself may not be open
+  // when deleteZone runs from the zone list) - a no-op if nothing's
+  // imported, which can't happen in practice (there's no session to
+  // recompute for without one).
+  private recomputeTriangleZones(sessionId: number): void {
+    const session = this.sessionsByKey.get(sessionId);
+    const stlMesh = this.referenceRender.getScaledReference(sessionId);
+    if (!session || !stlMesh) {
+      return;
+    }
+    session.triangleZone = assignTriangleZones(stlMesh, session.grid, (ix, iy, iz) => this.zoneIdAt(sessionId, ix, iy, iz));
+  }
+
+  // Frees a voxel zone's STL cells back to unassigned and renumbers every
+  // zone AFTER it down by 1 - mirrors ZonePaintingService.deleteZone exactly
+  // (same voxelZoneId space, so this MUST stay in lockstep with it: a
+  // caller deletes a zone by calling both services' deleteZone together,
+  // e.g. the zone list's own delete action).
+  deleteZone(sessionId: number, voxelZoneId: number): void {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const { cellZone } = session;
+    let removed = 0;
+    for (let i = 0; i < cellZone.length; i++) {
+      if (cellZone[i] === voxelZoneId) {
+        cellZone[i] = -1;
+        removed++;
+      } else if (cellZone[i] > voxelZoneId) {
+        cellZone[i]--;
+      }
+    }
+    session.assignedCount -= removed;
+    const renumberedUsed = new Set<number>();
+    session.usedVoxelZoneIds.forEach(id => {
+      if (id !== voxelZoneId) {
+        renumberedUsed.add(id > voxelZoneId ? id - 1 : id);
+      }
+    });
+    session.usedVoxelZoneIds.clear();
+    renumberedUsed.forEach(id => session.usedVoxelZoneIds.add(id));
+    if (session.activeVoxelZoneId === voxelZoneId) {
+      session.activeVoxelZoneId = -1;
+    } else if (session.activeVoxelZoneId > voxelZoneId) {
+      session.activeVoxelZoneId--;
+    }
+    this.recomputeTriangleZones(sessionId);
   }
 
   // Wipes every committed assignment AND whatever's pending - the "Скинути
@@ -446,7 +428,7 @@ export class SurfaceZonePaintingService {
     if (!session) {
       return;
     }
-    this.sessionsByKey.set(sessionId, this.createSession(session.grid, session.voxelZones, session.subdivisions));
+    this.sessionsByKey.set(sessionId, this.createSession(session.grid, session.voxelGrid, session.subdivisions));
   }
 
   // Connectivity is NOT enforced here (used to be, on every edit) - see
@@ -466,7 +448,7 @@ export class SurfaceZonePaintingService {
     }
     const index = maskIndex(session.grid, axis, u, v);
     const previous = mask[index];
-    if (!previous && !this.isCellAvailable(session, axis, u, v)) {
+    if (!previous && !this.isCellAvailable(sessionId, session, axis, u, v)) {
       return false;
     }
     mask[index] = previous ? 0 : 1;
@@ -491,6 +473,7 @@ export class SurfaceZonePaintingService {
     const maskB = maskFor(session, axisB);
     const maskAHasAny = maskA.includes(1);
     const maskBHasAny = maskB.includes(1);
+    const zoneColors = this.currentZoneColors(sessionId);
 
     let addedAny = false;
     for (let v = minV; v <= maxV; v++) {
@@ -498,7 +481,7 @@ export class SurfaceZonePaintingService {
         if (mask[u + v * width]) {
           continue;
         }
-        const state = this.classifyCell(session, axis, u, v, mask, maskA, maskAHasAny, maskB, maskBHasAny, axisA, axisB);
+        const state = this.classifyCell(session, zoneColors, axis, u, v, mask, maskA, maskAHasAny, maskB, maskBHasAny, axisA, axisB);
         if (state.kind === 'available') {
           mask[u + v * width] = 1;
           addedAny = true;
@@ -508,18 +491,28 @@ export class SurfaceZonePaintingService {
     return addedAny;
   }
 
-  private isCellAvailable(session: SurfacePaintingSession, axis: Axis, u: number, v: number): boolean {
+  private isCellAvailable(sessionId: number, session: SurfacePaintingSession, axis: Axis, u: number, v: number): boolean {
     const ownMask = maskFor(session, axis);
     const [axisA, axisB] = AXES.filter(a => a !== axis);
     const maskA = maskFor(session, axisA);
     const maskB = maskFor(session, axisB);
-    const state = this.classifyCell(session, axis, u, v, ownMask, maskA, maskA.includes(1), maskB, maskB.includes(1), axisA, axisB);
+    const zoneColors = this.currentZoneColors(sessionId);
+    const state = this.classifyCell(session, zoneColors, axis, u, v, ownMask, maskA, maskA.includes(1), maskB, maskB.includes(1), axisA, axisB);
     return state.kind === 'available';
   }
 
   pendingMask(sessionId: number, axis: Axis): Uint8Array | null {
     const session = this.sessionsByKey.get(sessionId);
     return session ? maskFor(session, axis) : null;
+  }
+
+  // A fresh id->color lookup for the CURRENT voxel zone list - built once
+  // per call site rather than per cell (viewState/selectRect can classify
+  // thousands of cells in one call), same reasoning as maskAHasAny/maskBHasAny
+  // being hoisted out of their own per-cell loops.
+  private currentZoneColors(sessionId: number): ReadonlyMap<number, string> {
+    const zones = this.zonePainting.getSession(sessionId)?.zones ?? [];
+    return new Map(zones.map(zone => [zone.id, zone.color]));
   }
 
   viewState(sessionId: number, axis: Axis): { width: number; height: number; cells: SurfaceZoneCellState[] } {
@@ -536,11 +529,12 @@ export class SurfaceZonePaintingService {
     const maskB = maskFor(session, otherAxisB);
     const maskAHasAny = maskA.includes(1);
     const maskBHasAny = maskB.includes(1);
+    const zoneColors = this.currentZoneColors(sessionId);
 
     const cells: SurfaceZoneCellState[] = new Array(width * height);
     for (let v = 0; v < height; v++) {
       for (let u = 0; u < width; u++) {
-        cells[u + v * width] = this.classifyCell(session, axis, u, v, ownMask, maskA, maskAHasAny, maskB, maskBHasAny, otherAxisA, otherAxisB);
+        cells[u + v * width] = this.classifyCell(session, zoneColors, axis, u, v, ownMask, maskA, maskAHasAny, maskB, maskBHasAny, otherAxisA, otherAxisB);
       }
     }
     return { width, height, cells };
@@ -548,6 +542,7 @@ export class SurfaceZonePaintingService {
 
   private classifyCell(
     session: SurfacePaintingSession,
+    zoneColors: ReadonlyMap<number, string>,
     axis: Axis,
     u: number,
     v: number,
@@ -573,7 +568,7 @@ export class SurfaceZonePaintingService {
       sawOccupiedAny = true;
       const zoneId = cellZone[shellIndex(grid, ix, iy, iz)];
       if (zoneId !== -1) {
-        zoneColorIfAnyClaimed ??= session.voxelZones.find(zone => zone.voxelZoneId === zoneId)?.color ?? null;
+        zoneColorIfAnyClaimed ??= zoneColors.get(zoneId) ?? null;
         continue;
       }
       const coordsA = projectedCoords(axisA, ix, iy, iz);
@@ -652,6 +647,7 @@ export class SurfaceZonePaintingService {
       maskX.fill(0);
       maskY.fill(0);
       maskZ.fill(0);
+      this.recomputeTriangleZones(sessionId);
     }
     return { assigned, disconnected: false };
   }

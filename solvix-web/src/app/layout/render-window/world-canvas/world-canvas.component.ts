@@ -154,10 +154,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // pass, before ngAfterViewInit (and initScene, which creates gridHelper)
   // has even run, so reading gridHelper.visible directly there would throw.
   private gridVisible = true;
-  // Backing state for the "Показати зони" toggle (see hasFullZoneCoverage/
+  // Backing state for the "Показати зони" toggle (see hasAnyZones/
   // toggleZonesOverlay/updateZoneOverlay) - whether the user WANTS to see
-  // it, independent of whether it's currently allowed to show (full
-  // coverage). Rebuilt lazily in updateZoneOverlay whenever the session or
+  // it, independent of whether it's currently allowed to show (at least one
+  // zone exists). Rebuilt lazily in updateZoneOverlay whenever the session or
   // ZonePaintingService.zonesRevision(sessionId) has changed since the last
   // build (a per-zone color edit bumps this WITHOUT changing zones.length,
   // so revision - not length - is what this must key on), same identity-
@@ -167,14 +167,16 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private zoneOverlaySessionId: number | null = null;
   private zoneOverlayRevision = -1;
   // Same "wanted vs. currently allowed" split as zonesOverlayWanted above,
-  // for the "Показати зони на STL" toggle - allowed only once
-  // SurfaceZonePaintingService.isSaved(sessionId), which (unlike voxel zone
-  // coverage) never goes back to false without a full resetSelections, so
-  // this needs no revision tracking: rebuild once per session, never again
-  // for that same session.
+  // for the "Показати зони на STL" toggle - the zone list interleaves STL
+  // painting per zone now (no single "saved, frozen forever" moment), so
+  // this rebuilds whenever getTriangleZones returns a DIFFERENT array
+  // instance than last time (recomputeTriangleZones always creates a fresh
+  // one - see SurfaceZonePaintingService's own comment), not just once per
+  // session.
   private surfaceZonesOverlayWanted = false;
   private surfaceZoneOverlayGroup: THREE.Object3D | null = null;
   private surfaceZoneOverlaySessionId: number | null = null;
+  private surfaceZoneOverlayTriangleZone: Int16Array | null = null;
   // Last shouldShow value updateSurfaceZoneOverlay computed - lets it touch
   // currentImportedReference.visible only right at a real transition, not
   // unconditionally on every one of its (every-World, every-frame) calls.
@@ -1133,28 +1135,28 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Fixtures that are clutter, not content, in every fixed-axis "just show
   // me the model" preview this canvas can feed (SixViewOverlayComponent,
   // ZonePaintingComponent, and - via ZonePaintingSource.hiddenDuringView,
-  // carried through by openSurfaceZonePainting - SurfaceZonePaintingComponent
+  // carried through by its own openStep2ForZone - SurfaceZonePaintingComponent
   // too): the floor grid, the interactive rotate-gizmo ring (meaningless
-  // outside THIS canvas's own orbit controls), the hole-highlight overlay,
-  // and the dimension-lines/ruler measurement overlays
-  // (ImportedReferenceDisplayService's dimensionsVisible/rulerVisible
-  // toggles) - all still visible on THIS canvas's own normal view the whole
-  // time, just hidden for the duration of each preview's own render() calls
-  // (see each component's own animate()). A snapshot at whichever moment
-  // the preview is opened, same as framingObjects/voxelPreview/stlMesh
-  // below - toggling dimension lines/ruler ON only AFTER a preview is
-  // already open won't retroactively hide them there until it's reopened,
-  // matching how this already worked for gridHelper/the rotate gizmo.
+  // outside THIS canvas's own orbit controls), and the dimension-lines/ruler
+  // measurement overlays (ImportedReferenceDisplayService's
+  // dimensionsVisible/rulerVisible toggles) - all still visible on THIS
+  // canvas's own normal view the whole time, just hidden for the duration
+  // of each preview's own render() calls (see each component's own animate()).
+  // A snapshot at whichever moment the preview is opened, same as
+  // framingObjects/voxelPreview/stlMesh below - toggling dimension
+  // lines/ruler ON only AFTER a preview is already open won't retroactively
+  // hide them there until it's reopened, matching how this already worked
+  // for gridHelper/the rotate gizmo.
   private previewFixtures(): THREE.Object3D[] {
     const fixtures: THREE.Object3D[] = [this.gridHelper, this.rotateGizmo.getHelper()];
-    if (this.currentHoleHighlight) {
-      fixtures.push(this.currentHoleHighlight);
-    }
     if (this.currentDimensionLines) {
       fixtures.push(this.currentDimensionLines);
     }
     if (this.currentRuler) {
       fixtures.push(this.currentRuler);
+    }
+    if (this.currentHoleHighlight) {
+      fixtures.push(this.currentHoleHighlight);
     }
     return fixtures;
   }
@@ -1175,20 +1177,21 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // the same colored-zone overlay the zone-painting window's own 3D result
   // panel shows (geometry/zone-overlay.ts, shared code), but directly on
   // THIS canvas's normal, freely-orbitable view of the full-size model.
-  // Only enabled once every occupied voxel has been claimed by some zone -
-  // showing a PARTIAL result here (unlike the zone-painting window itself,
-  // which is explicitly about painting the not-yet-finished parts) would
-  // just look like missing/broken coverage rather than a deliberate choice.
-  hasFullZoneCoverage(): boolean {
+  // Enabled once at least one zone exists - the zone list no longer has a
+  // single "fully covered and confirmed" moment (zones are committed one at
+  // a time, partial coverage is an accepted end state, unclaimed voxels
+  // fall back to the automatic check), so showing a partial result here is
+  // no longer a sign of something unfinished, just the current state.
+  hasAnyZones(): boolean {
     if (this.sessionId === null) {
       return false;
     }
     const coverage = this.zonePainting.coverage(this.sessionId);
-    return coverage !== null && coverage.total > 0 && coverage.assigned >= coverage.total;
+    return coverage !== null && coverage.assigned > 0;
   }
 
   isZonesOverlayVisible(): boolean {
-    return this.zonesOverlayWanted && this.hasFullZoneCoverage();
+    return this.zonesOverlayWanted && this.hasAnyZones();
   }
 
   toggleZonesOverlay(): void {
@@ -1266,17 +1269,20 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   // Backing state + action for the "Показати зони на STL" button - the
-  // step-2 (surface) counterpart to hasFullZoneCoverage/isZonesOverlayVisible/
-  // toggleZonesOverlay above. Only enabled once step 2 is actually saved
-  // (SurfaceZonePaintingService.isSaved) - unlike the voxel version, there's
-  // no "partial but still worth showing" state here at all (step 2 itself
-  // already requires full coverage before it lets you save).
-  hasSavedSurfaceZoning(): boolean {
-    return this.sessionId !== null && this.surfaceZonePainting.isSaved(this.sessionId);
+  // step-2 (surface) counterpart to hasAnyZones/isZonesOverlayVisible/
+  // toggleZonesOverlay above. Enabled once at least one zone has any STL
+  // data at all, same "partial is a real end state" reasoning as the voxel
+  // version.
+  hasAnySurfaceZoning(): boolean {
+    if (this.sessionId === null) {
+      return false;
+    }
+    const coverage = this.surfaceZonePainting.coverage(this.sessionId);
+    return coverage !== null && coverage.assigned > 0;
   }
 
   isSurfaceZonesOverlayVisible(): boolean {
-    return this.surfaceZonesOverlayWanted && this.hasSavedSurfaceZoning();
+    return this.surfaceZonesOverlayWanted && this.hasAnySurfaceZoning();
   }
 
   toggleSurfaceZonesOverlay(): void {
@@ -1315,23 +1321,25 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
 
     const sessionId = this.sessionId!;
-    if (this.surfaceZoneOverlayGroup && this.surfaceZoneOverlaySessionId === sessionId) {
-      return; // already showing this session's (frozen) result - nothing to rebuild
+    const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
+    if (this.surfaceZoneOverlayGroup && this.surfaceZoneOverlaySessionId === sessionId && this.surfaceZoneOverlayTriangleZone === triangleZone) {
+      return; // already showing this exact triangleZone result - nothing to rebuild
     }
     if (this.surfaceZoneOverlayGroup) {
       disposeSurfaceZoneOverlay(this.surfaceZoneOverlayGroup);
       this.surfaceZoneOverlayGroup = null;
     }
     const session = this.surfaceZonePainting.getSession(sessionId);
-    const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
     if (!session || !triangleZone || !this.currentImportedReference) {
       this.surfaceZoneOverlaySessionId = null;
+      this.surfaceZoneOverlayTriangleZone = null;
       return;
     }
     const group = buildSurfaceZoneOverlay(this.currentImportedReference, triangleZone, session.voxelZones, 1);
     this.scene.add(group);
     this.surfaceZoneOverlayGroup = group;
     this.surfaceZoneOverlaySessionId = sessionId;
+    this.surfaceZoneOverlayTriangleZone = triangleZone;
   }
 
   private clearSurfaceZoneOverlay(): void {
@@ -1340,6 +1348,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.surfaceZoneOverlayGroup = null;
     }
     this.surfaceZoneOverlaySessionId = null;
+    this.surfaceZoneOverlayTriangleZone = null;
   }
 
   openSixView(): void {

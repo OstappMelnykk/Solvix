@@ -54,8 +54,8 @@
     <button
       class="tool-button"
       type="button"
-      [disabled]="!hasFullZoneCoverage()"
-      [title]="hasFullZoneCoverage() ? 'Показати/сховати кольори зон на моделі' : 'Доступно лише коли всі вокселі вже розмічені по зонах'"
+      [disabled]="!hasAnyZones()"
+      [title]="hasAnyZones() ? 'Показати/сховати кольори зон на моделі' : 'Доступно, коли хоч одна зона вже створена'"
       (click)="toggleZonesOverlay()"
     >
       {{ isZonesOverlayVisible() ? 'Сховати зони' : 'Показати зони' }}
@@ -74,8 +74,8 @@
     <button
       class="tool-button"
       type="button"
-      [disabled]="!hasSavedSurfaceZoning()"
-      [title]="hasSavedSurfaceZoning() ? 'Показати/сховати розфарбовану за зонами STL-поверхню (ховає вокселі)' : 'Доступно лише після завершення кроку 2 розмітки зон (STL-поверхня)'"
+      [disabled]="!hasAnySurfaceZoning()"
+      [title]="hasAnySurfaceZoning() ? 'Показати/сховати розфарбовану за зонами STL-поверхню (ховає вокселі)' : 'Доступно, коли хоч одна зона вже має розмітку на STL-поверхні'"
       (click)="toggleSurfaceZonesOverlay()"
     >
       {{ isSurfaceZonesOverlayVisible() ? 'Сховати зони на STL' : 'Показати зони на STL' }}

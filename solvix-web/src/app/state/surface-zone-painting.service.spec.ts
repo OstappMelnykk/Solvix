@@ -5,6 +5,7 @@ import { SurfaceZonePaintingService, SurfaceZonePaintingSource, SurfaceZoneCellS
 import { ZonePaintingService, ZonePaintingSource } from './zone-painting.service';
 import { SessionsService } from './sessions.service';
 import { VoxelizationService, VoxelizationStatus } from './voxelization.service';
+import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 
 // A 2x1x1 solid voxel grid (both cells occupied) - just wide enough for 2
@@ -66,6 +67,7 @@ function buildFourPatchMesh(): THREE.Mesh {
 describe('SurfaceZonePaintingService', () => {
   let service: SurfaceZonePaintingService;
   let zonePainting: ZonePaintingService;
+  let referenceRender: ImportedReferenceRenderService;
   let statuses: Map<number, VoxelizationStatus>;
   let stlMesh: THREE.Mesh;
   let source: SurfaceZonePaintingSource;
@@ -81,27 +83,36 @@ describe('SurfaceZonePaintingService', () => {
     });
     zonePainting = TestBed.inject(ZonePaintingService);
     service = TestBed.inject(SurfaceZonePaintingService);
+    referenceRender = TestBed.inject(ImportedReferenceRenderService);
 
-    // Paint and save 2 voxel zones (zone 0 = ix=0, zone 1 = ix=1) - the
-    // precondition this tool requires before it will even open.
+    // Paint 2 voxel zones (zone 0 = ix=0, zone 1 = ix=1) - the wizard would
+    // normally interleave these one at a time with their own STL step, but
+    // committing both up front here is equivalent for tests that don't
+    // specifically exercise that interleaving (see "mid-session zone
+    // additions" below for one that does).
     zonePainting.open(1, fakeZonePaintingSource);
     zonePainting.toggleCell(1, 'y', 0, 0);
     zonePainting.finishZone(1); // zone 0: ix=0
     zonePainting.toggleCell(1, 'y', 1, 0);
     zonePainting.finishZone(1); // zone 1: ix=1
-    zonePainting.save(1);
 
     stlMesh = buildFourPatchMesh();
     source = { scene: new THREE.Scene(), stlMesh, framingObjects: [], hiddenDuringView: [], step1Source: fakeZonePaintingSource };
+
+    // recomputeTriangleZones (finishSelection/deleteZone) needs the actual
+    // displayed STL mesh, which it reads from ImportedReferenceRenderService,
+    // not from this tool's own activeSource - stub it the same way a real
+    // import would populate it.
+    spyOn(referenceRender, 'getScaledReference').and.returnValue(stlMesh);
   });
 
-  it('refuses to open before the voxel zoning is saved', () => {
-    zonePainting.resetZones(1); // back to no zones, definitely not saved
+  it('refuses to open when there are no voxel zones yet', () => {
+    zonePainting.resetZones(1); // back to no zones
     expect(service.open(1, source)).toBe(false);
     expect(service.activeSessionId()).toBeNull();
   });
 
-  it('opens once the voxel zoning is saved, seeding one voxel-zone option per voxel zone', () => {
+  it('opens as soon as at least one voxel zone exists, seeding one voxel-zone option per voxel zone', () => {
     expect(service.open(1, source)).toBe(true);
     expect(service.activeSessionId()).toBe(1);
     const session = service.getSession(1);
@@ -143,7 +154,7 @@ describe('SurfaceZonePaintingService', () => {
     const { assigned: secondAssigned } = service.finishSelection(1);
 
     expect(secondAssigned).toBeGreaterThan(0);
-    expect(service.allVoxelZonesUsed(1)).toBe(false); // zone 1 still untouched
+    expect(service.isZoneUsed(1, 1)).toBe(false); // zone 1 still untouched
   });
 
   // buildFourPatchMesh's 2 triangles per side are spatially FAR apart (not
@@ -184,22 +195,25 @@ describe('SurfaceZonePaintingService', () => {
     expect(service.pendingMask(1, 'y')![first.u + first.v * service.getSession(1)!.grid.countX]).toBe(1);
   });
 
-  it('requires full coverage AND every voxel zone used before it can be saved', () => {
+  it('recomputes the triangle->zone mapping after a single zone commit, with no coverage requirement', () => {
     service.open(1, source);
-    const before = service.coverage(1)!;
-    expect(before.total).toBeGreaterThan(0);
-
-    // Only assign zone 0's own cells (the whole left half) - zone 1 is
-    // never used.
     const halfway = service.getSession(1)!.grid.countX / 2;
+
+    // Only zone 0's own cells - zone 1 is never touched, and coverage stays
+    // partial. Neither used to gate anything anymore.
     assignAllAvailableCells(0, halfway, 'left', 0);
 
-    expect(service.allVoxelZonesUsed(1)).toBe(false);
-    expect(service.save(1, stlMesh)).toBe(false);
-    expect(service.isSaved(1)).toBe(false);
+    expect(service.isZoneUsed(1, 1)).toBe(false);
+    expect(service.coverage(1)!.assigned).toBeLessThan(service.coverage(1)!.total);
+    // 4 triangles in mesh order: left, left, right, right - only the left
+    // 2 (zone 0) are assigned yet.
+    expect(service.zoneIdOfTriangle(1, 0)).toBe(0);
+    expect(service.zoneIdOfTriangle(1, 1)).toBe(0);
+    expect(service.zoneIdOfTriangle(1, 2)).toBeNull();
+    expect(service.zoneIdOfTriangle(1, 3)).toBeNull();
   });
 
-  it('saves once coverage is complete and every voxel zone was used, and exposes the triangle->zone mapping', () => {
+  it('exposes the full triangle->zone mapping once every zone has been painted', () => {
     service.open(1, source);
     const halfway = service.getSession(1)!.grid.countX / 2;
 
@@ -208,11 +222,6 @@ describe('SurfaceZonePaintingService', () => {
 
     const coverage = service.coverage(1)!;
     expect(coverage.assigned).toBe(coverage.total);
-    expect(service.allVoxelZonesUsed(1)).toBe(true);
-    expect(service.save(1, stlMesh)).toBe(true);
-    expect(service.isSaved(1)).toBe(true);
-
-    // 4 triangles in mesh order: left, left, right, right.
     expect(service.zoneIdOfTriangle(1, 0)).toBe(0);
     expect(service.zoneIdOfTriangle(1, 1)).toBe(0);
     expect(service.zoneIdOfTriangle(1, 2)).toBe(1);
@@ -227,72 +236,71 @@ describe('SurfaceZonePaintingService', () => {
 
     service.resetSelections(1);
     expect(service.coverage(1)!.assigned).toBe(0);
-    expect(service.allVoxelZonesUsed(1)).toBe(false);
+    expect(service.isZoneUsed(1, 0)).toBe(false);
   });
 
-  describe('sequential zone navigation', () => {
-    it('starts on the first zone', () => {
-      service.open(1, source);
-      expect(service.currentZoneIndex(1)).toBe(0);
-      expect(service.zoneCount(1)).toBe(2);
-      expect(service.isFirstZone(1)).toBe(true);
-      expect(service.isLastZone(1)).toBe(false);
-    });
-
-    it('refuses to advance until the current zone has at least one committed cell', () => {
-      service.open(1, source);
-      expect(service.advanceToNextZone(1)).toBe(false);
-      expect(service.currentZoneIndex(1)).toBe(0);
-    });
-
-    it('advances to the next zone once the current one is used', () => {
-      service.open(1, source);
-      const halfway = service.getSession(1)!.grid.countX / 2;
-      assignAllAvailableCells(0, halfway, 'left', 0); // uses zone 0
-
-      expect(service.advanceToNextZone(1)).toBe(true);
-      expect(service.currentZoneIndex(1)).toBe(1);
-      expect(service.isLastZone(1)).toBe(true);
-      expect(service.getActiveVoxelZoneId(1)).toBe(1);
-    });
-
-    it('refuses to advance past the last zone', () => {
+  describe('deleteZone', () => {
+    it('frees the zone\'s shell cells and drops it from isZoneUsed', () => {
       service.open(1, source);
       const halfway = service.getSession(1)!.grid.countX / 2;
       assignAllAvailableCells(0, halfway, 'left', 0);
-      service.advanceToNextZone(1);
-      assignAllAvailableCells(0, halfway, 'right', 1); // uses zone 1 (now last)
+      expect(service.isZoneUsed(1, 0)).toBe(true);
 
-      expect(service.advanceToNextZone(1)).toBe(false);
-      expect(service.currentZoneIndex(1)).toBe(1);
+      service.deleteZone(1, 0);
+
+      expect(service.isZoneUsed(1, 0)).toBe(false);
+      expect(service.coverage(1)!.assigned).toBe(0);
     });
 
-    it('goToPreviousZone moves back without requiring the current zone to be used', () => {
+    it('renumbers a later zone\'s cells down when an earlier zone is deleted', () => {
       service.open(1, source);
       const halfway = service.getSession(1)!.grid.countX / 2;
       assignAllAvailableCells(0, halfway, 'left', 0);
-      service.advanceToNextZone(1);
-      expect(service.currentZoneIndex(1)).toBe(1);
+      assignAllAvailableCells(0, halfway, 'right', 1);
 
-      expect(service.goToPreviousZone(1)).toBe(true);
-      expect(service.currentZoneIndex(1)).toBe(0);
-      expect(service.getActiveVoxelZoneId(1)).toBe(0);
+      service.deleteZone(1, 0); // ZonePaintingService.deleteZone would renumber zone 1 -> 0 too
+
+      expect(service.isZoneUsed(1, 0)).toBe(true); // was zone 1, renumbered
+      expect(service.zoneIdOfTriangle(1, 2)).toBe(0); // right-side triangle, was zone 1
     });
+  });
 
-    it('refuses to go back before the first zone', () => {
-      service.open(1, source);
-      expect(service.goToPreviousZone(1)).toBe(false);
-      expect(service.currentZoneIndex(1)).toBe(0);
-    });
+  describe('mid-session zone additions (the interleaved wizard flow)', () => {
+    it('keeps an already-painted zone\'s STL data when a NEW voxel zone is added afterward', () => {
+      // Undo the outer beforeEach's 2 already-committed zones so there's
+      // room to add a genuinely NEW one partway through this test - the
+      // whole point being verified here.
+      zonePainting.resetZones(1);
+      zonePainting.toggleCell(1, 'y', 0, 0);
+      zonePainting.finishZone(1); // zone 0: ix=0
 
-    it('isCurrentZoneUsed reflects only the ACTIVE zone, not zones visited earlier', () => {
       service.open(1, source);
       const halfway = service.getSession(1)!.grid.countX / 2;
       assignAllAvailableCells(0, halfway, 'left', 0);
-      expect(service.isCurrentZoneUsed(1)).toBe(true);
+      const assignedBefore = service.coverage(1)!.assigned;
+      expect(assignedBefore).toBeGreaterThan(0);
 
-      service.advanceToNextZone(1);
-      expect(service.isCurrentZoneUsed(1)).toBe(false); // zone 1 not painted yet
+      // A new voxel zone appears (exactly as the wizard creates one after
+      // finishing a zone's voxel step) - re-opening must NOT wipe the STL
+      // work already done for zone 0.
+      zonePainting.toggleCell(1, 'y', 1, 0);
+      zonePainting.finishZone(1); // zone 1: ix=1
+
+      expect(service.open(1, source)).toBe(true);
+      expect(service.coverage(1)!.assigned).toBe(assignedBefore);
+      expect(service.isZoneUsed(1, 0)).toBe(true);
+    });
+  });
+
+  describe('discarding a session when its reference changes', () => {
+    it('drops the shell-grid session once the source STL reference changes', () => {
+      service.open(1, source);
+      expect(service.getSession(1)).not.toBeNull();
+
+      referenceRender.refreshScaledReference(1);
+
+      expect(service.getSession(1)).toBeNull();
+      expect(service.activeSessionId()).toBeNull();
     });
   });
 });

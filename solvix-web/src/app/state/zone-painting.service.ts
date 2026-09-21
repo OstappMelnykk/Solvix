@@ -94,13 +94,6 @@ interface PaintingSession {
   // "Показати зони" button) - NOT readonly, since a slider mutates it in
   // place via setZoneOverlayOpacity below. Survives resetZones (see there).
   opacity: number;
-  // Set by save() once the user explicitly confirms a fully-covered zoning -
-  // see save()'s own comment. NOT the same thing as "coverage is 100%":
-  // reaching full coverage no longer closes the window on its own (the user
-  // asked to stop that - they navigate away only when THEY choose to), so
-  // this is the one place that distinguishes "done and confirmed" from
-  // "happens to be fully covered right now, still fiddling with it".
-  saved: boolean;
   // -1 = unassigned. Same linearization as VoxelGridDto's own occupancy bit
   // index (voxel-grid-contract.ts's cellIndex) - ix fastest, then iy, then iz.
   readonly voxelZone: Int16Array;
@@ -109,6 +102,21 @@ interface PaintingSession {
   readonly maskX: Uint8Array; // over (iy,iz), size countY*countZ
   readonly maskY: Uint8Array; // over (ix,iz), size countX*countZ
   readonly maskZ: Uint8Array; // over (ix,iy), size countX*countY
+}
+
+// Only used by nextZoneColor's fallback once the fixed ZONE_COLORS palette
+// is exhausted - h in degrees [0,360), s/l in percent [0,100].
+function hslToHex(h: number, s: number, l: number): string {
+  const sFrac = s / 100;
+  const lFrac = l / 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = sFrac * Math.min(lFrac, 1 - lFrac);
+  const f = (n: number) => lFrac - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (n: number) =>
+    Math.round(f(n) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${toHex(0)}${toHex(8)}${toHex(4)}`;
 }
 
 function voxelIndex(grid: VoxelGridDto, ix: number, iy: number, iz: number): number {
@@ -183,6 +191,17 @@ export class ZonePaintingService {
   // all, only in the component.
   readonly activeSessionId = signal<number | null>(null);
   readonly activeSource = signal<ZonePaintingSource | null>(null);
+  // Whether step 1's OWN painting canvas (ZonePaintingComponent) is showing
+  // on top of the zone list (ZoneListComponent) - independent of
+  // activeSessionId/activeSource above, which now mean "the zone-painting
+  // FEATURE is open for this session" (the list is always what's underneath,
+  // for as long as that's true). false right after open() (landing on the
+  // list first, per the user's own spec, even if zones already exist from
+  // earlier), true only while a "Додати зону"/"Редагувати" wizard is
+  // actually on screen (ZoneListComponent.addZone/editLastZone call
+  // showStep1(); ZonePaintingComponent.close()/its own successful
+  // finishZone hand-off call hideStep1()).
+  readonly step1Visible = signal(false);
 
   private readonly sessionsByKey = new Map<number, PaintingSession>();
 
@@ -236,9 +255,25 @@ export class ZonePaintingService {
     }
     this.activeSource.set(source);
     this.activeSessionId.set(sessionId);
+    this.step1Visible.set(false);
+  }
+
+  // Reveals step 1's painting canvas on top of the (already-open) list -
+  // "Додати зону"/"Редагувати" on ZoneListComponent.
+  showStep1(): void {
+    this.step1Visible.set(true);
+  }
+
+  // Hides step 1's canvas back down to the list, WITHOUT closing the
+  // feature itself (the list stays open, its session data untouched) -
+  // ZonePaintingComponent's own "Закрити" (cancel this zone attempt) and
+  // its finishZone hand-off to step 2 both call this instead of close().
+  hideStep1(): void {
+    this.step1Visible.set(false);
   }
 
   close(): void {
+    this.step1Visible.set(false);
     this.activeSessionId.set(null);
     this.activeSource.set(null);
   }
@@ -251,7 +286,6 @@ export class ZonePaintingService {
       zones: [],
       zonesRevision: 0,
       opacity: DEFAULT_ZONE_OVERLAY_OPACITY,
-      saved: false,
       voxelZone,
       maskX: new Uint8Array(grid.countY * grid.countZ),
       maskY: new Uint8Array(grid.countX * grid.countZ),
@@ -273,14 +307,17 @@ export class ZonePaintingService {
 
   // Lets the user override a committed zone's auto-assigned color (a
   // <input type="color"> next to it in the zone list) - purely cosmetic,
-  // never touches which voxels belong to the zone.
+  // never touches which voxels belong to the zone. Refuses a color already
+  // used by some OTHER zone (isColorTaken) - 2 zones must never look
+  // identical, or the colored overlay/zone list become impossible to tell
+  // apart at a glance.
   setZoneColor(sessionId: number, zoneId: number, color: string): void {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
       return;
     }
     const index = session.zones.findIndex(zone => zone.id === zoneId);
-    if (index === -1) {
+    if (index === -1 || this.isColorTaken(sessionId, color, zoneId)) {
       return;
     }
     session.zones[index] = { ...session.zones[index], color };
@@ -332,35 +369,67 @@ export class ZonePaintingService {
     return { assigned, total: session.totalOccupied };
   }
 
-  isSaved(sessionId: number): boolean {
-    return this.sessionsByKey.get(sessionId)?.saved ?? false;
-  }
-
-  // The explicit "Зберегти" action - marks a fully-covered zoning as
-  // confirmed (see PaintingSession.saved's own comment). Refuses to save a
-  // partial zoning - there's nothing ambiguous to "confirm" until the user
-  // has actually finished assigning every occupied voxel to some zone; the
-  // component itself already only shows the button once coverage() reports
-  // complete, this is the defensive backstop matching that same rule.
-  save(sessionId: number): boolean {
+  // Whether `color` is already used by some OTHER zone in this session -
+  // the zone list's color picker (and the default-color suggestion below)
+  // must never let 2 zones look identical. `excludeZoneId` lets a zone
+  // check a color against every zone EXCEPT itself (so re-picking its own
+  // current color is never rejected as "already taken").
+  isColorTaken(sessionId: number, color: string, excludeZoneId?: number): boolean {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
       return false;
     }
-    const assigned = session.zones.reduce((sum, zone) => sum + zone.voxelCount, 0);
-    if (assigned < session.totalOccupied) {
-      return false;
-    }
-    session.saved = true;
-    return true;
+    const normalized = color.toLowerCase();
+    return session.zones.some(zone => zone.id !== excludeZoneId && zone.color.toLowerCase() === normalized);
   }
 
   // The color the NEXT committed zone will get - shown while the user is
-  // still drawing it, before finishZone makes it official.
+  // still drawing it, before finishZone makes it official. Skips whatever's
+  // already in use (setZoneColor lets the user freely override a zone's
+  // auto-assigned color, so the palette can run out of order) - falls back
+  // to a golden-angle hue rotation once every palette color is taken, so a
+  // session with more zones than ZONE_COLORS.length never just repeats one.
   nextZoneColor(sessionId: number): string {
     const session = this.sessionsByKey.get(sessionId);
-    const count = session?.zones.length ?? 0;
-    return ZONE_COLORS[count % ZONE_COLORS.length];
+    const used = new Set((session?.zones ?? []).map(zone => zone.color.toLowerCase()));
+    const fromPalette = ZONE_COLORS.find(color => !used.has(color.toLowerCase()));
+    if (fromPalette) {
+      return fromPalette;
+    }
+    const hue = ((session?.zones.length ?? 0) * 137.508) % 360;
+    return hslToHex(hue, 65, 55);
+  }
+
+  // Frees a zone's voxels back to unassigned (they fall back to Варіант B's
+  // automatic check, same as any voxel that was never zoned at all) and
+  // removes it from the list. Every zone AFTER the deleted one is
+  // renumbered down by 1 - both its own `id` and every voxel currently
+  // pointing at it - so `zones` stays a contiguous 0..N-1 array, which
+  // finishZone's own `zoneId = zones.length` and buildZoneOverlayGroup's
+  // zoneIdAt lookup both depend on.
+  deleteZone(sessionId: number, zoneId: number): void {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const index = session.zones.findIndex(zone => zone.id === zoneId);
+    if (index === -1) {
+      return;
+    }
+    const { voxelZone } = session;
+    for (let i = 0; i < voxelZone.length; i++) {
+      if (voxelZone[i] === zoneId) {
+        voxelZone[i] = -1;
+      } else if (voxelZone[i] > zoneId) {
+        voxelZone[i]--;
+      }
+    }
+    const zones = session.zones as ZoneDefinition[];
+    zones.splice(index, 1);
+    for (let i = index; i < zones.length; i++) {
+      zones[i] = { ...zones[i], id: zones[i].id - 1 };
+    }
+    session.zonesRevision++;
   }
 
   // Toggles ONE cell in `axis`'s pending mask. ADDING a cell is refused
