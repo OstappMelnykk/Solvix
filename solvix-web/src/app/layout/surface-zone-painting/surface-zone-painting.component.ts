@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Axis, AXES, ZonePaintingService, axisCoords, projectedCoords } from '../../state/zone-painting.service';
 import { SurfaceZoneCellState, SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
+import { labelConnectedComponents } from '../../state/mask-connectivity';
 import { worldPointToShellCell } from '../../geometry/surface-shell-grid';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
 import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
@@ -15,6 +16,14 @@ type AxisSign = 1 | -1;
 const AVAILABLE_FILL = 'rgba(180, 185, 190, 0.35)';
 const EXCLUDED_FILL = 'rgba(10, 10, 12, 0.55)';
 const PENDING_FILL = 'rgba(255, 255, 255, 0.55)';
+// The pending mask's FIRST connected component keeps PENDING_FILL - these
+// are for every ADDITIONAL disconnected "island" (2nd, 3rd, ...), a direct
+// visual hint on the geometry itself for what would otherwise only surface
+// as a text error at "Завершити виділення" ("Виділення розірвано на
+// кілька ділянок..."): distinct, attention-grabbing colors so the user can
+// see AT A GLANCE which separate blobs still need to be bridged together.
+// Same palette as ZonePaintingComponent's own DISCONNECTED_ISLAND_FILLS.
+const DISCONNECTED_ISLAND_FILLS: readonly string[] = ['rgba(230, 57, 70, 0.65)', 'rgba(255, 190, 11, 0.65)', 'rgba(131, 56, 236, 0.65)'];
 // Fully opaque - the result panel now hides the original STL reference
 // while showing this (see animate()'s stlMeshWasVisible handling), so
 // there's nothing underneath this needs to blend with any more; a crisp,
@@ -728,6 +737,13 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     const pixelsPerWorldUnit = (width / (camera.right - camera.left)) * camera.zoom;
     const cellPixelSize = grid.cellSize * pixelsPerWorldUnit;
     const projected = new THREE.Vector3();
+    // Labels this axis's PENDING mask by connected component, so a
+    // disconnected selection (allowed while painting - only rejected at
+    // "Завершити виділення") shows each separate island in its own color
+    // instead of one uniform pending fill (see DISCONNECTED_ISLAND_FILLS'
+    // own comment).
+    const pendingMask = this.surfaceZonePainting.pendingMask(sessionId, axis);
+    const pendingLabels = pendingMask ? labelConnectedComponents(pendingMask, state.width, state.height) : null;
 
     for (let v = 0; v < state.height; v++) {
       for (let u = 0; u < state.width; u++) {
@@ -735,7 +751,10 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
         if (cellState.kind === 'empty') {
           continue;
         }
-        const fill = this.fillFor(cellState);
+        const fill =
+          cellState.kind === 'pending'
+            ? this.pendingFillFor(pendingLabels?.labels[u + v * state.width] ?? 0)
+            : this.fillFor(cellState);
         if (!fill) {
           continue;
         }
@@ -759,9 +778,20 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       case 'excluded':
         return EXCLUDED_FILL;
       case 'pending':
-        return PENDING_FILL;
+        return this.pendingFillFor(0);
       case 'zoned':
         return darkenZoneColorCss(state.color);
     }
+  }
+
+  // component 0 (whichever island the flood fill happens to reach first -
+  // not necessarily "the first one the user painted") keeps PENDING_FILL;
+  // every later component cycles through DISCONNECTED_ISLAND_FILLS instead
+  // - see that constant's own comment.
+  private pendingFillFor(component: number): string {
+    if (component <= 0) {
+      return PENDING_FILL;
+    }
+    return DISCONNECTED_ISLAND_FILLS[(component - 1) % DISCONNECTED_ISLAND_FILLS.length];
   }
 }
