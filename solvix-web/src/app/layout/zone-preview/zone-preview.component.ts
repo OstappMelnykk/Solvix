@@ -2,40 +2,36 @@ import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } fr
 import { NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { ZonePaintingService } from '../../state/zone-painting.service';
+import { ZonePaintingService, ZonePaintingSource } from '../../state/zone-painting.service';
 import { SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
-import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
-import { VoxelGridDto } from '../../geometry/voxel-grid-contract';
-import { buildVoxelBasePreview, disposeVoxelBasePreview } from '../../geometry/scene-objects/voxel-base-preview';
-import { ZoneOverlayZone, buildZoneOverlayGroup, disposeZoneOverlayGroup } from '../../geometry/scene-objects/zone-overlay';
+import { buildZoneOverlayGroup, disposeZoneOverlayGroup } from '../../geometry/scene-objects/zone-overlay';
 import { SurfaceZoneOverlayZone, buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
-
-// Fully opaque, deliberately independent of ZonePaintingService's own
-// zoneOverlayOpacity slider (that one is for the interactive editing views,
-// which need to see the model through the color) - this is a passive,
-// at-a-glance preview, where a crisp solid color reads better at the small
-// size these 2 panels actually render at.
-const OVERLAY_OPACITY = 1;
+import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 
 // A separate, globally-mounted overlay (app.component.html), NOT nested
-// inside ZoneListComponent's own template - 2 reasons: (1) ZoneListComponent
-// explicitly keeps NO 3D rendering of its own (its own header comment), and
-// (2) ZoneListComponent already has an extensive spec file that creates a
-// fresh instance per test; nesting a real WebGL-rendering child there would
-// mean 30+ real WebGLRenderer create/destroy cycles per test run for
-// nothing those tests actually exercise - matching this codebase's existing
-// convention of never writing a .spec.ts for a component with a live
-// requestAnimationFrame render loop (ZonePaintingComponent/
-// SurfaceZonePaintingComponent/SixViewOverlayComponent/WorldCanvasComponent
-// have none either).
+// inside ZoneListComponent's own template - ZoneListComponent explicitly
+// keeps NO 3D rendering of its own, and already has an extensive spec file
+// that creates a fresh instance per test; nesting a real WebGL-rendering
+// child there would mean real WebGLRenderer create/destroy cycles on every
+// one of those 30+ tests for nothing they actually exercise - matching this
+// codebase's convention of never writing a .spec.ts for a component with a
+// live requestAnimationFrame render loop.
 //
-// Visually combined with ZoneListComponent purely through z-index stacking:
-// this sits BEHIND it (z-index 999 vs. 1000), full-screen, and
-// ZoneListComponent's own header + right-hand column are the only opaque
-// parts of ITS OWN template - the list's left half is simply left empty (no
-// element there at all, see its own .scss), so this preview shows through
-// untouched in exactly that region with no pixel-coordinate duplication
-// between the two components' stylesheets.
+// Deliberately NOT a from-scratch preview: per explicit request, this is
+// meant to look exactly like the wizard's own "3D результат" panel (the
+// 4th, free-orbit panel already in ZonePaintingComponent for voxels and
+// SurfaceZonePaintingComponent for STL) - so it reuses those SAME live
+// scene objects (ZonePaintingService.activeSource()'s scene/voxelPreview/
+// stlMesh) and the SAME rendering technique (WeightedOitRenderer for the
+// voxel panel, buildZoneOverlayGroup/buildSurfaceZoneOverlay for the
+// colored zones), not a custom-built simplified scene. The only difference
+// from those 2 wizard panels is that both show at once, continuously, on
+// the list screen instead of one at a time inside the wizard.
+//
+// Visually combined with ZoneListComponent purely through layout: this
+// occupies exactly the left 50% of the screen (its own :host), and
+// ZoneListComponent's own right-hand panel opaquely covers the other 50% -
+// see each component's own .scss for how that split is kept in sync.
 @Component({
   selector: 'app-zone-preview',
   standalone: true,
@@ -50,27 +46,30 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
 
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
-  private readonly referenceRender = inject(ImportedReferenceRenderService);
 
   private frameId = 0;
   private viewReady = false;
 
-  // --- Top panel: painted voxels, white base ------------------------------
+  // --- Top panel: same technique as ZonePaintingComponent's own "3D
+  // результат" panel - the real, live voxelPreview (purple fill + white
+  // edges) plus the real colored zone overlay, via the same
+  // WeightedOitRenderer every panel in that wizard step already uses. ---
   private voxelRenderer: THREE.WebGLRenderer | null = null;
-  private readonly voxelScene = new THREE.Scene();
+  private voxelOit: WeightedOitRenderer | null = null;
   private readonly voxelCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
   private voxelControls: OrbitControls | null = null;
-  private voxelBaseMesh: THREE.Group | null = null;
   private voxelOverlayGroup: THREE.Group | null = null;
-  private lastVoxelGrid: VoxelGridDto | null = null;
-  private lastVoxelRevision = -1;
+  private lastVoxelSessionId: number | null = null;
+  private lastVoxelZonesRevision = -1;
   private readonly voxelLastSize = { width: 0, height: 0 };
   private readonly voxelFramingCenter = new THREE.Vector3();
   private voxelFramingRadius = 1;
 
-  // --- Bottom panel: painted STL surface -----------------------------------
+  // --- Bottom panel: same technique as SurfaceZonePaintingComponent's own
+  // "3D результат" panel - the real STL mesh, replaced by the colored
+  // buildSurfaceZoneOverlay clone once any STL zone data exists, on a plain
+  // (non-OIT) renderer, exactly matching that panel. ---
   private stlRenderer: THREE.WebGLRenderer | null = null;
-  private readonly stlScene = new THREE.Scene();
   private readonly stlCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
   private stlControls: OrbitControls | null = null;
   private stlOverlayGroup: THREE.Object3D | null = null;
@@ -79,22 +78,6 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   private readonly stlLastSize = { width: 0, height: 0 };
   private readonly stlFramingCenter = new THREE.Vector3();
   private stlFramingRadius = 1;
-
-  constructor() {
-    // Both buildVoxelBasePreview's fill and buildSurfaceZoneOverlay's mesh
-    // use a lit MeshStandardMaterial (matching the real editing views'
-    // own technique - see each builder's own header comment) - without a
-    // light either renders pure black regardless of vertex color.
-    this.voxelScene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const voxelDirectional = new THREE.DirectionalLight(0xffffff, 0.9);
-    voxelDirectional.position.set(1, 1, 1);
-    this.voxelScene.add(voxelDirectional);
-
-    this.stlScene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const stlDirectional = new THREE.DirectionalLight(0xffffff, 0.9);
-    stlDirectional.position.set(1, 1, 1);
-    this.stlScene.add(stlDirectional);
-  }
 
   ngAfterViewInit(): void {
     this.viewReady = true;
@@ -105,9 +88,6 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     cancelAnimationFrame(this.frameId);
     this.teardownVoxelRenderer();
     this.teardownStlRenderer();
-    if (this.voxelBaseMesh) {
-      disposeVoxelBasePreview(this.voxelBaseMesh);
-    }
     if (this.voxelOverlayGroup) {
       disposeZoneOverlayGroup(this.voxelOverlayGroup);
     }
@@ -119,8 +99,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   // Frontmost only while the LIST itself is on screen - both wizard steps
   // (z-index 1100) draw fully on top of this (999) and of the list (1000)
   // alike, so there is no point spending GPU time on either panel while
-  // they're up; the same "hidden means stop rendering entirely" discipline
-  // every other overlay tool in this app already follows.
+  // they're up.
   isHidden(): boolean {
     return (
       this.zonePainting.activeSessionId() === null || this.zonePainting.step1Visible() || this.surfaceZonePainting.activeSessionId() !== null
@@ -128,8 +107,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   }
 
   hasStlReference(): boolean {
-    const sessionId = this.zonePainting.activeSessionId();
-    return sessionId !== null && this.referenceRender.getScaledReference(sessionId) !== null;
+    return this.zonePainting.activeSource()?.stlMesh != null;
   }
 
   private ensureVoxelRenderer(canvas: HTMLCanvasElement): boolean {
@@ -139,11 +117,12 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
       return false;
     }
-    this.voxelRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.voxelRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.voxelRenderer.setPixelRatio(window.devicePixelRatio);
-    this.voxelRenderer.setClearColor(0x000000, 1);
+    this.voxelOit = new WeightedOitRenderer(this.voxelRenderer);
     this.voxelControls = new OrbitControls(this.voxelCamera, canvas);
-    this.configureTurntable(this.voxelControls);
+    this.voxelControls.screenSpacePanning = true;
+    this.voxelControls.enableDamping = false;
     this.voxelLastSize.width = 0;
     this.voxelLastSize.height = 0;
     return true;
@@ -158,23 +137,12 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     }
     this.stlRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.stlRenderer.setPixelRatio(window.devicePixelRatio);
-    this.stlRenderer.setClearColor(0x000000, 1);
     this.stlControls = new OrbitControls(this.stlCamera, canvas);
-    this.configureTurntable(this.stlControls);
+    this.stlControls.screenSpacePanning = true;
+    this.stlControls.enableDamping = false;
     this.stlLastSize.width = 0;
     this.stlLastSize.height = 0;
     return true;
-  }
-
-  // A passive, always-spinning turntable - no manual interaction (this is a
-  // small glance-at-it preview, not an inspection tool; the wizard's own
-  // "3D результат" panel already covers manual orbiting).
-  private configureTurntable(controls: OrbitControls): void {
-    controls.enableRotate = false;
-    controls.enableZoom = false;
-    controls.enablePan = false;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 4;
   }
 
   private teardownVoxelRenderer(): void {
@@ -182,8 +150,10 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.voxelControls?.dispose();
+    this.voxelOit?.dispose();
     this.voxelRenderer.dispose();
     this.voxelRenderer = null;
+    this.voxelOit = null;
     this.voxelControls = null;
   }
 
@@ -197,6 +167,9 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     this.stlControls = null;
   }
 
+  // Same isometric-ish free-orbit framing every "3D результат" panel in
+  // this app starts at (ZonePaintingComponent/SurfaceZonePaintingComponent's
+  // own applyFraming, RESULT_PANEL_INDEX branch).
   private applyFraming(
     camera: THREE.OrthographicCamera,
     controls: OrbitControls,
@@ -224,90 +197,76 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     controls.update();
   }
 
-  // Rebuilds only what actually changed: the base mesh only when the grid
-  // itself is a new object (a fresh voxelization), the colored overlay only
-  // when zonesRevision moved (a zone was added/edited/deleted) - matches
-  // ZonePaintingComponent's own "rebuild on identity/revision change, not
-  // every frame" discipline.
-  private rebuildVoxelPanel(sessionId: number): void {
+  private rebuildVoxelFraming(source: ZonePaintingSource): void {
+    const box = new THREE.Box3();
+    source.framingObjects.forEach(object => box.expandByObject(object));
+    const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : box.getBoundingSphere(new THREE.Sphere());
+    this.voxelFramingCenter.copy(sphere.center);
+    this.voxelFramingRadius = Math.max(sphere.radius, 0.01);
+    if (this.voxelControls) {
+      this.applyFraming(this.voxelCamera, this.voxelControls, this.voxelFramingCenter, this.voxelFramingRadius, this.voxelCanvasRef?.nativeElement);
+    }
+  }
+
+  private rebuildStlFraming(stlMesh: THREE.Object3D): void {
+    const box = new THREE.Box3().setFromObject(stlMesh);
+    const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : box.getBoundingSphere(new THREE.Sphere());
+    this.stlFramingCenter.copy(sphere.center);
+    this.stlFramingRadius = Math.max(sphere.radius, 0.01);
+    if (this.stlControls) {
+      this.applyFraming(this.stlCamera, this.stlControls, this.stlFramingCenter, this.stlFramingRadius, this.stlCanvasRef?.nativeElement);
+    }
+  }
+
+  private rebuildVoxelOverlay(sessionId: number): void {
+    const revision = this.zonePainting.zonesRevision(sessionId);
+    if (revision === this.lastVoxelZonesRevision) {
+      return;
+    }
+    this.lastVoxelZonesRevision = revision;
+    if (this.voxelOverlayGroup) {
+      this.voxelOverlayGroup.removeFromParent();
+      disposeZoneOverlayGroup(this.voxelOverlayGroup);
+      this.voxelOverlayGroup = null;
+    }
     const session = this.zonePainting.getSession(sessionId);
     if (!session) {
       return;
     }
-    if (session.grid !== this.lastVoxelGrid) {
-      this.lastVoxelGrid = session.grid;
-      if (this.voxelBaseMesh) {
-        this.voxelScene.remove(this.voxelBaseMesh);
-        disposeVoxelBasePreview(this.voxelBaseMesh);
-        this.voxelBaseMesh = null;
-      }
-      const base = buildVoxelBasePreview(session.grid);
-      if (base) {
-        this.voxelScene.add(base);
-        this.voxelBaseMesh = base;
-      }
-      const box = this.voxelBaseMesh ? new THREE.Box3().setFromObject(this.voxelBaseMesh) : new THREE.Box3();
-      const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : box.getBoundingSphere(new THREE.Sphere());
-      this.voxelFramingCenter.copy(sphere.center);
-      this.voxelFramingRadius = Math.max(sphere.radius, 0.01);
-      if (this.voxelControls) {
-        this.applyFraming(this.voxelCamera, this.voxelControls, this.voxelFramingCenter, this.voxelFramingRadius, this.voxelCanvasRef?.nativeElement);
-      }
-    }
-
-    const revision = this.zonePainting.zonesRevision(sessionId);
-    if (revision !== this.lastVoxelRevision) {
-      this.lastVoxelRevision = revision;
-      if (this.voxelOverlayGroup) {
-        this.voxelScene.remove(this.voxelOverlayGroup);
-        disposeZoneOverlayGroup(this.voxelOverlayGroup);
-        this.voxelOverlayGroup = null;
-      }
-      const zones: readonly ZoneOverlayZone[] = session.zones;
-      const group = buildZoneOverlayGroup(session.grid, zones, (ix, iy, iz) => this.zonePainting.zoneIdAt(sessionId, ix, iy, iz), OVERLAY_OPACITY);
-      if (group) {
-        this.voxelScene.add(group);
-        this.voxelOverlayGroup = group;
-      }
+    const opacity = this.zonePainting.getZoneOverlayOpacity(sessionId);
+    const group = buildZoneOverlayGroup(session.grid, session.zones, (ix, iy, iz) => this.zonePainting.zoneIdAt(sessionId, ix, iy, iz), opacity);
+    if (group) {
+      group.visible = false;
+      this.zonePainting.activeSource()!.scene.add(group);
+      this.voxelOverlayGroup = group;
     }
   }
 
-  private rebuildStlPanel(sessionId: number): void {
-    const stlMesh = this.referenceRender.getScaledReference(sessionId);
+  // Mirrors SurfaceZonePaintingComponent's own rebuildResultOverlay exactly:
+  // only replaces the plain STL mesh once real triangle->zone data exists
+  // (getTriangleZones only returns non-null after a first committed
+  // selection) - before that, the panel just shows the plain STL reference,
+  // same as the real one does.
+  private rebuildStlOverlay(sessionId: number, stlMesh: THREE.Object3D): void {
     const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
-    if (stlMesh === this.lastStlMesh && triangleZone === this.lastTriangleZone) {
+    if (triangleZone === this.lastTriangleZone) {
       return;
     }
-    const meshChanged = stlMesh !== this.lastStlMesh;
-    this.lastStlMesh = stlMesh;
     this.lastTriangleZone = triangleZone;
-
     if (this.stlOverlayGroup) {
-      this.stlScene.remove(this.stlOverlayGroup);
+      this.stlOverlayGroup.removeFromParent();
       disposeSurfaceZoneOverlay(this.stlOverlayGroup);
       this.stlOverlayGroup = null;
     }
-    if (!stlMesh) {
+    if (!triangleZone) {
       return;
     }
-    const zones: readonly SurfaceZoneOverlayZone[] = this.surfaceZonePainting.getSession(sessionId)?.voxelZones ?? [];
-    // An empty Int16Array reads as -1 (fallback gray) at every triangle
-    // index - buildSurfaceZoneOverlay's own `triangleZone[i] ?? -1` already
-    // handles a typed array's out-of-range read that way, so this alone
-    // covers "no STL zone session exists yet" with no separate code path.
-    const group = buildSurfaceZoneOverlay(stlMesh, triangleZone ?? new Int16Array(0), zones, OVERLAY_OPACITY);
-    this.stlScene.add(group);
+    const session = this.surfaceZonePainting.getSession(sessionId);
+    const zones: readonly SurfaceZoneOverlayZone[] = session?.voxelZones ?? [];
+    const group = buildSurfaceZoneOverlay(stlMesh, triangleZone, zones, 1);
+    group.visible = false;
+    this.zonePainting.activeSource()!.scene.add(group);
     this.stlOverlayGroup = group;
-
-    if (meshChanged) {
-      const box = new THREE.Box3().setFromObject(group);
-      const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : box.getBoundingSphere(new THREE.Sphere());
-      this.stlFramingCenter.copy(sphere.center);
-      this.stlFramingRadius = Math.max(sphere.radius, 0.01);
-      if (this.stlControls) {
-        this.applyFraming(this.stlCamera, this.stlControls, this.stlFramingCenter, this.stlFramingRadius, this.stlCanvasRef?.nativeElement);
-      }
-    }
   }
 
   private resizeVoxelIfNeeded(canvas: HTMLCanvasElement): void {
@@ -325,6 +284,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     this.voxelCamera.bottom = -halfHeight;
     this.voxelCamera.updateProjectionMatrix();
     this.voxelRenderer!.setSize(width, height);
+    this.voxelOit!.setSize(width, height);
   }
 
   private resizeStlIfNeeded(canvas: HTMLCanvasElement): void {
@@ -352,25 +312,75 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
       return;
     }
     const sessionId = this.zonePainting.activeSessionId();
+    const source = this.zonePainting.activeSource();
     const voxelCanvas = this.voxelCanvasRef?.nativeElement;
     const stlCanvas = this.stlCanvasRef?.nativeElement;
-    if (sessionId === null || !voxelCanvas) {
+    if (sessionId === null || !source || !voxelCanvas) {
       return;
     }
 
+    // --- Voxel panel - literally ZonePaintingComponent's own result panel:
+    // same scene, same hiddenDuringView fixtures hidden, the STL reference
+    // left visible (step 1's own result panel shows it too, for comparing
+    // fit), zone overlay shown only during this render. ---
     if (this.ensureVoxelRenderer(voxelCanvas)) {
-      this.rebuildVoxelPanel(sessionId);
+      if (sessionId !== this.lastVoxelSessionId) {
+        this.lastVoxelSessionId = sessionId;
+        this.rebuildVoxelFraming(source);
+      }
+      this.rebuildVoxelOverlay(sessionId);
       this.resizeVoxelIfNeeded(voxelCanvas);
-      this.voxelControls!.update();
-      this.voxelRenderer!.render(this.voxelScene, this.voxelCamera);
+
+      const previousVisibility = source.hiddenDuringView.map(object => object.visible);
+      source.hiddenDuringView.forEach(object => (object.visible = false));
+      if (this.voxelOverlayGroup) {
+        this.voxelOverlayGroup.visible = true;
+      }
+      try {
+        this.voxelControls!.update();
+        this.voxelOit!.render(source.scene, this.voxelCamera);
+      } finally {
+        source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
+        if (this.voxelOverlayGroup) {
+          this.voxelOverlayGroup.visible = false;
+        }
+      }
     }
 
-    if (this.hasStlReference() && stlCanvas) {
+    // --- STL panel - literally SurfaceZonePaintingComponent's own result
+    // panel: same scene, additionally hides the voxel preview (step 2's own
+    // hand-off does the same), swaps the plain STL mesh for the colored
+    // overlay once zone data exists. ---
+    if (source.stlMesh && stlCanvas) {
       if (this.ensureStlRenderer(stlCanvas)) {
-        this.rebuildStlPanel(sessionId);
+        if (source.stlMesh !== this.lastStlMesh) {
+          this.lastStlMesh = source.stlMesh;
+          this.rebuildStlFraming(source.stlMesh);
+        }
+        this.rebuildStlOverlay(sessionId, source.stlMesh);
         this.resizeStlIfNeeded(stlCanvas);
-        this.stlControls!.update();
-        this.stlRenderer!.render(this.stlScene, this.stlCamera);
+
+        const previousVisibility = source.hiddenDuringView.map(object => object.visible);
+        source.hiddenDuringView.forEach(object => (object.visible = false));
+        const voxelPreviewWasVisible = source.voxelPreview.visible;
+        source.voxelPreview.visible = false;
+        const stlMeshWasVisible = source.stlMesh.visible;
+        const showingResult = this.stlOverlayGroup !== null;
+        source.stlMesh.visible = stlMeshWasVisible && !showingResult;
+        if (this.stlOverlayGroup) {
+          this.stlOverlayGroup.visible = true;
+        }
+        try {
+          this.stlControls!.update();
+          this.stlRenderer!.render(source.scene, this.stlCamera);
+        } finally {
+          source.hiddenDuringView.forEach((object, i) => (object.visible = previousVisibility[i]));
+          source.voxelPreview.visible = voxelPreviewWasVisible;
+          source.stlMesh.visible = stlMeshWasVisible;
+          if (this.stlOverlayGroup) {
+            this.stlOverlayGroup.visible = false;
+          }
+        }
       }
     } else {
       this.teardownStlRenderer();

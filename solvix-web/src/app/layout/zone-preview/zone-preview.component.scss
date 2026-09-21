@@ -13,7 +13,10 @@
   z-index: 999;
   display: flex;
   flex-direction: column;
-  background: #000;
+  // Matches the real scene's own THREE.Scene.background
+  // (world-canvas.component.ts) - the canvases below render that color
+  // themselves; this is just what shows in the label/border gap around them.
+  background: #1e1f22;
 }
 
 :host([hidden]) {
