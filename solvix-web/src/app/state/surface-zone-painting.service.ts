@@ -67,6 +67,12 @@ export type SurfaceZoneCellState =
   | { readonly kind: 'excluded' }
   | { readonly kind: 'available' };
 
+// finishSelection's own result - see that method's doc comment.
+export interface FinishSelectionResult {
+  readonly assigned: number;
+  readonly disconnected: boolean;
+}
+
 interface SurfacePaintingSession {
   readonly grid: VoxelGridDto; // the fine shell grid, not the solid voxel grid
   readonly totalOccupied: number;
@@ -356,6 +362,11 @@ export class SurfaceZonePaintingService {
     this.sessionsByKey.set(sessionId, this.createSession(session.grid, session.voxelZones));
   }
 
+  // Connectivity is NOT enforced here (used to be, on every edit) - see
+  // finishSelection's own comment for why that moved to commit time
+  // instead: it let a user paint 2 separate "islands" and join them later,
+  // rather than forcing every intermediate step to already be one
+  // connected blob.
   toggleCell(sessionId: number, axis: Axis, u: number, v: number): boolean {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
@@ -372,13 +383,10 @@ export class SurfaceZonePaintingService {
       return false;
     }
     mask[index] = previous ? 0 : 1;
-    if (!isSingleConnectedComponent(mask, width, height)) {
-      mask[index] = previous;
-      return false;
-    }
     return true;
   }
 
+  // Connectivity is not enforced here either - see toggleCell's own comment.
   selectRect(sessionId: number, axis: Axis, u0: number, v0: number, u1: number, v1: number): boolean {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
@@ -397,7 +405,6 @@ export class SurfaceZonePaintingService {
     const maskAHasAny = maskA.includes(1);
     const maskBHasAny = maskB.includes(1);
 
-    const previous = mask.slice();
     let addedAny = false;
     for (let v = minV; v <= maxV; v++) {
       for (let u = minU; u <= maxU; u++) {
@@ -411,14 +418,7 @@ export class SurfaceZonePaintingService {
         }
       }
     }
-    if (!addedAny) {
-      return false;
-    }
-    if (!isSingleConnectedComponent(mask, width, height)) {
-      mask.set(previous);
-      return false;
-    }
-    return true;
+    return addedAny;
   }
 
   private isCellAvailable(session: SurfacePaintingSession, axis: Axis, u: number, v: number): boolean {
@@ -513,14 +513,31 @@ export class SurfaceZonePaintingService {
   // Commits the pending selection (intersection of the 3 masks) into
   // `session.activeVoxelZoneId` - unlike ZonePaintingService.finishZone,
   // this never creates a new zone id, and can be called more than once for
-  // the same voxelZoneId (file header point 1). Returns how many cells
-  // actually got assigned.
-  finishSelection(sessionId: number): number {
+  // the same voxelZoneId (file header point 1). `assigned` is how many
+  // cells actually got assigned - 0 means either the intersection was
+  // empty, or (`disconnected: true`) at least one of the 3 masks was split
+  // into 2+ disconnected pieces. Connectivity is checked HERE, at commit
+  // time, not on every intermediate toggleCell/selectRect edit (same
+  // reasoning as ZonePaintingService.finishZone's own version of this
+  // check) - lets the user build a selection out of disconnected "islands"
+  // while painting, as long as it's one connected blob by the time they
+  // commit it.
+  finishSelection(sessionId: number): FinishSelectionResult {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
-      return 0;
+      return { assigned: 0, disconnected: false };
     }
     const { grid, maskX, maskY, maskZ, cellZone, activeVoxelZoneId } = session;
+    const xDims = maskDims(grid, 'x');
+    const yDims = maskDims(grid, 'y');
+    const zDims = maskDims(grid, 'z');
+    if (
+      !isSingleConnectedComponent(maskX, xDims.width, xDims.height) ||
+      !isSingleConnectedComponent(maskY, yDims.width, yDims.height) ||
+      !isSingleConnectedComponent(maskZ, zDims.width, zDims.height)
+    ) {
+      return { assigned: 0, disconnected: true };
+    }
     const maskXHasAny = maskX.includes(1);
     const maskYHasAny = maskY.includes(1);
     const maskZHasAny = maskZ.includes(1);
@@ -549,7 +566,7 @@ export class SurfaceZonePaintingService {
       maskY.fill(0);
       maskZ.fill(0);
     }
-    return assigned;
+    return { assigned, disconnected: false };
   }
 
   zoneIdAt(sessionId: number, ix: number, iy: number, iz: number): number | null {

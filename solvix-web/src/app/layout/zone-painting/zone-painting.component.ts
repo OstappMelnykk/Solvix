@@ -3,6 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Axis, AXES, ZoneCellState, ZonePaintingService, axisCoords, projectedCoords } from '../../state/zone-painting.service';
+import { labelConnectedComponents } from '../../state/mask-connectivity';
 import { voxelCenter } from '../../geometry/voxel-grid-contract';
 import { getVoxelCellByInstanceId } from '../../geometry/scene-objects/voxels';
 import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity, darkenZoneColorCss } from '../../geometry/scene-objects/zone-overlay';
@@ -18,6 +19,16 @@ const CLICK_MOVE_THRESHOLD_PX = 4;
 
 const AVAILABLE_FILL = 'rgba(180, 185, 190, 0.35)';
 const EXCLUDED_FILL = 'rgba(10, 10, 12, 0.55)';
+// The pending mask's FIRST connected component keeps the normal
+// zone-colored pending fill (fillFor's own 'pending' case) - these are for
+// every ADDITIONAL disconnected "island" (2nd, 3rd, ...), a direct visual
+// hint on the geometry itself for what would otherwise only surface as a
+// text error at "Завершити зону" ("Виділення розірвано на кілька
+// ділянок..."): distinct, attention-grabbing colors so the user can see
+// AT A GLANCE which separate blobs still need to be bridged together, and
+// tell them apart from each other while they're at it. Cycles if there
+// somehow end up being more than 3 islands at once.
+const DISCONNECTED_ISLAND_FILLS: readonly string[] = ['rgba(230, 57, 70, 0.65)', 'rgba(255, 190, 11, 0.65)', 'rgba(131, 56, 236, 0.65)'];
 
 // Panels 0-2 are the fixed X/Y/Z painting views; panel 3 is a free-orbit "3D
 // result" preview - the same real Scene, colored zones baked onto their
@@ -297,10 +308,14 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     if (sessionId === null) {
       return;
     }
-    const assigned = this.zonePainting.finishZone(sessionId);
+    const { assigned, disconnected } = this.zonePainting.finishZone(sessionId);
     this.refreshClassifications();
     this.rebuildZoneOverlayMesh();
 
+    if (disconnected) {
+      this.notifications.error('Виділення розірвано на кілька ділянок - з\'єднайте їх або завершіть частинами. Зона не створена.');
+      return;
+    }
     if (assigned === 0) {
       this.notifications.error('Перетин 3 областей порожній - жодного вокселя не додано. Зона не створена.');
       return;
@@ -722,6 +737,13 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
     const cellPixelSize = grid.cellSize * pixelsPerWorldUnit;
     const currentZoneColor = this.nextZoneColor();
     const projected = new THREE.Vector3();
+    // Labels this axis's PENDING mask by connected component, so a
+    // disconnected selection (allowed while painting - only rejected at
+    // "Завершити зону") shows each separate island in its own color
+    // instead of one uniform pending fill (see DISCONNECTED_ISLAND_FILLS'
+    // own comment).
+    const pendingMask = this.zonePainting.pendingMask(sessionId, axis);
+    const pendingLabels = pendingMask ? labelConnectedComponents(pendingMask, state.width, state.height) : null;
 
     for (let v = 0; v < state.height; v++) {
       for (let u = 0; u < state.width; u++) {
@@ -729,7 +751,10 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
         if (cellState.kind === 'empty') {
           continue;
         }
-        const fill = this.fillFor(cellState, currentZoneColor);
+        const fill =
+          cellState.kind === 'pending'
+            ? this.pendingFillFor(currentZoneColor, pendingLabels?.labels[u + v * state.width] ?? 0)
+            : this.fillFor(cellState, currentZoneColor);
         if (!fill) {
           continue;
         }
@@ -753,9 +778,20 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       case 'excluded':
         return EXCLUDED_FILL;
       case 'pending':
-        return withAlpha(currentZoneColor, 0.55);
+        return this.pendingFillFor(currentZoneColor, 0);
       case 'zoned':
         return darkenZoneColorCss(state.color);
     }
+  }
+
+  // component 0 (whichever island the flood fill happens to reach first -
+  // not necessarily "the first one the user painted") keeps the normal
+  // zone-colored pending fill; every later component cycles through
+  // DISCONNECTED_ISLAND_FILLS instead - see that constant's own comment.
+  private pendingFillFor(currentZoneColor: string, component: number): string {
+    if (component <= 0) {
+      return withAlpha(currentZoneColor, 0.55);
+    }
+    return DISCONNECTED_ISLAND_FILLS[(component - 1) % DISCONNECTED_ISLAND_FILLS.length];
   }
 }
