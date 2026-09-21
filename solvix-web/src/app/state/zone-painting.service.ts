@@ -264,15 +264,40 @@ export class ZonePaintingService {
     this.step1Visible.set(true);
   }
 
+  // Wipes whatever's currently pending (uncommitted) on the active
+  // session, if any - shared by hideStep1/close below. A pending selection
+  // only ever belongs to the SPECIFIC zone-creation attempt in progress
+  // when the user painted it; leaving without committing (finishZone) and
+  // later starting a fresh attempt (Додати зону, or Редагувати re-opening
+  // this same slot) must never resurrect those stale clicks - they'd show
+  // as already-selected cells for a completely different, unrelated
+  // attempt.
+  private clearPendingSelection(): void {
+    const sessionId = this.activeSessionId();
+    const session = sessionId === null ? undefined : this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return;
+    }
+    session.maskX.fill(0);
+    session.maskY.fill(0);
+    session.maskZ.fill(0);
+  }
+
   // Hides step 1's canvas back down to the list, WITHOUT closing the
   // feature itself (the list stays open, its session data untouched) -
   // ZonePaintingComponent's own "Закрити" (cancel this zone attempt) and
   // its finishZone hand-off to step 2 both call this instead of close().
+  // Clearing the pending selection here (not just inside finishZone's own
+  // success path) is what makes "Закрити" a genuine cancel: any
+  // still-in-progress, uncommitted clicks are dropped, not left lying
+  // around for the next zone attempt to inherit.
   hideStep1(): void {
+    this.clearPendingSelection();
     this.step1Visible.set(false);
   }
 
   close(): void {
+    this.clearPendingSelection();
     this.step1Visible.set(false);
     this.activeSessionId.set(null);
     this.activeSource.set(null);

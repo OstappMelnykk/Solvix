@@ -263,7 +263,21 @@ export class SurfaceZonePaintingService {
     return true;
   }
 
+  // Clears whatever's still pending (uncommitted) on the active session
+  // before closing - "Закрити"/"← Крок 1" both leave via this without ever
+  // calling finishSelection, and this service's own open() reuses the SAME
+  // session object on reopen (see its own comment: adding/deleting a zone
+  // must not wipe OTHER zones' committed work) - without this, whatever the
+  // user brushed but never finished would resurface as already-selected
+  // cells the next time this zone (or its renumbered successor) is opened.
   close(): void {
+    const sessionId = this.activeSessionId();
+    const session = sessionId === null ? undefined : this.sessionsByKey.get(sessionId);
+    if (session) {
+      session.maskX.fill(0);
+      session.maskY.fill(0);
+      session.maskZ.fill(0);
+    }
     this.activeSessionId.set(null);
     this.activeSource.set(null);
   }

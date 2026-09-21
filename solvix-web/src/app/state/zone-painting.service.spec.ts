@@ -417,6 +417,48 @@ describe('ZonePaintingService', () => {
     });
   });
 
+  describe('pending selection cleared on hideStep1/close', () => {
+    beforeEach(() => {
+      statuses.set(1, { kind: 'ok', result: buildGrid(3, 1, 1) });
+      service.open(1, fakeSource);
+    });
+
+    it("hideStep1 drops an abandoned (never finished) pending selection", () => {
+      service.toggleCell(1, 'y', 0, 0);
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([1, 0, 0]);
+
+      service.hideStep1(); // "Закрити" without finishZone
+
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([0, 0, 0]);
+    });
+
+    it("a fresh attempt after hideStep1 doesn't inherit the abandoned selection", () => {
+      service.toggleCell(1, 'y', 0, 0);
+      service.hideStep1();
+      service.showStep1();
+
+      // The cell is 'available' again, not still showing as pending.
+      expect(service.viewState(1, 'y').cells[0]).toEqual({ kind: 'available' });
+    });
+
+    it('close drops an abandoned pending selection too', () => {
+      service.toggleCell(1, 'y', 0, 0);
+      service.close();
+      service.open(1, fakeSource);
+
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([0, 0, 0]);
+    });
+
+    it("hideStep1 doesn't disturb an already-committed zone's pending masks (already empty)", () => {
+      service.toggleCell(1, 'y', 0, 0);
+      service.finishZone(1); // clears pending masks itself on success
+      service.hideStep1();
+
+      expect(service.getSession(1)?.zones.length).toBe(1);
+      expect(Array.from(service.pendingMask(1, 'y')!)).toEqual([0, 0, 0]);
+    });
+  });
+
   describe('discarding a session when its reference changes', () => {
     it('drops the zone data once the source STL reference changes (rotate/move/re-import)', () => {
       statuses.set(1, { kind: 'ok', result: buildGrid(1, 1, 1) });

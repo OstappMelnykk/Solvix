@@ -265,6 +265,23 @@ describe('SurfaceZonePaintingService', () => {
     });
   });
 
+  describe('pending selection cleared on close', () => {
+    it("an abandoned (never finished) pending selection doesn't resurface on reopen", () => {
+      service.open(1, source);
+      service.setActiveVoxelZoneId(1, 0);
+      const halfway = service.getSession(1)!.grid.countX / 2;
+      const cell = firstAvailableCell(service.viewState(1, 'y'), u => u < halfway)!;
+      service.toggleCell(1, 'y', cell.u, cell.v);
+      expect(service.pendingMask(1, 'y')![cell.u + cell.v * service.getSession(1)!.grid.countX]).toBe(1);
+
+      service.close(); // "Закрити" without finishSelection
+      service.open(1, source);
+
+      expect(service.pendingMask(1, 'y')![cell.u + cell.v * service.getSession(1)!.grid.countX]).toBe(0);
+      expect(service.viewState(1, 'y').cells[cell.u + cell.v * service.getSession(1)!.grid.countX]).toEqual({ kind: 'available' });
+    });
+  });
+
   describe('mid-session zone additions (the interleaved wizard flow)', () => {
     it('keeps an already-painted zone\'s STL data when a NEW voxel zone is added afterward', () => {
       // Undo the outer beforeEach's 2 already-committed zones so there's
