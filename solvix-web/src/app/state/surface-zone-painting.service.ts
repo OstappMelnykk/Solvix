@@ -625,6 +625,15 @@ export class SurfaceZonePaintingService {
       return { assigned: 0, disconnected: false };
     }
     const { grid, maskX, maskY, maskZ, cellZone, activeVoxelZoneId } = session;
+    // -1 means "no zone selected" (createSession's own starting value,
+    // restored whenever open() rebuilds the shell grid, e.g. a subdivisions
+    // change) - committing here would write -1 into cellZone, which reads
+    // back identically to "still unassigned" everywhere else, while
+    // assignedCount still went up: a silent mismatch where the overall
+    // progress bar counts more than any real zone's own count adds up to.
+    if (activeVoxelZoneId === -1) {
+      return { assigned: 0, disconnected: false };
+    }
     const xDims = maskDims(grid, 'x');
     const yDims = maskDims(grid, 'y');
     const zDims = maskDims(grid, 'z');
