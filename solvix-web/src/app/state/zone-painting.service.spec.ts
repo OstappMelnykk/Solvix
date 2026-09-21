@@ -200,6 +200,21 @@ describe('ZonePaintingService', () => {
       expect(assigned).toBe(0);
       expect(service.getSession(1)?.zones.length).toBe(1);
     });
+
+    // Regression test: all 3 axis masks being empty must NOT be treated as
+    // "every axis is unconstrained" (which degenerates into "claim the
+    // entire remaining grid") - it must mean "nothing was selected, assign
+    // nothing." This was the root cause of a reported >100% over-assignment
+    // bug, reachable via the always-enabled "Завершити виділення" button
+    // with no guard against an empty selection.
+    it('assigns nothing when finishZone is called with all 3 axis masks empty and unassigned cells remain', () => {
+      const { assigned, disconnected } = service.finishZone(1); // nothing painted on any axis
+
+      expect(assigned).toBe(0);
+      expect(disconnected).toBe(false);
+      expect(service.getSession(1)?.zones).toEqual([]);
+      expect(service.coverage(1)).toEqual({ assigned: 0, total: 4 });
+    });
   });
 
   describe('already-zoned voxels cannot be repainted', () => {

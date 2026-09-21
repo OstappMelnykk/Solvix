@@ -195,6 +195,25 @@ describe('SurfaceZonePaintingService', () => {
     expect(service.pendingMask(1, 'y')![first.u + first.v * service.getSession(1)!.grid.countX]).toBe(1);
   });
 
+  // Regression test: all 3 axis masks being empty must NOT be treated as
+  // "every axis is unconstrained" (which degenerates into "claim the entire
+  // remaining shell grid for the active zone"). This was the root cause of
+  // a reported >100% over-assignment bug (assignedCount exceeding
+  // totalOccupied), reachable via the always-enabled "Завершити зону"
+  // button with no guard against an empty selection.
+  it('assigns nothing when finishSelection is called with all 3 axis masks empty and unassigned cells remain', () => {
+    service.open(1, source);
+    service.setActiveVoxelZoneId(1, 0);
+
+    const before = service.coverage(1)!;
+    const { assigned, disconnected } = service.finishSelection(1); // nothing painted on any axis
+
+    expect(assigned).toBe(0);
+    expect(disconnected).toBe(false);
+    expect(service.coverage(1)).toEqual(before);
+    expect(service.isZoneUsed(1, 0)).toBe(false);
+  });
+
   it('recomputes the triangle->zone mapping after a single zone commit, with no coverage requirement', () => {
     service.open(1, source);
     const halfway = service.getSession(1)!.grid.countX / 2;

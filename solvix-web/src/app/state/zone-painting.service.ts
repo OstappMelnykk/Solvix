@@ -433,12 +433,15 @@ export class ZonePaintingService {
   // finishZone's own `zoneId = zones.length` and buildZoneOverlayGroup's
   // zoneIdAt lookup both depend on.
   deleteZone(sessionId: number, zoneId: number): void {
+    console.log('[ZonePaintingService.deleteZone] called', { sessionId, zoneId });
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
+      console.log('[ZonePaintingService.deleteZone] no session for', sessionId);
       return;
     }
     const index = session.zones.findIndex(zone => zone.id === zoneId);
     if (index === -1) {
+      console.log('[ZonePaintingService.deleteZone] no zone with id', zoneId, 'in', session.zones.map(z => z.id));
       return;
     }
     const { voxelZone } = session;
@@ -455,6 +458,7 @@ export class ZonePaintingService {
       zones[i] = { ...zones[i], id: zones[i].id - 1 };
     }
     session.zonesRevision++;
+    console.log('[ZonePaintingService.deleteZone] done, remaining zones:', zones.map(z => z.id));
   }
 
   // Toggles ONE cell in `axis`'s pending mask. ADDING a cell is refused
@@ -686,24 +690,34 @@ export class ZonePaintingService {
     const maskXHasAny = maskX.includes(1);
     const maskYHasAny = maskY.includes(1);
     const maskZHasAny = maskZ.includes(1);
+    // "An untouched axis is unconstrained" only makes sense when at least
+    // ONE axis actually has a selection to intersect against - with all 3
+    // empty (finishZone clicked before painting anything), every
+    // xOk/yOk/zOk below would default to true unconditionally, matching
+    // every remaining unassigned occupied voxel in the WHOLE grid instead
+    // of nothing. A real, reproduced bug (mirrored in
+    // SurfaceZonePaintingService.finishSelection - see its own comment).
     let assigned = 0;
-    for (let iz = 0; iz < grid.countZ; iz++) {
-      for (let iy = 0; iy < grid.countY; iy++) {
-        for (let ix = 0; ix < grid.countX; ix++) {
-          const index = voxelIndex(grid, ix, iy, iz);
-          if (voxelZone[index] !== -1 || !isOccupied(grid, ix, iy, iz)) {
-            continue;
-          }
-          const xOk = !maskXHasAny || maskX[iy + iz * grid.countY] === 1;
-          const yOk = !maskYHasAny || maskY[ix + iz * grid.countX] === 1;
-          const zOk = !maskZHasAny || maskZ[ix + iy * grid.countX] === 1;
-          if (xOk && yOk && zOk) {
-            voxelZone[index] = zoneId;
-            assigned++;
+    if (maskXHasAny || maskYHasAny || maskZHasAny) {
+      for (let iz = 0; iz < grid.countZ; iz++) {
+        for (let iy = 0; iy < grid.countY; iy++) {
+          for (let ix = 0; ix < grid.countX; ix++) {
+            const index = voxelIndex(grid, ix, iy, iz);
+            if (voxelZone[index] !== -1 || !isOccupied(grid, ix, iy, iz)) {
+              continue;
+            }
+            const xOk = !maskXHasAny || maskX[iy + iz * grid.countY] === 1;
+            const yOk = !maskYHasAny || maskY[ix + iz * grid.countX] === 1;
+            const zOk = !maskZHasAny || maskZ[ix + iy * grid.countX] === 1;
+            if (xOk && yOk && zOk) {
+              voxelZone[index] = zoneId;
+              assigned++;
+            }
           }
         }
       }
     }
+    console.log('[ZonePaintingService.finishZone]', { sessionId, zoneId, assigned, maskXHasAny, maskYHasAny, maskZHasAny });
     // Only an actual commit clears the pending masks - an empty intersection
     // leaves the user's in-progress selection untouched so they can adjust
     // and retry, instead of silently losing it on a failed attempt.

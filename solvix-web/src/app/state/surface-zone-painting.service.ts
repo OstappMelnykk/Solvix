@@ -254,9 +254,23 @@ export class SurfaceZonePaintingService {
     const subdivisions = this.subdivisions();
     const existing = this.sessionsByKey.get(sessionId);
     const alreadyMatches = existing && existing.subdivisions === subdivisions && existing.voxelGrid === voxelSession.grid;
+    console.log('[SurfaceZonePaintingService.open]', {
+      sessionId,
+      subdivisions,
+      alreadyMatches,
+      existingSubdivisions: existing?.subdivisions,
+      existingVoxelGridSameRef: existing ? existing.voxelGrid === voxelSession.grid : null,
+      existingAssignedCount: existing?.assignedCount,
+      existingTotalOccupied: existing?.totalOccupied
+    });
     if (!alreadyMatches) {
       const grid = buildSurfaceShellGrid(source.stlMesh, voxelSession.grid, subdivisions);
-      this.sessionsByKey.set(sessionId, this.createSession(grid, voxelSession.grid, subdivisions));
+      const fresh = this.createSession(grid, voxelSession.grid, subdivisions);
+      console.log('[SurfaceZonePaintingService.open] rebuilding shell grid', {
+        sessionId,
+        newTotalOccupied: fresh.totalOccupied
+      });
+      this.sessionsByKey.set(sessionId, fresh);
     }
     this.activeSource.set(source);
     this.activeSessionId.set(sessionId);
@@ -405,6 +419,7 @@ export class SurfaceZonePaintingService {
   deleteZone(sessionId: number, voxelZoneId: number): void {
     const session = this.sessionsByKey.get(sessionId);
     if (!session) {
+      console.log('[SurfaceZonePaintingService.deleteZone] no session for', { sessionId, voxelZoneId });
       return;
     }
     const { cellZone } = session;
@@ -417,7 +432,16 @@ export class SurfaceZonePaintingService {
         cellZone[i]--;
       }
     }
+    const before = session.assignedCount;
     session.assignedCount -= removed;
+    console.log('[SurfaceZonePaintingService.deleteZone]', {
+      sessionId,
+      voxelZoneId,
+      removed,
+      assignedCountBefore: before,
+      assignedCountAfter: session.assignedCount,
+      totalOccupied: session.totalOccupied
+    });
     const renumberedUsed = new Set<number>();
     session.usedVoxelZoneIds.forEach(id => {
       if (id !== voxelZoneId) {
@@ -637,20 +661,30 @@ export class SurfaceZonePaintingService {
     const maskXHasAny = maskX.includes(1);
     const maskYHasAny = maskY.includes(1);
     const maskZHasAny = maskZ.includes(1);
+    // "An untouched axis is unconstrained" only makes sense when at least
+    // ONE axis actually has a selection to intersect against - with all 3
+    // empty (nothing painted at all, e.g. clicking "Завершити виділення"
+    // before painting anything), every xOk/yOk/zOk below would default to
+    // true unconditionally, matching every remaining occupied cell in the
+    // ENTIRE shell grid instead of nothing. A real, reproduced bug - console
+    // logs below (finishSelection) are there specifically to confirm this
+    // was the actual mechanism if it recurs.
     let assigned = 0;
-    for (let iz = 0; iz < grid.countZ; iz++) {
-      for (let iy = 0; iy < grid.countY; iy++) {
-        for (let ix = 0; ix < grid.countX; ix++) {
-          const index = shellIndex(grid, ix, iy, iz);
-          if (cellZone[index] !== -1 || !isOccupied(grid, ix, iy, iz)) {
-            continue;
-          }
-          const xOk = !maskXHasAny || maskX[iy + iz * grid.countY] === 1;
-          const yOk = !maskYHasAny || maskY[ix + iz * grid.countX] === 1;
-          const zOk = !maskZHasAny || maskZ[ix + iy * grid.countX] === 1;
-          if (xOk && yOk && zOk) {
-            cellZone[index] = activeVoxelZoneId;
-            assigned++;
+    if (maskXHasAny || maskYHasAny || maskZHasAny) {
+      for (let iz = 0; iz < grid.countZ; iz++) {
+        for (let iy = 0; iy < grid.countY; iy++) {
+          for (let ix = 0; ix < grid.countX; ix++) {
+            const index = shellIndex(grid, ix, iy, iz);
+            if (cellZone[index] !== -1 || !isOccupied(grid, ix, iy, iz)) {
+              continue;
+            }
+            const xOk = !maskXHasAny || maskX[iy + iz * grid.countY] === 1;
+            const yOk = !maskYHasAny || maskY[ix + iz * grid.countX] === 1;
+            const zOk = !maskZHasAny || maskZ[ix + iy * grid.countX] === 1;
+            if (xOk && yOk && zOk) {
+              cellZone[index] = activeVoxelZoneId;
+              assigned++;
+            }
           }
         }
       }
@@ -662,6 +696,23 @@ export class SurfaceZonePaintingService {
       maskY.fill(0);
       maskZ.fill(0);
       this.recomputeTriangleZones(sessionId);
+    }
+    console.log('[SurfaceZonePaintingService.finishSelection]', {
+      sessionId,
+      activeVoxelZoneId,
+      assigned,
+      maskXHasAny,
+      maskYHasAny,
+      maskZHasAny,
+      assignedCount: session.assignedCount,
+      totalOccupied: session.totalOccupied
+    });
+    if (session.assignedCount > session.totalOccupied) {
+      console.error('[SurfaceZonePaintingService.finishSelection] INVARIANT VIOLATED: assignedCount > totalOccupied', {
+        sessionId,
+        assignedCount: session.assignedCount,
+        totalOccupied: session.totalOccupied
+      });
     }
     return { assigned, disconnected: false };
   }
