@@ -418,8 +418,12 @@ export class ZonePaintingComponent implements AfterViewInit, OnDestroy {
       // The voxel fill occupies roughly the same physical space as the STL
       // surface being clicked on here - left visible, it would visually
       // compete with (and occlude) the smooth surface the user is trying
-      // to precisely click on.
-      hiddenDuringView: [source.voxelPreview],
+      // to precisely click on. Combined with step 1's OWN hidden fixtures
+      // (source.hiddenDuringView - the floor grid, rotate gizmo ring, and
+      // dimension-lines/ruler overlays WorldCanvasComponent.previewFixtures
+      // already computed for step 1) so step 2 hides the exact same clutter,
+      // not just the voxel fill on its own.
+      hiddenDuringView: [source.voxelPreview, ...source.hiddenDuringView],
       // Kept verbatim so SurfaceZonePaintingComponent's own "← Крок 1" back
       // button can re-open this exact same window later, without this
       // component needing to still be around to hand it over again.

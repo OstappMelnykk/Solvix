@@ -1130,6 +1130,35 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return this.sessionId !== null && this.voxelization.getStatus(this.sessionId).kind === 'ok';
   }
 
+  // Fixtures that are clutter, not content, in every fixed-axis "just show
+  // me the model" preview this canvas can feed (SixViewOverlayComponent,
+  // ZonePaintingComponent, and - via ZonePaintingSource.hiddenDuringView,
+  // carried through by openSurfaceZonePainting - SurfaceZonePaintingComponent
+  // too): the floor grid, the interactive rotate-gizmo ring (meaningless
+  // outside THIS canvas's own orbit controls), the hole-highlight overlay,
+  // and the dimension-lines/ruler measurement overlays
+  // (ImportedReferenceDisplayService's dimensionsVisible/rulerVisible
+  // toggles) - all still visible on THIS canvas's own normal view the whole
+  // time, just hidden for the duration of each preview's own render() calls
+  // (see each component's own animate()). A snapshot at whichever moment
+  // the preview is opened, same as framingObjects/voxelPreview/stlMesh
+  // below - toggling dimension lines/ruler ON only AFTER a preview is
+  // already open won't retroactively hide them there until it's reopened,
+  // matching how this already worked for gridHelper/the rotate gizmo.
+  private previewFixtures(): THREE.Object3D[] {
+    const fixtures: THREE.Object3D[] = [this.gridHelper, this.rotateGizmo.getHelper()];
+    if (this.currentHoleHighlight) {
+      fixtures.push(this.currentHoleHighlight);
+    }
+    if (this.currentDimensionLines) {
+      fixtures.push(this.currentDimensionLines);
+    }
+    if (this.currentRuler) {
+      fixtures.push(this.currentRuler);
+    }
+    return fixtures;
+  }
+
   openZonePainting(): void {
     if (this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.currentVoxelPreview) {
       this.zonePainting.open(this.sessionId, {
@@ -1137,9 +1166,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         voxelPreview: this.currentVoxelPreview,
         stlMesh: this.currentImportedReference,
         framingObjects: [this.currentVoxelPreview],
-        // Same fixtures SixViewOverlayComponent hides while open - clutter,
-        // not content, for a fixed-axis "just show me the voxels" view.
-        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper(), ...(this.currentHoleHighlight ? [this.currentHoleHighlight] : [])]
+        hiddenDuringView: this.previewFixtures()
       });
     }
   }
@@ -1326,10 +1353,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         sessionId: this.sessionId,
         isIdealWorld: this.worldIndex === IDEAL_WORLD_INDEX,
         framingObjects,
-        // Rings and floor grid only add clutter to a 6-way "just show me
-        // the model" comparison - AxesHelper stays (not listed here) since
-        // orientation is exactly what these 6 fixed-axis panels are about.
-        hiddenDuringView: [this.gridHelper, this.rotateGizmo.getHelper(), ...(this.currentHoleHighlight ? [this.currentHoleHighlight] : [])]
+        // AxesHelper stays (not part of previewFixtures) - orientation is
+        // exactly what these 6 fixed-axis panels are about.
+        hiddenDuringView: this.previewFixtures()
       });
     }
   }
