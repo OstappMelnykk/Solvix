@@ -42,7 +42,6 @@
     <button type="button" class="zone-painting__finish-zone" [style.border-color]="nextZoneColor()" (click)="finishZone()">
       Завершити зону
     </button>
-    <p class="zone-painting__message" *ngIf="commitMessage()">{{ commitMessage() }}</p>
 
     <p class="zone-painting__coverage">{{ coverageText() }}</p>
 
