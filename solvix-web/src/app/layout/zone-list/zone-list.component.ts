@@ -99,6 +99,24 @@ export class ZoneListComponent {
     }));
   }
 
+  // REQUIRED here, not cosmetic: zones() above builds a brand-new array of
+  // brand-new row objects on every call. This app's several always-mounted
+  // WebGL panels (SixViewOverlayComponent, ZonePaintingComponent,
+  // SurfaceZonePaintingComponent, WorldCanvasComponent, ...) each keep their
+  // own requestAnimationFrame loop running forever, even while hidden -
+  // zone.js patches rAF, so every single frame triggers a full-app change
+  // detection pass (nothing in this codebase calls runOutsideAngular). With
+  // NgFor's default identity-based diffing, every row's changed object
+  // reference on every ~16ms tick looked like "a different zone", so Angular
+  // was destroying and recreating every row's DOM (including the Редагувати/
+  // Видалити buttons) 60 times a second - a user's mousedown and mouseup can
+  // easily land on 2 different DOM element instances that way, which the
+  // browser then never fires a "click" for at all. Keying by the zone's own
+  // stable id keeps the same DOM node across ticks.
+  trackByZoneId(_index: number, zone: ZoneRow): number {
+    return zone.id;
+  }
+
   // "Редагувати" only ever shows on the LAST row - editing an earlier zone
   // would need to roll back everything painted after it, which the user
   // explicitly asked to keep out of scope; deleting (any row) already
