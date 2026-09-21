@@ -110,7 +110,6 @@ describe('ZoneListComponent', () => {
 
   it('shows an empty list before any zone exists', () => {
     expect(zoneRows().length).toBe(0);
-    expect(fixture.nativeElement.querySelector('.zone-list__empty')).toBeTruthy();
   });
 
   it('shows "Редагувати" on the last zone even when it has 0 STL cells (step 2 was opened but never finished)', () => {

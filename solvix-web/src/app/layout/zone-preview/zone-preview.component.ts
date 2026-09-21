@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ZonePaintingService, ZonePaintingSource } from '../../state/zone-painting.service';
 import { SurfaceZonePaintingService } from '../../state/surface-zone-painting.service';
-import { buildZoneOverlayGroup, disposeZoneOverlayGroup } from '../../geometry/scene-objects/zone-overlay';
+import { VoxelizationService } from '../../state/voxelization.service';
+import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../geometry/scene-objects/zone-overlay';
 import { SurfaceZoneOverlayZone, buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
 import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 
@@ -46,6 +47,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
 
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
+  private readonly voxelization = inject(VoxelizationService);
 
   private frameId = 0;
   private viewReady = false;
@@ -75,6 +77,7 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   private stlOverlayGroup: THREE.Object3D | null = null;
   private lastStlMesh: THREE.Object3D | null = null;
   private lastTriangleZone: Int16Array | null = null;
+  private lastZonesRevisionForStl = -1;
   private readonly stlLastSize = { width: 0, height: 0 };
   private readonly stlFramingCenter = new THREE.Vector3();
   private stlFramingRadius = 1;
@@ -108,6 +111,43 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
 
   hasStlReference(): boolean {
     return this.zonePainting.activeSource()?.stlMesh != null;
+  }
+
+  // Same value the wizard's own "3D результат" panel already exposes via
+  // its "Прозорість зон" slider - this is the on-canvas equivalent for the
+  // list page, so it's reachable without opening step 1.
+  voxelOverlayOpacityPercent(): number {
+    const sessionId = this.zonePainting.activeSessionId();
+    return sessionId === null ? 75 : Math.round(this.zonePainting.getZoneOverlayOpacity(sessionId) * 100);
+  }
+
+  onVoxelOverlayOpacityChange(event: Event): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.zonePainting.setZoneOverlayOpacity(sessionId, percent / 100);
+  }
+
+  // The BASE voxel fill's own opacity (VoxelizationService, same value the
+  // wizard's own "Прозорість вокселів" slider and the main settings panel
+  // already control) - separate from voxelOverlayOpacityPercent above,
+  // which only ever affects the COLORED ZONE layer on top. setOpacity
+  // mutates the live shared preview mesh's material directly, so this
+  // takes effect immediately with no extra per-frame sync needed here.
+  voxelFillOpacityPercent(): number {
+    const sessionId = this.zonePainting.activeSessionId();
+    return sessionId === null ? 0 : Math.round(this.voxelization.getOpacity(sessionId) * 100);
+  }
+
+  onVoxelFillOpacityChange(event: Event): void {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    const percent = Number((event.target as HTMLInputElement).value);
+    this.voxelization.setOpacity(sessionId, percent / 100);
   }
 
   private ensureVoxelRenderer(canvas: HTMLCanvasElement): boolean {
@@ -247,12 +287,23 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
   // (getTriangleZones only returns non-null after a first committed
   // selection) - before that, the panel just shows the plain STL reference,
   // same as the real one does.
+  //
+  // Also keyed on zonesRevision, not just triangleZone's own reference:
+  // buildSurfaceZoneOverlay bakes each zone's CURRENT color into the mesh's
+  // vertex colors at build time - setZoneColor changes a zone's color
+  // without ever touching triangleZone (which cell belongs to which zone id
+  // doesn't change), so triangleZone alone staying the same reference
+  // previously meant a color edit on the list page never got picked up here
+  // (the voxel panel's own overlay didn't have this bug - it already keys
+  // off zonesRevision alone).
   private rebuildStlOverlay(sessionId: number, stlMesh: THREE.Object3D): void {
     const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
-    if (triangleZone === this.lastTriangleZone) {
+    const zonesRevision = this.zonePainting.zonesRevision(sessionId);
+    if (triangleZone === this.lastTriangleZone && zonesRevision === this.lastZonesRevisionForStl) {
       return;
     }
     this.lastTriangleZone = triangleZone;
+    this.lastZonesRevisionForStl = zonesRevision;
     if (this.stlOverlayGroup) {
       this.stlOverlayGroup.removeFromParent();
       disposeSurfaceZoneOverlay(this.stlOverlayGroup);
@@ -330,6 +381,16 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
       }
       this.rebuildVoxelOverlay(sessionId);
       this.resizeVoxelIfNeeded(voxelCanvas);
+      // Cheap in-place update, every frame, deliberately NOT gated behind
+      // zonesRevision like rebuildVoxelOverlay's own full rebuild -
+      // setZoneOverlayOpacity (the SERVICE method, changing a slider) never
+      // bumps zonesRevision, so a rebuild-only approach silently never
+      // picked up an opacity change at all. Matches
+      // ZonePaintingComponent.setZoneOverlayOpacityFromInput's own
+      // "mutate the existing mesh's material directly" idiom.
+      if (this.voxelOverlayGroup) {
+        setZoneOverlayOpacity(this.voxelOverlayGroup, this.zonePainting.getZoneOverlayOpacity(sessionId));
+      }
 
       const previousVisibility = source.hiddenDuringView.map(object => object.visible);
       source.hiddenDuringView.forEach(object => (object.visible = false));

@@ -30,10 +30,6 @@
     </div>
 
     <div class="zone-list__zones">
-      <p class="zone-list__empty" *ngIf="zones().length === 0">
-        Зон ще немає. Натисни "Додати зону", щоб розмалювати першу - спочатку вокселі, потім одразу її ж ділянку на STL-поверхні.
-      </p>
-
       <div class="zone-list__zone-row" *ngFor="let zone of zones(); trackBy: trackByZoneId">
         <ng-container *ngIf="!isConfirming(zone.id, 'delete') && !isConfirming(zone.id, 'edit'); else confirmBar">
           <input
