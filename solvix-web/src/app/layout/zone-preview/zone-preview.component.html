@@ -1,0 +1,10 @@
+<div class="zone-preview__pane zone-preview__pane--voxels">
+  <span class="zone-preview__label">Вокселі</span>
+  <canvas #voxelCanvas></canvas>
+</div>
+
+<div class="zone-preview__pane zone-preview__pane--stl">
+  <span class="zone-preview__label">STL-поверхня</span>
+  <canvas #stlCanvas [hidden]="!hasStlReference()"></canvas>
+  <p class="zone-preview__empty" *ngIf="!hasStlReference()">Немає STL-референсу</p>
+</div>

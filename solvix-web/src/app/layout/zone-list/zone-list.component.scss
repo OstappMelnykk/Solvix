@@ -2,13 +2,18 @@
 // SurfaceZonePaintingComponent, both inset 5% / z-index 1100) sits on top
 // of - same z-index (1000) the wizard steps used to use back when THEY were
 // the top-level window.
+//
+// No background here (deliberately) - ZonePreviewComponent sits one z-index
+// behind this (999) and shows through wherever THIS host has no opaque
+// content of its own. The header below and .zone-list__body each carry
+// their own explicit background instead, covering exactly the regions that
+// are actually this component's own UI.
 :host {
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  background: #1e1f22;
   font-family: sans-serif;
   color: #dfe1e5;
 }
@@ -53,18 +58,27 @@
   }
 }
 
-.zone-list__body {
+// Wraps .zone-list__body and, implicitly, the empty left half - see this
+// component's own top comment for why nothing is rendered there at all
+// (ZonePreviewComponent shows through instead, one z-index behind).
+.zone-list__row {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.zone-list__body {
+  flex: 0 0 50%;
+  max-width: 50%;
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
-  max-width: 520px;
-  margin: 0 auto;
-  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
   box-sizing: border-box;
+  background: #1e1f22;
 }
 
 .zone-list__status {
@@ -257,4 +271,18 @@
   &:hover {
     background: rgba(57, 197, 242, 0.28);
   }
+
+  &:disabled {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #6b7075;
+    cursor: not-allowed;
+  }
+}
+
+.zone-list__add-hint {
+  margin: -8px 0 0;
+  font-size: 11px;
+  color: #9aa0a6;
+  text-align: center;
 }

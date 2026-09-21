@@ -3,68 +3,74 @@
   <button type="button" class="zone-list__back" (click)="close()">Закрити</button>
 </div>
 
-<div class="zone-list__body">
-  <div class="zone-list__status">
-    <div class="zone-list__status-row">
-      <span>{{ voxelCoverageText() }}</span>
-      <span>{{ voxelCoveragePercent() }}%</span>
+<!-- The left half is deliberately left empty - ZonePreviewComponent (a
+     separate, globally-mounted overlay sitting one z-index behind this one)
+     shows through untouched there. See that component's own header comment. -->
+<div class="zone-list__row">
+  <div class="zone-list__body">
+    <div class="zone-list__status">
+      <div class="zone-list__status-row">
+        <span>{{ voxelCoverageText() }}</span>
+        <span>{{ voxelCoveragePercent() }}%</span>
+      </div>
+      <div class="zone-list__progress-bar">
+        <div class="zone-list__progress-fill" [style.width.%]="voxelCoveragePercent()"></div>
+      </div>
+      <div class="zone-list__status-row">
+        <span>{{ stlCoverageText() }}</span>
+        <span>{{ stlCoveragePercent() }}%</span>
+      </div>
+      <div class="zone-list__progress-bar">
+        <div class="zone-list__progress-fill zone-list__progress-fill--stl" [style.width.%]="stlCoveragePercent()"></div>
+      </div>
     </div>
-    <div class="zone-list__progress-bar">
-      <div class="zone-list__progress-fill" [style.width.%]="voxelCoveragePercent()"></div>
+
+    <div class="zone-list__zones">
+      <p class="zone-list__empty" *ngIf="zones().length === 0">
+        Зон ще немає. Натисни "Додати зону", щоб розмалювати першу - спочатку вокселі, потім одразу її ж ділянку на STL-поверхні.
+      </p>
+
+      <div class="zone-list__zone-row" *ngFor="let zone of zones(); trackBy: trackByZoneId">
+        <ng-container *ngIf="!isConfirming(zone.id, 'delete') && !isConfirming(zone.id, 'edit'); else confirmBar">
+          <input
+            type="color"
+            class="zone-list__color-picker"
+            [value]="zone.color"
+            title="Обрати колір цієї зони"
+            (change)="onColorInput(zone.id, $any($event.target).value)"
+          />
+          <div class="zone-list__zone-info">
+            <span class="zone-list__zone-title">Зона {{ zone.id + 1 }}</span>
+            <span class="zone-list__zone-stats">{{ zone.voxelCount }} вокселів · {{ zone.stlCount }} ділянок STL</span>
+          </div>
+          <button
+            *ngIf="isLastZone(zone.id)"
+            type="button"
+            class="zone-list__zone-action"
+            title="Розмалювати цю зону заново (вокселі та STL)"
+            (click)="requestEdit(zone.id)"
+          >
+            Редагувати
+          </button>
+          <button type="button" class="zone-list__zone-action zone-list__zone-action--danger" title="Видалити цю зону" (click)="requestDelete(zone.id)">
+            Видалити
+          </button>
+        </ng-container>
+        <ng-template #confirmBar>
+          <span class="zone-list__confirm-text">
+            {{
+              isConfirming(zone.id, 'delete')
+                ? 'Видалити цю зону? Вокселі та STL-розмітку буде звільнено. Це незворотно.'
+                : 'Редагувати цю зону? Поточне виділення (вокселі та STL) буде видалено, і ви розмалюєте її заново.'
+            }}
+          </span>
+          <button type="button" class="zone-list__confirm-yes" (click)="confirmPendingAction()">Так</button>
+          <button type="button" class="zone-list__confirm-no" (click)="cancelConfirmation()">Ні</button>
+        </ng-template>
+      </div>
     </div>
-    <div class="zone-list__status-row">
-      <span>{{ stlCoverageText() }}</span>
-      <span>{{ stlCoveragePercent() }}%</span>
-    </div>
-    <div class="zone-list__progress-bar">
-      <div class="zone-list__progress-fill zone-list__progress-fill--stl" [style.width.%]="stlCoveragePercent()"></div>
-    </div>
+
+    <button type="button" class="zone-list__add" [disabled]="!canAddZone()" (click)="addZone()">+ Додати зону</button>
+    <p class="zone-list__add-hint" *ngIf="addZoneDisabledReason() as reason">{{ reason }}</p>
   </div>
-
-  <div class="zone-list__zones">
-    <p class="zone-list__empty" *ngIf="zones().length === 0">
-      Зон ще немає. Натисни "Додати зону", щоб розмалювати першу - спочатку вокселі, потім одразу її ж ділянку на STL-поверхні.
-    </p>
-
-    <div class="zone-list__zone-row" *ngFor="let zone of zones(); trackBy: trackByZoneId">
-      <ng-container *ngIf="!isConfirming(zone.id, 'delete') && !isConfirming(zone.id, 'edit'); else confirmBar">
-        <input
-          type="color"
-          class="zone-list__color-picker"
-          [value]="zone.color"
-          title="Обрати колір цієї зони"
-          (change)="onColorInput(zone.id, $any($event.target).value)"
-        />
-        <div class="zone-list__zone-info">
-          <span class="zone-list__zone-title">Зона {{ zone.id + 1 }}</span>
-          <span class="zone-list__zone-stats">{{ zone.voxelCount }} вокселів · {{ zone.stlCount }} ділянок STL</span>
-        </div>
-        <button
-          *ngIf="isLastZone(zone.id)"
-          type="button"
-          class="zone-list__zone-action"
-          title="Розмалювати цю зону заново (вокселі та STL)"
-          (click)="requestEdit(zone.id)"
-        >
-          Редагувати
-        </button>
-        <button type="button" class="zone-list__zone-action zone-list__zone-action--danger" title="Видалити цю зону" (click)="requestDelete(zone.id)">
-          Видалити
-        </button>
-      </ng-container>
-      <ng-template #confirmBar>
-        <span class="zone-list__confirm-text">
-          {{
-            isConfirming(zone.id, 'delete')
-              ? 'Видалити цю зону? Вокселі та STL-розмітку буде звільнено. Це незворотно.'
-              : 'Редагувати цю зону? Поточне виділення (вокселі та STL) буде видалено, і ви розмалюєте її заново.'
-          }}
-        </span>
-        <button type="button" class="zone-list__confirm-yes" (click)="confirmPendingAction()">Так</button>
-        <button type="button" class="zone-list__confirm-no" (click)="cancelConfirmation()">Ні</button>
-      </ng-template>
-    </div>
-  </div>
-
-  <button type="button" class="zone-list__add" (click)="addZone()">+ Додати зону</button>
 </div>

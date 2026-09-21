@@ -126,9 +126,33 @@ export class ZoneListComponent {
     return zones.length > 0 && zones[zones.length - 1].id === zoneId;
   }
 
+  // Once every occupied voxel already belongs to some zone, step 1 has
+  // nothing left to select - "Додати зону" would open straight into a dead
+  // end (an immediate "Перетин 3 областей порожній" error the moment the
+  // user tries to finish it). Voxel coverage alone is the correct, always-
+  // sufficient gate here: STL coverage can only reach 100% once every
+  // occupied voxel is ALSO already zoned (an unzoned voxel's shell cells
+  // stay 'excluded', never 'assigned'), so checking voxels alone already
+  // covers "both bars are full" without needing to also read the STL bar.
+  canAddZone(): boolean {
+    const sessionId = this.zonePainting.activeSessionId();
+    if (sessionId === null) {
+      return false;
+    }
+    // Raw counts, not voxelCoveragePercent()'s rounded value - rounding
+    // (e.g. 199/200 -> "100%") must never falsely lock the button before
+    // coverage is ACTUALLY complete.
+    const coverage = this.zonePainting.coverage(sessionId);
+    return coverage !== null && coverage.assigned < coverage.total;
+  }
+
+  addZoneDisabledReason(): string | null {
+    return this.canAddZone() ? null : 'Усі вокселі вже розподілені по зонах.';
+  }
+
   // Opens the 2-step wizard for a brand-new zone, on top of this list.
   addZone(): void {
-    if (this.zonePainting.activeSessionId() === null) {
+    if (!this.canAddZone()) {
       return;
     }
     this.zonePainting.showStep1();

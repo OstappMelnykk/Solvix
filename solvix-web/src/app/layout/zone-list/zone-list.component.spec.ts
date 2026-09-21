@@ -364,6 +364,50 @@ describe('ZoneListComponent', () => {
     });
   });
 
+  describe('canAddZone / addZone gating once every voxel is claimed', () => {
+    it('allows adding a zone while occupied voxels remain unclaimed', () => {
+      expect(component.canAddZone()).toBe(true);
+      expect(component.addZoneDisabledReason()).toBeNull();
+    });
+
+    it('disables adding once every occupied voxel belongs to some zone', () => {
+      zonePainting.selectRect(1, 'y', 0, 0, 2, 0); // all 3 cells of the 3x1x1 grid
+      zonePainting.finishZone(1);
+      fixture.detectChanges();
+
+      expect(zonePainting.coverage(1)).toEqual({ assigned: 3, total: 3 });
+      expect(component.canAddZone()).toBe(false);
+      expect(component.addZoneDisabledReason()).toBe('Усі вокселі вже розподілені по зонах.');
+
+      const addButton = fixture.nativeElement.querySelector('.zone-list__add') as HTMLButtonElement;
+      expect(addButton.disabled).toBe(true);
+    });
+
+    it('addZone is a no-op once coverage is already 100%, even if called directly', () => {
+      zonePainting.selectRect(1, 'y', 0, 0, 2, 0);
+      zonePainting.finishZone(1);
+
+      component.addZone();
+
+      expect(zonePainting.step1Visible()).toBe(false);
+    });
+
+    it('re-enables once a fresh voxelization gives the grid more unclaimed cells', () => {
+      zonePainting.selectRect(1, 'y', 0, 0, 2, 0);
+      zonePainting.finishZone(1);
+      fixture.detectChanges();
+      expect(component.canAddZone()).toBe(false);
+
+      statuses.set(1, { kind: 'ok', result: buildVoxelGrid(3, 1, 1) }); // a fresh grid, re-voxelized
+      zonePainting.close();
+      surfaceZonePainting.close();
+      zonePainting.open(1, fakeZonePaintingSource);
+      fixture.detectChanges();
+
+      expect(component.canAddZone()).toBe(true);
+    });
+  });
+
   describe('progress bar text and percent (voxels)', () => {
     it('starts at 0/total and 0% before any zone is painted', () => {
       expect(component.voxelCoverageText()).toBe('Вокселі: 0 / 3');
