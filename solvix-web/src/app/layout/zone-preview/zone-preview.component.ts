@@ -195,6 +195,15 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     this.voxelRenderer = null;
     this.voxelOit = null;
     this.voxelControls = null;
+    // A brand-new OrbitControls defaults its own target to (0,0,0), not to
+    // wherever this session's model actually sits - resetting the cache key
+    // here forces rebuildVoxelFraming to run again against the NEXT fresh
+    // controls instance instead of skipping it as "already framed this
+    // session" (sessionId itself never changed across a hide/show cycle,
+    // which is exactly what happens every time a zone's 2-step wizard opens
+    // and closes). Without this, the preview silently orbited the world
+    // origin instead of the model after finishing any zone.
+    this.lastVoxelSessionId = null;
   }
 
   private teardownStlRenderer(): void {
@@ -205,6 +214,8 @@ export class ZonePreviewComponent implements AfterViewInit, OnDestroy {
     this.stlRenderer.dispose();
     this.stlRenderer = null;
     this.stlControls = null;
+    // Same reasoning as teardownVoxelRenderer's own comment.
+    this.lastStlMesh = null;
   }
 
   // Same isometric-ish free-orbit framing every "3D результат" panel in
