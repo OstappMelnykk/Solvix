@@ -9,7 +9,7 @@
   <div class="surface-zone-painting__grid">
     <div
       class="surface-zone-painting__panel"
-      *ngFor="let i of panelIndices"
+      *ngFor="let i of panelIndices; trackBy: trackPanel"
       [class.surface-zone-painting__panel--result]="isResultPanel(i)"
     >
       <canvas #canvas (pointerdown)="onPointerDown(i, $event)" (pointermove)="onPointerMove(i, $event)" (pointerup)="onPointerUp(i)"></canvas>

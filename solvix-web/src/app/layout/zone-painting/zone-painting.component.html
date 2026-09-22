@@ -6,7 +6,7 @@
 
 <div class="zone-painting__body">
   <div class="zone-painting__grid">
-    <div class="zone-painting__panel" *ngFor="let i of panelIndices" [class.zone-painting__panel--result]="isResultPanel(i)">
+    <div class="zone-painting__panel" *ngFor="let i of panelIndices; trackBy: trackPanel" [class.zone-painting__panel--result]="isResultPanel(i)">
       <canvas #canvas (pointerdown)="onPointerDown(i, $event)" (pointermove)="onPointerMove(i, $event)" (pointerup)="onPointerUp(i)"></canvas>
       <canvas *ngIf="!isResultPanel(i)" #overlay class="zone-painting__overlay"></canvas>
       <span class="zone-painting__label">{{ axisLabel(i) }}</span>

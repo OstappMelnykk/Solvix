@@ -10,6 +10,7 @@ import { voxelCenter } from '../../geometry/voxel-grid-contract';
 import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../geometry/scene-objects/surface-zone-overlay';
 import { darkenZoneColorCss } from '../../geometry/scene-objects/zone-overlay';
 import { NotificationService } from '../../state/notification.service';
+import { WebglContextBudgetService } from '../../state/webgl-context-budget.service';
 
 type AxisSign = 1 | -1;
 
@@ -68,6 +69,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly notifications = inject(NotificationService);
+  private readonly webglBudget = inject(WebglContextBudgetService);
 
   readonly axes = AXES;
   readonly panelIndices = Array.from({ length: PANEL_COUNT }, (_, i) => i);
@@ -75,10 +77,17 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   private panelSign: Record<Axis, AxisSign> = { x: 1, y: 1, z: 1 };
   private viewStateCache: Partial<Record<Axis, { width: number; height: number; cells: SurfaceZoneCellState[] }>> = {};
 
-  private renderers: THREE.WebGLRenderer[] = [];
-  private cameras: THREE.OrthographicCamera[] = [];
-  private controls: OrbitControls[] = [];
-  private cameraHalfHeights: number[] = new Array(PANEL_COUNT).fill(1);
+  // Nullable, one slot per panel - see ZonePaintingComponent's own fields
+  // comment (identical reasoning) for why this replaced an old all-or-
+  // nothing batch model: one permanently-broken panel used to block every
+  // other panel from ever finishing setup, and every failed retry disposed
+  // and reconstructed the OTHER, perfectly fine panels' real WebGL contexts
+  // too - a retry storm confirmed live (SixViewOverlayComponent) via a
+  // flood of "Too many active WebGL contexts" console warnings.
+  private readonly renderers: (THREE.WebGLRenderer | null)[] = new Array(PANEL_COUNT).fill(null);
+  private readonly cameras: (THREE.OrthographicCamera | null)[] = new Array(PANEL_COUNT).fill(null);
+  private readonly controls: (OrbitControls | null)[] = new Array(PANEL_COUNT).fill(null);
+  private readonly cameraHalfHeights: number[] = new Array(PANEL_COUNT).fill(1);
   private readonly lastPanelSizes: { width: number; height: number }[] = Array.from({ length: PANEL_COUNT }, () => ({ width: 0, height: 0 }));
   // 0, not window.devicePixelRatio, deliberately - these renderers are
   // created lazily (ensureRenderersReady, only once this tool is actually
@@ -96,6 +105,27 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
   // WorldCanvasComponent's own long-standing handling, which these 4
   // canvases never had.
   private readonly onContextLost = (event: Event) => event.preventDefault();
+  // Same reasoning as ZonePaintingComponent's own onContextRestoredHandlers -
+  // one closure per panel (bound to that panel's index), added in
+  // ensureRenderersReady, removed again in teardownRenderers.
+  private readonly onContextRestoredHandlers: Array<() => void> = [];
+  // Same reasoning as ZonePaintingComponent's own panelGeneration/
+  // recreatingPanel/lastAttemptedCanvas/trackPanel - bumped only when a
+  // canvas's context was evicted and never came back, forcing Angular to
+  // hand that ONE panel a genuinely new <canvas> element.
+  private readonly panelGeneration: number[] = new Array(PANEL_COUNT).fill(0);
+  private readonly recreatingPanel: boolean[] = new Array(PANEL_COUNT).fill(false);
+  private readonly lastAttemptedCanvas: (HTMLCanvasElement | null)[] = new Array(PANEL_COUNT).fill(null);
+  trackPanel = (_: number, i: number): string => `${i}-${this.panelGeneration[i]}`;
+  // Plain data, not live three.js objects - purely for mid-session context
+  // loss recovery (a canvas can lose its context at any time, unrelated to
+  // this component's own open/close), NOT for restoring across a
+  // close/reopen (this component's teardown always coincides with true
+  // session end - see [[project_webgl_context_architecture]] - so there is
+  // nothing meaningful to restore there). Updated every frame.
+  private readonly savedCameraStates: Array<{ position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null> = new Array(
+    PANEL_COUNT
+  ).fill(null);
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointerNdc = new THREE.Vector2();
@@ -137,72 +167,157 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
     this.disposeResultOverlay();
   }
 
-  private ensureRenderersReady(): boolean {
-    if (this.renderers.length > 0) {
+  // Sets up panel i's whole bundle (renderer/camera/controls) the first
+  // time its canvas measures non-zero, independently of every other panel -
+  // see the fields' own comment for why. Returns whether panel i is ready
+  // to render THIS frame.
+  private ensurePanelReady(i: number, canvas: HTMLCanvasElement): boolean {
+    if (this.renderers[i]) {
       return true;
     }
-    const canvases = this.canvasRefs.toArray().map(ref => ref.nativeElement);
     // The host only just stopped being [hidden] (isHidden() flips the
     // instant activeSessionId() becomes non-null, in the SAME tick this
     // checks it) - Angular's own change detection hasn't necessarily run
     // yet by the time this rAF-driven animate() loop gets here, so the
-    // canvases can still measure 0x0 for a frame or two. Wait for real
-    // dimensions before creating anything sized off them.
-    if (canvases.some(canvas => canvas.clientWidth === 0 || canvas.clientHeight === 0)) {
+    // canvas can still measure 0x0 for a frame or two. Wait for real
+    // dimensions before creating anything sized off it.
+    if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
       return false;
     }
-    canvases.forEach(canvas => canvas.addEventListener('webglcontextlost', this.onContextLost, false));
-    this.renderers = canvases.map(canvas => new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true }));
+    if (this.recreatingPanel[i]) {
+      if (canvas === this.lastAttemptedCanvas[i]) {
+        return false;
+      }
+      this.recreatingPanel[i] = false;
+    }
+    this.lastAttemptedCanvas[i] = canvas;
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    const onRestored = () => this.restorePanelAfterContextLoss(i);
+    this.onContextRestoredHandlers[i] = onRestored;
+    canvas.addEventListener('webglcontextrestored', onRestored, false);
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+    } catch (error) {
+      // See ZonePaintingComponent's own ensurePanelReady comment for the
+      // full reasoning - the browser doesn't always fire
+      // webglcontextrestored for an evicted context, so recreating this
+      // ONE panel's <canvas> element (via panelGeneration) is the only way
+      // to guarantee a fresh, non-evicted context. Only THIS panel is
+      // affected - the other 3, if already ready, are left untouched.
+      console.error(
+        `[SurfaceZonePaintingComponent] panel ${i}'s canvas context was evicted and never restored by the browser - recreating its <canvas> element to force a fresh context`,
+        error
+      );
+      this.evictPanel(i);
+      return false;
+    }
     // Without this, three.js defaults every renderer to a pixel ratio of 1
     // regardless of the actual display - sharp on a plain 1x monitor, but
     // visibly soft/pixelated on anything HiDPI (Retina, most modern
     // external monitors too).
-    this.lastPixelRatio = window.devicePixelRatio;
-    this.renderers.forEach(renderer => renderer.setPixelRatio(this.lastPixelRatio));
-    this.cameras = canvases.map(() => new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000));
-    this.controls = this.cameras.map((camera, i) => {
-      const controls = new OrbitControls(camera, canvases[i]);
-      controls.screenSpacePanning = true;
-      controls.enableDamping = false;
-      if (i === RESULT_PANEL_INDEX) {
-        controls.enableRotate = true;
-      } else {
-        controls.enableRotate = false;
-        controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-      }
-      controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
-      return controls;
-    });
-    this.lastPanelSizes.forEach(size => {
-      size.width = 0;
-      size.height = 0;
-    });
+    renderer.setPixelRatio(this.lastPixelRatio || window.devicePixelRatio);
+    this.renderers[i] = renderer;
+    // See WebglContextBudgetService's own header comment - may proactively
+    // evict some OTHER, currently-idle panel (this component's own, or a
+    // different tool's) to stay under the app-wide context cap.
+    this.webglBudget.register(`surface-zone-painting-${i}`, () => this.evictPanel(i));
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
+    this.cameras[i] = camera;
+    const controls = new OrbitControls(camera, canvas);
+    controls.screenSpacePanning = true;
+    controls.enableDamping = false;
+    if (i === RESULT_PANEL_INDEX) {
+      controls.enableRotate = true;
+    } else {
+      controls.enableRotate = false;
+      controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    }
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+    this.controls[i] = controls;
+    this.lastPanelSizes[i].width = 0;
+    this.lastPanelSizes[i].height = 0;
+    this.applyFraming(i);
     return true;
   }
 
-  private teardownRenderers(): void {
-    if (this.renderers.length === 0) {
-      return;
+  // Forces panel i to give up its real WebGL context right now - either
+  // reactively (ensurePanelReady's own catch, above) or proactively
+  // (WebglContextBudgetService, when the app-wide context cap is reached
+  // and this panel is the least-recently-used one). See SixViewOverlayComponent's
+  // own evictPanel for the full reasoning - same mechanism, adapted here
+  // (no oitRenderers in this component - plain renderer.render() is used).
+  // Safe to call on a panel never actually constructed (this.renderers[i]
+  // still null) - the dispose block is skipped.
+  private evictPanel(i: number): void {
+    const renderer = this.renderers[i];
+    if (renderer) {
+      const canvas = this.canvasRefs?.get(i)?.nativeElement;
+      if (canvas) {
+        canvas.removeEventListener('webglcontextlost', this.onContextLost);
+        const onRestored = this.onContextRestoredHandlers[i];
+        if (onRestored) {
+          canvas.removeEventListener('webglcontextrestored', onRestored);
+        }
+      }
+      this.controls[i]?.dispose();
+      renderer.dispose();
+      this.renderers[i] = null;
+      this.cameras[i] = null;
+      this.controls[i] = null;
     }
-    this.canvasRefs.forEach(ref => ref.nativeElement.removeEventListener('webglcontextlost', this.onContextLost));
-    this.controls.forEach(controls => controls.dispose());
-    // dispose() only, deliberately NOT forceContextLoss() - these 4
-    // <canvas> elements are never removed from the DOM (this component is
-    // mounted once and only ever [hidden]), so the SAME canvas gets reused
-    // on the next open. forceContextLoss() permanently kills a canvas's
-    // context, which made a later `new THREE.WebGLRenderer({ canvas })` on
-    // reopen read capabilities off a dead context and throw. dispose()
-    // alone doesn't lose the context - a canvas that already has one just
-    // hands the SAME live context back to the next WebGLRenderer created
-    // on it, so reopening stays safe.
-    this.renderers.forEach(renderer => renderer.dispose());
-    this.renderers = [];
-    this.cameras = [];
-    this.controls = [];
+    this.onContextRestoredHandlers[i] = undefined as unknown as () => void;
+    this.recreatingPanel[i] = true;
+    this.panelGeneration[i]++;
+    this.webglBudget.unregister(`surface-zone-painting-${i}`);
+  }
+
+  private teardownRenderers(): void {
+    for (let i = 0; i < PANEL_COUNT; i++) {
+      const renderer = this.renderers[i];
+      if (!renderer) {
+        continue;
+      }
+      const canvas = this.canvasRefs?.get(i)?.nativeElement;
+      if (canvas) {
+        canvas.removeEventListener('webglcontextlost', this.onContextLost);
+        const onRestored = this.onContextRestoredHandlers[i];
+        if (onRestored) {
+          canvas.removeEventListener('webglcontextrestored', onRestored);
+        }
+      }
+      this.onContextRestoredHandlers[i] = undefined as unknown as () => void;
+      this.controls[i]?.dispose();
+      // dispose() only, deliberately NOT forceContextLoss() - these 4
+      // <canvas> elements are never removed from the DOM (this component is
+      // mounted once and only ever [hidden]), so the SAME canvas gets reused
+      // on the next open. forceContextLoss() permanently kills a canvas's
+      // context, which made a later `new THREE.WebGLRenderer({ canvas })` on
+      // reopen read capabilities off a dead context and throw. dispose()
+      // alone doesn't lose the context - a canvas that already has one just
+      // hands the SAME live context back to the next WebGLRenderer created
+      // on it, so reopening stays safe.
+      renderer.dispose();
+      this.renderers[i] = null;
+      this.cameras[i] = null;
+      this.controls[i] = null;
+    }
   }
 
   isHidden(): boolean {
     return this.surfaceZonePainting.activeSessionId() === null;
+  }
+
+  // Same condition as isHidden() above (unlike ZonePaintingComponent, this
+  // component has no separate "step visible" toggle - see the class's own
+  // ngAfterViewInit comment: its teardown always coincides with true
+  // session end). Named separately anyway, as its own template gate
+  // (*ngIf on the canvas grid) - see ZonePaintingComponent's own
+  // hasActiveSession() for the full reasoning (releasing the real WebGL
+  // context via actual DOM removal, not just dispose(), now that plain-data
+  // camera serialization means there's no live state left to lose).
+  hasActiveSession(): boolean {
+    return this.surfaceZonePainting.activeSessionId() !== null;
   }
 
   isResultPanel(index: number): boolean {
@@ -545,13 +660,14 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       return null;
     }
     const grid = this.surfaceZonePainting.getSession(sessionId)?.grid;
-    if (!grid) {
+    const camera = this.cameras[index];
+    if (!grid || !camera) {
       return null;
     }
     const rect = canvas.getBoundingClientRect();
     this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointerNdc, this.cameras[index]);
+    this.raycaster.setFromCamera(this.pointerNdc, camera);
     const hit = this.raycaster.intersectObject(source.stlMesh, true)[0];
     if (!hit) {
       return null;
@@ -580,6 +696,10 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
 
   private applyFraming(i: number): void {
     const camera = this.cameras[i];
+    const controls = this.controls[i];
+    if (!camera || !controls) {
+      return; // panel i hasn't been created yet - ensurePanelReady calls this itself once it has
+    }
     const radius = this.framingRadius;
     const distance = radius * 3;
     const halfHeight = radius * 1.15;
@@ -609,9 +729,49 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       camera.updateProjectionMatrix();
     }
 
-    const controls = this.controls[i];
     controls.target.copy(this.framingCenter);
     controls.update();
+  }
+
+  // Plain-data snapshot of panel i's current camera/controls, kept up to
+  // date every frame - see savedCameraStates' own comment for why this
+  // exists (mid-session context-loss recovery only).
+  private saveCameraState(i: number, camera: THREE.OrthographicCamera, controls: OrbitControls): void {
+    let saved = this.savedCameraStates[i];
+    if (!saved) {
+      saved = { position: new THREE.Vector3(), target: new THREE.Vector3(), zoom: 1 };
+      this.savedCameraStates[i] = saved;
+    }
+    saved.position.copy(camera.position);
+    saved.target.copy(controls.target);
+    saved.zoom = camera.zoom;
+  }
+
+  // Fired when the browser actually restores a lost context on panel i -
+  // see ZonePaintingComponent's own restorePanelAfterContextLoss for the
+  // full reasoning (three.js reinitializes its internal GL state on this
+  // event automatically, but never repaints or reapplies camera state on
+  // its own). Reapplies this panel's own last-known plain-data camera
+  // state and forces one immediate render.
+  private restorePanelAfterContextLoss(i: number): void {
+    const renderer = this.renderers[i];
+    const camera = this.cameras[i];
+    const controls = this.controls[i];
+    const canvas = this.canvasRefs?.get(i)?.nativeElement;
+    const source = this.surfaceZonePainting.activeSource();
+    if (!renderer || !camera || !controls || !canvas || !source || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+      return;
+    }
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    const saved = this.savedCameraStates[i];
+    if (saved) {
+      camera.position.copy(saved.position);
+      camera.zoom = saved.zoom;
+      camera.updateProjectionMatrix();
+      controls.target.copy(saved.target);
+      controls.update();
+    }
+    renderer.render(source.scene, camera);
   }
 
   private animate = (): void => {
@@ -626,10 +786,8 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       this.teardownRenderers();
       return;
     }
-    if (!this.ensureRenderersReady()) {
-      return; // canvases not measurable yet - retry next frame
-    }
-    if (sessionId !== this.lastSessionId) {
+    const sessionChanged = sessionId !== this.lastSessionId;
+    if (sessionChanged) {
       this.lastSessionId = sessionId;
       this.panelSign = { x: 1, y: 1, z: 1 };
       this.rebuildFraming(source.framingObjects);
@@ -657,7 +815,7 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
       const pixelRatio = window.devicePixelRatio;
       if (pixelRatio !== this.lastPixelRatio) {
         this.lastPixelRatio = pixelRatio;
-        this.renderers.forEach(renderer => renderer.setPixelRatio(pixelRatio));
+        this.renderers.forEach(renderer => renderer?.setPixelRatio(pixelRatio));
         this.lastPanelSizes.forEach(size => {
           size.width = 0;
           size.height = 0;
@@ -666,16 +824,39 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
 
       const canvases = this.canvasRefs.toArray();
       for (let i = 0; i < canvases.length; i++) {
-        // Each panel in its own try/catch - see SixViewOverlayComponent's
-        // animate() for why (one bad panel shouldn't stop the other 3, or
-        // repeat-throw forever without ever painting anything).
+        // Each panel is set up (if needed) and rendered in its own
+        // try/catch - see SixViewOverlayComponent's animate() for why (one
+        // bad, or one permanently-stuck, panel must never stop the other 3
+        // from rendering).
         try {
           const canvas = canvases[i].nativeElement;
           const { clientWidth: width, clientHeight: height } = canvas;
           if (width === 0 || height === 0) {
             continue;
           }
-          const camera = this.cameras[i];
+          const wasReady = this.renderers[i] !== null;
+          if (!this.ensurePanelReady(i, canvas)) {
+            continue; // this panel isn't ready yet - the others still render
+          }
+          const camera = this.cameras[i]!;
+          const controls = this.controls[i]!;
+          const renderer = this.renderers[i]!;
+          // Only a genuine mid-session recovery (NOT a real session change,
+          // which already reset panelSign/framing to their defaults above
+          // on purpose) restores saved camera state - savedCameraStates
+          // belongs to whatever THIS session's panels last looked like, so
+          // applying it after switching to a different session would be
+          // actively wrong.
+          if (!wasReady && !sessionChanged) {
+            const saved = this.savedCameraStates[i];
+            if (saved) {
+              camera.position.copy(saved.position);
+              camera.zoom = saved.zoom;
+              camera.updateProjectionMatrix();
+              controls.target.copy(saved.target);
+              controls.update();
+            }
+          }
           const size = this.lastPanelSizes[i];
           if (size.width !== width || size.height !== height) {
             size.width = width;
@@ -687,9 +868,10 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
             camera.top = halfHeight;
             camera.bottom = -halfHeight;
             camera.updateProjectionMatrix();
-            this.renderers[i].setSize(width, height);
+            renderer.setSize(width, height);
           }
-          this.controls[i].update();
+          controls.update();
+          this.saveCameraState(i, camera, controls);
           const showingResult = i === RESULT_PANEL_INDEX && this.resultOverlay !== null;
           if (this.resultOverlay) {
             this.resultOverlay.visible = showingResult;
@@ -700,7 +882,8 @@ export class SurfaceZonePaintingComponent implements AfterViewInit, OnDestroy {
           // muddy wash rather than a crisp "here's the model, painted by
           // zone" view, which was the actual point of this panel.
           source.stlMesh.visible = stlMeshWasVisible && !showingResult;
-          this.renderers[i].render(source.scene, camera);
+          this.webglBudget.touch(`surface-zone-painting-${i}`);
+          renderer.render(source.scene, camera);
           if (i !== RESULT_PANEL_INDEX) {
             this.drawOverlay(i, camera, width, height);
           }
