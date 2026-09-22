@@ -10,3 +10,14 @@
   </div>
   <div class="tab tab--new" (click)="sessions.createSession()">+</div>
 </div>
+
+<div class="reset" *ngIf="!isResetConfirming(); else resetConfirmBar">
+  <button type="button" class="reset__button" title="Видалити всі сесії та почати з чистого листа" (click)="requestReset()">Скинути все</button>
+</div>
+<ng-template #resetConfirmBar>
+  <div class="reset reset--confirming">
+    <span class="reset__confirm-text">Видалити ВСІ сесії та дані назавжди?</span>
+    <button type="button" class="reset__confirm-yes" (click)="confirmReset()">Так</button>
+    <button type="button" class="reset__confirm-no" (click)="cancelReset()">Ні</button>
+  </div>
+</ng-template>
