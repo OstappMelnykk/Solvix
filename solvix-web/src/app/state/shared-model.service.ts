@@ -2,6 +2,7 @@ import { Injectable, InjectionToken, effect, inject } from '@angular/core';
 import * as THREE from 'three';
 import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
+import { ModelStorageService } from './model-storage.service';
 
 export type ModelFactory = () => THREE.Object3D;
 
@@ -34,22 +35,34 @@ export const INITIAL_MODEL_FACTORY = new InjectionToken<ModelFactory>('INITIAL_M
 export class SharedModelService {
   private readonly sessions = inject(SessionsService);
   private readonly createInitialModel = inject(INITIAL_MODEL_FACTORY);
+  private readonly modelStorage = inject(ModelStorageService);
   private readonly modelBySession = new KeyedStore<number, THREE.Object3D>();
 
   constructor() {
     // Once a session actually closes, dispose its model's GPU resources
     // (geometry/material) before dropping the reference - otherwise every
-    // closed session leaks VRAM forever.
+    // closed session leaks VRAM forever. Also drops its ModelStorageService
+    // snapshot - a closed session's data shouldn't come back if the same id
+    // were ever somehow reused (it isn't - see SessionsService's own
+    // nextId comment - but there's no reason to keep it around either).
     effect(() => {
       this.modelBySession.pruneTo(
         this.sessions.sessions().map(session => session.id),
-        model => this.disposeModel(model)
+        (model, sessionId) => {
+          this.disposeModel(model);
+          this.modelStorage.delete(sessionId);
+        }
       );
     });
   }
 
+  // Checks ModelStorageService FIRST, not just createInitialModel - a
+  // session whose only WorldCanvasComponent view was ever destroyed and
+  // recreated (toolbar-icon switch, WebGL context-loss recovery) still has
+  // whatever the user last built, via commit() below, instead of silently
+  // starting over from a blank model.
   getModel(sessionId: number): THREE.Object3D {
-    return this.modelBySession.getOrCreate(sessionId, this.createInitialModel);
+    return this.modelBySession.getOrCreate(sessionId, () => this.modelStorage.load(sessionId) ?? this.createInitialModel());
   }
 
   // The only write path - see WorldCanvasComponent's own callers (ngOnDestroy,
@@ -60,6 +73,7 @@ export class SharedModelService {
   // was told about last.
   commit(sessionId: number, object: THREE.Object3D): void {
     this.modelBySession.set(sessionId, object);
+    this.modelStorage.save(sessionId, object);
   }
 
   private disposeModel(model: THREE.Object3D): void {
