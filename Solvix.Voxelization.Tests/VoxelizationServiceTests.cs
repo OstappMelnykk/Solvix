@@ -341,4 +341,57 @@ public class VoxelizationServiceTests
         Assert.That(componentCount, Is.LessThanOrEqualTo(2),
             $"Expected at most 2 connected components (one per box), got {componentCount}. Occupied cells: [{string.Join(", ", occupied)}]");
     }
+
+    // Two thin "prongs" (0.3 wide each) separated by a 0.2-wide gap - both
+    // small enough that their COMBINED bounding box (0.8 x 1 x 1) fits
+    // inside a SINGLE unit voxel (countX=countY=countZ=1). The gap is real
+    // empty space with no material at all, but it's narrower than the
+    // voxel itself - exactly docs/local-refinement/PROBLEMS.md's Проблема 2
+    // motivating case (one coarse voxel genuinely touching 2 disconnected
+    // parts of the body), reduced to its simplest possible shape instead
+    // of an actual tooth.
+    private static ImportedSurfaceMesh TwoProngsInOneVoxel()
+    {
+        var left = Box(0.3f, 1, 1);
+        var right = Box(0.3f, 1, 1);
+        var offsetLeft = new Vector3(-0.25f, 0.5f, 0);
+        var offsetRight = new Vector3(0.25f, 0.5f, 0);
+        var vertices = left.Vertices.Select(v => v + offsetLeft)
+            .Concat(right.Vertices.Select(v => v + offsetRight))
+            .ToArray();
+        var indices = left.Indices
+            .Concat(right.Indices.Select(i => i + left.Vertices.Count))
+            .ToArray();
+        return new ImportedSurfaceMesh(vertices, indices);
+    }
+
+    [Test]
+    public void Marks_a_single_voxel_that_straddles_two_disconnected_prongs()
+    {
+        var result = _voxelizationService.Voxelize(TwoProngsInOneVoxel());
+
+        Assert.That(result.CountX, Is.EqualTo(1));
+        Assert.That(result.CountY, Is.EqualTo(1));
+        Assert.That(result.CountZ, Is.EqualTo(1));
+        Assert.That(result.IsOccupied(0, 0, 0), Is.True);
+        Assert.That(result.IsMarkedForRefinement(0, 0, 0), Is.True);
+    }
+
+    [Test]
+    public void Does_not_mark_any_cell_of_a_plain_solid_box()
+    {
+        var result = _voxelizationService.Voxelize(Box(2, 2, 2));
+
+        for (var ix = 0; ix < result.CountX; ix++)
+        {
+            for (var iy = 0; iy < result.CountY; iy++)
+            {
+                for (var iz = 0; iz < result.CountZ; iz++)
+                {
+                    Assert.That(result.IsMarkedForRefinement(ix, iy, iz), Is.False,
+                        $"Cell ({ix},{iy},{iz}) of a plain solid box should never be marked - nothing here is disconnected from anything else.");
+                }
+            }
+        }
+    }
 }

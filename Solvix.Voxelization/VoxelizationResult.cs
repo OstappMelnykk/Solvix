@@ -35,7 +35,17 @@ namespace Solvix.Voxelization;
 /// imported surface, <c>0</c> means empty. Length is always
 /// <c>ceil(CountX*CountY*CountZ / 8)</c> bytes.
 /// </param>
-internal sealed record VoxelizationResult(Vector3 Origin, float CellSize, int CountX, int CountY, int CountZ, byte[] Occupancy)
+/// <param name="MarkedForRefinement">
+/// Same shape/bit-linearization as <paramref name="Occupancy"/> (always a
+/// subset of its 1-bits) - <c>1</c> means this occupied cell's own volume
+/// was found to cover 2+ topologically disconnected pieces of the imported
+/// body (docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант B - e.g.
+/// one coarse voxel physically touching two separate tooth roots with an
+/// air gap between them), a candidate for local refinement later. Not yet
+/// acted on by anything in this project - purely diagnostic output today.
+/// </param>
+internal sealed record VoxelizationResult(
+    Vector3 Origin, float CellSize, int CountX, int CountY, int CountZ, byte[] Occupancy, byte[] MarkedForRefinement)
 {
     /// <param name="ix">Cell index along X, in <c>[0, CountX)</c>.</param>
     /// <param name="iy">Cell index along Y, in <c>[0, CountY)</c>.</param>
@@ -76,5 +86,15 @@ internal sealed record VoxelizationResult(Vector3 Origin, float CellSize, int Co
     {
         var index = CellIndex(ix, iy, iz, CountX, CountY);
         return (Occupancy[index / 8] & (1 << (index % 8))) != 0;
+    }
+
+    /// <param name="ix">Cell index along X, in <c>[0, CountX)</c>.</param>
+    /// <param name="iy">Cell index along Y, in <c>[0, CountY)</c>.</param>
+    /// <param name="iz">Cell index along Z, in <c>[0, CountZ)</c>.</param>
+    /// <returns><c>true</c> if this cell was found to cover 2+ disconnected pieces of the body - see <see cref="MarkedForRefinement"/>.</returns>
+    public bool IsMarkedForRefinement(int ix, int iy, int iz)
+    {
+        var index = CellIndex(ix, iy, iz, CountX, CountY);
+        return (MarkedForRefinement[index / 8] & (1 << (index % 8))) != 0;
     }
 }

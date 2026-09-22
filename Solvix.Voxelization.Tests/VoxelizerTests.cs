@@ -59,6 +59,7 @@ public class VoxelizerTests
         Assert.That(reader.ReadUInt32(), Is.EqualTo(1u)); // countY
         Assert.That(reader.ReadUInt32(), Is.EqualTo(1u)); // countZ
         Assert.That(reader.ReadByte(), Is.EqualTo(0b0000_0001)); // the one cell, occupied
+        Assert.That(reader.ReadByte(), Is.EqualTo(0b0000_0000)); // a plain solid cube has no connectivity split anywhere
         Assert.That(reader.BaseStream.Position, Is.EqualTo(reader.BaseStream.Length));
     }
 

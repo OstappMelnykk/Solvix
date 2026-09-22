@@ -16,6 +16,18 @@ internal sealed class VoxelizationService
     // by a parameter here.
     private const float UnitCubeSize = 1.0f;
 
+    // How many sample points per axis HasConnectivitySplit tests inside a
+    // candidate cell (resolution^3 total IsPointInsideViaGrid calls - 4
+    // means 64, cheap even run per-candidate-cell). A gap narrower than
+    // roughly 1/resolution of the cell can fall entirely between two
+    // adjacent samples and go undetected - same accepted "give up on a
+    // genuinely infinitesimal/noisy gap" limitation
+    // docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант B, already
+    // calls out for its own recursion depth cap; a plain fixed resolution
+    // serves that same role here without the correctness pitfall a
+    // recursive octree split has (see HasConnectivitySplit's own remarks).
+    private const int AmbiguitySampleResolution = 4;
+
     // Hard cap on grid cells so a mesh scaled far too large relative to the
     // unit cube fails fast instead of hanging.
     private const int MaxCells = 900_000;
@@ -69,7 +81,7 @@ internal sealed class VoxelizationService
         var triangles = CollectTriangles(mesh);
         if (triangles.Count == 0)
         {
-            return new VoxelizationResult(Vector3.Zero, UnitCubeSize, 0, 0, 0, []);
+            return new VoxelizationResult(Vector3.Zero, UnitCubeSize, 0, 0, 0, [], []);
         }
 
         var (boxMin, boxMax) = BoundingBox(triangles);
@@ -140,6 +152,13 @@ internal sealed class VoxelizationService
         // one thread's bit. The bool[] -> packed-byte[] pass below is the
         // single-threaded step that does the bit-packing safely.
         var occupied = new bool[estimatedCells];
+        // Which occupied cells the surface genuinely passes through AND
+        // whose own volume covers 2+ topologically disconnected pieces of
+        // solid material (HasConnectivitySplit) - candidates for local
+        // refinement (a separate, not-yet-built feature) later, so that
+        // feature never needs to guess at connectivity itself; see
+        // docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант B.
+        var marked = new bool[estimatedCells];
         var parallelOptions = new ParallelOptions { CancellationToken = cancellationToken };
         Parallel.For(0, countX, parallelOptions, ix =>
         {
@@ -151,24 +170,39 @@ internal sealed class VoxelizationService
                 {
                     var z = boxMin.Z + half + iz * cellSize;
                     var center = new Vector3(x, y, z);
-                    if (IsCubeIncluded(ix, iy, iz, center, half, boxMin, cellSize, dims, grid))
+                    if (!IsCubeIncluded(ix, iy, iz, center, half, boxMin, cellSize, dims, grid, out var touchedByTriangle))
                     {
-                        occupied[VoxelizationResult.CellIndex(ix, iy, iz, countX, countY)] = true;
+                        continue;
+                    }
+                    var index = VoxelizationResult.CellIndex(ix, iy, iz, countX, countY);
+                    occupied[index] = true;
+                    // A cell only ever included via the center-inside
+                    // fallback (touchedByTriangle false) sits deep in solid
+                    // material with nothing to split internally - not worth
+                    // the recursive check at all.
+                    if (touchedByTriangle && HasConnectivitySplit(center, half, boxMin, cellSize, dims, grid))
+                    {
+                        marked[index] = true;
                     }
                 }
             }
         });
 
         var occupancy = new byte[(estimatedCells + 7) / 8];
+        var markedForRefinement = new byte[(estimatedCells + 7) / 8];
         for (var i = 0; i < estimatedCells; i++)
         {
             if (occupied[i])
             {
                 occupancy[i / 8] |= (byte)(1 << (i % 8));
             }
+            if (marked[i])
+            {
+                markedForRefinement[i / 8] |= (byte)(1 << (i % 8));
+            }
         }
 
-        return new VoxelizationResult(boxMin, cellSize, countX, countY, countZ, occupancy);
+        return new VoxelizationResult(boxMin, cellSize, countX, countY, countZ, occupancy, markedForRefinement);
     }
 
     /// <param name="mesh">The raw vertex/index arrays as decoded off the wire.</param>
@@ -476,14 +510,136 @@ internal sealed class VoxelizationService
     /// ray-parity inside test says its center - or a probe point near a
     /// boundary-exact triangle's real contact - lies inside the body.
     /// </returns>
+    /// <summary>
+    /// Whether the box (<paramref name="boxCenter"/>, <paramref name="boxHalf"/>) -
+    /// already known to be genuinely touched by the surface, see
+    /// <see cref="IsCubeIncluded"/>'s own <c>touchedByTriangle</c> - actually
+    /// covers TWO OR MORE topologically disconnected pieces of solid
+    /// material (docs/local-refinement/PROBLEMS.md, Проблема 2's tooth-root
+    /// example: one coarse voxel physically touching two roots with an air
+    /// gap between them).
+    /// </summary>
+    /// <remarks>
+    /// Samples a uniform <see cref="AmbiguitySampleResolution"/>^3 grid of
+    /// points inside the box, classifies each via <see cref="IsPointInsideViaGrid"/>
+    /// ("Тест 2", deliberately WITHOUT the touch branch <see cref="IsCubeIncluded"/>
+    /// uses - a thin curved wall touching a sample point in the empty gap
+    /// between two roots must NOT count as "inside" there, or the split
+    /// would never be found), then checks whether the "inside" samples form
+    /// more than one connected group under this SAME fine grid's own
+    /// face-adjacency.
+    ///
+    /// Deliberately NOT a recursive octree split (8 octants, recurse into
+    /// each independently on an inconclusive result) - an earlier version
+    /// of this method did exactly that and had a real bug: two octants
+    /// that are ADJACENT BY OCTREE INDEX (agree on 2 of 3 axes) are not
+    /// necessarily adjacent in the sense that matters here - a gap
+    /// narrower than one octant can sit entirely between their two SAMPLED
+    /// CENTERS without either center ever landing in it, so the two
+    /// "inside" votes get wrongly merged into one group and the split is
+    /// never found, no matter how much deeper the (by-then-already-merged)
+    /// recursion goes. Sampling everything at ONE fixed, sufficiently fine
+    /// resolution up front and only then checking adjacency avoids that
+    /// class of bug entirely: "face-adjacent" then genuinely means "no
+    /// untested gap fits between these two samples", which recursing into
+    /// separately-scaled octant subtrees cannot guarantee.
+    /// </remarks>
+    private static bool HasConnectivitySplit(
+        Vector3 boxCenter, float boxHalf, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
+    {
+        const int resolution = AmbiguitySampleResolution;
+        var step = boxHalf * 2f / resolution;
+        var start = boxCenter - new Vector3(boxHalf) + new Vector3(step / 2f);
+
+        var isInside = new bool[resolution, resolution, resolution];
+        var insideCount = 0;
+        for (var ix = 0; ix < resolution; ix++)
+        {
+            for (var iy = 0; iy < resolution; iy++)
+            {
+                for (var iz = 0; iz < resolution; iz++)
+                {
+                    var point = start + new Vector3(ix * step, iy * step, iz * step);
+                    if (IsPointInsideViaGrid(point, boxMin, cellSize, dims, grid))
+                    {
+                        isInside[ix, iy, iz] = true;
+                        insideCount++;
+                    }
+                }
+            }
+        }
+        if (insideCount == 0)
+        {
+            // Nothing landed inside at this resolution at all - not
+            // ambiguous, just nothing here to check (can happen for a cell
+            // whose only solid material is a thin sliver near one
+            // corner/edge, still short of every sample point).
+            return false;
+        }
+
+        // Flood-fill from the first "inside" sample found; if it doesn't
+        // reach every other "inside" sample, there's more than one group.
+        var visited = new bool[resolution, resolution, resolution];
+        var stack = new Stack<(int X, int Y, int Z)>();
+        var visitedCount = 0;
+        for (var ix = 0; ix < resolution && stack.Count == 0; ix++)
+        {
+            for (var iy = 0; iy < resolution && stack.Count == 0; iy++)
+            {
+                for (var iz = 0; iz < resolution && stack.Count == 0; iz++)
+                {
+                    if (isInside[ix, iy, iz])
+                    {
+                        stack.Push((ix, iy, iz));
+                        visited[ix, iy, iz] = true;
+                        visitedCount = 1;
+                    }
+                }
+            }
+        }
+        (int Dx, int Dy, int Dz)[] neighborOffsets = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+        while (stack.Count > 0)
+        {
+            var (x, y, z) = stack.Pop();
+            foreach (var (dx, dy, dz) in neighborOffsets)
+            {
+                var nx = x + dx;
+                var ny = y + dy;
+                var nz = z + dz;
+                if (nx < 0 || nx >= resolution || ny < 0 || ny >= resolution || nz < 0 || nz >= resolution)
+                {
+                    continue;
+                }
+                if (!isInside[nx, ny, nz] || visited[nx, ny, nz])
+                {
+                    continue;
+                }
+                visited[nx, ny, nz] = true;
+                visitedCount++;
+                stack.Push((nx, ny, nz));
+            }
+        }
+        return visitedCount < insideCount;
+    }
+
     private static bool IsCubeIncluded(
-        int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid)
+        int ix, int iy, int iz, Vector3 center, float half, Vector3 boxMin, float cellSize, GridDims dims, TriangleSpatialGrid grid,
+        out bool touchedByTriangle)
     {
         // Loop-invariant for the whole call - hoisted out of the per-triangle
         // foreach below rather than reallocated once per boundary-exact touch.
         var cubeMin = center - new Vector3(half);
         var cubeMax = center + new Vector3(half);
 
+        // Set the moment ANY triangle (genuine or boundary-exact) actually
+        // intersects this box, regardless of which branch below ultimately
+        // decides inclusion - separate from the return value on purpose.
+        // MarkAmbiguousCells (connectivity-split detection) only makes sense
+        // for a cell the surface genuinely passes through: a cell included
+        // purely via the center-inside fallback below sits deep in solid
+        // material with nothing to split internally, so it's never worth
+        // that recursive check.
+        touchedByTriangle = false;
         List<Vector3>? boundaryExactProbes = null;
         foreach (var triangle in grid.TrianglesNear(ix, iy, iz))
         {
@@ -491,6 +647,7 @@ internal sealed class VoxelizationService
             {
                 continue;
             }
+            touchedByTriangle = true;
             if (!isBoundaryExactOnly)
             {
                 return true; // a genuine, non-degenerate touch - trust it immediately

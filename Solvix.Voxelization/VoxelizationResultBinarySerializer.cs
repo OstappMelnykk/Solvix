@@ -12,9 +12,12 @@ namespace Solvix.Voxelization;
 //   [uint32 countX, countY, countZ]
 //   [occupancy bitmask, ceil(countX*countY*countZ/8) bytes - bit index
 //    ix + iy*countX + iz*countX*countY, LSB first within each byte]
+//   [markedForRefinement bitmask, same shape/bit-linearization as the
+//    occupancy bitmask immediately above - see VoxelizationResult's own
+//    MarkedForRefinement doc comment]
 internal static class VoxelizationResultBinarySerializer
 {
-    /// <param name="result">The finished voxel grid (from <see cref="VoxelizationService.Voxelize"/>) to encode - its <see cref="VoxelizationResult.Occupancy"/> bitmask is written out verbatim, not recomputed.</param>
+    /// <param name="result">The finished voxel grid (from <see cref="VoxelizationService.Voxelize"/>) to encode - its <see cref="VoxelizationResult.Occupancy"/>/<see cref="VoxelizationResult.MarkedForRefinement"/> bitmasks are written out verbatim, not recomputed.</param>
     /// <param name="stream">Destination to write the binary layout (documented above) into - the HTTP response body in practice.</param>
     public static void Serialize(VoxelizationResult result, Stream stream)
     {
@@ -27,5 +30,6 @@ internal static class VoxelizationResultBinarySerializer
         writer.Write((uint)result.CountY);
         writer.Write((uint)result.CountZ);
         writer.Write(result.Occupancy);
+        writer.Write(result.MarkedForRefinement);
     }
 }
