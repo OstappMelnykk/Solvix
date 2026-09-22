@@ -21,6 +21,7 @@ import {
   setVoxelNodeSize,
   setVoxelPreviewOpacity
 } from '../geometry/scene-objects/voxels';
+import { VoxelizationStorageService } from './voxelization-storage.service';
 
 const DEFAULT_VOXEL_OPACITY = 0.55;
 const DEFAULT_VOXEL_EDGE_OPACITY = 1;
@@ -68,6 +69,7 @@ export class VoxelizationService {
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly meshApi = inject(MeshApiService);
+  private readonly voxelizationStorage = inject(VoxelizationStorageService);
   private readonly statusBySession = new KeyedStore<number, VoxelizationStatus>();
   // The rendered voxel-cube preview for the LAST successful run - kept
   // separate from statusBySession (rather than derived from it on every
@@ -121,7 +123,7 @@ export class VoxelizationService {
   constructor() {
     effect(() => {
       const ids = this.sessions.sessions().map(session => session.id);
-      this.statusBySession.pruneTo(ids);
+      this.statusBySession.pruneTo(ids, (_status, sessionId) => this.voxelizationStorage.delete(sessionId));
       this.voxelPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
       this.opacityBySession.pruneTo(ids);
       this.edgeOpacityBySession.pruneTo(ids);
@@ -139,6 +141,27 @@ export class VoxelizationService {
     // all emit here. Never re-runs on its own - voxelization only ever
     // starts from the explicit "Вокселізувати" click (see run()).
     this.referenceRender.referenceChanged$.subscribe(sessionId => this.clearResult(sessionId));
+
+    // Reload-survival (see [[project_model_persistence]]) - restores each
+    // CURRENTLY-existing session's last successful result. Render settings
+    // are seeded directly into their own KeyedStores first, so
+    // applyEditedGrid's own getOpacity()/getEdgeOpacity()/etc. reads (used
+    // to build the restored preview) see the RESTORED values, not the
+    // defaults. Only ever restores an 'ok' result - see
+    // VoxelizationStorageService's own header comment for why the other
+    // (transient) statuses are never persisted at all.
+    for (const session of this.sessions.sessions()) {
+      const persisted = this.voxelizationStorage.load(session.id);
+      if (!persisted) {
+        continue;
+      }
+      this.opacityBySession.set(session.id, persisted.render.opacity);
+      this.edgeOpacityBySession.set(session.id, persisted.render.edgeOpacity);
+      this.lineWidthBySession.set(session.id, persisted.render.lineWidth);
+      this.nodeSizeBySession.set(session.id, persisted.render.nodeSize);
+      this.nodeOpacityBySession.set(session.id, persisted.render.nodeOpacity);
+      this.applyEditedGrid(session.id, persisted.grid);
+    }
   }
 
   getStatus(sessionId: number): VoxelizationStatus {
@@ -166,6 +189,7 @@ export class VoxelizationService {
     if (preview) {
       setVoxelPreviewOpacity(preview, clamped);
     }
+    this.persistCurrent(sessionId);
   }
 
   getEdgeOpacity(sessionId: number): number {
@@ -180,6 +204,7 @@ export class VoxelizationService {
     if (preview) {
       setVoxelEdgeOpacity(preview, clamped);
     }
+    this.persistCurrent(sessionId);
   }
 
   getLineWidth(sessionId: number): number {
@@ -197,6 +222,7 @@ export class VoxelizationService {
     if (preview && status?.kind === 'ok') {
       setVoxelLineWidth(preview, clamped, status.result.cellSize);
     }
+    this.persistCurrent(sessionId);
   }
 
   getNodeSize(sessionId: number): number {
@@ -217,6 +243,7 @@ export class VoxelizationService {
     if (preview && status?.kind === 'ok') {
       setVoxelNodeSize(preview, clamped, status.result.cellSize);
     }
+    this.persistCurrent(sessionId);
   }
 
   getNodeOpacity(sessionId: number): number {
@@ -231,6 +258,7 @@ export class VoxelizationService {
     if (preview) {
       setVoxelNodeOpacity(preview, clamped);
     }
+    this.persistCurrent(sessionId);
   }
 
   // Puts every voxel RENDER setting (fill/edge/node opacity, line width,
@@ -385,6 +413,27 @@ export class VoxelizationService {
     if (outgoing) {
       disposeVoxelPreview(outgoing);
     }
+    this.persistCurrent(sessionId);
+  }
+
+  // Reload-survival (see [[project_model_persistence]]) - saves the
+  // CURRENT successful result + render settings, or does nothing if there
+  // isn't one (VoxelizationStorageService never persists a transient
+  // status - see its own header comment). Called after every mutation that
+  // could affect either half of that pair (applyEditedGrid, and each
+  // render-setting setter).
+  private persistCurrent(sessionId: number): void {
+    const status = this.statusBySession.get(sessionId);
+    if (status?.kind !== 'ok') {
+      return;
+    }
+    this.voxelizationStorage.save(sessionId, status.result, {
+      opacity: this.getOpacity(sessionId),
+      edgeOpacity: this.getEdgeOpacity(sessionId),
+      lineWidth: this.getLineWidth(sessionId),
+      nodeSize: this.getNodeSize(sessionId),
+      nodeOpacity: this.getNodeOpacity(sessionId)
+    });
   }
 
   // "Скинути вокселізацію" - the explicit, user-driven equivalent of
@@ -413,6 +462,7 @@ export class VoxelizationService {
       disposeVoxelPreview(preview);
       this.voxelPreviewBySession.delete(sessionId);
     }
+    this.voxelizationStorage.delete(sessionId);
   }
 
   // Sends the session's current scaled reference (ImportedReferenceRenderService)
