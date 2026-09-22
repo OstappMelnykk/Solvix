@@ -1,10 +1,12 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, effect, inject, signal } from '@angular/core';
 import * as THREE from 'three';
 import { ZonePaintingService, ZonePaintingSource, Axis, AXES, axisCoords, projectedCoords } from './zone-painting.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
+import { SessionsService } from './sessions.service';
 import { isSingleConnectedComponent } from './mask-connectivity';
 import { SHELL_SUBDIVISIONS, buildSurfaceShellGrid, assignTriangleZones } from '../geometry/surface-shell-grid';
 import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-contract';
+import { PersistedSurfacePaintingSession, SurfaceZonePaintingStorageService } from './surface-zone-painting-storage.service';
 
 // The second half of each zone's 2-step wizard (Проблема 2 Варіант D,
 // docs/local-refinement/PROBLEMS.md): right after a voxel zone is committed
@@ -160,6 +162,8 @@ function maskIndex(grid: VoxelGridDto, axis: Axis, u: number, v: number): number
 export class SurfaceZonePaintingService {
   private readonly zonePainting = inject(ZonePaintingService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  private readonly sessions = inject(SessionsService);
+  private readonly surfaceStorage = inject(SurfaceZonePaintingStorageService);
 
   readonly activeSessionId = signal<number | null>(null);
   readonly activeSource = signal<SurfaceZonePaintingSource | null>(null);
@@ -179,9 +183,27 @@ export class SurfaceZonePaintingService {
     // (rotate/move/reimport), the grid's world-space alignment with the
     // CURRENT mesh is no longer valid.
     this.referenceRender.referenceChanged$.subscribe(sessionId => this.discardSession(sessionId));
+
+    // Same prune reasoning as ZonePaintingService's own constructor effect -
+    // this service never had one before (a pre-existing gap, closed here
+    // rather than left inconsistent with every other service in the
+    // reload-survival chain - see [[project_model_persistence]]).
+    effect(() => {
+      const ids = new Set(this.sessions.sessions().map(session => session.id));
+      for (const key of [...this.sessionsByKey.keys()]) {
+        if (!ids.has(key)) {
+          this.sessionsByKey.delete(key);
+          this.surfaceStorage.delete(key);
+        }
+      }
+      if (this.activeSessionId() !== null && !ids.has(this.activeSessionId()!)) {
+        this.close();
+      }
+    });
   }
 
   private discardSession(sessionId: number): void {
+    this.surfaceStorage.delete(sessionId);
     if (!this.sessionsByKey.has(sessionId)) {
       return;
     }
@@ -189,6 +211,59 @@ export class SurfaceZonePaintingService {
     if (this.activeSessionId() === sessionId) {
       this.close();
     }
+  }
+
+  // See PersistedSurfacePaintingSession's own header comment. Called at the
+  // end of every mutator that changes anything a reload should bring back.
+  private persistSession(sessionId: number): void {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const persisted: PersistedSurfacePaintingSession = {
+      subdivisions: session.subdivisions,
+      cellCount: session.grid.countX * session.grid.countY * session.grid.countZ,
+      assignedCount: session.assignedCount,
+      usedVoxelZoneIds: [...session.usedVoxelZoneIds],
+      activeVoxelZoneId: session.activeVoxelZoneId,
+      cellZone: Array.from(session.cellZone),
+      triangleZone: session.triangleZone ? Array.from(session.triangleZone) : null,
+      maskX: Array.from(session.maskX),
+      maskY: Array.from(session.maskY),
+      maskZ: Array.from(session.maskZ)
+    };
+    this.surfaceStorage.save(sessionId, persisted);
+  }
+
+  // Splices persisted data (see PersistedSurfacePaintingSession's own header
+  // comment) onto a shell grid open() just (re)built, IF the signature
+  // matches - null if there's nothing persisted, or it was painted against a
+  // differently-shaped shell grid (different subdivisions, or somehow a
+  // different cell count) and so can't be trusted to line up with this
+  // grid's own array indices.
+  private tryRestoreSession(sessionId: number, grid: VoxelGridDto, voxelGrid: VoxelGridDto, subdivisions: number): SurfacePaintingSession | null {
+    const persisted = this.surfaceStorage.load(sessionId);
+    if (!persisted) {
+      return null;
+    }
+    const cellCount = grid.countX * grid.countY * grid.countZ;
+    if (persisted.subdivisions !== subdivisions || persisted.cellCount !== cellCount || persisted.cellZone.length !== cellCount) {
+      return null;
+    }
+    return {
+      grid,
+      voxelGrid,
+      subdivisions,
+      totalOccupied: countOccupied(grid),
+      cellZone: Int16Array.from(persisted.cellZone),
+      assignedCount: persisted.assignedCount,
+      usedVoxelZoneIds: new Set(persisted.usedVoxelZoneIds),
+      activeVoxelZoneId: persisted.activeVoxelZoneId,
+      triangleZone: persisted.triangleZone ? Int16Array.from(persisted.triangleZone) : null,
+      maskX: Uint8Array.from(persisted.maskX),
+      maskY: Uint8Array.from(persisted.maskY),
+      maskZ: Uint8Array.from(persisted.maskZ)
+    };
   }
 
   // Only floors at MIN_SHELL_SUBDIVISIONS and caps at the internal safety
@@ -256,8 +331,17 @@ export class SurfaceZonePaintingService {
     const alreadyMatches = existing && existing.subdivisions === subdivisions && existing.voxelGrid === voxelSession.grid;
     if (!alreadyMatches) {
       const grid = buildSurfaceShellGrid(source.stlMesh, voxelSession.grid, subdivisions);
-      const fresh = this.createSession(grid, voxelSession.grid, subdivisions);
-      this.sessionsByKey.set(sessionId, fresh);
+      // Only worth consulting localStorage the FIRST time this session is
+      // touched in this JS runtime (i.e. right after a reload) - `existing`
+      // being set here means a session already lived in memory and is being
+      // rebuilt on purpose (e.g. the user just changed subdivisions), which
+      // must reset it exactly like it always has, not resurrect stale data
+      // painted against the shell grid's previous shape.
+      const restored = existing ? null : this.tryRestoreSession(sessionId, grid, voxelSession.grid, subdivisions);
+      this.sessionsByKey.set(sessionId, restored ?? this.createSession(grid, voxelSession.grid, subdivisions));
+      if (!restored) {
+        this.surfaceStorage.delete(sessionId);
+      }
     }
     this.activeSource.set(source);
     this.activeSessionId.set(sessionId);
@@ -278,6 +362,7 @@ export class SurfaceZonePaintingService {
       session.maskX.fill(0);
       session.maskY.fill(0);
       session.maskZ.fill(0);
+      this.persistSession(sessionId!);
     }
     this.activeSessionId.set(null);
     this.activeSource.set(null);
@@ -433,6 +518,7 @@ export class SurfaceZonePaintingService {
       session.activeVoxelZoneId--;
     }
     this.recomputeTriangleZones(sessionId);
+    this.persistSession(sessionId);
   }
 
   // Wipes every committed assignment AND whatever's pending - the "Скинути
@@ -444,6 +530,7 @@ export class SurfaceZonePaintingService {
       return;
     }
     this.sessionsByKey.set(sessionId, this.createSession(session.grid, session.voxelGrid, session.subdivisions));
+    this.persistSession(sessionId);
   }
 
   // Connectivity is NOT enforced here (used to be, on every edit) - see
@@ -467,6 +554,7 @@ export class SurfaceZonePaintingService {
       return false;
     }
     mask[index] = previous ? 0 : 1;
+    this.persistSession(sessionId);
     return true;
   }
 
@@ -502,6 +590,9 @@ export class SurfaceZonePaintingService {
           addedAny = true;
         }
       }
+    }
+    if (addedAny) {
+      this.persistSession(sessionId);
     }
     return addedAny;
   }
@@ -682,6 +773,7 @@ export class SurfaceZonePaintingService {
       maskY.fill(0);
       maskZ.fill(0);
       this.recomputeTriangleZones(sessionId);
+      this.persistSession(sessionId);
     }
     return { assigned, disconnected: false };
   }
