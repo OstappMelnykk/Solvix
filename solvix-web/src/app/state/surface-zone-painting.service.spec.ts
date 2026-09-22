@@ -73,6 +73,11 @@ describe('SurfaceZonePaintingService', () => {
   let source: SurfaceZonePaintingSource;
 
   beforeEach(() => {
+    // SurfaceZonePaintingStorageService/ZonePaintingStorageService now
+    // persist to real localStorage (reload-survival - see
+    // [[project_model_persistence]]), which otherwise leaks between
+    // tests/spec files in this same browser instance.
+    localStorage.clear();
     statuses = new Map();
     statuses.set(1, { kind: 'ok', result: buildVoxelGrid() });
     TestBed.configureTestingModule({
