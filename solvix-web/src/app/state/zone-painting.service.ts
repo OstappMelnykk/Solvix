@@ -5,6 +5,7 @@ import { VoxelizationService } from './voxelization.service';
 import { ImportedReferenceRenderService } from './imported-reference-render.service';
 import { isSingleConnectedComponent } from './mask-connectivity';
 import { VoxelGridDto, countOccupied, isOccupied } from '../geometry/voxel-grid-contract';
+import { PersistedPaintingSession, ZonePaintingStorageService } from './zone-painting-storage.service';
 
 // What WorldCanvasComponent.openZonePainting hands the service to open the
 // window - same shape/reasoning as SixViewOverlayService's own SixViewSource
@@ -182,6 +183,7 @@ export class ZonePaintingService {
   private readonly sessions = inject(SessionsService);
   private readonly voxelization = inject(VoxelizationService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
+  private readonly zonePaintingStorage = inject(ZonePaintingStorageService);
 
   // Non-null means the painting window should be showing, for this session,
   // rendering `activeSource`'s REAL scene (same reasoning as
@@ -206,11 +208,55 @@ export class ZonePaintingService {
   private readonly sessionsByKey = new Map<number, PaintingSession>();
 
   constructor() {
+    // Reload-survival restore - see [[project_model_persistence]]. Only
+    // VoxelizationService's own field initializer above (`inject(...)`)
+    // guarantees ITS constructor (and so ITS OWN restore loop) has already
+    // run by the time this one does - Angular injects/constructs a
+    // dependency the first time something asks for it, and field
+    // initializers run before this constructor body. That's what makes
+    // `this.voxelization.getStatus(session.id)` below already reflect a
+    // restored grid, not a stale 'idle'.
+    //
+    // Deliberately does NOT restore the grid from ITS OWN storage (there is
+    // none - see zone-painting-storage.service.ts's own header comment) -
+    // it takes the CURRENT (just-restored) grid from VoxelizationService, so
+    // this session's `grid` is the exact same object reference open() will
+    // see next time it's called, not a separately re-deserialized copy that
+    // would make open()'s `existing.grid !== status.result` check always
+    // fail and silently re-blank this very session.
+    for (const session of this.sessions.sessions()) {
+      const persisted = this.zonePaintingStorage.load(session.id);
+      if (!persisted) {
+        continue;
+      }
+      const status = this.voxelization.getStatus(session.id);
+      if (status.kind !== 'ok') {
+        continue;
+      }
+      const grid = status.result;
+      const cellCount = grid.countX * grid.countY * grid.countZ;
+      if (persisted.gridCellCount !== cellCount || persisted.voxelZone.length !== cellCount) {
+        continue;
+      }
+      this.sessionsByKey.set(session.id, {
+        grid,
+        totalOccupied: persisted.totalOccupied,
+        zones: persisted.zones.map(zone => ({ ...zone })),
+        zonesRevision: persisted.zonesRevision,
+        opacity: persisted.opacity,
+        voxelZone: Int16Array.from(persisted.voxelZone),
+        maskX: Uint8Array.from(persisted.maskX),
+        maskY: Uint8Array.from(persisted.maskY),
+        maskZ: Uint8Array.from(persisted.maskZ)
+      });
+    }
+
     effect(() => {
       const ids = new Set(this.sessions.sessions().map(session => session.id));
       for (const key of [...this.sessionsByKey.keys()]) {
         if (!ids.has(key)) {
           this.sessionsByKey.delete(key);
+          this.zonePaintingStorage.delete(key);
         }
       }
       if (this.activeSessionId() !== null && !ids.has(this.activeSessionId()!)) {
@@ -234,9 +280,33 @@ export class ZonePaintingService {
       return;
     }
     this.sessionsByKey.delete(sessionId);
+    this.zonePaintingStorage.delete(sessionId);
     if (this.activeSessionId() === sessionId) {
       this.close();
     }
+  }
+
+  // See PersistedPaintingSession's own header comment for what is/isn't
+  // stored and why. Called at the end of every mutator that changes
+  // anything a reload should bring back - a no-op if the session was
+  // already discarded out from under the caller.
+  private persistSession(sessionId: number): void {
+    const session = this.sessionsByKey.get(sessionId);
+    if (!session) {
+      return;
+    }
+    const persisted: PersistedPaintingSession = {
+      gridCellCount: session.grid.countX * session.grid.countY * session.grid.countZ,
+      totalOccupied: session.totalOccupied,
+      zones: session.zones.map(zone => ({ id: zone.id, color: zone.color, voxelCount: zone.voxelCount })),
+      zonesRevision: session.zonesRevision,
+      opacity: session.opacity,
+      voxelZone: Array.from(session.voxelZone),
+      maskX: Array.from(session.maskX),
+      maskY: Array.from(session.maskY),
+      maskZ: Array.from(session.maskZ)
+    };
+    this.zonePaintingStorage.save(sessionId, persisted);
   }
 
   // Opens the window for `sessionId`, provided its voxelization succeeded.
@@ -281,6 +351,7 @@ export class ZonePaintingService {
     session.maskX.fill(0);
     session.maskY.fill(0);
     session.maskZ.fill(0);
+    this.persistSession(sessionId!);
   }
 
   // Hides step 1's canvas back down to the list, WITHOUT closing the
@@ -347,6 +418,7 @@ export class ZonePaintingService {
     }
     session.zones[index] = { ...session.zones[index], color };
     session.zonesRevision++;
+    this.persistSession(sessionId);
   }
 
   getZoneOverlayOpacity(sessionId: number): number {
@@ -357,6 +429,7 @@ export class ZonePaintingService {
     const session = this.sessionsByKey.get(sessionId);
     if (session) {
       session.opacity = Math.min(1, Math.max(0, opacity));
+      this.persistSession(sessionId);
     }
   }
 
@@ -379,6 +452,7 @@ export class ZonePaintingService {
     next.opacity = session.opacity;
     next.zonesRevision = session.zonesRevision + 1;
     this.sessionsByKey.set(sessionId, next);
+    this.persistSession(sessionId);
   }
 
   // "assigned" is the sum of every committed zone's own voxelCount (each
@@ -455,6 +529,7 @@ export class ZonePaintingService {
       zones[i] = { ...zones[i], id: zones[i].id - 1 };
     }
     session.zonesRevision++;
+    this.persistSession(sessionId);
   }
 
   // Toggles ONE cell in `axis`'s pending mask. ADDING a cell is refused
@@ -484,6 +559,7 @@ export class ZonePaintingService {
       return false;
     }
     mask[index] = previous ? 0 : 1;
+    this.persistSession(sessionId);
     return true;
   }
 
@@ -532,6 +608,9 @@ export class ZonePaintingService {
     // Nothing in the rectangle was actually addable (every cell in it was
     // already zoned/excluded/empty) - report this the same way a rejected
     // edit is reported, rather than silently succeeding at doing nothing.
+    if (addedAny) {
+      this.persistSession(sessionId);
+    }
     return addedAny;
   }
 
@@ -722,6 +801,7 @@ export class ZonePaintingService {
       maskX.fill(0);
       maskY.fill(0);
       maskZ.fill(0);
+      this.persistSession(sessionId);
     }
     return { assigned, disconnected: false };
   }
