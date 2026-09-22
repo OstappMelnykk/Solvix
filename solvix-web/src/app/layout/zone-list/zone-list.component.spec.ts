@@ -60,6 +60,11 @@ describe('ZoneListComponent', () => {
   let statuses: Map<number, VoxelizationStatus>;
 
   beforeEach(() => {
+    // ZonePaintingStorageService/SurfaceZonePaintingStorageService now
+    // persist to real localStorage (reload-survival - see
+    // [[project_model_persistence]]), which otherwise leaks between
+    // tests/spec files in this same browser instance.
+    localStorage.clear();
     statuses = new Map();
     statuses.set(1, { kind: 'ok', result: buildVoxelGrid(3, 1, 1) });
     TestBed.configureTestingModule({
