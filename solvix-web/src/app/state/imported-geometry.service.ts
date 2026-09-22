@@ -6,6 +6,7 @@ import { isWatertight } from '../geometry/watertight-check';
 import { disposeObject3D } from '../geometry/dispose-object3d';
 import { recenterAtOrigin } from '../geometry/recenter-object3d';
 import { computeMeshStats } from '../geometry/mesh-stats';
+import { ImportedGeometryStorageService } from './imported-geometry-storage.service';
 
 export interface ImportedGeometry {
   // A pivot Group wrapping the loaded object, NOT the loaded object
@@ -41,19 +42,36 @@ export interface ImportedGeometry {
 @Injectable({ providedIn: 'root' })
 export class ImportedGeometryService {
   private readonly sessions = inject(SessionsService);
+  private readonly storage = inject(ImportedGeometryStorageService);
   private readonly bySession = new KeyedStore<number, ImportedGeometry>();
 
   constructor() {
     effect(() => {
       this.bySession.pruneTo(
         this.sessions.sessions().map(session => session.id),
-        entry => disposeObject3D(entry.object)
+        (entry, sessionId) => {
+          disposeObject3D(entry.object);
+          this.storage.delete(sessionId);
+        }
       );
     });
   }
 
+  // Checks the reload-survival storage FIRST, not just returning null - see
+  // ModelStorageService's own header comment for the full reasoning (same
+  // pattern, applied here). A session whose import was only ever restored
+  // from storage (never re-`set()` this page load) still gets cached in
+  // bySession on this first read, so a later `set()` correctly disposes it.
   get(sessionId: number): ImportedGeometry | null {
-    return this.bySession.get(sessionId) ?? null;
+    const cached = this.bySession.get(sessionId);
+    if (cached) {
+      return cached;
+    }
+    const restored = this.storage.load(sessionId);
+    if (restored) {
+      this.bySession.set(sessionId, restored);
+    }
+    return restored;
   }
 
   // Replaces whatever was previously imported for this session, if
@@ -94,7 +112,7 @@ export class ImportedGeometryService {
     const longestLength = [boundingSize.x, boundingSize.y, boundingSize.z][longestAxis];
     const stats = computeMeshStats(pivot);
 
-    this.bySession.set(sessionId, {
+    const entry: ImportedGeometry = {
       object: pivot,
       fileName,
       watertight: isWatertight(pivot),
@@ -105,6 +123,8 @@ export class ImportedGeometryService {
       longestAxis,
       longestLength,
       boundingBox
-    });
+    };
+    this.bySession.set(sessionId, entry);
+    this.storage.save(sessionId, entry);
   }
 }

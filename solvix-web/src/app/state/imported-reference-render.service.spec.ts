@@ -23,6 +23,11 @@ describe('ImportedReferenceRenderService', () => {
   let render: ImportedReferenceRenderService;
 
   beforeEach(() => {
+    // SessionsService/ImportedGeometryStorageService now persist to real
+    // localStorage (reload-survival - see [[project_model_persistence]]),
+    // which otherwise leaks between tests/spec files in this same browser
+    // instance.
+    localStorage.clear();
     TestBed.configureTestingModule({});
     sessions = TestBed.inject(SessionsService);
     importedGeometry = TestBed.inject(ImportedGeometryService);
