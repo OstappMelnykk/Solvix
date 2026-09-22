@@ -1,4 +1,11 @@
-<canvas #canvas></canvas>
+<!-- trackBy on canvasGeneration - see its own comment in the .ts file. This
+     canvas is otherwise never conditionally destroyed; the *ngFor exists
+     solely so a permanently-lost WebGL context (browser never fires
+     webglcontextrestored - not guaranteed by spec) can be recovered by
+     forcing Angular to hand this ONE World a genuinely fresh <canvas>
+     element, instead of staying a dead/broken-image canvas until a full
+     page reload. -->
+<canvas #canvas *ngFor="let g of canvasKeys(); trackBy: trackGeneration"></canvas>
 
 <div class="canvas-toolbar">
   <div class="canvas-toolbar__group">
