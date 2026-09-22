@@ -5,6 +5,11 @@ describe('SessionsService', () => {
   let service: SessionsService;
 
   beforeEach(() => {
+    // SessionsService now restores from localStorage (reload-survival - see
+    // [[project_model_persistence]]), which otherwise leaks between tests in
+    // this same browser instance, unlike a plain in-memory field that a
+    // fresh TestBed always reset on its own.
+    localStorage.clear();
     TestBed.configureTestingModule({});
     service = TestBed.inject(SessionsService);
   });
