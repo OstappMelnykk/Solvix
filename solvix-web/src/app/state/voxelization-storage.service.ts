@@ -56,11 +56,22 @@ export class VoxelizationStorageService {
     if (!persisted) {
       return null;
     }
+    const occupancy = Uint8Array.from(persisted.grid.occupancy);
     return {
       grid: {
         ...persisted.grid,
-        occupancy: Uint8Array.from(persisted.grid.occupancy),
-        markedForRefinement: Uint8Array.from(persisted.grid.markedForRefinement)
+        occupancy,
+        // A session saved before markedForRefinement existed has no such
+        // field in its stored JSON at all (undefined, not an empty array) -
+        // Uint8Array.from(undefined) throws rather than producing an empty
+        // array, so this falls back to "nothing marked yet" (same shape as
+        // occupancy) instead of crashing every reload for pre-existing
+        // sessions. Re-voxelizing (or this PR's own "Прив'язати..." trigger,
+        // once local refinement exists) naturally produces the real
+        // bitmask on top of this.
+        markedForRefinement: persisted.grid.markedForRefinement
+          ? Uint8Array.from(persisted.grid.markedForRefinement)
+          : new Uint8Array(occupancy.length)
       },
       render: persisted.render
     };
