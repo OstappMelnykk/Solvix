@@ -1,10 +1,12 @@
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { NgFor } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { IDEAL_WORLD_INDEX } from '../../../config/app-settings';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
+import { SharedModelService } from '../../../state/shared-model.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
@@ -49,7 +51,7 @@ const DEFAULT_ORBIT_TARGET: [number, number, number] = [0, 0, 0];
 @Component({
   selector: 'app-world-canvas',
   standalone: true,
-  imports: [],
+  imports: [NgFor],
   templateUrl: './world-canvas.component.html',
   styleUrl: './world-canvas.component.scss'
 })
@@ -100,6 +102,28 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // confirmed crash for this specific resource).
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
+
+  // Bumped only when this canvas's WebGL context was lost and the browser
+  // never restored it (checked once per frame in animate() via
+  // renderer.getContext().isContextLost() - onContextLost/onContextRestored
+  // below handle the case where the browser DOES restore it; this is the
+  // fallback for when it doesn't, which the spec never guarantees). Forces
+  // Angular to hand this canvas a genuinely fresh <canvas> DOM element via
+  // the template's own *ngFor/trackBy - the same mechanism ZonePaintingComponent/
+  // SixViewOverlayComponent/ZonePreviewComponent already use for their own
+  // canvases, adapted here since this one is otherwise never conditionally
+  // destroyed at all.
+  private canvasGeneration = 0;
+  // Set the first frame a lost context is noticed, cleared once
+  // recoverFromLostContext actually runs - guards against re-bumping
+  // canvasGeneration every single frame while waiting for Angular to
+  // actually swap the element in.
+  private recreatingCanvas = false;
+  private lastAttemptedCanvas: HTMLCanvasElement | null = null;
+  canvasKeys(): number[] {
+    return [this.canvasGeneration];
+  }
+  trackGeneration = (_: number, gen: number): number => gen;
 
   private renderer!: THREE.WebGLRenderer;
   // Every actual draw of `scene` goes through this instead of calling
@@ -252,6 +276,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private readonly pointerNdc = new THREE.Vector2();
   private pointerDownClient: { x: number; y: number } | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
+  private readonly sharedModel = inject(SharedModelService);
   private lastSessionId: number | null = null;
   private sceneReady = false;
   private frameId = 0;
@@ -303,15 +328,30 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // instead of exposing it across two.
     this.cdr.detectChanges();
 
-    const canvas = this.canvasRef.nativeElement;
+    this.attachCanvasListeners(this.canvasRef.nativeElement);
+    // Window-scoped, not canvas-scoped (three.js canvases aren't focusable
+    // by default - see onKeyDown's own comment) - bound exactly once here,
+    // for this component's whole lifetime, unlike the canvas-scoped
+    // listeners above which get reattached to a fresh element every time
+    // recoverFromLostContext runs.
+    window.addEventListener('keydown', this.onKeyDown);
+
+    this.animate();
+  }
+
+  // Canvas-scoped listeners only (NOT the window-scoped keydown above) -
+  // shared between the initial setup (ngAfterViewInit) and
+  // recoverFromLostContext, which needs to rebind these same 5 to a
+  // genuinely new <canvas> element after a permanently-lost context. No
+  // explicit removal from the OLD canvas is needed in that second case -
+  // it's already been destroyed by Angular (the *ngFor/trackBy swap) by the
+  // time this runs, taking its listeners with it.
+  private attachCanvasListeners(canvas: HTMLCanvasElement): void {
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('contextmenu', this.onContextMenu);
-    window.addEventListener('keydown', this.onKeyDown);
-
-    this.animate();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -336,6 +376,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   ngOnDestroy(): void {
     cancelAnimationFrame(this.frameId);
+    // Whatever's actually in this.currentModel RIGHT NOW - not whatever
+    // SharedModelService last handed out via `representation` - is the true
+    // state at the moment this canvas dies (toolbar-icon switch destroys all
+    // 3 WorldCanvasComponent instances via NgComponentOutlet - see
+    // docs/FRONTEND_ARCHITECTURE.md's own tech-debt note). Committing it here
+    // is what lets the next WorldCanvasComponent instance for this session
+    // pick up exactly where this one left off instead of silently reverting
+    // to whatever was last explicitly committed (or nothing at all).
+    if (this.sessionId !== null && this.currentModel) {
+      this.sharedModel.commit(this.sessionId, this.currentModel);
+    }
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
@@ -354,31 +405,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer?.dispose();
   }
 
-  private initScene(): void {
-    const canvas = this.canvasRef.nativeElement;
-    const { clientWidth: width, clientHeight: height } = canvas.parentElement!;
-    this.lastWidth = width;
-    this.lastHeight = height;
-
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1e1f22);
-
-    // far=100 clipped the model out of view once the user zoomed out enough
-    // for OrbitControls' camera distance to exceed it - easy to hit once the
-    // scene can hold arbitrarily large imported/scaled geometry. This makes
-    // the near:far ratio 100000:1, which would ordinarily risk z-fighting
-    // (depth-buffer precision is spread across the whole range) - logarithmicDepthBuffer
-    // on the renderer below is what actually keeps that safe, not the specific numbers here.
-    this.perspectiveCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
-    this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
-    // Frustum bounds are placeholders here - updateCameraFrustum() (called
-    // below via checkResize's first pass, and again on every toggle/resize)
-    // sets the real left/right/top/bottom from orthoHalfHeight + aspect.
-    this.orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
-    this.orthographicCamera.position.set(...DEFAULT_CAMERA_POSITION);
-    this.camera = this.perspectiveCamera;
-    this.updateCameraFrustum(width, height);
-
+  // Renderer/oitRenderer/controls/rotateGizmo construction - extracted out
+  // of initScene() so recoverFromLostContext() below can rebuild exactly
+  // this part on a fresh <canvas> without re-running the rest of initScene()
+  // (scene/cameras/model/lights/grid, none of which need to change - a lost
+  // WebGL context doesn't erase this.scene or anything in it, only whatever
+  // was drawing it).
+  private setupRenderer(canvas: HTMLCanvasElement, width: number, height: number): void {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -446,6 +479,80 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.syncOverlayTransform();
       this.settleAnimation = { object: this.currentImportedReference, from, to, startTime: performance.now() };
     });
+  }
+
+  // Fired from animate() once a permanently-lost context (never restored by
+  // the browser) has forced Angular to hand this World a genuinely fresh
+  // <canvas> element (see canvasGeneration's own comment). Rebuilds exactly
+  // the renderer/oitRenderer/controls/rotateGizmo bundle on it - this.scene
+  // and everything in it (model, imported reference, grid, lights, overlays)
+  // is untouched, since none of that ever lived in the lost context itself.
+  private recoverFromLostContext(canvas: HTMLCanvasElement): void {
+    // Plain data, not the live objects themselves - same reasoning as the
+    // lazy tools' own savedCameraStates (see [[project_webgl_context_architecture]]):
+    // a fresh OrbitControls is constructed below regardless (it binds DOM
+    // listeners at construction time, so the old instance can't just be
+    // reattached to a new element), so whatever it should look like has to
+    // be copied onto it afterward instead.
+    const savedTarget = this.controls.target.clone();
+    const savedEnabled = this.controls.enabled;
+    const hadAttachedReference = this.currentImportedReference !== null;
+
+    this.scene.remove(this.rotateGizmo.getHelper());
+    this.controls.dispose();
+    this.rotateGizmo.dispose();
+    this.oitRenderer.dispose();
+    this.renderer.dispose();
+
+    const { clientWidth: width, clientHeight: height } = canvas.parentElement!;
+    this.setupRenderer(canvas, width, height);
+    this.attachCanvasListeners(canvas);
+
+    this.controls.target.copy(savedTarget);
+    this.controls.enabled = savedEnabled;
+    this.controls.update();
+    if (hadAttachedReference && this.currentImportedReference) {
+      this.rotateGizmo.attach(this.currentImportedReference);
+    }
+
+    // Forces checkResize()'s own diff check to re-apply size/pixel ratio to
+    // the freshly created renderer on the very next frame, exactly as if
+    // the canvas had genuinely changed size (it didn't - only the renderer
+    // under it did, and setupRenderer already sized it once here, but this
+    // also re-syncs anything checkResize additionally does, e.g.
+    // updateCameraFrustum, rather than duplicating that logic here too).
+    this.lastWidth = 0;
+    this.lastHeight = 0;
+    this.renderer.compile(this.scene, this.camera);
+    this.oitRenderer.render(this.scene, this.camera);
+  }
+
+  private initScene(): void {
+    const canvas = this.canvasRef.nativeElement;
+    const { clientWidth: width, clientHeight: height } = canvas.parentElement!;
+    this.lastWidth = width;
+    this.lastHeight = height;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x1e1f22);
+
+    // far=100 clipped the model out of view once the user zoomed out enough
+    // for OrbitControls' camera distance to exceed it - easy to hit once the
+    // scene can hold arbitrarily large imported/scaled geometry. This makes
+    // the near:far ratio 100000:1, which would ordinarily risk z-fighting
+    // (depth-buffer precision is spread across the whole range) - logarithmicDepthBuffer
+    // on the renderer below is what actually keeps that safe, not the specific numbers here.
+    this.perspectiveCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
+    this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    // Frustum bounds are placeholders here - updateCameraFrustum() (called
+    // below via checkResize's first pass, and again on every toggle/resize)
+    // sets the real left/right/top/bottom from orthoHalfHeight + aspect.
+    this.orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10000);
+    this.orthographicCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    this.camera = this.perspectiveCamera;
+    this.updateCameraFrustum(width, height);
+
+    this.setupRenderer(canvas, width, height);
 
     this.updateModel();
     this.updateImportedReference();
@@ -479,6 +586,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
     this.lastModel = object;
+    // Captures whatever the OUTGOING session actually had, right before it's
+    // discarded below - this.lastSessionId still holds that session's id
+    // here (updateSession(), which advances it to this.sessionId, always
+    // runs AFTER updateModel() in both ngOnChanges and animate() - see
+    // their own call order). Without this, switching sessions (not
+    // destroying any canvas at all) would silently drop whatever was last
+    // built in the session being switched away from, same gap ngOnDestroy's
+    // own commit() call closes for an actual canvas teardown.
+    if (this.currentModel && this.lastSessionId !== null) {
+      this.sharedModel.commit(this.lastSessionId, this.currentModel);
+    }
     if (this.currentModel) {
       this.scene.remove(this.currentModel);
     }
@@ -951,6 +1069,26 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // above). This can't fix whatever the underlying bug is, but it keeps
     // THIS World's last good frame on screen (or later frames working
     // again, if the bad state was transient) instead of a dead canvas.
+    // Checked fresh every frame (not cached) - onContextLost/onContextRestored
+    // above handle the case where the browser DOES restore this canvas's
+    // context on its own; this is what notices when it doesn't (never
+    // guaranteed by spec). Small, accepted race: if the browser restores it
+    // in the handful of frames between noticing this and Angular actually
+    // swapping in the fresh <canvas> below, this still goes ahead and
+    // recreates the renderer anyway (one avoidable but harmless extra
+    // context) rather than trying to detect and cancel that in flight.
+    if (this.renderer.getContext().isContextLost()) {
+      const canvas = this.canvasRef.nativeElement;
+      if (!this.recreatingCanvas) {
+        this.recreatingCanvas = true;
+        this.lastAttemptedCanvas = canvas;
+        this.canvasGeneration++;
+      } else if (canvas !== this.lastAttemptedCanvas) {
+        this.recreatingCanvas = false;
+        this.recoverFromLostContext(canvas);
+      }
+      return;
+    }
     try {
       this.checkResize();
       this.updateModel();

@@ -52,6 +52,16 @@ export class SharedModelService {
     return this.modelBySession.getOrCreate(sessionId, this.createInitialModel);
   }
 
+  // The only write path - see WorldCanvasComponent's own callers (ngOnDestroy,
+  // updateSession) for exactly when this needs to run: right before this
+  // session's model might stop being represented by a live, in-scene
+  // Object3D (a canvas destroy, or switching away to another session), so
+  // whatever's actually there gets captured, not just whatever this service
+  // was told about last.
+  commit(sessionId: number, object: THREE.Object3D): void {
+    this.modelBySession.set(sessionId, object);
+  }
+
   private disposeModel(model: THREE.Object3D): void {
     model.traverse(child => {
       if (!(child instanceof THREE.Mesh)) {
