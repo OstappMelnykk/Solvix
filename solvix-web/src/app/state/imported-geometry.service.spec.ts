@@ -38,6 +38,11 @@ describe('ImportedGeometryService', () => {
   let imported: ImportedGeometryService;
 
   beforeEach(() => {
+    // SessionsService/ImportedGeometryStorageService now persist to real
+    // localStorage (reload-survival - see [[project_model_persistence]]),
+    // which otherwise leaks between tests/spec files in this same browser
+    // instance.
+    localStorage.clear();
     TestBed.configureTestingModule({});
     sessions = TestBed.inject(SessionsService);
     imported = TestBed.inject(ImportedGeometryService);
