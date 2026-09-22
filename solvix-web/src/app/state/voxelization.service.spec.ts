@@ -70,6 +70,11 @@ describe('VoxelizationService', () => {
   let httpMock: HttpTestingController;
 
   beforeEach(() => {
+    // SessionsService/VoxelizationStorageService now persist to real
+    // localStorage (reload-survival - see [[project_model_persistence]]),
+    // which otherwise leaks between tests/spec files in this same browser
+    // instance.
+    localStorage.clear();
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()]
     });
