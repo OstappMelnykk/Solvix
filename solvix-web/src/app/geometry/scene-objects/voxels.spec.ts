@@ -56,15 +56,32 @@ function gridWithCentersAlongX(centers: number[], cellSize: number): VoxelGridDt
   for (let i = 0; i < countX; i++) {
     occupancy[i >> 3] |= 1 << (i & 7);
   }
-  return { origin, cellSize, countX: Math.max(countX, 1), countY: 1, countZ: 1, occupancy: countX === 0 ? new Uint8Array([0]) : occupancy };
+  const finalOccupancy = countX === 0 ? new Uint8Array([0]) : occupancy;
+  return {
+    origin,
+    cellSize,
+    countX: Math.max(countX, 1),
+    countY: 1,
+    countZ: 1,
+    occupancy: finalOccupancy,
+    markedForRefinement: new Uint8Array(finalOccupancy.length)
+  };
 }
 
 function singleCellGridAt(center: { x: number; y: number; z: number }, cellSize: number): VoxelGridDto {
   const origin = { x: center.x - cellSize / 2, y: center.y - cellSize / 2, z: center.z - cellSize / 2 };
-  return { origin, cellSize, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+  return { origin, cellSize, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]), markedForRefinement: new Uint8Array([0]) };
 }
 
-const EMPTY_GRID: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0]) };
+const EMPTY_GRID: VoxelGridDto = {
+  origin: { x: 0, y: 0, z: 0 },
+  cellSize: 1,
+  countX: 1,
+  countY: 1,
+  countZ: 1,
+  occupancy: new Uint8Array([0]),
+  markedForRefinement: new Uint8Array([0])
+};
 
 describe('buildVoxelPreview', () => {
   it('creates one BatchedMesh instance per occupied cell', () => {

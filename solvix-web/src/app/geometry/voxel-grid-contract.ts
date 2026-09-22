@@ -11,6 +11,9 @@
 //   [uint32 countX, countY, countZ]
 //   [occupancy bitmask, ceil(countX*countY*countZ/8) bytes - bit index
 //    ix + iy*countX + iz*countX*countY, LSB first within each byte]
+//   [markedForRefinement bitmask, same shape/bit-linearization as the
+//    occupancy bitmask immediately above - see markedForRefinement's own
+//    doc comment]
 export interface VoxelGridDto {
   readonly origin: { readonly x: number; readonly y: number; readonly z: number };
   readonly cellSize: number;
@@ -18,6 +21,14 @@ export interface VoxelGridDto {
   readonly countY: number;
   readonly countZ: number;
   readonly occupancy: Uint8Array;
+  // Always a subset of occupancy's 1-bits. 1 means this occupied cell's
+  // own volume was found to cover 2+ topologically disconnected pieces of
+  // the imported body (docs/local-refinement/PROBLEMS.md, Проблема 2,
+  // Варіант B - Solvix.Voxelization's own HasConnectivitySplit) - a
+  // candidate for local refinement later. Purely diagnostic today -
+  // nothing yet acts on it beyond scene-objects/voxels.ts's own highlight
+  // tint.
+  readonly markedForRefinement: Uint8Array;
 }
 
 export function fromVoxelGridBinary(buffer: ArrayBuffer): VoxelGridDto {
@@ -27,7 +38,6 @@ export function fromVoxelGridBinary(buffer: ArrayBuffer): VoxelGridDto {
   const countX = view.getUint32(16, true);
   const countY = view.getUint32(20, true);
   const countZ = view.getUint32(24, true);
-  const occupancy = new Uint8Array(buffer, 28);
 
   // Declared dimensions must actually be backed by enough occupancy bytes
   // - without this, a truncated/corrupted response silently reads past
@@ -35,14 +45,17 @@ export function fromVoxelGridBinary(buffer: ArrayBuffer): VoxelGridDto {
   // `undefined` evaluates to 0, i.e. "not occupied") instead of failing
   // loudly, hiding a broken response as a merely-empty result.
   const cellCount = countX * countY * countZ;
-  const expectedOccupancyBytes = Math.ceil(cellCount / 8);
-  if (occupancy.length < expectedOccupancyBytes) {
+  const expectedBytesPerBitmask = Math.ceil(cellCount / 8);
+  const expectedTotalBytes = 28 + expectedBytesPerBitmask * 2;
+  if (buffer.byteLength < expectedTotalBytes) {
     throw new Error(
-      `Voxel grid response is truncated: ${countX}x${countY}x${countZ} cells need ${expectedOccupancyBytes} occupancy bytes, got ${occupancy.length}.`
+      `Voxel grid response is truncated: ${countX}x${countY}x${countZ} cells need ${expectedBytesPerBitmask} bytes each for occupancy and markedForRefinement, got ${buffer.byteLength - 28} bytes total after the header.`
     );
   }
+  const occupancy = new Uint8Array(buffer, 28, expectedBytesPerBitmask);
+  const markedForRefinement = new Uint8Array(buffer, 28 + expectedBytesPerBitmask, expectedBytesPerBitmask);
 
-  return { origin, cellSize, countX, countY, countZ, occupancy };
+  return { origin, cellSize, countX, countY, countZ, occupancy, markedForRefinement };
 }
 
 // Same linearization the backend's VoxelizationResult.CellIndex writes a
@@ -55,6 +68,11 @@ function cellIndex(grid: VoxelGridDto, ix: number, iy: number, iz: number): numb
 export function isOccupied(grid: VoxelGridDto, ix: number, iy: number, iz: number): boolean {
   const index = cellIndex(grid, ix, iy, iz);
   return (grid.occupancy[index >> 3] & (1 << (index & 7))) !== 0;
+}
+
+export function isMarkedForRefinement(grid: VoxelGridDto, ix: number, iy: number, iz: number): boolean {
+  const index = cellIndex(grid, ix, iy, iz);
+  return (grid.markedForRefinement[index >> 3] & (1 << (index & 7))) !== 0;
 }
 
 // Total occupied-cell count - used by the settings-panel cube-count
@@ -118,6 +136,15 @@ export function withCellSet(grid: VoxelGridDto, ix: number, iy: number, iz: numb
   };
 
   const occupancy = new Uint8Array(Math.max(1, Math.ceil((countX * countY * countZ) / 8)));
+  // Carried forward at each existing cell's own (possibly shifted) index,
+  // same as occupancy - a manual add/delete has no way to redo
+  // HasConnectivitySplit itself (that needs the real STL triangles, which
+  // only Solvix.Voxelization has), so this just preserves whatever the
+  // server last computed rather than silently dropping it. The newly
+  // added cell (if any) is never marked here - it has no server-computed
+  // answer yet, and "not marked" is the safe default until the next real
+  // re-voxelization.
+  const markedForRefinement = new Uint8Array(occupancy.length);
   for (let x = 0; x < grid.countX; x++) {
     for (let y = 0; y < grid.countY; y++) {
       for (let z = 0; z < grid.countZ; z++) {
@@ -126,6 +153,9 @@ export function withCellSet(grid: VoxelGridDto, ix: number, iy: number, iz: numb
         }
         const index = x + shiftX + (y + shiftY) * countX + (z + shiftZ) * countX * countY;
         occupancy[index >> 3] |= 1 << (index & 7);
+        if (isMarkedForRefinement(grid, x, y, z)) {
+          markedForRefinement[index >> 3] |= 1 << (index & 7);
+        }
       }
     }
   }
@@ -135,7 +165,8 @@ export function withCellSet(grid: VoxelGridDto, ix: number, iy: number, iz: numb
     occupancy[targetIndex >> 3] |= 1 << (targetIndex & 7);
   } else {
     occupancy[targetIndex >> 3] &= ~(1 << (targetIndex & 7));
+    markedForRefinement[targetIndex >> 3] &= ~(1 << (targetIndex & 7));
   }
 
-  return { origin, cellSize: grid.cellSize, countX, countY, countZ, occupancy };
+  return { origin, cellSize: grid.cellSize, countX, countY, countZ, occupancy, markedForRefinement };
 }

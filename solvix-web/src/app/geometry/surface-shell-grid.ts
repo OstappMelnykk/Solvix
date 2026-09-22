@@ -125,13 +125,19 @@ export function buildSurfaceShellGrid(object: THREE.Object3D, voxelGrid: VoxelGr
   const countX = voxelGrid.countX * subdivisions;
   const countY = voxelGrid.countY * subdivisions;
   const countZ = voxelGrid.countZ * subdivisions;
+  const bitmaskLength = Math.max(1, Math.ceil((countX * countY * countZ) / 8));
   const grid: VoxelGridDto = {
     origin: voxelGrid.origin,
     cellSize: voxelGrid.cellSize / subdivisions,
     countX,
     countY,
     countZ,
-    occupancy: new Uint8Array(Math.max(1, Math.ceil((countX * countY * countZ) / 8)))
+    occupancy: new Uint8Array(bitmaskLength),
+    // This is a synthetic, purely local finer grid for surface-zone
+    // painting - not a real Solvix.Voxelization result, so there's no
+    // connectivity-split data for it to carry. Left all-zero; nothing
+    // reads it for a shell grid.
+    markedForRefinement: new Uint8Array(bitmaskLength)
   };
 
   object.updateMatrixWorld(true);

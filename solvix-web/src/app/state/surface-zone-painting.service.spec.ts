@@ -12,7 +12,15 @@ import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 // physically distinct voxel zones (ix=0 and ix=1) to pair with 2 separate
 // STL surface patches.
 function buildVoxelGrid(): VoxelGridDto {
-  return { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b11]) };
+  return {
+    origin: { x: 0, y: 0, z: 0 },
+    cellSize: 1,
+    countX: 2,
+    countY: 1,
+    countZ: 1,
+    occupancy: new Uint8Array([0b11]),
+    markedForRefinement: new Uint8Array([0])
+  };
 }
 
 function meshFromTriangles(positions: number[]): THREE.Mesh {

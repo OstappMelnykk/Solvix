@@ -20,7 +20,7 @@ function box(): THREE.Object3D {
 // VoxelizationResultBinarySerializer produces - what MeshApiService.voxelize
 // actually receives over the wire (responseType: 'arraybuffer').
 function encodeGrid(cellCount: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(29);
+  const buffer = new ArrayBuffer(30);
   const view = new DataView(buffer);
   view.setFloat32(0, 0, true);
   view.setFloat32(4, 0, true);
@@ -29,7 +29,7 @@ function encodeGrid(cellCount: number): ArrayBuffer {
   view.setUint32(16, 1, true);
   view.setUint32(20, 1, true);
   view.setUint32(24, 1, true);
-  new Uint8Array(buffer, 28).set([cellCount > 0 ? 0b1 : 0b0]);
+  new Uint8Array(buffer, 28).set([cellCount > 0 ? 0b1 : 0b0, 0]); // occupancy byte, then markedForRefinement byte
   return buffer;
 }
 
@@ -46,7 +46,8 @@ function encodeInvalidMeshError(message: string): ArrayBuffer {
 // grid cell (i,0,0), so selectVoxelInstance(sessionId, i) picks link i of
 // the chain directly.
 function encodeChain(length: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(28 + Math.ceil(length / 8));
+  const bitmaskLength = Math.ceil(length / 8);
+  const buffer = new ArrayBuffer(28 + bitmaskLength * 2); // occupancy + markedForRefinement, same shape
   const view = new DataView(buffer);
   view.setFloat32(0, 0, true);
   view.setFloat32(4, 0, true);
@@ -55,7 +56,7 @@ function encodeChain(length: number): ArrayBuffer {
   view.setUint32(16, length, true);
   view.setUint32(20, 1, true);
   view.setUint32(24, 1, true);
-  const occupancy = new Uint8Array(buffer, 28);
+  const occupancy = new Uint8Array(buffer, 28, bitmaskLength);
   for (let i = 0; i < length; i++) {
     occupancy[i >> 3] |= 1 << (i & 7);
   }

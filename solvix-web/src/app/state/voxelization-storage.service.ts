@@ -15,6 +15,8 @@ interface PersistedVoxelGrid {
   // ends (Array.from/Uint8Array.from) rather than relying on whatever a
   // given JS engine's JSON.stringify happens to do with a TypedArray as-is.
   readonly occupancy: number[];
+  // Same conversion reasoning as occupancy.
+  readonly markedForRefinement: number[];
 }
 
 export interface VoxelizationRenderSettings {
@@ -43,7 +45,7 @@ interface PersistedVoxelization {
 export class VoxelizationStorageService {
   save(sessionId: number, grid: VoxelGridDto, render: VoxelizationRenderSettings): void {
     const persisted: PersistedVoxelization = {
-      grid: { ...grid, occupancy: Array.from(grid.occupancy) },
+      grid: { ...grid, occupancy: Array.from(grid.occupancy), markedForRefinement: Array.from(grid.markedForRefinement) },
       render
     };
     writeJson(STORAGE_KEY_PREFIX + sessionId, persisted);
@@ -55,7 +57,11 @@ export class VoxelizationStorageService {
       return null;
     }
     return {
-      grid: { ...persisted.grid, occupancy: Uint8Array.from(persisted.grid.occupancy) },
+      grid: {
+        ...persisted.grid,
+        occupancy: Uint8Array.from(persisted.grid.occupancy),
+        markedForRefinement: Uint8Array.from(persisted.grid.markedForRefinement)
+      },
       render: persisted.render
     };
   }

@@ -9,7 +9,7 @@ import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 
 function buildGrid(countX: number, countY: number, countZ: number): VoxelGridDto {
   const occupancy = new Uint8Array(Math.ceil((countX * countY * countZ) / 8)).fill(0xff);
-  return { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX, countY, countZ, occupancy };
+  return { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX, countY, countZ, occupancy, markedForRefinement: new Uint8Array(occupancy.length) };
 }
 
 // The service only stores this and hands it back to the component (which

@@ -10,7 +10,8 @@ function buildVoxelGrid(countX: number, countY: number, countZ: number, cellSize
     countX,
     countY,
     countZ,
-    occupancy: new Uint8Array(Math.ceil(cellCount / 8)).fill(0xff)
+    occupancy: new Uint8Array(Math.ceil(cellCount / 8)).fill(0xff),
+    markedForRefinement: new Uint8Array(Math.ceil(cellCount / 8))
   };
 }
 

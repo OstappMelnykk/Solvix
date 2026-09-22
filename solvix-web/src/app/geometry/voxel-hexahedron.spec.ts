@@ -11,7 +11,7 @@ function unitCubeCell(): VoxelCell {
     new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(1, 1, 0), new THREE.Vector3(0, 1, 0),
     new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 1), new THREE.Vector3(1, 1, 1), new THREE.Vector3(0, 1, 1)
   ];
-  return new VoxelCell(0, 0, 0, corners, new Array(6).fill(null));
+  return new VoxelCell(0, 0, 0, corners, new Array(6).fill(null), false);
 }
 
 function fillOf(hex: THREE.Object3D): THREE.Mesh {

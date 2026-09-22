@@ -9,7 +9,7 @@ import { VoxelGridDto } from '../geometry/voxel-grid-contract';
 // VoxelizationResultBinarySerializer produces, mirroring
 // voxel-grid-contract.spec.ts's helper.
 function encodeGrid(): ArrayBuffer {
-  const buffer = new ArrayBuffer(29);
+  const buffer = new ArrayBuffer(30);
   const view = new DataView(buffer);
   view.setFloat32(0, -0.5, true);
   view.setFloat32(4, -0.5, true);
@@ -18,7 +18,7 @@ function encodeGrid(): ArrayBuffer {
   view.setUint32(16, 1, true);
   view.setUint32(20, 1, true);
   view.setUint32(24, 1, true);
-  new Uint8Array(buffer, 28).set([0b1]);
+  new Uint8Array(buffer, 28).set([0b1, 0]); // occupancy byte, then markedForRefinement byte
   return buffer;
 }
 

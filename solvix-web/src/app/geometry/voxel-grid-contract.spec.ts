@@ -2,9 +2,21 @@ import { VoxelGridDto, countOccupied, fromVoxelGridBinary, isOccupied, voxelCent
 
 // Builds the exact byte layout Solvix.Voxelization's internal
 // VoxelizationResultBinarySerializer produces, so these tests exercise the
-// decoding side against the real wire format.
-function encode(originX: number, originY: number, originZ: number, cellSize: number, countX: number, countY: number, countZ: number, occupancy: number[]): ArrayBuffer {
-  const buffer = new ArrayBuffer(28 + occupancy.length);
+// decoding side against the real wire format. markedForRefinement defaults
+// to all-zero, same shape as occupancy - most tests here don't care about
+// it at all.
+function encode(
+  originX: number,
+  originY: number,
+  originZ: number,
+  cellSize: number,
+  countX: number,
+  countY: number,
+  countZ: number,
+  occupancy: number[],
+  markedForRefinement: number[] = new Array(occupancy.length).fill(0)
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(28 + occupancy.length + markedForRefinement.length);
   const view = new DataView(buffer);
   view.setFloat32(0, originX, true);
   view.setFloat32(4, originY, true);
@@ -13,7 +25,8 @@ function encode(originX: number, originY: number, originZ: number, cellSize: num
   view.setUint32(16, countX, true);
   view.setUint32(20, countY, true);
   view.setUint32(24, countZ, true);
-  new Uint8Array(buffer, 28).set(occupancy);
+  new Uint8Array(buffer, 28, occupancy.length).set(occupancy);
+  new Uint8Array(buffer, 28 + occupancy.length, markedForRefinement.length).set(markedForRefinement);
   return buffer;
 }
 
@@ -80,7 +93,7 @@ describe('countOccupied', () => {
 
 describe('withCellSet', () => {
   it('sets a cell within the existing bounds without growing the grid', () => {
-    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b01]) };
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b01]), markedForRefinement: new Uint8Array([0b01].length) };
 
     const result = withCellSet(grid, 1, 0, 0, true);
 
@@ -91,7 +104,7 @@ describe('withCellSet', () => {
   });
 
   it('grows the grid in the positive direction without shifting existing cells or the origin', () => {
-    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 2, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 2, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]), markedForRefinement: new Uint8Array([0b1].length) };
 
     const result = withCellSet(grid, 3, 0, 0, true);
 
@@ -102,7 +115,7 @@ describe('withCellSet', () => {
   });
 
   it('grows the grid in the negative direction, shifting the origin and every existing cell', () => {
-    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 2, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 2, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]), markedForRefinement: new Uint8Array([0b1].length) };
 
     const result = withCellSet(grid, -2, 0, 0, true);
 
@@ -114,7 +127,7 @@ describe('withCellSet', () => {
   });
 
   it('clears an occupied cell without touching the others', () => {
-    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b11]) };
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 2, countY: 1, countZ: 1, occupancy: new Uint8Array([0b11]), markedForRefinement: new Uint8Array([0b11].length) };
 
     const result = withCellSet(grid, 0, 0, 0, false);
 
@@ -123,7 +136,7 @@ describe('withCellSet', () => {
   });
 
   it('does not mutate the original grid', () => {
-    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]) };
+    const grid: VoxelGridDto = { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX: 1, countY: 1, countZ: 1, occupancy: new Uint8Array([0b1]), markedForRefinement: new Uint8Array([0b1].length) };
 
     withCellSet(grid, 5, 0, 0, true);
 

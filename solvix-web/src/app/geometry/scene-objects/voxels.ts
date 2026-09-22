@@ -17,6 +17,14 @@ import { markForWeightedOit } from '../../rendering/weighted-oit';
 // files under this same geometry/scene-objects/ folder instead.
 
 const EDGE_COLOR = 0xffffff;
+// Distinct, unambiguous red-orange - a cell whose own volume was found to
+// straddle 2+ topologically disconnected pieces of the imported body
+// (docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант B -
+// VoxelCell.markedForRefinement, set from Solvix.Voxelization's own
+// HasConnectivitySplit). Purely diagnostic today - nothing yet acts on a
+// marked cell beyond this tint; local refinement itself is a separate,
+// not-yet-built feature.
+const MARKED_FOR_REFINEMENT_COLOR = 0xff5522;
 // Real 3D tubes (InstancedMesh of a unit CylinderGeometry, one instance per
 // edge - see buildVoxelEdges below), not screen-space "fat lines" (three's
 // LineSegments2/LineMaterial addon) - that was tried first and reverted:
@@ -153,7 +161,10 @@ export function buildVoxelPreview(
 
   const cellByInstanceId = new Map<number, VoxelCell>();
   for (const cell of cells) {
-    const fillGeometry = buildVoxelHexahedronFillGeometry(cell);
+    const fillGeometry = buildVoxelHexahedronFillGeometry(
+      cell,
+      cell.markedForRefinement ? { fillColor: MARKED_FOR_REFINEMENT_COLOR } : {}
+    );
     const geometryId = batched.addGeometry(fillGeometry);
     cell.batchInstanceId = batched.addInstance(geometryId);
     cellByInstanceId.set(cell.batchInstanceId, cell);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VoxelGridDto, isOccupied } from './voxel-grid-contract';
+import { VoxelGridDto, isMarkedForRefinement, isOccupied } from './voxel-grid-contract';
 
 // One occupied grid cell as a standalone object - deliberately minimal for
 // now (no face colors, no FEM node ids, no subdivision state), but this is
@@ -25,7 +25,13 @@ export class VoxelCell {
     readonly corners: readonly THREE.Vector3[],
     // One entry per face, in FACE_DIRECTIONS order below - null when that
     // neighbor isn't an occupied cell (or is outside the grid).
-    readonly neighbors: (VoxelCell | null)[]
+    readonly neighbors: (VoxelCell | null)[],
+    // Whether this cell's own volume was found to cover 2+ topologically
+    // disconnected pieces of the imported body (docs/local-refinement/
+    // PROBLEMS.md, Проблема 2, Варіант B - Solvix.Voxelization's own
+    // HasConnectivitySplit) - purely diagnostic today, read by
+    // scene-objects/voxels.ts to tint the fill a distinct color.
+    readonly markedForRefinement: boolean
   ) {}
 }
 
@@ -136,7 +142,14 @@ export function buildVoxelCells(grid: VoxelGridDto): VoxelCell[] {
         if (!isOccupied(grid, ix, iy, iz)) {
           continue;
         }
-        const cell = new VoxelCell(ix, iy, iz, cellCorners(grid, ix, iy, iz, nodes), new Array(6).fill(null));
+        const cell = new VoxelCell(
+          ix,
+          iy,
+          iz,
+          cellCorners(grid, ix, iy, iz, nodes),
+          new Array(6).fill(null),
+          isMarkedForRefinement(grid, ix, iy, iz)
+        );
         cells.push(cell);
         byKey.set(flatIndex(ix, iy, iz, grid.countX, grid.countY), cell);
       }

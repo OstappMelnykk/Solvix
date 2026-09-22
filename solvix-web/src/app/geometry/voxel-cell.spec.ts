@@ -10,7 +10,7 @@ function gridWithOccupied(countX: number, countY: number, countZ: number, occupi
     const index = ix + iy * countX + iz * countX * countY;
     occupancy[index >> 3] |= 1 << (index & 7);
   }
-  return { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX, countY, countZ, occupancy };
+  return { origin: { x: 0, y: 0, z: 0 }, cellSize: 1, countX, countY, countZ, occupancy, markedForRefinement: new Uint8Array(occupancy.length) };
 }
 
 function cellAt(cells: VoxelCell[], ix: number, iy: number, iz: number): VoxelCell {
@@ -37,6 +37,16 @@ describe('buildVoxelCells', () => {
 
     expect(cells.length).toBe(2);
     expect(cells.some(c => c.ix === 1)).toBe(false);
+  });
+
+  it('carries markedForRefinement through from the grid, per cell', () => {
+    const grid = gridWithOccupied(2, 1, 1, [[0, 0, 0], [1, 0, 0]]);
+    grid.markedForRefinement[0] |= 1 << 1; // mark only cell (1,0,0)
+
+    const cells = buildVoxelCells(grid);
+
+    expect(cellAt(cells, 0, 0, 0).markedForRefinement).toBe(false);
+    expect(cellAt(cells, 1, 0, 0).markedForRefinement).toBe(true);
   });
 
   it('computes 8 corners spanning exactly one cell around its center', () => {
