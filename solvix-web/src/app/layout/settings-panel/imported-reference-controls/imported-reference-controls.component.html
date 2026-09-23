@@ -27,6 +27,26 @@
   >
     Скинути вокселізацію
   </button>
+  <button
+    class="tool"
+    type="button"
+    *ngIf="!isReshaped()"
+    [disabled]="!canReshapeGeometry()"
+    title="У вкладці Real World згладити довгі прямі/звужені ряди вокселів у безперервну видовжену форму (кількість елементів не змінюється - лише форма в Real World)"
+    (click)="reshapeGeometry()"
+  >
+    Спростити геометрію (Real World)
+  </button>
+  <button
+    class="tool"
+    type="button"
+    *ngIf="isReshaped()"
+    title="Повернути звичайні (нерозтягнуті) кубики у вкладці Real World"
+    (click)="undoReshapeGeometry()"
+  >
+    Скасувати спрощення
+  </button>
+  <div class="voxelize-status" *ngIf="getReshapeStatsMessage() as message">{{ message }}</div>
 </div>
 
 <h4>Вигляд геометрії</h4>

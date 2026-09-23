@@ -68,7 +68,7 @@ export function faceIndexForNormal(normal: THREE.Vector3): number {
 // (see buildVoxelCells' `nodes` map below). Same order as VoxelCell's
 // corners doc comment (and voxel-hexahedron.ts's FACES/EDGES): 0-3 the
 // -Z face, 4-7 the +Z face.
-const CORNER_OFFSETS: readonly [number, number, number][] = [
+export const CORNER_OFFSETS: readonly [number, number, number][] = [
   [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
   [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
 ];

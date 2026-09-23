@@ -3,7 +3,7 @@ import { NgFor } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
-import { IDEAL_WORLD_INDEX } from '../../../config/app-settings';
+import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 import { SharedModelService } from '../../../state/shared-model.service';
@@ -838,18 +838,38 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // is single-threaded, so whatever VoxelizationService disposed has
   // already fully happened by the time this next runs, no matter which
   // rAF queue got there first.
-  private updateVoxelPreview(): void {
-    const source =
+  // Ideal World: the plain, always-unit-cube preview, gated on the same
+  // display toggles as before. Real World: docs/IDEAS.md R4's derived view
+  // of the SAME topology (VoxelizationService.getRealWorldPreview) - plain
+  // unit cells until "Спростити геометрію" reshapes them (same cell count
+  // throughout, only each cell's own corners differ - see
+  // geometry/voxel-reshape.ts's own header) - shown unconditionally
+  // whenever a result exists, independent of Ideal World's own
+  // voxelPreviewVisible/zones-overlay toggles (Real World isn't part of
+  // that editing workflow at all).
+  private resolveVoxelPreviewSource(): THREE.Object3D | null {
+    if (this.sessionId === null) {
+      return null;
+    }
+    if (this.worldIndex === REAL_WORLD_INDEX) {
+      return this.voxelization.getRealWorldPreview(this.sessionId);
+    }
+    if (
       this.worldIndex === IDEAL_WORLD_INDEX &&
-      this.sessionId !== null &&
       this.importedReferenceDisplay.getStyle(this.sessionId).voxelPreviewVisible &&
       // "Показати зони на STL" is meant to show ONLY the colored STL
       // surface (per the user's own request) - the coarse voxel cubes
       // sitting in roughly the same physical space would otherwise
       // visually compete with (and largely hide) that fine-grained result.
       !this.isSurfaceZonesOverlayVisible()
-        ? this.voxelization.getVoxelPreview(this.sessionId)
-        : null;
+    ) {
+      return this.voxelization.getVoxelPreview(this.sessionId);
+    }
+    return null;
+  }
+
+  private updateVoxelPreview(): void {
+    const source = this.resolveVoxelPreviewSource();
     if (this.lastVoxelPreview === source) {
       return;
     }

@@ -247,6 +247,53 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.resetVoxelization(sessionId);
   }
 
+  // "Спростити геометрію" - reshapes Real World's own preview only (see
+  // VoxelizationService.reshapeGeometry's own doc comment for why - Ideal
+  // World always keeps perfect unit cubes, the SAME cell count as Real
+  // World throughout). Only meaningful with an actual voxel result, and not
+  // already reshaped (the button itself is hidden while reshaped - see
+  // isReshaped below - but the guard stays here too, matching
+  // canVoxelize/canResetVoxelization's own shape).
+  canReshapeGeometry(): boolean {
+    const sessionId = this.sessionId;
+    return sessionId !== null && this.getVoxelizationStatus().kind === 'ok' && !this.voxelization.isReshaped(sessionId);
+  }
+
+  isReshaped(): boolean {
+    const sessionId = this.sessionId;
+    return sessionId !== null && this.voxelization.isReshaped(sessionId);
+  }
+
+  reshapeGeometry(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    this.voxelization.reshapeGeometry(sessionId);
+  }
+
+  undoReshapeGeometry(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    this.voxelization.resetReshape(sessionId);
+  }
+
+  getReshapeStatsMessage(): string | null {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return null;
+    }
+    const stats = this.voxelization.getReshapeStats(sessionId);
+    if (!stats) {
+      return null;
+    }
+    return stats.reshapedCellCount > 0
+      ? `Real World: згладжено видовжених кубиків — ${stats.reshapedCellCount}`
+      : 'Не знайдено видовжених ділянок для згладжування';
+  }
+
   isVoxelPreviewVisible(): boolean {
     const sessionId = this.sessionId;
     return sessionId !== null && this.referenceDisplay.getStyle(sessionId).voxelPreviewVisible;

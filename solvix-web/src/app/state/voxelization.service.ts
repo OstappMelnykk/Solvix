@@ -7,10 +7,12 @@ import { ImportedReferenceRenderService } from './imported-reference-render.serv
 import { ImportedReferenceDisplayService } from './imported-reference-display.service';
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto, countOccupied, withCellSet } from '../geometry/voxel-grid-contract';
-import { FACE_DIRECTIONS, VoxelCell, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
+import { FACE_DIRECTIONS, VoxelCell, buildVoxelCells, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
 import { toMeshBinary } from '../geometry/mesh-contract';
+import { reshapeElongatedVoxels } from '../geometry/voxel-reshape';
 import {
   buildVoxelPreview,
+  buildVoxelPreviewFromCells,
   disposeVoxelPreview,
   getSelectedVoxelCell,
   getVoxelCellByInstanceId,
@@ -119,12 +121,31 @@ export class VoxelizationService {
   // clock instead of racing it).
   private readonly deletionViolationBySession = new KeyedStore<number, VoxelDeletionViolation>();
   private readonly deletionViolationTimeoutBySession = new KeyedStore<number, ReturnType<typeof setTimeout>>();
+  // Real World's OWN cached preview - deliberately separate from
+  // voxelPreviewBySession (Ideal World's), never the same object, but ALWAYS
+  // the same cell COUNT as it too (see reshapeElongatedVoxels' own doc
+  // comment - per docs/IDEAS.md R4, every World shows the same topology,
+  // only each cell's own corner positions differ per World). Ideal World is
+  // the only WRITE-active world (editing, and eventually local refinement
+  // T1-T4, both need the real, undistorted 1x1x1 lattice) - Real/Solver
+  // World are read-only DERIVED views, so reshapeGeometry's tapered corners
+  // (geometry/voxel-reshape.ts) apply here ONLY, never to Ideal World's own
+  // preview. Rebuilt (back to plain unit cells, matching the new grid) on
+  // every applyEditedGrid, same as Ideal World's - "reshaped" is a per-
+  // grid-result view choice, not something that should survive past
+  // whatever grid it was computed from.
+  private readonly realWorldPreviewBySession = new KeyedStore<number, THREE.Object3D>();
+  // Whether realWorldPreviewBySession currently shows reshapeGeometry's
+  // tapered corners (true) or the plain per-cell preview (false) - drives
+  // isReshaped()/getReshapeStats() for the UI toggle button + toast.
+  private readonly reshapedStatsBySession = new KeyedStore<number, { readonly reshapedCellCount: number }>();
 
   constructor() {
     effect(() => {
       const ids = this.sessions.sessions().map(session => session.id);
       this.statusBySession.pruneTo(ids, (_status, sessionId) => this.voxelizationStorage.delete(sessionId));
       this.voxelPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
+      this.realWorldPreviewBySession.pruneTo(ids, preview => disposeVoxelPreview(preview));
       this.opacityBySession.pruneTo(ids);
       this.edgeOpacityBySession.pruneTo(ids);
       this.lineWidthBySession.pruneTo(ids);
@@ -133,6 +154,7 @@ export class VoxelizationService {
       this.runGenerationBySession.pruneTo(ids);
       this.deletionViolationBySession.pruneTo(ids);
       this.deletionViolationTimeoutBySession.pruneTo(ids, timeout => clearTimeout(timeout));
+      this.reshapedStatsBySession.pruneTo(ids);
     });
 
     // Actively clears (not just hides) a session's result the moment the
@@ -173,6 +195,13 @@ export class VoxelizationService {
   // again once clearResult drops it (see referenceChanged$ above).
   getVoxelPreview(sessionId: number): THREE.Object3D | null {
     return this.voxelPreviewBySession.get(sessionId) ?? null;
+  }
+
+  // Real World's own preview - plain unit cells until reshapeGeometry is
+  // called, then the same cells with tapered corners, independent of Ideal
+  // World's own (always-plain) getVoxelPreview above.
+  getRealWorldPreview(sessionId: number): THREE.Object3D | null {
+    return this.realWorldPreviewBySession.get(sessionId) ?? null;
   }
 
   getOpacity(sessionId: number): number {
@@ -364,6 +393,83 @@ export class VoxelizationService {
     this.deletionViolationTimeoutBySession.set(sessionId, timeout);
   }
 
+  // "Спростити геометрію" - rebuilds REAL WORLD'S OWN preview (never Ideal
+  // World's - see realWorldPreviewBySession's own doc comment) with
+  // reshapeElongatedVoxels' tapered corners (long straight voxel runs
+  // smoothed from a jagged staircase into a gently tapering shape, same
+  // CELL COUNT as Ideal World throughout - see geometry/voxel-reshape.ts's
+  // own header for why the count must never differ between Worlds). The
+  // underlying grid is never touched, so nothing here is destructive -
+  // resetReshape below just rebuilds Real World's plain preview again.
+  // Returns how many cells were actually reshaped, for a status message, or
+  // null without a successful result.
+  reshapeGeometry(sessionId: number): { readonly reshapedCellCount: number } | null {
+    const status = this.statusBySession.get(sessionId);
+    if (!status || status.kind !== 'ok') {
+      return null;
+    }
+    const cells = buildVoxelCells(status.result);
+    const stats = reshapeElongatedVoxels(cells, status.result);
+    this.reshapedStatsBySession.set(sessionId, stats);
+    const outgoing = this.realWorldPreviewBySession.get(sessionId);
+    this.realWorldPreviewBySession.set(
+      sessionId,
+      buildVoxelPreviewFromCells(
+        cells,
+        status.result.cellSize,
+        this.getOpacity(sessionId),
+        this.getEdgeOpacity(sessionId),
+        this.getLineWidth(sessionId),
+        this.getNodeSize(sessionId),
+        this.getNodeOpacity(sessionId)
+      )
+    );
+    if (outgoing) {
+      disposeVoxelPreview(outgoing);
+    }
+    return stats;
+  }
+
+  // "Скасувати спрощення" - rebuilds Real World's plain, per-cell preview
+  // from the (untouched) grid, undoing reshapeGeometry's corner mutation. A
+  // no-op if it isn't currently reshaped, or there's no successful result.
+  resetReshape(sessionId: number): void {
+    const status = this.statusBySession.get(sessionId);
+    if (!status || status.kind !== 'ok' || !this.reshapedStatsBySession.get(sessionId)) {
+      return;
+    }
+    this.reshapedStatsBySession.delete(sessionId);
+    this.rebuildRealWorldPreview(sessionId, status.result);
+  }
+
+  // Shared by resetReshape and applyEditedGrid - Real World's plain
+  // (untapered) preview, built fresh from `grid`.
+  private rebuildRealWorldPreview(sessionId: number, grid: VoxelGridDto): void {
+    const outgoing = this.realWorldPreviewBySession.get(sessionId);
+    this.realWorldPreviewBySession.set(
+      sessionId,
+      buildVoxelPreview(
+        grid,
+        this.getOpacity(sessionId),
+        this.getEdgeOpacity(sessionId),
+        this.getLineWidth(sessionId),
+        this.getNodeSize(sessionId),
+        this.getNodeOpacity(sessionId)
+      )
+    );
+    if (outgoing) {
+      disposeVoxelPreview(outgoing);
+    }
+  }
+
+  isReshaped(sessionId: number): boolean {
+    return this.reshapedStatsBySession.get(sessionId) !== undefined;
+  }
+
+  getReshapeStats(sessionId: number): { readonly reshapedCellCount: number } | null {
+    return this.reshapedStatsBySession.get(sessionId) ?? null;
+  }
+
   // Shared by run()'s success handler, addVoxelOnFace, and
   // removeSelectedVoxel: stores `grid` as the session's new 'ok' result and
   // rebuilds/re-caches its preview from it. DOES dispose the outgoing
@@ -398,6 +504,11 @@ export class VoxelizationService {
       this.deletionViolationTimeoutBySession.delete(sessionId);
     }
     this.deletionViolationBySession.delete(sessionId);
+    // A fresh 'ok' grid (add, permitted delete, or a new run()) always
+    // rebuilds Ideal World's plain per-cell preview below AND Real World's
+    // (dropping any previously-shown simplification - it was computed from
+    // the OLD grid, so it no longer applies).
+    this.reshapedStatsBySession.delete(sessionId);
     const outgoing = this.voxelPreviewBySession.get(sessionId);
     this.voxelPreviewBySession.set(
       sessionId,
@@ -413,6 +524,7 @@ export class VoxelizationService {
     if (outgoing) {
       disposeVoxelPreview(outgoing);
     }
+    this.rebuildRealWorldPreview(sessionId, grid);
     this.persistCurrent(sessionId);
   }
 
@@ -462,6 +574,12 @@ export class VoxelizationService {
       disposeVoxelPreview(preview);
       this.voxelPreviewBySession.delete(sessionId);
     }
+    const realWorldPreview = this.realWorldPreviewBySession.get(sessionId);
+    if (realWorldPreview) {
+      disposeVoxelPreview(realWorldPreview);
+      this.realWorldPreviewBySession.delete(sessionId);
+    }
+    this.reshapedStatsBySession.delete(sessionId);
     this.voxelizationStorage.delete(sessionId);
   }
 
