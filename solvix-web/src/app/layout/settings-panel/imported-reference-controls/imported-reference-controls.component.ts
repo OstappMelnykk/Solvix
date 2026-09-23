@@ -247,6 +247,41 @@ export class ImportedReferenceControlsComponent {
     this.voxelization.resetVoxelization(sessionId);
   }
 
+  // "Згладити межу" - only meaningful once there's an actual voxel result
+  // to smooth (same "nothing to send" guard shape as canVoxelize/
+  // canResetVoxelization above).
+  canSmoothBoundary(): boolean {
+    const sessionId = this.sessionId;
+    return sessionId !== null && this.getVoxelizationStatus().kind === 'ok';
+  }
+
+  // Runs VoxelizationService.smoothBoundaryToSurface and reports how many
+  // corners actually moved - kept per-session (not a single shared field)
+  // so switching sessions doesn't show a stale count from a different
+  // model. Cleared implicitly whenever the message getter below is read for
+  // a DIFFERENT session than the one that produced it.
+  smoothBoundary(): void {
+    const sessionId = this.sessionId;
+    if (sessionId === null) {
+      return;
+    }
+    const movedCount = this.voxelization.smoothBoundaryToSurface(sessionId);
+    this.smoothBoundarySessionId = sessionId;
+    this.smoothBoundaryMovedCount = movedCount;
+  }
+
+  private smoothBoundarySessionId: number | null = null;
+  private smoothBoundaryMovedCount = 0;
+
+  smoothBoundaryMessage(): string | null {
+    if (this.sessionId === null || this.smoothBoundarySessionId !== this.sessionId) {
+      return null;
+    }
+    return this.smoothBoundaryMovedCount > 0
+      ? `Згладжено вершин: ${this.smoothBoundaryMovedCount}`
+      : 'Усі кути межі вже на поверхні (чи нема з чого згладжувати)';
+  }
+
   isVoxelPreviewVisible(): boolean {
     const sessionId = this.sessionId;
     return sessionId !== null && this.referenceDisplay.getStyle(sessionId).voxelPreviewVisible;

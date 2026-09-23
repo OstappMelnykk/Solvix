@@ -7,10 +7,12 @@ import { ImportedReferenceRenderService } from './imported-reference-render.serv
 import { ImportedReferenceDisplayService } from './imported-reference-display.service';
 import { MeshApiService, parseInvalidMeshError, parseVoxelizationTooLargeError } from '../api/mesh-api.service';
 import { VoxelGridDto, countOccupied, withCellSet } from '../geometry/voxel-grid-contract';
-import { FACE_DIRECTIONS, VoxelCell, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
+import { FACE_DIRECTIONS, VoxelCell, buildVoxelCells, connectedComponentSizes, faceIndexForNormal } from '../geometry/voxel-cell';
 import { toMeshBinary } from '../geometry/mesh-contract';
+import { snapExteriorVerticesToSurface } from '../geometry/surface-projection';
 import {
   buildVoxelPreview,
+  buildVoxelPreviewFromCells,
   disposeVoxelPreview,
   getSelectedVoxelCell,
   getVoxelCellByInstanceId,
@@ -362,6 +364,50 @@ export class VoxelizationService {
       this.deletionViolationTimeoutBySession.delete(sessionId);
     }, DELETION_VIOLATION_DISPLAY_MS);
     this.deletionViolationTimeoutBySession.set(sessionId, timeout);
+  }
+
+  // "Згладити межу" - moves every boundary corner that sits outside the
+  // real imported STL surface onto its nearest point on that surface (see
+  // geometry/surface-projection.ts), smoothing the blocky voxel boundary
+  // toward the actual shape. Deliberately does NOT touch statusBySession's
+  // grid (occupancy is unchanged - only where the already-occupied cells'
+  // corners sit moves) - rebuilds the preview from the SAME snapped cells
+  // via buildVoxelPreviewFromCells instead of buildVoxelPreview(grid, ...),
+  // which would silently discard the snap and rebuild plain lattice
+  // corners. A later applyEditedGrid (add/remove voxel, or a fresh run())
+  // still rebuilds from the grid and so reverts to plain lattice corners -
+  // acceptable, since editing the voxel set invalidates any snap anyway.
+  // Returns how many corners actually moved, for a status toast; a no-op
+  // (returns 0) without a successful result or without the reference
+  // geometry still available.
+  smoothBoundaryToSurface(sessionId: number): number {
+    const status = this.statusBySession.get(sessionId);
+    const scaledReference = this.referenceRender.getScaledReference(sessionId);
+    if (!status || status.kind !== 'ok' || !scaledReference) {
+      return 0;
+    }
+    const cells = buildVoxelCells(status.result);
+    const movedCount = snapExteriorVerticesToSurface(cells, scaledReference);
+    if (movedCount === 0) {
+      return 0;
+    }
+    const outgoing = this.voxelPreviewBySession.get(sessionId);
+    this.voxelPreviewBySession.set(
+      sessionId,
+      buildVoxelPreviewFromCells(
+        cells,
+        status.result.cellSize,
+        this.getOpacity(sessionId),
+        this.getEdgeOpacity(sessionId),
+        this.getLineWidth(sessionId),
+        this.getNodeSize(sessionId),
+        this.getNodeOpacity(sessionId)
+      )
+    );
+    if (outgoing) {
+      disposeVoxelPreview(outgoing);
+    }
+    return movedCount;
   }
 
   // Shared by run()'s success handler, addVoxelOnFace, and

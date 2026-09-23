@@ -104,8 +104,27 @@ export function buildVoxelPreview(
   nodeSize: number,
   nodeOpacity: number
 ): THREE.Object3D {
+  return buildVoxelPreviewFromCells(buildVoxelCells(grid), grid.cellSize, fillOpacity, edgeOpacity, lineWidth, nodeSize, nodeOpacity);
+}
+
+// Same as buildVoxelPreview, but takes already-built cells instead of
+// building them fresh from `grid` - the seam geometry/surface-projection.ts
+// needs: snapping exterior corners onto the real STL surface mutates a
+// VoxelCell[]'s own corner Vector3s in place, so the preview built from
+// them has to be built from THAT SAME array, not a fresh buildVoxelCells(grid)
+// call (which would silently discard the snap and rebuild plain lattice
+// positions instead). VoxelizationService owns calling the snap (if at
+// all) BEFORE this, then this, on the exact same cells.
+export function buildVoxelPreviewFromCells(
+  cells: readonly VoxelCell[],
+  cellSize: number,
+  fillOpacity: number,
+  edgeOpacity: number,
+  lineWidth: number,
+  nodeSize: number,
+  nodeOpacity: number
+): THREE.Object3D {
   const group = new THREE.Group();
-  const cells = buildVoxelCells(grid);
 
   // --- Fill (the cube faces) ---------------------------------------------
   // One BatchedMesh draw call for potentially tens of thousands of cubes,
@@ -170,7 +189,7 @@ export function buildVoxelPreview(
   // rotated/translated per instance below - same "one shared geometry,
   // many instances" reasoning as the node spheres.
   const edgeGeometry = new THREE.CylinderGeometry(1, 1, 1, EDGE_RADIAL_SEGMENTS);
-  const edgeRadius = Math.max(MIN_EDGE_RADIUS, grid.cellSize * EDGE_RADIUS_MAX_FACTOR * lineWidth);
+  const edgeRadius = Math.max(MIN_EDGE_RADIUS, cellSize * EDGE_RADIUS_MAX_FACTOR * lineWidth);
   const edgeMesh = new THREE.InstancedMesh(
     edgeGeometry,
     new THREE.MeshBasicMaterial({ color: EDGE_COLOR, transparent: true, opacity: edgeOpacity }),
@@ -214,7 +233,7 @@ export function buildVoxelPreview(
   // cell that touches them), instanced for the same reason the fill is
   // batched: a real grid can have tens of thousands of nodes.
   const nodes = collectUniqueNodes(cells);
-  const nodeRadius = Math.max(MIN_NODE_RADIUS, grid.cellSize * NODE_RADIUS_MAX_FACTOR * nodeSize);
+  const nodeRadius = Math.max(MIN_NODE_RADIUS, cellSize * NODE_RADIUS_MAX_FACTOR * nodeSize);
   const nodeGeometry = new THREE.SphereGeometry(nodeRadius);
   const nodeMesh = new THREE.InstancedMesh(
     nodeGeometry,
