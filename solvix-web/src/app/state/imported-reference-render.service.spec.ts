@@ -160,6 +160,31 @@ describe('ImportedReferenceRenderService', () => {
     expect(render.getRuler(sessionId)).toBeNull();
   });
 
+  // Regression: after a page reload the import is restored from storage but
+  // nothing has called refreshScaledReference yet, so getScaledReference
+  // returned null and callers fell back to the RAW import - shown at the
+  // file's native units instead of the chosen size (gigantic or microscopic).
+  it('getScaledReference lazily rebuilds the scaled clone after a simulated reload', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(2, 1, 1), 'model.glb');
+    render.setDensity(sessionId, 10);
+    const scaleBefore = worldBox(render.getScaledReference(sessionId)!).getSize(new THREE.Vector3()).x;
+
+    // Simulate a page reload: fresh injector, same localStorage, so
+    // ImportedReferenceRenderService's in-memory scaledReferenceBySession
+    // cache starts empty even though the import/density are still persisted.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+    const reloadedSessions = TestBed.inject(SessionsService);
+    const reloadedRender = TestBed.inject(ImportedReferenceRenderService);
+    const reloadedSessionId = reloadedSessions.sessions()[0].id;
+
+    const clone = reloadedRender.getScaledReference(reloadedSessionId);
+
+    expect(clone).not.toBeNull();
+    expect(worldBox(clone!).getSize(new THREE.Vector3()).x).toBeCloseTo(scaleBefore, 4);
+  });
+
   it('disposes dimension lines and ruler (but not the shared reference geometry) when a session closes', () => {
     const first = sessions.sessions()[0].id;
     sessions.createSession();
