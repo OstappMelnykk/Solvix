@@ -392,22 +392,4 @@ describe('mesh-editor-view', () => {
       expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1.7 })).length).toBe(1);
     });
   });
-
-  describe('a closed ring in the ideal world', () => {
-    // Two cubes in a row whose far ends share the same 8 nodes (a ring of two, as a pipe cut into sectors
-    // closes): the shared nodes keep one ideal position, but each cube must still be drawn in its own cell.
-    it('draws every cube in its own cell even when it shares nodes with a cube at the other end of the row', () => {
-      const pair = linkedPairState();
-      const first = pair.hexes[0];
-      const second = { ...pair.hexes[1], nodeIds: pair.hexes[1].nodeIds.map((id, slot) => (LOCAL_COORDS[slot][0] === 1 ? first.nodeIds.find((_, s) => s === slot && LOCAL_COORDS[s][0] === -1) ?? id : id)) };
-      const ring = { ...pair, hexes: [first, second] };
-
-      const view = buildMeshView(ring, 'ideal', noSelection);
-      const edges = view.root.children.find(c => c instanceof THREE.LineSegments) as THREE.LineSegments;
-      const xs = Array.from(edges.geometry.getAttribute('position').array).filter((_, i) => i % 3 === 0);
-
-      expect(Math.min(...xs)).toBeCloseTo(0, 6);
-      expect(Math.max(...xs)).toBeCloseTo(2, 6);   // the second cube's far end is at x = 2, not folded back onto the shared nodes at x = 0
-    });
-  });
 });

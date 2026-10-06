@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FaceStatus, HexFaceName, MeshFaceDto, MeshHexDto, MeshNodeDto, MeshStateDto } from '../api/mesh-editor-api.service';
+import { FaceStatus, HexFaceName, MeshFaceDto, MeshNodeDto, MeshStateDto } from '../api/mesh-editor-api.service';
 
 // Pure drawing of the backend's mesh state - no geometry decisions here: the
 // nodes are placed exactly where the server says, and the curved edges/faces
@@ -207,25 +207,15 @@ export function buildMeshView(
   const pickables: THREE.Object3D[] = [];
   const nodeMeshes = new Map<number, THREE.Mesh>();
   const nodes = new Map(state.nodes.map(node => [node.id, node]));
-  // Where a cube's slot is drawn. In the ideal world that is its own cell's lattice point, not the node's:
-  // the nodes on the seam of a closed ring (a pipe cut into sectors) belong to the first and the last cell
-  // at once, so the row has to be drawn with each end where its cell is.
-  const slotPosition = (hex: MeshHexDto, slot: number) =>
-    mode === 'ideal'
-      ? new THREE.Vector3(
-          hex.cellI + (LOCAL_COORDS[slot][0] + 1) / 2,
-          hex.cellJ + (LOCAL_COORDS[slot][1] + 1) / 2,
-          hex.cellK + (LOCAL_COORDS[slot][2] + 1) / 2
-        )
-      : nodePosition(nodes.get(hex.nodeIds[slot])!, mode);
+  const positionOf = (id: number) => nodePosition(nodes.get(id)!, mode);
 
   // Curved edges: one polyline set for the whole mesh.
   const edgeVertices: number[] = [];
   for (const hex of state.hexes) {
     EDGE_CORNERS.forEach(([a, b], k) => {
-      const start = slotPosition(hex, a);
-      const mid = slotPosition(hex, 8 + k);
-      const end = slotPosition(hex, b);
+      const start = positionOf(hex.nodeIds[a]);
+      const mid = positionOf(hex.nodeIds[8 + k]);
+      const end = positionOf(hex.nodeIds[b]);
       let previous = start;
       for (let i = 1; i <= EDGE_SEGMENTS; i++) {
         const next = edgePoint(start, mid, end, (i / EDGE_SEGMENTS) * 2 - 1);
@@ -247,7 +237,7 @@ export function buildMeshView(
   if (cells > 1) {
     const gridVertices: number[] = [];
     for (const hex of state.hexes) {
-      const slotPositions = hex.nodeIds.map((_, slot) => slotPosition(hex, slot));
+      const slotPositions = hex.nodeIds.map(id => positionOf(id));
       for (let axis = 0; axis < 3; axis++) {
         const [u, v] = [0, 1, 2].filter(d => d !== axis);
         for (let k1 = 0; k1 <= cells; k1++) {
@@ -285,7 +275,7 @@ export function buildMeshView(
     const tangent = [0, 1, 2].filter(d => d !== axis);
     const slots = faceSlots(face.face);
     const geometry = buildFaceGeometry(
-      slots.map(slot => slotPosition(hex, slot)),
+      slots.map(slot => positionOf(hex.nodeIds[slot])),
       slots.map(slot => [LOCAL_COORDS[slot][tangent[0]], LOCAL_COORDS[slot][tangent[1]]] as [number, number])
     );
     // A shared face is drawn once (from the lower-id hex) but belongs to both,
