@@ -31,6 +31,9 @@ public sealed class HexMesh
     public Hex20 Hex(int id) => _hexes[id];
     public MeshNode Node(int id) => _nodes[id];
 
+    public bool HasHex(int id) => _hexes.ContainsKey(id);
+    public bool HasNode(int id) => _nodes.ContainsKey(id);
+
     public Hex20? HexAtCell((int I, int J, int K) cell) => _cells.TryGetValue(cell, out var id) ? _hexes[id] : null;
 
     /// <summary>The hexes (with the slot each uses) that own a node.</summary>
@@ -346,6 +349,36 @@ public sealed class HexMesh
         var hex = _hexes[hexId];
         ideal = new Vec3(hex.Cell.I + (xi.X + 1) / 2, hex.Cell.J + (xi.Y + 1) / 2, hex.Cell.K + (xi.Z + 1) / 2);
         return true;
+    }
+
+    public HexMeshState ToState() => new(
+        _nextNodeId,
+        _nextHexId,
+        _nodes.Values.OrderBy(n => n.Id).Select(n => new NodeState(n.Id, n.Position, n.Ideal.X, n.Ideal.Y, n.Ideal.Z)).ToList(),
+        _hexes.Values.OrderBy(h => h.Id).Select(h => new HexState(h.Id, h.Cell.I, h.Cell.J, h.Cell.K, h.ParentId, h.NodeIds.ToArray())).ToList(),
+        _links.OrderBy(kv => kv.Key.Hex).ThenBy(kv => kv.Key.Face).Select(kv => new LinkState(kv.Key.Hex, kv.Key.Face, kv.Value)).ToList());
+
+    public static HexMesh FromState(HexMeshState state)
+    {
+        var mesh = new HexMesh { _nextNodeId = state.NextNodeId, _nextHexId = state.NextHexId };
+        foreach (var n in state.Nodes)
+        {
+            mesh._nodes[n.Id] = new MeshNode(n.Id, n.Position, (n.IdealX, n.IdealY, n.IdealZ));
+            mesh._owners[n.Id] = new List<(int, int)>();
+        }
+        foreach (var h in state.Hexes)
+        {
+            var hex = new Hex20(mesh, h.Id, (h.I, h.J, h.K)) { ParentId = h.ParentId };
+            for (int s = 0; s < Hex20Reference.NodeCount; s++)
+            {
+                hex.NodeIds[s] = h.NodeIds[s];
+                mesh._owners[h.NodeIds[s]].Add((h.Id, s));
+            }
+            mesh._hexes[h.Id] = hex;
+            mesh._cells[hex.Cell] = hex.Id;
+        }
+        foreach (var l in state.Links) mesh._links[(l.Hex, l.Face)] = l.Other;
+        return mesh;
     }
 
     /// <summary>Solver-ready snapshot (nodes and elements ordered by id).</summary>
