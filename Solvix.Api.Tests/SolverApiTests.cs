@@ -179,4 +179,18 @@ public class SolverApiTests
         Assert.That(names, Does.Contain("glass"));
         Assert.That(names, Does.Not.Contain("bad"));
     }
+
+    [Test]
+    public async Task A_side_chosen_as_a_whole_replaces_the_faces_chosen_before()
+    {
+        await Send(HttpMethod.Put, "/api/solver/1/faces/fixed", new { faces = new[] { new { hex = 0, face = "XMinus" } }, @fixed = true });
+        var fixedNow = await Send(HttpMethod.Put, "/api/solver/1/faces/fixed", new { faces = new[] { new { hex = 1, face = "ZMinus" } }, replace = true });
+        await Send(HttpMethod.Put, "/api/solver/1/faces/load", new { faces = new[] { new { hex = 0, face = "XPlus" } }, pressure = -1e6 });
+        var loadedNow = await Send(HttpMethod.Put, "/api/solver/1/faces/load", new { faces = new[] { new { hex = 1, face = "ZPlus" } }, pressure = -2e6, replace = true });
+
+        Assert.That(fixedNow.GetProperty("fixed").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(fixedNow.GetProperty("fixed")[0].GetProperty("face").GetString(), Is.EqualTo("ZMinus"));
+        Assert.That(loadedNow.GetProperty("loads").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(loadedNow.GetProperty("loads")[0].GetProperty("pressure").GetDouble(), Is.EqualTo(-2e6));
+    }
 }

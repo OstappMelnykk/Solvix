@@ -19,6 +19,12 @@ public interface ISolverFacade
     /// <summary>How many small elements each cube is cut into along its axes (1..8 each), as the solver's Nx, Ny, Nz; invalid values change nothing.</summary>
     SolverSetupDto SetDivisions(int sessionId, int nx, int ny, int nz);
 
+    /// <summary>Makes exactly these faces the clamped ones (a side picked as a whole replaces what was clamped before).</summary>
+    SolverSetupDto ReplaceFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces);
+
+    /// <summary>Makes exactly these faces carry the pressure (replacing every pressure set before).</summary>
+    SolverSetupDto ReplaceLoads(int sessionId, IReadOnlyList<SolverFaceDto> faces, double pressure);
+
     /// <summary>Fixes (or frees) faces: every node on a fixed face is clamped.</summary>
     SolverSetupDto SetFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces, bool fixedFaces);
 

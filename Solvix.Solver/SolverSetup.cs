@@ -67,6 +67,20 @@ internal sealed class SolverSetup
         Version++;
     }
 
+    public void ReplaceFixed(IEnumerable<(int, string)> faces)
+    {
+        _fixed.Clear();
+        foreach (var face in faces) _fixed.Add(face);
+        Version++;
+    }
+
+    public void ReplaceLoads(IEnumerable<(int, string)> faces, double pressure)
+    {
+        _loads.Clear();
+        foreach (var face in faces) _loads[face] = pressure;
+        Version++;
+    }
+
     public void SetLoads(IEnumerable<(int, string)> faces, double? pressure)
     {
         foreach (var face in faces)

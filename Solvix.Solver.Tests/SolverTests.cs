@@ -258,4 +258,19 @@ public class SolverTests
         facade.DropSession(1);
         Assert.That(facade.GetSetup(1).Fixed, Is.Empty);
     }
+
+    [Test]
+    public void Replacing_the_clamped_and_loaded_faces_drops_what_was_there_before()
+    {
+        var facade = NewFacade();
+        facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus"), new SolverFaceDto(1, "YMinus") }, true);
+        facade.SetLoads(Session, new[] { new SolverFaceDto(0, "XPlus") }, -1e6);
+
+        var fixedNow = facade.ReplaceFixedFaces(Session, new[] { new SolverFaceDto(2, "ZMinus"), new SolverFaceDto(3, "Nope") });
+        var loadedNow = facade.ReplaceLoads(Session, new[] { new SolverFaceDto(1, "ZPlus") }, -2e6);
+
+        Assert.That(fixedNow.Fixed, Is.EqualTo(new[] { new SolverFaceDto(2, "ZMinus") }));
+        Assert.That(loadedNow.Loads, Is.EqualTo(new[] { new SolverLoadDto(1, "ZPlus", -2e6) }));
+        Assert.That(facade.ReplaceLoads(Session, new[] { new SolverFaceDto(1, "ZPlus") }, double.NaN).Loads, Has.Count.EqualTo(1));   // a bad pressure changes nothing
+    }
 }

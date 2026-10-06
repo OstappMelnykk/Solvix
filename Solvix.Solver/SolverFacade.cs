@@ -34,6 +34,18 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         return s.Setup.ToDto();
     });
 
+    public SolverSetupDto ReplaceFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces) => sessions.With(sessionId, s =>
+    {
+        s.Setup.ReplaceFixed(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)));
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto ReplaceLoads(int sessionId, IReadOnlyList<SolverFaceDto> faces, double pressure) => sessions.With(sessionId, s =>
+    {
+        if (double.IsFinite(pressure)) s.Setup.ReplaceLoads(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)), pressure);
+        return s.Setup.ToDto();
+    });
+
     public SolverSetupDto SetFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces, bool fixedFaces) => sessions.With(sessionId, s =>
     {
         s.Setup.SetFixed(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)), fixedFaces);

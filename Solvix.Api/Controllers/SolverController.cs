@@ -7,11 +7,13 @@ public record HexMaterialRequest(IReadOnlyList<int> HexIds, string? Material);
 
 public record DefaultMaterialRequest(string Material);
 
-public record FixedFacesRequest(IReadOnlyList<SolverFaceDto> Faces, bool Fixed);
+/// <param name="Replace">When true, exactly these faces become the clamped ones (<c>Fixed</c> is ignored).</param>
+public record FixedFacesRequest(IReadOnlyList<SolverFaceDto> Faces, bool Fixed, bool Replace = false);
 
 public record DivisionsRequest(int Nx, int Ny, int Nz);
 
-public record LoadFacesRequest(IReadOnlyList<SolverFaceDto> Faces, double? Pressure);
+/// <param name="Replace">When true (with a pressure), exactly these faces carry it, replacing every earlier pressure.</param>
+public record LoadFacesRequest(IReadOnlyList<SolverFaceDto> Faces, double? Pressure, bool Replace = false);
 
 /// <summary>
 /// The FEM solver for one session: what to solve (materials, supports, pressures), whether it can be solved,
@@ -44,12 +46,12 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
 
     [HttpPut("faces/fixed")]
     public ActionResult<SolverSetupDto> SetFixedFaces(int sessionId, [FromBody] FixedFacesRequest request) =>
-        solver.SetFixedFaces(sessionId, request.Faces, request.Fixed);
+        request.Replace ? solver.ReplaceFixedFaces(sessionId, request.Faces) : solver.SetFixedFaces(sessionId, request.Faces, request.Fixed);
 
     /// <summary>Sets a uniform pressure on faces; a null pressure removes it.</summary>
     [HttpPut("faces/load")]
     public ActionResult<SolverSetupDto> SetLoads(int sessionId, [FromBody] LoadFacesRequest request) =>
-        solver.SetLoads(sessionId, request.Faces, request.Pressure);
+        request.Replace && request.Pressure is double p ? solver.ReplaceLoads(sessionId, request.Faces, p) : solver.SetLoads(sessionId, request.Faces, request.Pressure);
 
     [HttpDelete("setup")]
     public ActionResult<SolverSetupDto> ClearSetup(int sessionId) => solver.ClearSetup(sessionId);
