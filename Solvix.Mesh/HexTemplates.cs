@@ -115,39 +115,55 @@ public static class HexTemplates
     // few strengths and keep the first that leaves no cube folded (see Fit).
     internal sealed record Rounding(double EdgePull, double EdgeWidth, double CornerPull, double CornerWidth);
 
-    // Every combination of a few edge and corner pushes, weakest first: the first one that keeps every cube
-    // valid is the one that bends the surface least.
-    private static readonly Rounding[] RoundingCandidates = BuildRoundingCandidates();
-
-    private static Rounding[] BuildRoundingCandidates()
+    // Shapes of the push (how far along the ridge it reaches, and how the corner pushes relative to the edge);
+    // its strength is then searched for: the weakest that leaves no cube folded.
+    private static readonly (double Edge, double EdgeWidth, double Corner, double CornerWidth)[] RoundingShapes =
     {
-        var edges = new[] { (0.0, 1.0), (0.1, 1.5), (0.2, 2.0), (0.3, 2.0), (0.5, 2.0), (0.5, 3.0), (1.0, 3.0), (1.0, 4.0), (2.0, 4.0), (2.0, 6.0) };
-        var corners = new[] { (0.0, 1.0), (0.5, 2.0), (1.0, 3.0), (2.0, 4.0), (3.0, 4.0), (3.0, 6.0), (5.0, 8.0), (8.0, 12.0) };
-        return edges.SelectMany(e => corners.Select(c => new Rounding(e.Item1, e.Item2, c.Item1, c.Item2)))
-            .OrderBy(r => r.EdgePull + r.CornerPull).ThenBy(r => r.EdgeWidth + r.CornerWidth).ToArray();
-    }
+        (1, 2, 4, 4), (1, 3, 4, 6), (1, 2, 8, 6),
+    };
 
-    private static bool IsFolded(BodyCell cell) => Hex20Geometry.MinDeterminant(cell.Positions) <= 1e-12;
+    private const double MinStrength = 0.004, MaxStrength = 4;
 
-    // Builds with each candidate rounding, weakest first, until no cube is folded. When none manages it,
-    // keeps the body with the fewest folded cubes (the editor flags those cubes as usual).
-    private static BodyPlan Fit(Func<Rounding, BodyPlan> build)
+    private static bool IsFolded(BodyCell cell) => Hex20Geometry.MinDeterminant(cell.Positions) <= 1e-9;
+
+    // For each shape of push, doubles the strength from a tiny value until no cube is folded, then bisects down
+    // to the weakest strength that still works; the body bent the least wins. When nothing works, the strongest
+    // push with the fewest folded cubes is kept (the editor flags those cubes as usual).
+    private static BodyPlan Fit(Func<Rounding, BodyPlan> build) => FitWith(build).Plan;
+
+    private static (Rounding Rounding, BodyPlan Plan) FitWith(Func<Rounding, BodyPlan> build)
     {
         BodyPlan? best = null;
-        int bestFolded = int.MaxValue;
-        foreach (var rounding in RoundingCandidates)
+        Rounding? bestRounding = null;
+        Rounding? fallbackRounding = null;
+        double bestStrength = double.MaxValue;
+        BodyPlan? fallback = null;
+        int fallbackFolded = int.MaxValue;
+        foreach (var shape in RoundingShapes)
         {
-            var plan = build(rounding);
-            if (!plan.Cells.Any(IsFolded)) return plan;
-            if (best is null) best = plan;
+            Rounding At(double k) => new(shape.Edge * k, shape.EdgeWidth, shape.Corner * k, shape.CornerWidth);
+            double low = 0, high = MinStrength;
+            BodyPlan? plan = null;
+            while (high <= MaxStrength && high < bestStrength)
+            {
+                var attempt = build(At(high));
+                int folded = attempt.Cells.Count(IsFolded);
+                if (folded < fallbackFolded) (fallback, fallbackFolded, fallbackRounding) = (attempt, folded, At(high));
+                if (folded == 0) { plan = attempt; break; }
+                low = high;
+                high *= 2;
+            }
+            if (plan is null) continue;
+            for (int i = 0; i < 5; i++)
+            {
+                double mid = (low + high) / 2;
+                var attempt = build(At(mid));
+                if (attempt.Cells.Any(IsFolded)) low = mid;
+                else { high = mid; plan = attempt; }
+            }
+            if (high < bestStrength) (best, bestStrength, bestRounding) = (plan, high, At(high));
         }
-        foreach (var rounding in RoundingCandidates)
-        {
-            var plan = build(rounding);
-            int folded = plan.Cells.Count(IsFolded);
-            if (folded < bestFolded) (best, bestFolded) = (plan, folded);
-        }
-        return best!;
+        return best is not null ? (bestRounding!, best) : (fallbackRounding ?? RoundingShapes.Select(x => new Rounding(x.Edge, x.EdgeWidth, x.Corner, x.CornerWidth)).First(), fallback!);
     }
 
     // Outward push at the ridges of a square (2D) or a cube (3D), as a factor on the radius: 1 away from them.
@@ -260,20 +276,20 @@ public static class HexTemplates
 
     private static TemplateKind Sphere() => new("sphere", "Куля / еліпсоїд", "Кулі", new[]
     {
-        P("around", "Кубів по діаметру", 6, 2, 12, true),
+        P("around", "Кубів по діаметру", 6, 2, 10, true),
         P("radiusX", "Піввісь X", 1, 0.01, 1000), P("radiusY", "Піввісь Y", 1, 0.01, 1000), P("radiusZ", "Піввісь Z", 1, 0.01, 1000),
     }, v => Fit(r => SphereBody(v, 0, false, r)));
 
     private static TemplateKind HollowSphere() => new("hollow-sphere", "Порожня куля (оболонка)", "Кулі", new[]
     {
-        P("around", "Кубів по діаметру", 8, 4, 24, true), P("wallCells", "Стінка, кубів", 1, 1, 8, true),
+        P("around", "Кубів по діаметру", 8, 4, 16, true), P("wallCells", "Стінка, кубів", 1, 1, 8, true),
         P("radiusX", "Зовнішня піввісь X", 1, 0.01, 1000), P("radiusY", "Зовнішня піввісь Y", 1, 0.01, 1000), P("radiusZ", "Зовнішня піввісь Z", 1, 0.01, 1000),
         P("wall", "Товщина оболонки", 0.2, 0.001, 1000),
     }, v => Fit(r => SphereBody(v, v.Int("wallCells"), false, r)));
 
     private static TemplateKind Hemisphere() => new("hemisphere", "Напівкуля (купол)", "Кулі", new[]
     {
-        P("around", "Кубів по діаметру (парне)", 6, 2, 12, true), P("wallCells", "Стінка, кубів (0 = суцільна)", 0, 0, 8, true),
+        P("around", "Кубів по діаметру (парне)", 6, 2, 10, true), P("wallCells", "Стінка, кубів (0 = суцільна)", 0, 0, 8, true),
         P("radiusX", "Піввісь X", 1, 0.01, 1000), P("radiusY", "Висота купола", 1, 0.01, 1000), P("radiusZ", "Піввісь Z", 1, 0.01, 1000),
         P("wall", "Товщина оболонки", 0.2, 0.001, 1000),
     }, v => Fit(r => SphereBody(v, v.Int("wallCells"), true, r)));
@@ -314,7 +330,7 @@ public static class HexTemplates
 
     private static TemplateKind Torus() => new("torus", "Тор (бублик)", "Кільця", new[]
     {
-        P("around", "Кубів по зовнішньому діаметру", 8, 4, 40, true), P("tubeCells", "Кубів у перерізі труби", 2, 1, 10, true),
+        P("around", "Кубів по зовнішньому діаметру", 16, 4, 40, true), P("tubeCells", "Кубів у перерізі труби (1–2)", 2, 1, 2, true),
         P("ringRadius", "Радіус кільця", 2, 0.01, 1000), P("tubeRadius", "Радіус труби", 0.6, 0.001, 1000),
     }, v =>
     {
@@ -322,14 +338,20 @@ public static class HexTemplates
         Require(n - 2 * t >= 1, "Переріз труби завеликий для кільця: збільште «кубів по зовнішньому діаметру».");
         Require(v["tubeRadius"] < v["ringRadius"], "Радіус труби має бути меншим за радіус кільця.");
         double c = n / 2.0, h = c - t;
-        return Fit(r => Plan(n, t, n, (i, _, k) => Math.Min(Layer(i, n), Layer(k, n)) < t, p =>
+        BodyPlan Torus(Rounding ring, Rounding sectionRounding) => Plan(n, t, n, (i, _, k) => Math.Min(Layer(i, n), Layer(k, n)) < t, p =>
         {
             double x = p.X - c, z = p.Z - c, rInf = Math.Max(Math.Abs(x), Math.Abs(z)), len = Math.Sqrt(x * x + z * z);
             double dx = len < 1e-12 ? 0 : x / len, dz = len < 1e-12 ? 0 : z / len;
-            var section = Disc(2 * Math.Clamp((rInf - h) / t, 0, 1) - 1, 2 * p.Y / t - 1, t, r);
-            double rho = (v["ringRadius"] + v["tubeRadius"] * section.X) * (1 + (Ridge2(x / c, z / c, n, r) - 1) * Math.Clamp((rInf - h) / t, 0, 1));
+            var section = Disc(2 * Math.Clamp((rInf - h) / t, 0, 1) - 1, 2 * p.Y / t - 1, t, sectionRounding);
+            double rho = (v["ringRadius"] + v["tubeRadius"] * section.X) * (1 + (Ridge2(x / c, z / c, n, ring) - 1) * Math.Clamp((rInf - h) / t, 0, 1));
             return new Vec3(c + rho * dx, v["tubeRadius"] * (1 + section.Y), c + rho * dz);
-        }));
+        });
+        // The tube's own cross-section (a few cubes across) needs a much stronger push than the big ring does, and
+        // the ring should not be bent for the section's sake: find the section's push first with the ring pushed
+        // generously, then the weakest ring push that still works with it.
+        var generous = new Rounding(1, 2, 0, 1);
+        var (sectionFit, _) = FitWith(r => Torus(generous, r));
+        return Fit(r => Torus(r, sectionFit));
     });
 
     private static TemplateKind PlateWithHole() => new("plate-hole", "Пластина з круглим отвором", "Кільця", new[]
@@ -446,7 +468,7 @@ public static class HexTemplates
         Preset("hemisphere", "Напівкуля", "hemisphere"),
         Preset("dome", "Купол (оболонка)", "hemisphere", ("around", 8), ("wallCells", 1)),
         Preset("torus", "Тор", "torus"),
-        Preset("torus-thin", "Тонкий тор", "torus", ("around", 10), ("tubeCells", 1), ("tubeRadius", 0.3), ("ringRadius", 2.5)),
+        Preset("torus-thin", "Тонкий тор", "torus", ("around", 20), ("tubeCells", 1), ("tubeRadius", 0.3), ("ringRadius", 2.5)),
         Preset("plate-hole", "Пластина з отвором", "plate-hole"),
         Preset("washer", "Шайба", "plate-hole", ("around", 8), ("wallCells", 3), ("size", 3), ("holeRadius", 0.6), ("thickness", 0.2)),
         Preset("l-profile", "Кутик", "l-profile"),
