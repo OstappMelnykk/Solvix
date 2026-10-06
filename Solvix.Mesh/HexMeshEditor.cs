@@ -35,6 +35,9 @@ public sealed class HexMeshEditor
         return Run(() => Mesh.AddOnFace(hexId, face, shape));
     });
 
+    /// <summary>Adds a ready-made body (see <see cref="HexMesh.AddBody"/>) as one undo step.</summary>
+    public EditResult AddBody(BodyPlan plan) => Apply(() => Run(() => Mesh.AddBody(plan)));
+
     public EditResult LinkFaces(FaceRef first, FaceRef second, LinkFit fit) => Apply(() =>
         Mesh.TryLinkFaces(first, second, fit, out var error) ? EditResult.Success : EditResult.Fail(error ?? "Link refused."));
 

@@ -214,6 +214,61 @@ public sealed class HexMesh
     }
 
     /// <summary>
+    /// Inserts a ready-made body as a separate part: into an empty mesh at its own cells, otherwise
+    /// one free cell to the +I side of everything already there (so nothing touches and nothing is
+    /// linked to the existing body). The body's real positions move with its cells. Lattice-adjacent
+    /// cells of the body are linked, and the nodes of linked faces are shared - by the same rule as
+    /// everywhere: a node belongs to every cube reachable through links.
+    /// </summary>
+    public IReadOnlyList<Hex20> AddBody(BodyPlan plan)
+    {
+        var (di, dj, dk) = (0, 0, 0);
+        if (_hexes.Count > 0) di = _hexes.Values.Max(h => h.Cell.I) + 2 - plan.Min.I;
+        foreach (var c in plan.Cells)
+            if (_cells.ContainsKey((c.I + di, c.J + dj, c.K + dk))) throw new InvalidOperationException("The body would overlap an occupied cell.");
+        var shift = new Vec3(di, dj, dk);
+
+        var hexes = plan.Cells.Select(c => NewHex((c.I + di, c.J + dj, c.K + dk))).ToList();
+        var index = hexes.Select((h, i) => (h.Cell, i)).ToDictionary(x => x.Cell, x => x.i);
+
+        // Union the slots that links make one node.
+        int slots = Hex20Reference.NodeCount;
+        var parent = Enumerable.Range(0, hexes.Count * slots).ToArray();
+        int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
+        for (int h = 0; h < hexes.Count; h++)
+        {
+            foreach (var face in HexFaces.All)
+            {
+                if (face.Sign() < 0) continue;
+                var (fi, fj, fk) = face.Offset();
+                var cell = hexes[h].Cell;
+                if (!index.TryGetValue((cell.I + fi, cell.J + fj, cell.K + fk), out int other)) continue;
+                foreach (int s in face.Slots())
+                    parent[Find(h * slots + s)] = Find(other * slots + face.PartnerSlot(s));
+                _links[(hexes[h].Id, face)] = hexes[other].Id;
+                _links[(hexes[other].Id, face.Opposite())] = hexes[h].Id;
+            }
+        }
+        var nodeOf = new Dictionary<int, int>();
+        for (int h = 0; h < hexes.Count; h++)
+        {
+            for (int s = 0; s < slots; s++)
+            {
+                int root = Find(h * slots + s);
+                if (!nodeOf.TryGetValue(root, out int nodeId))
+                {
+                    var position = plan.Cells[h].Positions[s] + shift;
+                    nodeId = NewNode(position, IdealOf(hexes[h].Cell, s)).Id;
+                    nodeOf[root] = nodeId;
+                }
+                hexes[h].NodeIds[s] = nodeId;
+                Own(nodeId, hexes[h].Id, s);
+            }
+        }
+        return hexes;
+    }
+
+    /// <summary>
     /// Makes the hex across <paramref name="face"/> (by lattice cell) a
     /// neighbour and merges the 8 shared nodes. Refused unless the two faces
     /// currently coincide in real space.
