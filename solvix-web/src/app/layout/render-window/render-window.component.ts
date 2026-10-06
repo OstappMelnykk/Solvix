@@ -116,11 +116,4 @@ export class RenderWindowComponent {
     return this.importedReferenceRender.getHoleHighlight(sessionId);
   }
 
-  // No getVoxelPreview() here, unlike the overlays above - WorldCanvasComponent
-  // computes voxel preview visibility itself, reading VoxelizationService/
-  // ImportedReferenceDisplayService directly every frame instead of
-  // through an @Input this component would otherwise compute. See
-  // world-canvas.component.ts's updateVoxelPreview for why (a confirmed
-  // disposal-race crash that pattern would reintroduce for this
-  // specifically fragile resource - BatchedMesh).
 }

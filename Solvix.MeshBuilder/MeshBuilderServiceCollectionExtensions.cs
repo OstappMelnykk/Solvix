@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Solvix.Contracts.Facades;
-using Solvix.Voxelization;
 
 namespace Solvix.MeshBuilder;
 
@@ -11,7 +10,6 @@ public static class MeshBuilderServiceCollectionExtensions
     // internal service shape - only that "mesh building" is available.
     public static IServiceCollection AddMeshBuilder(this IServiceCollection services)
     {
-        services.AddVoxelization();
         services.AddScoped<IMeshBuilderFacade, MeshBuilderFacade>();
         return services;
     }

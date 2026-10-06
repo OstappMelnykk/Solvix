@@ -10,11 +10,10 @@ import * as THREE from 'three';
 export interface SixViewSource {
   readonly scene: THREE.Scene;
   // Which session this came from, and whether that's the Ideal World's own
-  // canvas - the "6 сторін" button exists on all 3 worlds, but the voxel
-  // fill/STL reference opacity sliders the overlay itself adds only mean
-  // anything for the Ideal World (Real/Solver are read-only and never carry
-  // a voxelization or imported reference), same gating
-  // settings-panel.component.html already applies to those same controls
+  // canvas - the "6 сторін" button exists on all 3 worlds, but the STL
+  // reference opacity slider the overlay itself adds only means anything for
+  // the Ideal World (Real/Solver never carry an imported reference), same
+  // gating the settings panel already applies to that same control
   // (*ngIf="isIdealWorld()").
   readonly sessionId: number;
   readonly isIdealWorld: boolean;

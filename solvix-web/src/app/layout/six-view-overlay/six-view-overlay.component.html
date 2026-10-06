@@ -2,10 +2,6 @@
   <span class="six-view-overlay__title">Перегляд з 6 сторін</span>
   <div class="six-view-overlay__opacity-controls" *ngIf="showModelOpacityControls()">
     <label class="six-view-overlay__opacity">
-      Прозорість вокселів
-      <input type="range" min="0" max="100" [value]="voxelOpacityPercent()" (input)="onVoxelOpacityChange($event)" />
-    </label>
-    <label class="six-view-overlay__opacity">
       Прозорість STL
       <input type="range" min="0" max="100" [value]="referenceOpacityPercent()" (input)="onReferenceOpacityChange($event)" />
     </label>
