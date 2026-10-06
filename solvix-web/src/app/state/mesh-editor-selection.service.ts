@@ -19,9 +19,10 @@ interface Selection {
 
 const MAX_HEXES = 2;
 
-// What the user has picked in the mesh editor, per session: one face (a plain
-// click), up to two cubes (Shift+click; in pick order - the first is the one a
-// second cube is joined TO) and one node, plus the face whose "add a cube here"
+// What the user has picked in the mesh editor, per session: either one face (a
+// plain click) or up to two cubes (Shift+click; in pick order - the first is
+// the one a second cube is joined TO) - never both at once, picking one kind
+// drops the other - plus one node, plus the face whose "add a cube here"
 // button is being hovered (drawn as a preview). Purely client-side UI state - nothing
 // here is sent to the server until a command uses it.
 @Injectable({ providedIn: 'root' })
@@ -60,10 +61,11 @@ export class MeshEditorSelectionService {
     return this.selection(sessionId).hexes.includes(hexId);
   }
 
-  // Clicking a selected cube deselects it. A third cube replaces the SECOND, so
+  // Picking a cube drops the picked face. Clicking a selected cube deselects it. A third cube replaces the SECOND, so
   // the first (the base the others are joined to) stays put until deselected.
   toggleHex(sessionId: number, hexId: number): void {
     const selection = this.selection(sessionId);
+    selection.face = null;
     if (selection.hexes.includes(hexId)) {
       selection.hexes = selection.hexes.filter(id => id !== hexId);
     } else if (selection.hexes.length < MAX_HEXES) {
@@ -74,11 +76,12 @@ export class MeshEditorSelectionService {
     selection.revision++;
   }
 
-  // Clicking the picked face again deselects it.
+  // Clicking the picked face again deselects it. Picking a face drops any picked cubes.
   selectFace(sessionId: number, face: FaceRef): void {
     const selection = this.selection(sessionId);
     const same = selection.face?.hex === face.hex && selection.face.face === face.face;
     selection.face = same ? null : face;
+    selection.hexes = [];
     selection.revision++;
   }
 

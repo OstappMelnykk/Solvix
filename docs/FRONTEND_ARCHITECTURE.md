@@ -279,7 +279,7 @@ classDiagram
 
 - `api/mesh-editor-api.service.ts` — HTTP-клієнт `api/mesh-editor/{sessionId}/...` і DTO.
 - `state/mesh-editor.service.ts` — кеш останнього стану сітки на сесію (`root`, `KeyedStore`), команди, тости при відмовах; стан підтягується, коли сесія стає активною.
-- `state/mesh-editor-selection.service.ts` — що вибрав користувач: одна грань (клік), до двох кубів (Shift+клік; перший — основа), один вузол; `applyPick` каже, що означає який клік. Шорткати й інструкція — `docs/EDITOR_SHORTCUTS.md`.
+- `state/mesh-editor-selection.service.ts` — що вибрав користувач: або одна грань (клік), або до двох кубів (Shift+клік; перший — основа) — разом ніколи, — та один вузол; `applyPick` каже, що означає який клік. Шорткати й інструкція — `docs/EDITOR_SHORTCUTS.md`.
 - `geometry/mesh-editor-view.ts` — чиста побудова 3D-вигляду зі стану: криві ребра (квадратична інтерполяція через 3 вузли), грані (8-вузлова серендіпова поверхня) з кольором за статусом (вільна / з'єднана / кандидат), вузли-сфери. Ideal World малює вузли на цілочисельних позиціях, Real World — на реальних.
 - `state/mesh-editor-render.service.ts` — кешує вигляд на (сесія, World), перебудовує лише коли змінився стан або виділення; `WorldCanvasComponent` додає його в сцену й сам звільняє при заміні.
 - `WorldCanvasComponent` — клік (не drag) по вузлу/грані емітить `meshPick`; `RenderWindowComponent` перекладає це у виділення.

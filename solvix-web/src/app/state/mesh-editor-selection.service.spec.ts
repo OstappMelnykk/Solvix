@@ -126,12 +126,35 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.face(1)).toBeNull();
   });
 
-  it('face and cube picks are independent', () => {
+  it('a face and cubes are never picked at the same time: picking one kind drops the other', () => {
     selection.selectFace(1, { hex: 2, face: 'XPlus' });
     selection.toggleHex(1, 5);
-
-    expect(selection.face(1)).toEqual({ hex: 2, face: 'XPlus' });
+    expect(selection.face(1)).toBeNull();
     expect(selection.hexes(1)).toEqual([5]);
+
+    selection.toggleHex(1, 6);
+    selection.selectFace(1, { hex: 2, face: 'XPlus' });
+    expect(selection.hexes(1)).toEqual([]);
+    expect(selection.face(1)).toEqual({ hex: 2, face: 'XPlus' });
+  });
+
+  it('deselecting the only picked cube leaves nothing picked, not a stale face', () => {
+    selection.selectFace(1, { hex: 2, face: 'XPlus' });
+    selection.toggleHex(1, 5);
+    selection.toggleHex(1, 5);
+
+    expect(selection.hexes(1)).toEqual([]);
+    expect(selection.face(1)).toBeNull();
+  });
+
+  it('a node pick does not disturb the face or cube pick', () => {
+    selection.selectFace(1, { hex: 2, face: 'XPlus' });
+    selection.selectNode(1, 8);
+    expect(selection.face(1)).not.toBeNull();
+
+    selection.toggleHex(1, 3);
+    selection.selectNode(1, 9);
+    expect(selection.hexes(1)).toEqual([3]);
   });
 
   describe('applyPick', () => {
@@ -144,14 +167,24 @@ describe('MeshEditorSelectionService', () => {
       expect(selection.hexes(1)).toEqual([]);
     });
 
-    it('Shift+click on a face picks its cube, in pick order, without touching the face', () => {
+    it('Shift+click on a face picks its cube, in pick order, and drops a picked face', () => {
       selection.selectFace(1, { hex: 9, face: 'XPlus' });
 
       selection.applyPick(1, face, true);
       selection.applyPick(1, { kind: 'face', hex: 7, face: 'XMinus' }, true);
 
       expect(selection.hexes(1)).toEqual([4, 7]);
-      expect(selection.face(1)).toEqual({ hex: 9, face: 'XPlus' });
+      expect(selection.face(1)).toBeNull();
+    });
+
+    it('a plain click on a face drops picked cubes', () => {
+      selection.toggleHex(1, 3);
+      selection.toggleHex(1, 4);
+
+      selection.applyPick(1, face, false);
+
+      expect(selection.hexes(1)).toEqual([]);
+      expect(selection.face(1)).toEqual({ hex: 4, face: 'ZPlus' });
     });
 
     it('a click on a node picks the node, with or without Shift', () => {
@@ -162,13 +195,12 @@ describe('MeshEditorSelectionService', () => {
     });
 
     it('a plain click on empty space clears everything, Shift+click keeps it', () => {
-      selection.applyPick(1, face, false);
       selection.applyPick(1, { kind: 'node', nodeId: 1 }, false);
       selection.toggleHex(1, 3);
 
       selection.applyPick(1, null, true);
       expect(selection.hexes(1)).toEqual([3]);
-      expect(selection.face(1)).not.toBeNull();
+      expect(selection.nodeId(1)).toBe(1);
 
       selection.applyPick(1, null, false);
       expect(selection.hexes(1)).toEqual([]);

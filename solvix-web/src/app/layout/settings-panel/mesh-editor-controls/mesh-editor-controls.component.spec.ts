@@ -335,12 +335,13 @@ describe('MeshEditorControlsComponent', () => {
       expect(selection.face(1)).toBeNull();
     });
 
-    it('deletes the cube of the picked face when no cube is picked, but prefers a picked cube', () => {
+    it('deletes the cube of the picked face; with a cube picked instead, that cube', () => {
       state = linkedPairState();
       selection.selectFace(1, { hex: 1, face: 'YPlus' });
       expect(component.removeTarget()).toBe(1);
 
-      selection.toggleHex(1, 0);
+      selection.toggleHex(1, 0);                       // picking a cube drops the face
+      expect(component.activeFace()).toBeNull();
       expect(component.removeTarget()).toBe(0);
 
       selection.toggleHex(1, 1);
@@ -417,8 +418,8 @@ describe('MeshEditorControlsComponent', () => {
 
     it('Escape clears the selection', () => {
       state = singleCubeState();
-      selection.toggleHex(1, 0);
       selection.selectFace(1, { hex: 0, face: 'XPlus' });
+      selection.selectNode(1, 3);
 
       press('Escape');
 
