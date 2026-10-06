@@ -169,4 +169,23 @@ public class MeshEditorApiTests
         Assert.That(leaf.GetProperty("ok").GetBoolean(), Is.True);
         Assert.That(leaf.GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(2));
     }
+
+    [Test]
+    public async Task Moving_a_node_without_naming_the_carry_flag_moves_only_that_node()
+    {
+        var first = await Post("/api/mesh-editor/1/hexes/first");
+        var nodes = first.GetProperty("state").GetProperty("nodes").EnumerateArray().ToList();
+        var corner = nodes.Single(n => n.GetProperty("x").GetDouble() == 0 && n.GetProperty("y").GetDouble() == 0 && n.GetProperty("z").GetDouble() == 0);
+
+        var moved = await _client.PutAsJsonAsync($"/api/mesh-editor/1/nodes/{corner.GetProperty("id").GetInt32()}", new { x = -0.4, y = -0.3, z = -0.2 });
+        var after = Root(moved).GetProperty("state").GetProperty("nodes").EnumerateArray().ToList();
+
+        foreach (var node in nodes)
+        {
+            int id = node.GetProperty("id").GetInt32();
+            var now = after.Single(n => n.GetProperty("id").GetInt32() == id);
+            bool isMoved = id == corner.GetProperty("id").GetInt32();
+            Assert.That(now.GetProperty("x").GetDouble(), Is.EqualTo(isMoved ? -0.4 : node.GetProperty("x").GetDouble()), $"node {id}");
+        }
+    }
 }

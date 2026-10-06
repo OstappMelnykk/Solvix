@@ -301,6 +301,32 @@ describe('mesh-editor-view', () => {
       expect(shapeFunctions20(0.3, -0.6, 0.45).reduce((x, y) => x + y, 0)).toBeCloseTo(1, 12);
     });
 
+    it('moving one control point changes only the points that are not base nodes, by exactly phi_k times the move', () => {
+      let seed = 11;
+      const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+      const scattered = LOCAL_COORDS.map(([a, b, g]) => new THREE.Vector3((a + 1) / 2 + random() * 0.1, (b + 1) / 2 + random() * 0.1, (g + 1) / 2 + random() * 0.1));
+
+      for (let k = 0; k < 20; k++) {
+        const moved = scattered.map(p => p.clone());
+        const delta = new THREE.Vector3(random() * 0.5, random() * 0.5, random() * 0.5);
+        moved[k].add(delta);
+
+        // the other 19 base nodes' images never change
+        LOCAL_COORDS.forEach(([a, b, g], j) => {
+          const before = mapHex(scattered, a, b, g);
+          const after = mapHex(moved, a, b, g);
+          expect(after.distanceTo(j === k ? before.clone().add(delta) : before)).toBeLessThan(1e-12);
+        });
+        // an inner point moves by phi_k(xi) * delta
+        for (let n = 0; n < 10; n++) {
+          const xi = [random(), random(), random()] as const;
+          const expected = delta.clone().multiplyScalar(shapeFunctions20(...xi)[k]);
+          const actual = mapHex(moved, ...xi).sub(mapHex(scattered, ...xi));
+          expect(actual.distanceTo(expected)).toBeLessThan(1e-12);
+        }
+      }
+    });
+
     it('map a point of the cube through the 20 node positions: node slots reproduce their own positions', () => {
       const positions = LOCAL_COORDS.map(([a, b, g], i) => new THREE.Vector3(10 + a * 2 + i * 0.01, 20 + b, 30 + g * 3));
 

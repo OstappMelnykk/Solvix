@@ -7,7 +7,7 @@ public record LinkFacesRequest(int HexA, string FaceA, int HexB, string FaceB, b
 
 public record LinkHexesRequest(int HexA, int HexB, bool AdaptSecond);
 
-public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = true);
+public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = false);
 
 /// <summary>
 /// Manual hex editor, one mesh per client session. Every editing command
