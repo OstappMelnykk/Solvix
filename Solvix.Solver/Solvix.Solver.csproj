@@ -1,13 +1,26 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\Solvix.Contracts\Solvix.Contracts.csproj" />
-  </ItemGroup>
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- The FEM solver lives in its own repository; point FemSolverProject at its FemSolver.csproj
+         (environment variable or -p:FemSolverProject=...) when it is not at the default place. -->
+    <FemSolverProject Condition="'$(FemSolverProject)' == ''">$(MSBuildThisFileDirectory)../../../Vovk/AdaptiveMethods/Solution1/FemSolver/FemSolver.csproj</FemSolverProject>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Solvix.Contracts\Solvix.Contracts.csproj" />
+    <ProjectReference Include="$(FemSolverProject)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets Solvix.Solver.Tests build the internal facade directly. -->
+    <InternalsVisibleTo Include="Solvix.Solver.Tests" />
+  </ItemGroup>
 
 </Project>

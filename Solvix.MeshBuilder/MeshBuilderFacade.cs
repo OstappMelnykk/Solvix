@@ -17,6 +17,18 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
         return Command(sessionId, e => e.AddFirstHex(parsed));
     }
 
+    public FemMeshDto ExportFemMesh(int sessionId) => sessions.With(sessionId, editor =>
+    {
+        var fem = editor.Mesh.ToFemMesh();
+        var positions = new double[fem.NodeCount * 3];
+        for (int n = 0; n < fem.NodeCount; n++)
+            for (int c = 0; c < 3; c++) positions[n * 3 + c] = fem.Positions[n, c];
+        var connectivity = new int[fem.ElementCount * 20];
+        for (int e = 0; e < fem.ElementCount; e++)
+            for (int s = 0; s < 20; s++) connectivity[e * 20 + s] = fem.Connectivity[e, s];
+        return new FemMeshDto(fem.NodeCount, fem.ElementCount, positions, connectivity, fem.NodeIds, fem.ElementIds, editor.Mesh.InvalidHexes());
+    });
+
     public MeshTemplateLibraryDto TemplateLibrary() => new(
         HexTemplates.Kinds.Select(k => new MeshTemplateKindDto(k.Name, k.Label, k.Group,
             k.Parameters.Select(p => new MeshTemplateParameterDto(p.Key, p.Label, p.Default, p.Min, p.Max, p.Integer)).ToList())).ToList(),

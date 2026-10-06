@@ -35,6 +35,9 @@ public interface IMeshBuilderFacade
     /// <summary>Drops the session's mesh and history completely (the client closed or restarted the session).</summary>
     void DropSession(int sessionId);
 
+    /// <summary>The mesh as the FEM solver wants it (shared nodes once, the 20-node connectivity), plus the folded cubes.</summary>
+    FemMeshDto ExportFemMesh(int sessionId);
+
     /// <summary>The library of typical bodies (pipes, cylinders, spheres...) with their parameters and presets.</summary>
     MeshTemplateLibraryDto TemplateLibrary();
 

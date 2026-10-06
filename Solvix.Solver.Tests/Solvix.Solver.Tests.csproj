@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Solvix.Solver\Solvix.Solver.csproj" />
+    <ProjectReference Include="..\Solvix.Mesh\Solvix.Mesh.csproj" />
   </ItemGroup>
 
 </Project>
