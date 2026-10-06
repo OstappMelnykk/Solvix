@@ -151,8 +151,8 @@
 </div>
 
 <div class="group">
-  <div class="group-label">Внутрішня сітка (форми функцій)</div>
-  <div class="hint">Ділить кожен куб на n×n×n клітинок лініями α,β,γ = const, пропущеними через функції форми: видно, як 20 вузлів вигинають усі точки куба. 1 — вимкнено.</div>
+  <div class="group-label">Внутрішня сітка (додаткові точки за формулою)</div>
+  <div class="hint">Лише за бажанням: ділить кожен куб на n×n×n клітинок лініями α,β,γ = const, обчисленими через функції форми (це НЕ вузли сітки, а точки формули). 1 — вимкнено, показуються тільки реальні вузли.</div>
   <label class="row">
     <span>Поділів на ребро</span>
     <input type="number" min="1" max="8" step="1" [value]="subdivisions" (change)="onSubdivisionsChange($event)" />

@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { FaceStatus, HexFaceName, MeshFaceDto, MeshNodeDto, MeshStateDto } from '../api/mesh-editor-api.service';
 
-// Pure drawing of the backend's mesh state - no geometry decisions here: the
-// nodes are placed exactly where the server says, and the curved edges/faces
-// are just the same quadratic (serendipity) interpolation the server's
-// elements use, sampled finely enough to look smooth.
+// Pure drawing of the backend's mesh state - no geometry decisions here, and no
+// points that are not in the mesh: nodes are drawn exactly where the server says,
+// an edge is the two straight pieces corner -> midpoint -> corner through its 3
+// nodes, and a face is filled between its 8 nodes. (The smooth parabola the shape
+// functions define between them is not drawn - only the optional inner grid below
+// samples the functions, and it is off by default.)
 
 export type MeshViewMode = 'ideal' | 'real';
 
@@ -114,8 +116,6 @@ export interface MeshViewOptions {
 
 const GRID_LINE_SAMPLES = 12;
 const GRID_COLOR = 0x6f8fb8;
-const EDGE_SEGMENTS = 10;
-const FACE_GRID = 8;
 const CORNER_RADIUS = 0.045;
 const MIDPOINT_RADIUS = 0.032;
 // Click targets are larger than the dots drawn, so a node is easy to hit.
@@ -143,41 +143,20 @@ export function nodePosition(node: MeshNodeDto, mode: MeshViewMode): THREE.Vecto
     : new THREE.Vector3(node.x, node.y, node.z);
 }
 
-// Quadratic Lagrange through (start, mid, end) at t = -1, 0, 1 - exactly how
-// an edge of the 20-node element bends.
-function edgePoint(start: THREE.Vector3, mid: THREE.Vector3, end: THREE.Vector3, t: number): THREE.Vector3 {
-  return start
-    .clone()
-    .multiplyScalar((t * (t - 1)) / 2)
-    .addScaledVector(mid, 1 - t * t)
-    .addScaledVector(end, (t * (t + 1)) / 2);
-}
+// The 8 slots of a face in order around its perimeter, so the face can be filled
+// as one polygon through its own nodes.
+const PERIMETER_UV: readonly (readonly [number, number])[] = [
+  [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]
+];
 
-// 8-node serendipity shape functions on a face, (u, v) in [-1, 1]^2.
-function faceShape(ui: number, vi: number, u: number, v: number): number {
-  if (ui !== 0 && vi !== 0) return 0.25 * (1 + u * ui) * (1 + v * vi) * (u * ui + v * vi - 1);
-  if (ui === 0) return 0.5 * (1 - u * u) * (1 + v * vi);
-  return 0.5 * (1 + u * ui) * (1 - v * v);
-}
-
-function buildFaceGeometry(slotPositions: THREE.Vector3[], slotUv: [number, number][]): THREE.BufferGeometry {
+// A face filled between its 8 nodes only (a fan of 6 triangles from the first
+// corner) - no interpolated points.
+function buildFaceGeometry(perimeter: THREE.Vector3[]): THREE.BufferGeometry {
   const positions: number[] = [];
-  for (let iv = 0; iv <= FACE_GRID; iv++) {
-    for (let iu = 0; iu <= FACE_GRID; iu++) {
-      const u = (iu / FACE_GRID) * 2 - 1;
-      const v = (iv / FACE_GRID) * 2 - 1;
-      const point = new THREE.Vector3();
-      slotPositions.forEach((p, i) => point.addScaledVector(p, faceShape(slotUv[i][0], slotUv[i][1], u, v)));
-      positions.push(point.x, point.y, point.z);
-    }
-  }
+  perimeter.forEach(p => positions.push(p.x, p.y, p.z));
   const indices: number[] = [];
-  const stride = FACE_GRID + 1;
-  for (let iv = 0; iv < FACE_GRID; iv++) {
-    for (let iu = 0; iu < FACE_GRID; iu++) {
-      const a = iv * stride + iu;
-      indices.push(a, a + 1, a + stride, a + 1, a + stride + 1, a + stride);
-    }
+  for (let i = 1; i < perimeter.length - 1; i++) {
+    indices.push(0, i, i + 1);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -207,19 +186,14 @@ export function buildMeshView(
   const nodes = new Map(state.nodes.map(node => [node.id, node]));
   const positionOf = (id: number) => nodePosition(nodes.get(id)!, mode);
 
-  // Curved edges: one polyline set for the whole mesh.
+  // Edges: corner -> midpoint -> corner, straight between the real nodes.
   const edgeVertices: number[] = [];
   for (const hex of state.hexes) {
     EDGE_CORNERS.forEach(([a, b], k) => {
       const start = positionOf(hex.nodeIds[a]);
       const mid = positionOf(hex.nodeIds[8 + k]);
       const end = positionOf(hex.nodeIds[b]);
-      let previous = start;
-      for (let i = 1; i <= EDGE_SEGMENTS; i++) {
-        const next = edgePoint(start, mid, end, (i / EDGE_SEGMENTS) * 2 - 1);
-        edgeVertices.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
-        previous = next;
-      }
+      edgeVertices.push(start.x, start.y, start.z, mid.x, mid.y, mid.z, mid.x, mid.y, mid.z, end.x, end.y, end.z);
     });
   }
   if (edgeVertices.length > 0) {
@@ -273,8 +247,10 @@ export function buildMeshView(
     const tangent = [0, 1, 2].filter(d => d !== axis);
     const slots = faceSlots(face.face);
     const geometry = buildFaceGeometry(
-      slots.map(slot => positionOf(hex.nodeIds[slot])),
-      slots.map(slot => [LOCAL_COORDS[slot][tangent[0]], LOCAL_COORDS[slot][tangent[1]]] as [number, number])
+      PERIMETER_UV.map(([u, v]) => {
+        const slot = slots.find(s => LOCAL_COORDS[s][tangent[0]] === u && LOCAL_COORDS[s][tangent[1]] === v)!;
+        return positionOf(hex.nodeIds[slot]);
+      })
     );
     // A shared face is drawn once (from the lower-id hex) but belongs to both,
     // so it is tinted when either side's cube is picked (the base wins).
