@@ -39,14 +39,14 @@ describe('mesh-editor-view', () => {
   });
 
   describe('buildMeshView', () => {
-    it('makes 6 faces and 20 nodes pickable for a single cube, and draws each of the 12 edges as two pieces through its 3 nodes', () => {
+    it('makes 6 faces and 20 nodes pickable for a single cube, and draws 12 curved edges', () => {
       const view = buildMeshView(singleCubeState(), 'real', noSelection);
 
       const kinds = picks(view.pickables).map(p => p.kind);
       expect(kinds.filter(k => k === 'face').length).toBe(6);
       expect(kinds.filter(k => k === 'node').length).toBe(20);
       const edges = view.root.children.find(c => c instanceof THREE.LineSegments) as THREE.LineSegments;
-      expect(edges.geometry.getAttribute('position').count).toBe(12 * 2 * 2);   // only real nodes, no interpolated points
+      expect(edges.geometry.getAttribute('position').count).toBe(12 * 10 * 2);
     });
 
     it('draws a linked face once, so two hexes do not z-fight', () => {
@@ -87,7 +87,7 @@ describe('mesh-editor-view', () => {
       expect(nodeAt(ideal, 6).position.toArray()).toEqual([1, 1, 1]);
     });
 
-    it('draws an edge through its midpoint node: corner -> midpoint -> corner, nothing in between', () => {
+    it('bends an edge through its midpoint node', () => {
       const state = singleCubeState();
       // edge 0-1 has midpoint slot 8; lift it
       const bent = { ...state, nodes: state.nodes.map(n => (n.id === 8 ? { ...n, z: n.z + 0.2 } : n)) };
@@ -96,29 +96,10 @@ describe('mesh-editor-view', () => {
 
       const edges = view.root.children.find(c => c instanceof THREE.LineSegments) as THREE.LineSegments;
       const position = edges.geometry.getAttribute('position');
-      // edge 0 is drawn first: vertices 0-1 are start -> mid, 2-3 are mid -> end
-      const point = (i: number) => new THREE.Vector3().fromBufferAttribute(position, i);
-      expect(point(0).toArray()).toEqual([0, 0, 0]);
-      expect(point(1).z).toBeCloseTo(0.2, 6);
-      expect(point(1).x).toBeCloseTo(0.5, 6);
-      expect(point(2).toArray()).toEqual(point(1).toArray());
-      expect(point(3).toArray()).toEqual([1, 0, 0]);
-    });
-
-    it('every vertex of every edge and face is an actual node position of the mesh', () => {
-      const state = linkedPairState();
-      const nodePositions = state.nodes.map(n => `${n.x.toFixed(6)},${n.y.toFixed(6)},${n.z.toFixed(6)}`);
-      const view = buildMeshView(state, 'real', noSelection);
-
-      view.root.children.forEach(child => {
-        if (!(child instanceof THREE.LineSegments) && !(child instanceof THREE.Mesh && view.pickables.includes(child) && (child.userData['pick'] as MeshPick).kind === 'face')) {
-          return;
-        }
-        const position = (child as THREE.Mesh).geometry.getAttribute('position');
-        for (let i = 0; i < position.count; i++) {
-          expect(nodePositions).toContain(`${position.getX(i).toFixed(6)},${position.getY(i).toFixed(6)},${position.getZ(i).toFixed(6)}`);
-        }
-      });
+      // edge 0 is drawn first: 10 segments of 2 vertices; the end of segment 4 is t = 0, the midpoint node
+      const mid = new THREE.Vector3().fromBufferAttribute(position, 4 * 2 + 1);
+      expect(mid.x).toBeCloseTo(0.5, 6);
+      expect(mid.z).toBeCloseTo(0.2, 6);
     });
 
     it('colours a picked cube and a selected node differently from the rest', () => {
@@ -160,7 +141,7 @@ describe('mesh-editor-view', () => {
       expect(view.root.children).toEqual([]);
     });
 
-    it('fills a face between its own 8 nodes only', () => {
+    it('samples a face with the 8-node surface through its corner nodes', () => {
       const view = buildMeshView(singleCubeState(), 'real', noSelection);
       const face = view.pickables.find(o => {
         const p = o.userData['pick'] as MeshPick;
@@ -168,11 +149,9 @@ describe('mesh-editor-view', () => {
       }) as THREE.Mesh;
 
       const position = face.geometry.getAttribute('position');
-      expect(position.count).toBe(8);
       for (let i = 0; i < position.count; i++) {
         expect(position.getX(i)).toBeCloseTo(1, 6);
       }
-      expect(face.geometry.getIndex()!.count).toBe(6 * 3);
       const box = new THREE.Box3().setFromBufferAttribute(position as THREE.BufferAttribute);
       expect(box.min.y).toBeCloseTo(0, 6);
       expect(box.max.y).toBeCloseTo(1, 6);
