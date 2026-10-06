@@ -57,9 +57,12 @@ public sealed class HexMesh
     }
 
     /// <summary>
-    /// Attaches a new cube to a face of <paramref name="hostId"/> and links
-    /// them. New nodes are placed by continuing the host's isoparametric map
-    /// past the shared face, so a deformed host yields a smoothly continued cube.
+    /// Attaches a new cube to a face of <paramref name="hostId"/> and links them. The
+    /// new cube is an extrusion of the shared face: its far face is the shared face
+    /// moved along the face's outward normal by the host's thickness, and the nodes
+    /// halfway along are half a step out. Only the shared face (its 8 nodes are the
+    /// host's own) matters - a deformation elsewhere in the host never leaks into the
+    /// new cube, and an undeformed face gives an exact regular cube.
     /// </summary>
     public Hex20 AddOnFace(int hostId, HexFace face)
     {
@@ -72,24 +75,84 @@ public sealed class HexMesh
         var hex = NewHex(cell);
         int axis = face.Axis(), sign = face.Sign();
         var shared = face.Opposite();
+        var step = ExtrusionStep(host, face);
+
+        // First the 8 slots on the shared face: they are the host's nodes.
         for (int s = 0; s < Hex20Reference.NodeCount; s++)
         {
             int hostSlot = shared.PartnerSlot(s);
-            if (hostSlot >= 0)
-            {
-                hex.NodeIds[s] = host.NodeIds[hostSlot];
-            }
-            else
-            {
-                var xi = new Vec3(Hex20Reference.LocalCoords[s, 0], Hex20Reference.LocalCoords[s, 1], Hex20Reference.LocalCoords[s, 2]);
-                xi = xi.With(axis, xi[axis] + 2 * sign);
-                hex.NodeIds[s] = NewNode(host.Map(xi), IdealOf(cell, s)).Id;
-            }
+            if (hostSlot < 0) continue;
+            hex.NodeIds[s] = host.NodeIds[hostSlot];
+            Own(hex.NodeIds[s], hex.Id, s);
+        }
+        // Then every other slot: its counterpart on the shared face (same other
+        // coordinates), pushed out by 1/2 step (midway) or a whole step (far face).
+        for (int s = 0; s < Hex20Reference.NodeCount; s++)
+        {
+            if (shared.PartnerSlot(s) >= 0) continue;
+            int counterpart = Enumerable.Range(0, Hex20Reference.NodeCount).First(t =>
+                Hex20Reference.LocalCoords[t, axis] == -sign &&
+                Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[t, d] == Hex20Reference.LocalCoords[s, d]));
+            double weight = (Hex20Reference.LocalCoords[s, axis] * sign + 1) / 2.0;     // far face 1, halfway 1/2
+            var position = Node(hex.NodeIds[counterpart]).Position + step * weight;
+            hex.NodeIds[s] = NewNode(position, IdealOf(cell, s)).Id;
             Own(hex.NodeIds[s], hex.Id, s);
         }
         _links[(hostId, face)] = hex.Id;
         _links[(hex.Id, shared)] = hostId;
         return hex;
+    }
+
+    // The vector a new cube is pushed out by: the shared face's outward unit normal
+    // times the host's thickness across that axis. The thickness is the MEDIAN of the
+    // four edges leading from the shared face's corners to the opposite face (measured
+    // along the normal), so a single corner of the host's far side pulled out of place
+    // does not change how thick the new cube is.
+    private Vec3 ExtrusionStep(Hex20 host, HexFace face)
+    {
+        var normal = OutwardNormal(host, face);
+        int axis = face.Axis(), sign = face.Sign();
+        var thicknesses = new List<double>();
+        foreach (int corner in face.Slots().Where(Hex20Reference.IsCorner))
+        {
+            int opposite = Enumerable.Range(0, Hex20Reference.CornerCount).First(t =>
+                Hex20Reference.LocalCoords[t, axis] == -sign &&
+                Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[t, d] == Hex20Reference.LocalCoords[corner, d]));
+            var along = Node(host.NodeIds[corner]).Position - Node(host.NodeIds[opposite]).Position;
+            thicknesses.Add(Math.Abs(along.X * normal.X + along.Y * normal.Y + along.Z * normal.Z));
+        }
+        thicknesses.Sort();
+        double median = (thicknesses[1] + thicknesses[2]) / 2;
+        return normal * (median > 1e-9 ? median : 1.0);
+    }
+
+    private Vec3 FaceCentre(Hex20 hex, HexFace face)
+    {
+        var sum = Vec3.Zero;
+        foreach (int slot in face.Slots()) sum += Node(hex.NodeIds[slot]).Position;
+        return sum * (1.0 / 8.0);
+    }
+
+    // Unit normal of a face, pointing out of its hex. A degenerate face falls back to
+    // the face's axis direction.
+    private Vec3 OutwardNormal(Hex20 hex, HexFace face)
+    {
+        int axis = face.Axis(), sign = face.Sign();
+        var (t1, t2) = axis switch { 0 => (1, 2), 1 => (0, 2), _ => (0, 1) };
+        Vec3 P(int u, int v)
+        {
+            int slot = face.Slots().First(s => Hex20Reference.LocalCoords[s, t1] == u && Hex20Reference.LocalCoords[s, t2] == v);
+            return Node(hex.NodeIds[slot]).Position;
+        }
+        var tu = P(1, 0) - P(-1, 0);
+        var tv = P(0, 1) - P(0, -1);
+        var normal = new Vec3(tu.Y * tv.Z - tu.Z * tv.Y, tu.Z * tv.X - tu.X * tv.Z, tu.X * tv.Y - tu.Y * tv.X);
+        var fallback = Vec3.Zero.With(axis, sign);
+        double length = normal.Length;
+        if (length < 1e-12) return fallback;
+        normal = normal * (1.0 / length);
+        var outward = FaceCentre(hex, face) - hex.Map(Vec3.Zero);
+        return normal.X * outward.X + normal.Y * outward.Y + normal.Z * outward.Z < 0 ? normal * -1 : normal;
     }
 
     /// <summary>
