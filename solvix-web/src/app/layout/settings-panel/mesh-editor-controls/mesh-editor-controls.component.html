@@ -35,7 +35,7 @@
 
 <div class="group" *ngIf="candidates().length > 0">
   <div class="group-label">Поруч, але не сусіди</div>
-  <div class="candidate" *ngFor="let c of candidates()">
+  <div class="candidate" *ngFor="let c of candidates(); trackBy: trackCandidate">
     <span>Куб {{ c.a }} ↔ Куб {{ c.b }} <span class="status">({{ c.text }})</span></span>
     <button class="chip chip--wide" type="button" [disabled]="busy" (click)="linkCandidate(c)">Зв'язати</button>
   </div>

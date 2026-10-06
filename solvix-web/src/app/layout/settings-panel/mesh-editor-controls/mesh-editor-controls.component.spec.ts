@@ -142,6 +142,11 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.candidates()[0].text).toBe('зазор 0.250');
   });
 
+  it('gives each candidate pair a stable identity so its row is not re-created on every pass', () => {
+    expect(component.trackCandidate(0, { a: 2, b: 3 })).toBe('2-3');
+    expect(component.trackCandidate(5, { a: 2, b: 3 })).toBe(component.trackCandidate(0, { a: 2, b: 3 }));
+  });
+
   it('has no candidates for a mesh without unlinked neighbours', () => {
     state = linkedPairState();
     expect(component.candidates()).toEqual([]);

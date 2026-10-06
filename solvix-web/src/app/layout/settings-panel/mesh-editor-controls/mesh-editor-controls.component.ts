@@ -171,6 +171,11 @@ export class MeshEditorControlsComponent {
       }));
   }
 
+  // candidates() builds a fresh array on every change-detection pass; without
+  // a stable identity per pair Angular would re-create the rows (and their
+  // buttons) each pass, so a click could land on a button that was just replaced.
+  trackCandidate = (_: number, candidate: { a: number; b: number }): string => `${candidate.a}-${candidate.b}`;
+
   linkCandidate(candidate: { a: number; b: number }): void {
     if (this.sessionId !== null) {
       this.editor.linkHexes(this.sessionId, candidate.a, candidate.b, this.adaptSecond);
