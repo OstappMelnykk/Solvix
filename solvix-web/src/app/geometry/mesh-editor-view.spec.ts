@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MeshFaceDto } from '../api/mesh-editor-api.service';
+import { MeshFaceDto, MeshStateDto } from '../api/mesh-editor-api.service';
 import { FACE_NAMES, LOCAL_COORDS, MeshPick, buildMeshView, disposeMeshView, faceAxis, faceSign, faceSlots, mapHex, nodePosition, shapeFunctions20 } from './mesh-editor-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
@@ -408,6 +408,42 @@ describe('mesh-editor-view', () => {
 
       expect(Math.min(...xs)).toBeCloseTo(0, 6);
       expect(Math.max(...xs)).toBeCloseTo(2, 6);   // the second cube's far end is at x = 2, not folded back onto the shared nodes at x = 0
+    });
+
+    describe('the closing link', () => {
+      // Two cubes that are linked although their cells are far apart on the lattice - the closing link of a ring.
+      const farApart = () => {
+        const pair = linkedPairState();
+        return { ...pair, hexes: [pair.hexes[0], { ...pair.hexes[1], cellI: 5 }] };
+      };
+      const seamLines = (state: MeshStateDto = farApart(), mode: 'ideal' | 'real' = 'ideal') =>
+        buildMeshView(state, mode, noSelection).root.children.filter(
+          c => c instanceof THREE.LineSegments && (c.material as THREE.LineBasicMaterial).color.getHex() === 0xff8c1a
+        );
+
+      it('is joined by an arch in the ideal world, so it is plain that the two ends are neighbours', () => {
+        expect(seamLines().length).toBe(1);
+      });
+
+      it('draws both faces of the link, one at each end of the row', () => {
+        const view = buildMeshView(farApart(), 'ideal', noSelection);
+        const faces = picks(view.pickables).filter(p => p.kind === 'face') as { hex: number; face: string }[];
+
+        expect(faces.filter(f => f.hex === 0 && f.face === 'XPlus').length).toBe(1);
+        expect(faces.filter(f => f.hex === 1 && f.face === 'XMinus').length).toBe(1);
+      });
+
+      it('has no arch for an ordinary link between side-by-side cells, nor in the real world', () => {
+        expect(seamLines(linkedPairState()).length).toBe(0);
+        expect(seamLines(farApart(), 'real').length).toBe(0);
+      });
+
+      it('arches over the body, above its highest point', () => {
+        const arch = seamLines()[0] as THREE.LineSegments;
+        const ys = Array.from(arch.geometry.getAttribute('position').array).filter((_, i) => i % 3 === 1);
+
+        expect(Math.max(...ys)).toBeGreaterThan(1);
+      });
     });
   });
 });
