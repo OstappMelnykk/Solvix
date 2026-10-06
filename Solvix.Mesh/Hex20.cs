@@ -60,10 +60,50 @@ public sealed class Hex20
 
     public double Determinant(Vec3 xi) => Det(Jacobian(xi));
 
-    /// <summary>Inverse of <see cref="Map"/> by Newton iteration; false if it does not converge.</summary>
-    public bool TryInvertMap(Vec3 target, out Vec3 xi, double tolerance = 1e-10, int maxIterations = 60)
+    private static readonly double[] GaussPoints = { -Math.Sqrt(0.6), 0, Math.Sqrt(0.6) };
+
+    /// <summary>
+    /// Smallest Jacobian determinant over the 27 Gauss points (what the solver
+    /// integrates with) and the 20 nodes. The isoparametric map is a valid
+    /// one-to-one image of the cube only while this stays positive; a
+    /// non-positive value means the hex is folded or degenerate.
+    /// </summary>
+    public double MinDeterminant()
     {
-        xi = Vec3.Zero;
+        double min = double.MaxValue;
+        foreach (double a in GaussPoints)
+            foreach (double b in GaussPoints)
+                foreach (double g in GaussPoints)
+                    min = Math.Min(min, Determinant(new Vec3(a, b, g)));
+        for (int s = 0; s < Hex20Reference.NodeCount; s++)
+            min = Math.Min(min, Determinant(new Vec3(Hex20Reference.LocalCoords[s, 0], Hex20Reference.LocalCoords[s, 1], Hex20Reference.LocalCoords[s, 2])));
+        return min;
+    }
+
+    public bool IsValid(double minDeterminant = 1e-9) => MinDeterminant() > minDeterminant;
+
+    /// <summary>Axis-aligned box that safely contains the hex (padded: edge midpoints can bulge past the corners).</summary>
+    public (Vec3 Min, Vec3 Max) Bounds()
+    {
+        var min = new Vec3(double.MaxValue, double.MaxValue, double.MaxValue);
+        var max = new Vec3(double.MinValue, double.MinValue, double.MinValue);
+        foreach (int id in NodeIds)
+        {
+            var p = _mesh.Node(id).Position;
+            min = new Vec3(Math.Min(min.X, p.X), Math.Min(min.Y, p.Y), Math.Min(min.Z, p.Z));
+            max = new Vec3(Math.Max(max.X, p.X), Math.Max(max.Y, p.Y), Math.Max(max.Z, p.Z));
+        }
+        var pad = (max - min) * 0.25;
+        return (min - pad, max + pad);
+    }
+
+    /// <summary>Inverse of <see cref="Map"/> by Newton iteration; false if it does not converge.</summary>
+    public bool TryInvertMap(Vec3 target, out Vec3 xi, double tolerance = 1e-10, int maxIterations = 60) =>
+        TryInvertMap(target, Vec3.Zero, out xi, tolerance, maxIterations);
+
+    public bool TryInvertMap(Vec3 target, Vec3 start, out Vec3 xi, double tolerance = 1e-10, int maxIterations = 60)
+    {
+        xi = start;
         for (int iter = 0; iter < maxIterations; iter++)
         {
             Vec3 residual = Map(xi) - target;

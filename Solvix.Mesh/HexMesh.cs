@@ -180,30 +180,110 @@ public sealed class HexMesh
     /// <summary>Moves a single node without touching any other.</summary>
     public void SetNodePosition(int nodeId, Vec3 position) => _nodes[nodeId].Position = position;
 
-    /// <summary>Ideal point (lattice units) to real space.</summary>
+    /// <summary>
+    /// Like <see cref="DragNode"/>, but refuses (and leaves everything as it
+    /// was) if the move would fold or degenerate any hex that owns a moved node.
+    /// </summary>
+    public bool TryDragNode(int nodeId, Vec3 newPosition, out IReadOnlyList<int> invalidatedHexes)
+    {
+        var before = _nodes.ToDictionary(kv => kv.Key, kv => kv.Value.Position);
+        DragNode(nodeId, newPosition);
+        var affected = _nodes.Where(kv => kv.Value.Position != before[kv.Key]).Select(kv => kv.Key)
+            .SelectMany(id => _owners[id].Select(o => o.Hex)).Distinct().ToList();
+        var bad = affected.Where(h => !_hexes[h].IsValid()).OrderBy(h => h).ToList();
+        invalidatedHexes = bad;
+        if (bad.Count == 0) return true;
+        foreach (var kv in before) _nodes[kv.Key].Position = kv.Value;
+        return false;
+    }
+
+    /// <summary>Hexes whose map is folded or degenerate.</summary>
+    public IReadOnlyList<int> InvalidHexes() => _hexes.Values.Where(h => !h.IsValid()).Select(h => h.Id).OrderBy(i => i).ToList();
+
+    /// <summary>
+    /// Ideal point (lattice units) to real space. A point on a cell boundary
+    /// belongs to the cell on its positive side; if that cell is empty the
+    /// negative side is used, so the outer boundary of the body maps too. Across
+    /// linked hexes the two sides agree (they share the face nodes).
+    /// </summary>
     public bool TryMapIdealToReal(Vec3 ideal, out Vec3 real)
     {
         real = Vec3.Zero;
-        var cell = ((int)Math.Floor(ideal.X), (int)Math.Floor(ideal.Y), (int)Math.Floor(ideal.Z));
-        var hex = HexAtCell(cell);
+        var hex = CellFor(ideal);
         if (hex is null) return false;
-        var xi = new Vec3((ideal.X - cell.Item1) * 2 - 1, (ideal.Y - cell.Item2) * 2 - 1, (ideal.Z - cell.Item3) * 2 - 1);
-        real = hex.Map(xi);
+        real = hex.Map(LocalOf(hex, ideal));
         return true;
     }
 
-    /// <summary>Real point to ideal lattice units; picks the first hex containing it.</summary>
+    private Hex20? CellFor(Vec3 ideal)
+    {
+        int[] lo = { (int)Math.Floor(ideal.X), (int)Math.Floor(ideal.Y), (int)Math.Floor(ideal.Z) };
+        bool[] onBoundary = { ideal.X == lo[0], ideal.Y == lo[1], ideal.Z == lo[2] };
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var c = new int[3];
+            bool ok = true;
+            for (int d = 0; d < 3; d++)
+            {
+                bool minus = (mask >> d & 1) == 1;
+                if (minus && !onBoundary[d]) { ok = false; break; }
+                c[d] = lo[d] - (minus ? 1 : 0);
+            }
+            if (!ok) continue;
+            var hex = HexAtCell((c[0], c[1], c[2]));
+            if (hex is not null) return hex;
+        }
+        return null;
+    }
+
+    private static Vec3 LocalOf(Hex20 hex, Vec3 ideal) =>
+        new((ideal.X - hex.Cell.I) * 2 - 1, (ideal.Y - hex.Cell.J) * 2 - 1, (ideal.Z - hex.Cell.K) * 2 - 1);
+
+    /// <summary>
+    /// Finds the hex containing a real point and its local coordinates. When
+    /// several hexes contain it (a shared face, or overlapping unlinked hexes)
+    /// the one where the point is deepest inside wins, ties going to the lower id.
+    /// </summary>
+    public bool TryLocate(Vec3 real, out int hexId, out Vec3 xi, double slack = 1e-9)
+    {
+        hexId = -1;
+        xi = Vec3.Zero;
+        double bestDepth = double.MaxValue;
+        foreach (var hex in _hexes.Values.OrderBy(h => h.Id))
+        {
+            var (min, max) = hex.Bounds();
+            if (real.X < min.X || real.Y < min.Y || real.Z < min.Z || real.X > max.X || real.Y > max.Y || real.Z > max.Z) continue;
+            if (!TryInvertFromSeveralStarts(hex, real, out var local)) continue;
+            double depth = Math.Max(Math.Abs(local.X), Math.Max(Math.Abs(local.Y), Math.Abs(local.Z)));
+            if (depth > 1 + slack || depth >= bestDepth - 1e-12) continue;
+            bestDepth = depth;
+            hexId = hex.Id;
+            xi = local;
+        }
+        return hexId >= 0;
+    }
+
+    // Newton from the centre first, then from the 8 octant centres: a strongly
+    // curved hex can send a single start to a root outside the cube.
+    private static bool TryInvertFromSeveralStarts(Hex20 hex, Vec3 real, out Vec3 xi)
+    {
+        if (hex.TryInvertMap(real, out xi)) return true;
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var start = new Vec3((mask & 1) == 0 ? -0.5 : 0.5, (mask & 2) == 0 ? -0.5 : 0.5, (mask & 4) == 0 ? -0.5 : 0.5);
+            if (hex.TryInvertMap(real, start, out xi)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Real point to ideal lattice units.</summary>
     public bool TryMapRealToIdeal(Vec3 real, out Vec3 ideal, double slack = 1e-9)
     {
         ideal = Vec3.Zero;
-        foreach (var hex in _hexes.Values)
-        {
-            if (!hex.TryInvertMap(real, out var xi)) continue;
-            if (Math.Abs(xi.X) > 1 + slack || Math.Abs(xi.Y) > 1 + slack || Math.Abs(xi.Z) > 1 + slack) continue;
-            ideal = new Vec3(hex.Cell.I + (xi.X + 1) / 2, hex.Cell.J + (xi.Y + 1) / 2, hex.Cell.K + (xi.Z + 1) / 2);
-            return true;
-        }
-        return false;
+        if (!TryLocate(real, out int hexId, out var xi, slack)) return false;
+        var hex = _hexes[hexId];
+        ideal = new Vec3(hex.Cell.I + (xi.X + 1) / 2, hex.Cell.J + (xi.Y + 1) / 2, hex.Cell.K + (xi.Z + 1) / 2);
+        return true;
     }
 
     /// <summary>Solver-ready snapshot (nodes and elements ordered by id).</summary>
