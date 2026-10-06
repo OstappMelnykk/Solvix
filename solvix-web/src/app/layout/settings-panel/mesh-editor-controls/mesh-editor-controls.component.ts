@@ -362,6 +362,18 @@ export class MeshEditorControlsComponent {
     this.carryEdgeMidpoints = (event.target as HTMLInputElement).checked;
   }
 
+  get subdivisions(): number {
+    return this.editor.subdivisions;
+  }
+
+  // The inner grid view: 1 (off) to 8 cells per edge.
+  onSubdivisionsChange(event: Event): void {
+    const value = Math.floor(Number((event.target as HTMLInputElement).value));
+    if (Number.isFinite(value)) {
+      this.editor.subdivisions = Math.min(8, Math.max(1, value));
+    }
+  }
+
   onNudgeStepChange(event: Event): void {
     const value = Number((event.target as HTMLInputElement).value);
     if (Number.isFinite(value) && value > 0) this.nudgeStep = value;

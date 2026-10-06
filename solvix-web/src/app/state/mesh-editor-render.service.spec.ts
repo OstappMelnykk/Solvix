@@ -67,6 +67,18 @@ describe('MeshEditorRenderService', () => {
     expect(render.getView(sessionId, REAL_WORLD_INDEX)).not.toBe(afterSelection);
   });
 
+  it('rebuilds the view when the inner-grid setting changes', () => {
+    loadState(singleCubeState());
+    const first = render.getView(sessionId, REAL_WORLD_INDEX);
+
+    editor.subdivisions = 3;
+    const withGrid = render.getView(sessionId, REAL_WORLD_INDEX);
+
+    expect(withGrid).not.toBe(first);
+    expect(render.getView(sessionId, REAL_WORLD_INDEX)).toBe(withGrid);
+    expect(withGrid!.root.children.filter(c => c instanceof THREE.LineSegments).length).toBe(2);
+  });
+
   it('builds a separate view per World: lattice positions for Ideal, real positions for Real', () => {
     const moved = singleCubeState();
     loadState({ ...moved, nodes: moved.nodes.map(n => (n.id === 6 ? { ...n, x: 1.7 } : n)) });

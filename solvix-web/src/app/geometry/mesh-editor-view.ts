@@ -73,6 +73,47 @@ export function faceSlots(face: HexFaceName): number[] {
   return LOCAL_COORDS.map((c, slot) => (c[axis] === sign ? slot : -1)).filter(slot => slot >= 0);
 }
 
+// The 20 serendipity shape functions - the same formulas as the backend's
+// Hex20Reference and the solver's N20 (docs/ISOPARAMETRIC.md): corner i is
+// 1/8 (1+aᵢa)(1+bᵢb)(1+gᵢg)(aᵢa+bᵢb+gᵢg-2), a midside node has the (1-t²) factor
+// along its own axis. Used here only to DRAW the inside of a cube.
+export function shapeFunctions20(a: number, b: number, g: number): number[] {
+  const phi = new Array<number>(20);
+  for (let i = 0; i < 20; i++) {
+    const [ai, bi, ci] = LOCAL_COORDS[i];
+    if (i < 8) {
+      phi[i] = 0.125 * (1 + ai * a) * (1 + bi * b) * (1 + ci * g) * (ai * a + bi * b + ci * g - 2);
+    } else if (ai === 0) {
+      phi[i] = 0.25 * (1 - a * a) * (1 + bi * b) * (1 + ci * g);
+    } else if (bi === 0) {
+      phi[i] = 0.25 * (1 + ai * a) * (1 - b * b) * (1 + ci * g);
+    } else {
+      phi[i] = 0.25 * (1 + ai * a) * (1 + bi * b) * (1 - g * g);
+    }
+  }
+  return phi;
+}
+
+// x(a,b,g) = sum_i phi_i(a,b,g) * x[node in local slot i]: where a point of the
+// cube with local coordinates (a,b,g) is, given the 20 node positions.
+export function mapHex(slotPositions: readonly THREE.Vector3[], a: number, b: number, g: number): THREE.Vector3 {
+  const phi = shapeFunctions20(a, b, g);
+  const point = new THREE.Vector3();
+  for (let i = 0; i < 20; i++) {
+    point.addScaledVector(slotPositions[i], phi[i]);
+  }
+  return point;
+}
+
+export interface MeshViewOptions {
+  // Each cube is cut into n x n x n cells by lines of constant local coordinate,
+  // pushed through the shape functions (1 = off). It shows how the 20 nodes bend
+  // every point inside the cube.
+  readonly subdivisions: number;
+}
+
+const GRID_LINE_SAMPLES = 12;
+const GRID_COLOR = 0x6f8fb8;
 const EDGE_SEGMENTS = 10;
 const FACE_GRID = 8;
 const CORNER_RADIUS = 0.045;
@@ -154,7 +195,12 @@ function shouldDrawFace(face: MeshFaceDto): boolean {
   return true;
 }
 
-export function buildMeshView(state: MeshStateDto, mode: MeshViewMode, selection: MeshViewSelection): MeshView {
+export function buildMeshView(
+  state: MeshStateDto,
+  mode: MeshViewMode,
+  selection: MeshViewSelection,
+  options: MeshViewOptions = { subdivisions: 1 }
+): MeshView {
   const root = new THREE.Group();
   const pickables: THREE.Object3D[] = [];
   const nodeMeshes = new Map<number, THREE.Mesh>();
@@ -180,6 +226,42 @@ export function buildMeshView(state: MeshStateDto, mode: MeshViewMode, selection
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(edgeVertices, 3));
     root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR })));
+  }
+
+  // Inside of each cube: lines of constant (alpha, beta, gamma) through the shape
+  // functions. The 12 edges are drawn above already, so a line is skipped when
+  // both of its fixed coordinates sit on the cube's boundary.
+  const cells = Math.max(1, Math.floor(options.subdivisions));
+  if (cells > 1) {
+    const gridVertices: number[] = [];
+    for (const hex of state.hexes) {
+      const slotPositions = hex.nodeIds.map(id => positionOf(id));
+      for (let axis = 0; axis < 3; axis++) {
+        const [u, v] = [0, 1, 2].filter(d => d !== axis);
+        for (let k1 = 0; k1 <= cells; k1++) {
+          for (let k2 = 0; k2 <= cells; k2++) {
+            if ((k1 === 0 || k1 === cells) && (k2 === 0 || k2 === cells)) continue;
+            let previous: THREE.Vector3 | null = null;
+            for (let s = 0; s <= GRID_LINE_SAMPLES; s++) {
+              const local = [0, 0, 0];
+              local[axis] = (s / GRID_LINE_SAMPLES) * 2 - 1;
+              local[u] = (k1 / cells) * 2 - 1;
+              local[v] = (k2 / cells) * 2 - 1;
+              const point = mapHex(slotPositions, local[0], local[1], local[2]);
+              if (previous) {
+                gridVertices.push(previous.x, previous.y, previous.z, point.x, point.y, point.z);
+              }
+              previous = point;
+            }
+          }
+        }
+      }
+    }
+    if (gridVertices.length > 0) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(gridVertices, 3));
+      root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: GRID_COLOR, transparent: true, opacity: 0.6 })));
+    }
   }
 
   // Faces, coloured by status.

@@ -31,16 +31,21 @@ export class MeshEditorRenderService {
       this.cache.delete(cacheKey);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.editor.subdivisions}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 
-    const view = buildMeshView(state, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real', {
-      hexes: this.selection.hexes(sessionId),
-      face: this.selection.face(sessionId),
-      hoverFace: this.selection.hoverFace(sessionId),
-      nodeId: this.selection.nodeId(sessionId)
-    });
+    const view = buildMeshView(
+      state,
+      worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real',
+      {
+        hexes: this.selection.hexes(sessionId),
+        face: this.selection.face(sessionId),
+        hoverFace: this.selection.hoverFace(sessionId),
+        nodeId: this.selection.nodeId(sessionId)
+      },
+      { subdivisions: this.editor.subdivisions }
+    );
     this.cache.set(cacheKey, { key, view });
     return view;
   }

@@ -34,10 +34,17 @@ export class MeshEditorService {
   // double click cannot send the same command twice.
   readonly busy = signal(false);
 
-  // Whether dragging a corner node also carries the midpoints of its edges
-  // (they move by half, so the edges stay as curved as they were). Shared by
-  // the numeric fields and the on-canvas drag gizmo.
-  carryEdgeMidpoints = true;
+  // Whether dragging a corner node also carries the midpoints of its edges (they
+  // move by half, so the edges stay as straight as they were). OFF by default: the
+  // 20 nodes of a cube are independent control points, as in the solver project's
+  // viewer - dragging one changes only that node, and every other point of the
+  // cube follows through the shape functions. Shared by the numeric fields, the
+  // on-canvas gizmo and the six-view drag.
+  carryEdgeMidpoints = false;
+
+  // How many cells each cube is cut into along every axis in the inner grid view
+  // (1 = no inner grid). A view setting only - nothing is sent to the server.
+  subdivisions = 1;
 
   constructor() {
     effect(

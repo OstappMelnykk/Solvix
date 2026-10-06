@@ -24,7 +24,7 @@ describe('MeshEditorControlsComponent', () => {
       'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
     ]);
     editor.getState.and.callFake(() => state);
-    editor.carryEdgeMidpoints = true;
+    editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     TestBed.configureTestingModule({ providers: [{ provide: MeshEditorService, useValue: editor }] });
     selection = TestBed.inject(MeshEditorSelectionService);
@@ -292,16 +292,16 @@ describe('MeshEditorControlsComponent', () => {
 
     component.nudge('y', -1);
 
-    expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0.75, z: 1 }, true);
+    expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0.75, z: 1 }, false);
   });
 
   it('sets one coordinate from the input and ignores non-numbers', () => {
     state = singleCubeState();
     selection.selectNode(1, 6);
-    component.carryEdgeMidpoints = false;
+    component.carryEdgeMidpoints = true;
 
     component.onCoordChange('z', { target: { value: '1.4' } } as unknown as Event);
-    expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 1.4 }, false);
+    expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 1.4 }, true);
 
     editor.moveNode.calls.reset();
     component.onCoordChange('z', { target: { value: 'abc' } } as unknown as Event);
@@ -503,11 +503,11 @@ describe('MeshEditorControlsComponent', () => {
       component.nudgeStep = 0.1;
 
       press('ArrowRight');
-      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1.1, y: 1, z: 1 }, true);
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1.1, y: 1, z: 1 }, false);
       press('ArrowUp');
-      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 0.9 }, true);
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 0.9 }, false);
       press('PageDown', { shiftKey: true });
-      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, true);
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
     });
 
     it('arrow keys do nothing without a selected node or outside the Real World', () => {
@@ -540,6 +540,25 @@ describe('MeshEditorControlsComponent', () => {
 
       expect(press('n').defaultPrevented).toBeFalse();
       expect(editor.addFirstHex).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('inner grid setting', () => {
+    const type = (value: string) => component.onSubdivisionsChange({ target: { value } } as unknown as Event);
+
+    it('stores the cells per edge in the editor, clamped to 1..8, ignoring non-numbers', () => {
+      editor.subdivisions = 1;
+
+      type('4');
+      expect(component.subdivisions).toBe(4);
+      type('99');
+      expect(editor.subdivisions).toBe(8);
+      type('0');
+      expect(editor.subdivisions).toBe(1);
+      type('2.9');
+      expect(editor.subdivisions).toBe(2);
+      type('abc');
+      expect(editor.subdivisions).toBe(2);
     });
   });
 

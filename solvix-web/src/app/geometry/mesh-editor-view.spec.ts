@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MeshFaceDto } from '../api/mesh-editor-api.service';
-import { FACE_NAMES, MeshPick, buildMeshView, disposeMeshView, faceAxis, faceSign, faceSlots, nodePosition } from './mesh-editor-view';
+import { FACE_NAMES, LOCAL_COORDS, MeshPick, buildMeshView, disposeMeshView, faceAxis, faceSign, faceSlots, mapHex, nodePosition, shapeFunctions20 } from './mesh-editor-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const noSelection = { hexes: [], face: null, hoverFace: null, nodeId: null };
@@ -254,6 +254,116 @@ describe('mesh-editor-view', () => {
       disposeMeshView(view);
 
       spies.forEach(spy => expect(spy).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  describe('shape functions (drawing only)', () => {
+    // independent transcription of the solver's N20 (AdaptiveMethods/Solution1 viewer / Solution2 FemRunner)
+    const referenceN20 = (a: number, b: number, g: number): number[] => {
+      const ca = [-1, 1, 1, -1, -1, 1, 1, -1];
+      const cb = [-1, -1, 1, 1, -1, -1, 1, 1];
+      const cg = [-1, -1, -1, -1, 1, 1, 1, 1];
+      const n = new Array<number>(20).fill(0);
+      for (let i = 0; i < 8; i++) {
+        n[i] = 0.125 * (1 + ca[i] * a) * (1 + cb[i] * b) * (1 + cg[i] * g) * (ca[i] * a + cb[i] * b + cg[i] * g - 2);
+      }
+      n[8] = 0.25 * (1 - a * a) * (1 - b) * (1 - g);
+      n[9] = 0.25 * (1 + a) * (1 - b * b) * (1 - g);
+      n[10] = 0.25 * (1 - a * a) * (1 + b) * (1 - g);
+      n[11] = 0.25 * (1 - a) * (1 - b * b) * (1 - g);
+      n[12] = 0.25 * (1 - a * a) * (1 - b) * (1 + g);
+      n[13] = 0.25 * (1 + a) * (1 - b * b) * (1 + g);
+      n[14] = 0.25 * (1 - a * a) * (1 + b) * (1 + g);
+      n[15] = 0.25 * (1 - a) * (1 - b * b) * (1 + g);
+      n[16] = 0.25 * (1 - a) * (1 - b) * (1 - g * g);
+      n[17] = 0.25 * (1 + a) * (1 - b) * (1 - g * g);
+      n[18] = 0.25 * (1 + a) * (1 + b) * (1 - g * g);
+      n[19] = 0.25 * (1 - a) * (1 + b) * (1 - g * g);
+      return n;
+    };
+
+    it('match the solver N20 at random points', () => {
+      let seed = 7;
+      const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2.4 - 1.2;
+      for (let p = 0; p < 200; p++) {
+        const [a, b, c] = [random(), random(), random()];
+        const mine = shapeFunctions20(a, b, c);
+        const ref = referenceN20(a, b, c);
+        for (let i = 0; i < 20; i++) expect(mine[i]).toBeCloseTo(ref[i], 12);
+      }
+    });
+
+    it('are one at their own node, zero at the others, and sum to one', () => {
+      for (let i = 0; i < 20; i++) {
+        const phi = shapeFunctions20(...LOCAL_COORDS[i]);
+        phi.forEach((value, j) => expect(value).toBeCloseTo(i === j ? 1 : 0, 12));
+      }
+      expect(shapeFunctions20(0.3, -0.6, 0.45).reduce((x, y) => x + y, 0)).toBeCloseTo(1, 12);
+    });
+
+    it('map a point of the cube through the 20 node positions: node slots reproduce their own positions', () => {
+      const positions = LOCAL_COORDS.map(([a, b, g], i) => new THREE.Vector3(10 + a * 2 + i * 0.01, 20 + b, 30 + g * 3));
+
+      LOCAL_COORDS.forEach(([a, b, g], i) => expect(mapHex(positions, a, b, g).distanceTo(positions[i])).toBeLessThan(1e-12));
+    });
+  });
+
+  describe('inner grid', () => {
+    const segmentsOf = (view: ReturnType<typeof buildMeshView>) =>
+      view.root.children.filter((c): c is THREE.LineSegments => c instanceof THREE.LineSegments);
+
+    it('is off by default: only the cube edges are lines', () => {
+      expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection)).length).toBe(1);
+      expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1 })).length).toBe(1);
+    });
+
+    it('draws the interior lines for n = 2: 5 per axis, 12 samples each', () => {
+      const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 });
+
+      const lines = segmentsOf(view);
+      expect(lines.length).toBe(2);
+      expect(lines[1].geometry.getAttribute('position').count).toBe(3 * 5 * 12 * 2);
+    });
+
+    it('a straight cube gives straight, evenly spaced lines through the cube', () => {
+      const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 });
+      const position = segmentsOf(view)[1].geometry.getAttribute('position');
+
+      const xs = new Set<number>();
+      for (let i = 0; i < position.count; i++) xs.add(Math.round(position.getX(i) * 1e6) / 1e6);
+      expect([...xs].some(x => Math.abs(x - 0.5) < 1e-6)).toBeTrue();   // the middle plane
+    });
+
+    it('bends with the nodes: lifting an edge midpoint curves the grid lines near it', () => {
+      const state = singleCubeState();
+      const bent = { ...state, nodes: state.nodes.map(n => (n.id === 8 ? { ...n, z: n.z + 0.3 } : n)) };
+      const plain = segmentsOf(buildMeshView(state, 'real', noSelection, { subdivisions: 3 }))[1].geometry.getAttribute('position');
+      const curved = segmentsOf(buildMeshView(bent, 'real', noSelection, { subdivisions: 3 }))[1].geometry.getAttribute('position');
+
+      let moved = 0;
+      for (let i = 0; i < plain.count; i++) {
+        if (Math.abs(plain.getZ(i) - curved.getZ(i)) > 1e-6) moved++;
+      }
+      expect(moved).toBeGreaterThan(0);
+      expect(moved).toBeLessThan(plain.count);
+    });
+
+    it('in the ideal world the grid stays on the lattice whatever the real nodes do', () => {
+      const state = singleCubeState();
+      const bent = { ...state, nodes: state.nodes.map(n => (n.id === 8 ? { ...n, z: n.z + 0.3 } : n)) };
+      const a = segmentsOf(buildMeshView(state, 'ideal', noSelection, { subdivisions: 3 }))[1].geometry.getAttribute('position');
+      const b = segmentsOf(buildMeshView(bent, 'ideal', noSelection, { subdivisions: 3 }))[1].geometry.getAttribute('position');
+
+      for (let i = 0; i < a.count; i++) {
+        expect(b.getX(i)).toBeCloseTo(a.getX(i), 6);
+        expect(b.getY(i)).toBeCloseTo(a.getY(i), 6);
+        expect(b.getZ(i)).toBeCloseTo(a.getZ(i), 6);
+      }
+    });
+
+    it('ignores nonsense subdivision counts', () => {
+      expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 0 })).length).toBe(1);
+      expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1.7 })).length).toBe(1);
     });
   });
 });

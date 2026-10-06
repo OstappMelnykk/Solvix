@@ -142,11 +142,11 @@ describe('MeshEditorService', () => {
     expectAndFlush('POST', 'reset');
   });
 
-  it('keeps the carry-midpoints choice for both the fields and the drag gizmo, on by default', () => {
+  it('keeps the carry-midpoints choice for both the fields and the drag gizmo; nodes are independent by default', () => {
     loadInitialState();
-    expect(editor.carryEdgeMidpoints).toBeTrue();
-    editor.carryEdgeMidpoints = false;
     expect(editor.carryEdgeMidpoints).toBeFalse();
+    editor.carryEdgeMidpoints = true;
+    expect(editor.carryEdgeMidpoints).toBeTrue();
   });
 
   it('prunes the cached state of a closed session', () => {
