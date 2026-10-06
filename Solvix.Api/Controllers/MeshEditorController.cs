@@ -21,13 +21,14 @@ public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoi
 /// </summary>
 [ApiController]
 [Route("api/mesh-editor/{sessionId:int}")]
-public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBase
+public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade solver) : ControllerBase
 {
     /// <summary>Forgets the session's mesh and undo history (the client closed or restarted it).</summary>
     [HttpDelete]
     public IActionResult DropSession(int sessionId)
     {
         meshBuilder.DropSession(sessionId);
+        solver.DropSession(sessionId);
         return NoContent();
     }
 
@@ -75,7 +76,12 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBa
     public ActionResult<MeshCommandResultDto> Redo(int sessionId) => meshBuilder.Redo(sessionId);
 
     [HttpPost("reset")]
-    public ActionResult<MeshCommandResultDto> Reset(int sessionId) => meshBuilder.Reset(sessionId);
+    public ActionResult<MeshCommandResultDto> Reset(int sessionId)
+    {
+        // hex ids start again from 0, so supports and loads set for the old cubes must not apply to the new ones
+        solver.ClearSetup(sessionId);
+        return meshBuilder.Reset(sessionId);
+    }
 
     [HttpPost("map/ideal-to-real")]
     public ActionResult<MeshMappingResultDto> MapIdealToReal(int sessionId, [FromBody] MeshPointDto point) =>
