@@ -21,9 +21,8 @@ export interface ImportedGeometry {
   readonly triangleCount: number;
   readonly vertexCount: number;
   // Bounding-box size in the object's own (unscaled) coordinates, plus which
-  // axis is longest - general geometric metadata about the import (e.g. a
-  // future voxelization feature would use this to derive its cube density
-  // from the longest axis, proportions preserved).
+  // axis is longest - general geometric metadata about the import (e.g. for
+  // sizing the reference by its longest axis, proportions preserved).
   readonly boundingSize: THREE.Vector3;
   readonly longestAxis: 0 | 1 | 2;
   readonly longestLength: number;

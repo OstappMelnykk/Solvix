@@ -38,7 +38,7 @@ describe('SessionTabsComponent', () => {
 
   it('confirmReset wipes every solvix: key and requests a page reload', () => {
     localStorage.setItem('solvix:model:1', '{}');
-    localStorage.setItem('solvix:zone-painting:1', '{}');
+    localStorage.setItem('solvix:imported-geometry:1', '{}');
     localStorage.setItem('unrelated-key', 'kept');
     const reloadSpy = spyOn<any>(component, 'reloadPage');
 
@@ -46,7 +46,7 @@ describe('SessionTabsComponent', () => {
 
     expect(localStorage.getItem('solvix:sessions')).toBeNull();
     expect(localStorage.getItem('solvix:model:1')).toBeNull();
-    expect(localStorage.getItem('solvix:zone-painting:1')).toBeNull();
+    expect(localStorage.getItem('solvix:imported-geometry:1')).toBeNull();
     expect(localStorage.getItem('unrelated-key')).toBe('kept');
     expect(reloadSpy).toHaveBeenCalled();
   });

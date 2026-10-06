@@ -18,8 +18,7 @@ export class SessionTabsComponent {
     this.sessions.closeSession(id);
   }
 
-  // Inline "Точно?" prompt, not window.confirm() - see ZoneListComponent's
-  // own pendingConfirmation comment for why (a native dialog can end up
+  // Inline "Точно?" prompt, not window.confirm() (a native dialog can end up
   // silently auto-suppressed by the browser after a few confirm()/alert()
   // calls, which reads as "nothing happened" from the outside - an in-app
   // prompt can't be silently swallowed like that).
@@ -33,7 +32,7 @@ export class SessionTabsComponent {
     this.isResetConfirming.set(false);
   }
 
-  // Wipes every session/model/import/voxelization/zone ever persisted
+  // Wipes every session/model/import ever persisted
   // (every session, not just the active one) and reloads the page - see
   // clearAllSolvixStorage's own comment for why a reload, not a manual
   // in-memory reset, is what actually gets back to a genuinely clean sheet.

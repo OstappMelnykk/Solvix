@@ -25,8 +25,7 @@ const AUTO_DISMISS_MS: Record<ToastKind, number> = {
 // easy-to-miss inline text some tools already show in their own sidebar.
 // Deliberately NOT tied to any one tool/component - any part of the app
 // can call error()/warning()/info() without needing its own bespoke
-// notice UI (see WorldCanvasComponent's own older .voxel-rule-notice for
-// the kind of one-off overlay this is meant to replace going forward).
+// notice UI.
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
   readonly toasts = signal<readonly Toast[]>([]);

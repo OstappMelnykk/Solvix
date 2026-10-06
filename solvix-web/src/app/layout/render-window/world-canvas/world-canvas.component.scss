@@ -18,8 +18,7 @@ canvas {
 // A single flex-stacked container, grouped logically and ordered by how
 // often each group is actually needed - Вид (camera/scene, used constantly
 // regardless of world or model) first, Модель (STL visibility, Ideal World
-// only) next, Зони (the zone-painting tools, only relevant during that one
-// later workflow step) last. Replaces what used to be ~10 individually
+// only) last. Replaces what used to be ~10 individually
 // position:absolute-stacked buttons/controls, each with its own hand-picked
 // `top: Npx` a fixed 34px past the previous one - fragile (a forgotten
 // offset either overlaps or leaves a gap) and exactly how a real bug
