@@ -1,34 +1,3 @@
-<!-- Pulled to the very top, styled as a primary action - without running
-     this, nothing downstream (zone painting, etc.) works, so it must not
-     read as just another settings toggle buried among cosmetic ones. -->
-<div class="group group--voxelize">
-  <div class="group-label">Вокселізація</div>
-  <button class="tool tool--primary" type="button" [disabled]="!canVoxelize()" (click)="runVoxelization()">Вокселізувати</button>
-  <ng-container *ngIf="getVoxelizationStatus() as voxelStatus">
-    <div
-      class="voxelize-status"
-      *ngIf="voxelStatus.kind !== 'idle'"
-      [class.voxelize-status--warning]="voxelStatus.kind === 'too-large'"
-      [class.voxelize-status--error]="voxelStatus.kind === 'error' || voxelStatus.kind === 'invalid-mesh'"
-    >
-      <span *ngIf="voxelStatus.kind === 'loading'">Вокселізація…</span>
-      <span *ngIf="voxelStatus.kind === 'ok'">{{ getVoxelCubeCount(voxelStatus.result) }} кубів</span>
-      <span *ngIf="voxelStatus.kind === 'too-large'">Забагато кубів ({{ voxelStatus.cellCount }}, ліміт {{ voxelStatus.limit }}) — зменши розмір</span>
-      <span *ngIf="voxelStatus.kind === 'invalid-mesh'">{{ voxelStatus.message }}</span>
-      <span *ngIf="voxelStatus.kind === 'error'">Не вдалось виконати вокселізацію</span>
-    </div>
-  </ng-container>
-  <button
-    class="tool"
-    type="button"
-    [disabled]="!canResetVoxelization()"
-    title="Видалити всі вокселі й ручні правки, щоб можна було зробити нову вокселізацію"
-    (click)="resetVoxelization()"
-  >
-    Скинути вокселізацію
-  </button>
-</div>
-
 <h4>Вигляд геометрії</h4>
 
 <div class="group">
@@ -89,37 +58,6 @@
     <span>Відстань рулетки</span>
     <input type="number" min="0" step="0.1" [value]="getRulerDistance()" (change)="onRulerDistanceChange($event)" />
   </label>
-</div>
-
-<div class="group">
-  <div class="group-label">Рендер вокселів</div>
-  <label class="row">
-    <span>Показати кубики</span>
-    <input type="checkbox" [checked]="isVoxelPreviewVisible()" (change)="onVoxelPreviewVisibleChange($event)" />
-  </label>
-  <label class="row">
-    <span>Прозорість кубів</span>
-    <input type="range" min="0" max="100" [value]="getVoxelOpacityPercent()" (change)="onVoxelOpacityChange($event)" />
-  </label>
-  <label class="row">
-    <span>Прозорість каркасу</span>
-    <input type="range" min="0" max="100" [value]="getVoxelEdgeOpacityPercent()" (change)="onVoxelEdgeOpacityChange($event)" />
-  </label>
-  <label class="row">
-    <span>Товщина каркасу</span>
-    <input type="range" min="0" max="100" [value]="getVoxelLineWidthPercent()" (change)="onVoxelLineWidthChange($event)" />
-  </label>
-  <label class="row">
-    <span>Розмір вузлів</span>
-    <input type="range" min="0" max="100" [value]="getVoxelNodeSizePercent()" (change)="onVoxelNodeSizeChange($event)" />
-  </label>
-  <label class="row">
-    <span>Прозорість вузлів</span>
-    <input type="range" min="0" max="100" [value]="getVoxelNodeOpacityPercent()" (change)="onVoxelNodeOpacityChange($event)" />
-  </label>
-  <button class="tool" type="button" title="Повернути прозорість/товщину/розмір до значень за замовчуванням - сама вокселізація не зачіпається" (click)="resetVoxelRenderSettings()">
-    Скинути рендер вокселів
-  </button>
 </div>
 
 <ng-container *ngIf="getGeometryInfo() as info">

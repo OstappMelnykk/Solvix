@@ -2,10 +2,6 @@
   <span class="six-view-overlay__title">Перегляд з 6 сторін</span>
   <div class="six-view-overlay__opacity-controls" *ngIf="showModelOpacityControls()">
     <label class="six-view-overlay__opacity">
-      Прозорість вокселів
-      <input type="range" min="0" max="100" [value]="voxelOpacityPercent()" (input)="onVoxelOpacityChange($event)" />
-    </label>
-    <label class="six-view-overlay__opacity">
       Прозорість STL
       <input type="range" min="0" max="100" [value]="referenceOpacityPercent()" (input)="onReferenceOpacityChange($event)" />
     </label>
@@ -23,8 +19,7 @@
      simultaneously open.
 
      Safe to key this on the SAME isHidden() that also gates rendering
-     (unlike ZonePreviewComponent, which needs 2 separate conditions - see
-     its own template comment): isHidden() here only flips on an explicit
+     : isHidden() here only flips on an explicit
      "6 сторін"/"Назад" click (SixViewOverlayService.open/close), never
      toggled by some OTHER tool merely covering this one, so
      destroying+recreating these 6 contexts is a rare, deliberate action,

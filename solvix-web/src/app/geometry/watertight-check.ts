@@ -59,9 +59,9 @@ function buildWeldedEdgeCounts(geometry: THREE.BufferGeometry): { edgeCounts: Ma
 }
 
 // A closed (watertight) manifold surface: every edge is shared by exactly 2
-// triangles. This is the property the future R3 voxelization candidate
-// (docs/IDEAS.md) needs for its inside/outside point test - an open surface
-// anywhere makes "is this point inside the body" ill-defined there.
+// triangles. An open surface anywhere makes "is this point inside the
+// body" ill-defined, so this is the validity check for imported reference
+// geometry.
 function isGeometryWatertight(geometry: THREE.BufferGeometry): boolean {
   const { edgeCounts } = buildWeldedEdgeCounts(geometry);
   if (edgeCounts.size === 0) {
@@ -273,9 +273,9 @@ export function findHoleBoundaryClusters(object: THREE.Object3D): THREE.Vector3[
   return clusters;
 }
 
-// Whether an imported object is a valid input for future R3 voxelization -
-// every mesh in it has to be independently watertight, not just the union,
-// since a stray open surface anywhere breaks the inside/outside test there.
+// Whether an imported object is a valid closed reference - every mesh in it
+// has to be independently watertight, not just the union, since a stray
+// open surface anywhere breaks the inside/outside test.
 export function isWatertight(object: THREE.Object3D): boolean {
   let meshCount = 0;
   let allWatertight = true;

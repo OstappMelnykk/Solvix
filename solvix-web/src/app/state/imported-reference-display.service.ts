@@ -26,13 +26,6 @@ export interface ImportedReferenceStyle {
   // the rings (e.g. to inspect the geometry unobstructed) without losing
   // the reference itself.
   readonly rotateGizmoVisible: boolean;
-  // Whether the voxelization cube preview (VoxelizationService, geometry/scene-objects/voxels.ts)
-  // is shown - independent of `visible`, same reasoning as dimensionsVisible/
-  // rulerVisible: the voxel result can be hidden to inspect the reference
-  // unobstructed without losing the last computed result (VoxelizationService
-  // keeps it cached either way - this only gates whether RenderWindowComponent
-  // hands it to WorldCanvasComponent).
-  readonly voxelPreviewVisible: boolean;
   // Whether the not-watertight highlight (geometry/scene-objects/hole-highlight.ts)
   // is shown on top of the reference - only meaningful when the import
   // actually has boundary edges (ImportedGeometryService.watertight === false);
@@ -57,7 +50,6 @@ const DEFAULT_STYLE: ImportedReferenceStyle = {
   rulerVisible: false,
   rulerDistance: 1,
   rotateGizmoVisible: true,
-  voxelPreviewVisible: true,
   holesVisible: false,
   holeMarkersVisible: true
 };
@@ -66,7 +58,7 @@ const DEFAULT_STYLE: ImportedReferenceStyle = {
 // DRAWN, per session - separate from the geometry itself, which never
 // changes just because the user wants to look at it differently. Purely a
 // display preference: WorldCanvasComponent reads this to build the
-// material, nothing about voxelization/import/watertightness depends on it.
+// material, nothing about import/watertightness depends on it.
 @Injectable({ providedIn: 'root' })
 export class ImportedReferenceDisplayService {
   private readonly sessions = inject(SessionsService);
@@ -112,10 +104,6 @@ export class ImportedReferenceDisplayService {
 
   setRotateGizmoVisible(sessionId: number, visible: boolean): void {
     this.update(sessionId, { rotateGizmoVisible: visible });
-  }
-
-  setVoxelPreviewVisible(sessionId: number, visible: boolean): void {
-    this.update(sessionId, { voxelPreviewVisible: visible });
   }
 
   setHolesVisible(sessionId: number, visible: boolean): void {

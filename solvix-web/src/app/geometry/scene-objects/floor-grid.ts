@@ -29,15 +29,11 @@ const LINE_WIDTH_PX = 1;
 // which is why the caller keeps its own reference to the returned object
 // rather than this file tracking visibility itself.
 //
-// Unlike voxels.ts's own edge wireframe (see that file's own comment on
-// why IT reverted this exact same LineSegments2 approach back to real 3D
-// cylinders), this is safe here: the failure mode there was a single
-// shared voxel-preview object rendered by SEVERAL different renderers at
-// once (six-view, zone painting, the main canvas), each needing a
-// DIFFERENT `resolution` uniform value - there's no single correct answer
-// to feed the shader. This grid has no such conflict: each of the 3
-// WorldCanvasComponent instances builds and owns exactly one, rendered by
-// exactly its own one renderer (see updateGridResolution below, called
+// LineSegments2 needs a single `resolution` uniform matching the renderer
+// that draws it, so it can't be shared by renderers of different sizes.
+// This grid has no such conflict: each of the 3 WorldCanvasComponent
+// instances builds and owns exactly one, rendered by exactly its own one
+// renderer (see updateGridResolution below, called
 // from that same component's checkResize).
 export function buildFloorGrid(): LineSegments2 {
   const center = GRID_DIVISIONS / 2;

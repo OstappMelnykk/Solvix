@@ -3,8 +3,6 @@ import { NgFor, NgIf } from '@angular/common';
 import { ImportedGeometryService } from '../../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceMode } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
-import { VoxelizationService, VoxelizationStatus } from '../../../state/voxelization.service';
-import { VoxelGridDto, countOccupied } from '../../../geometry/voxel-grid-contract';
 
 interface GeometryInfoEntry {
   readonly label: string;
@@ -30,7 +28,6 @@ export class ImportedReferenceControlsComponent {
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly referenceRender = inject(ImportedReferenceRenderService);
-  private readonly voxelization = inject(VoxelizationService);
 
   @Input({ required: true }) sessionId!: number | null;
 
@@ -194,163 +191,6 @@ export class ImportedReferenceControlsComponent {
     }
     this.referenceRender.resetRotation(sessionId);
     this.referenceRender.refreshScaledReference(sessionId);
-  }
-
-  // Backs the "Вокселізувати" button's [disabled] - nothing to send while no
-  // reference is imported, no reason to allow re-clicking while a previous
-  // call is still in flight, and no reason to re-run once this exact
-  // reference already has a successful result ('ok'): re-enables itself the
-  // moment that stops being true, since VoxelizationService.clearResult
-  // drops the result back to 'idle' the instant the reference actually
-  // changes underneath it (density, rotation, reset, a new import - see its
-  // own referenceChanged$ subscription). Failure states ('too-large',
-  // 'invalid-mesh', 'error') deliberately stay clickable so the user can
-  // just retry without first having to touch the reference at all.
-  canVoxelize(): boolean {
-    const sessionId = this.sessionId;
-    if (sessionId === null || !this.importedGeometry.get(sessionId)) {
-      return false;
-    }
-    const status = this.getVoxelizationStatus();
-    return status.kind !== 'loading' && status.kind !== 'ok';
-  }
-
-  // Sends the currently-shown scaled reference (ImportedReferenceRenderService)
-  // to Solvix.Api for voxelization.
-  runVoxelization(): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    this.voxelization.run(sessionId);
-  }
-
-  // Backs "Скинути вокселізацію" - nothing to reset from 'idle' (matches
-  // canVoxelize's own "nothing to send" guard in spirit).
-  canResetVoxelization(): boolean {
-    const sessionId = this.sessionId;
-    return sessionId !== null && this.getVoxelizationStatus().kind !== 'idle';
-  }
-
-  // Deletes every voxel (and any manual add/remove edits on top of them),
-  // putting "Вокселізувати" back to clickable without first having to
-  // change the reference itself - destructive and irreversible, hence the
-  // confirm, same as zone-painting's own "Скинути всі зони".
-  resetVoxelization(): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    if (!window.confirm('Скинути вокселізацію? Усі вокселі та ручні правки буде видалено. Це незворотно.')) {
-      return;
-    }
-    this.voxelization.resetVoxelization(sessionId);
-  }
-
-  isVoxelPreviewVisible(): boolean {
-    const sessionId = this.sessionId;
-    return sessionId !== null && this.referenceDisplay.getStyle(sessionId).voxelPreviewVisible;
-  }
-
-  onVoxelPreviewVisibleChange(event: Event): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    this.referenceDisplay.setVoxelPreviewVisible(sessionId, (event.target as HTMLInputElement).checked);
-  }
-
-  getVoxelizationStatus(): VoxelizationStatus {
-    const sessionId = this.sessionId;
-    return sessionId === null ? { kind: 'idle' } : this.voxelization.getStatus(sessionId);
-  }
-
-  // Cube count for the "ok" status line - VoxelizationStatus carries the
-  // raw grid+bitmask (VoxelGridDto), not a precomputed count, since this
-  // is the only place that needs one.
-  getVoxelCubeCount(result: VoxelGridDto): number {
-    return countOccupied(result);
-  }
-
-  getVoxelOpacityPercent(): number {
-    const sessionId = this.sessionId;
-    return sessionId === null ? 0 : Math.round(this.voxelization.getOpacity(sessionId) * 100);
-  }
-
-  onVoxelOpacityChange(event: Event): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    const percent = Number((event.target as HTMLInputElement).value);
-    this.voxelization.setOpacity(sessionId, percent / 100);
-  }
-
-  getVoxelEdgeOpacityPercent(): number {
-    const sessionId = this.sessionId;
-    return sessionId === null ? 0 : Math.round(this.voxelization.getEdgeOpacity(sessionId) * 100);
-  }
-
-  onVoxelEdgeOpacityChange(event: Event): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    const percent = Number((event.target as HTMLInputElement).value);
-    this.voxelization.setEdgeOpacity(sessionId, percent / 100);
-  }
-
-  getVoxelLineWidthPercent(): number {
-    const sessionId = this.sessionId;
-    return sessionId === null ? 0 : Math.round(this.voxelization.getLineWidth(sessionId) * 100);
-  }
-
-  onVoxelLineWidthChange(event: Event): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    const percent = Number((event.target as HTMLInputElement).value);
-    this.voxelization.setLineWidth(sessionId, percent / 100);
-  }
-
-  getVoxelNodeSizePercent(): number {
-    const sessionId = this.sessionId;
-    return sessionId === null ? 0 : Math.round(this.voxelization.getNodeSize(sessionId) * 100);
-  }
-
-  onVoxelNodeSizeChange(event: Event): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    const percent = Number((event.target as HTMLInputElement).value);
-    this.voxelization.setNodeSize(sessionId, percent / 100);
-  }
-
-  getVoxelNodeOpacityPercent(): number {
-    const sessionId = this.sessionId;
-    return sessionId === null ? 0 : Math.round(this.voxelization.getNodeOpacity(sessionId) * 100);
-  }
-
-  onVoxelNodeOpacityChange(event: Event): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    const percent = Number((event.target as HTMLInputElement).value);
-    this.voxelization.setNodeOpacity(sessionId, percent / 100);
-  }
-
-  // "Скинути рендер вокселів" - puts fill/edge/node opacity, line width, and
-  // node size back to their defaults. Never touches the voxelization result
-  // itself (VoxelizationService.resetRenderSettings's own doc comment).
-  resetVoxelRenderSettings(): void {
-    const sessionId = this.sessionId;
-    if (sessionId === null) {
-      return;
-    }
-    this.voxelization.resetRenderSettings(sessionId);
   }
 
   // Full metadata dictionary for whatever's currently imported

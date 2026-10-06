@@ -4,8 +4,8 @@ import { markForWeightedOit } from '../../rendering/weighted-oit';
 // Minimal shape ImportedReferenceDisplayService's own ImportedReferenceStyle
 // satisfies - kept separate (not imported from state/imported-reference-
 // display.service.ts) so this geometry-layer file never depends on the
-// state layer, matching how voxels.ts/zone-overlay.ts only ever take plain
-// data, never a service.
+// state layer, matching the other scene-object builders, which only ever
+// take plain data, never a service.
 export interface ImportedReferenceRenderStyle {
   readonly mode: 'solid' | 'wireframe';
   readonly color: number;
@@ -38,10 +38,10 @@ export function buildImportedReferenceClone(source: THREE.Object3D, style: Impor
       ? new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity })
       : new THREE.MeshStandardMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, flatShading: true, roughness: 0.6 });
   if (mode === 'solid') {
-    // Only the solid mode genuinely self-overlaps in a way that fights
-    // with the voxel fill's own translucency (see weighted-oit.ts) -
-    // wireframe's sparse lines don't meaningfully occlude each other or
-    // the voxels, so they stay on the existing simple renderOrder scheme.
+    // Only the solid mode genuinely self-overlaps in a way that needs
+    // order-independent transparency (see weighted-oit.ts) - wireframe's
+    // sparse lines don't meaningfully occlude each other, so they stay on
+    // the existing simple renderOrder scheme.
     markForWeightedOit(material);
   }
   clone.traverse(child => {

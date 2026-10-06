@@ -6,9 +6,8 @@ import { BoundaryEdge } from '../watertight-check';
 
 // Bright, unmissable color for exactly the boundary edges a hole punches
 // into an otherwise-closed surface - deliberately far from every other
-// color already in use nearby (the reference's own material, the voxel
-// wireframe's white, the disconnected-zone-island reds/oranges/purples), so
-// "this is a defect" reads at a glance.
+// color already in use nearby  (the reference's own material, the
+// floor grid and axes), so "this is a defect" reads at a glance.
 const OUTLINE_COLOR = 0xff2d55;
 // CSS pixels (LineMaterial's `worldUnits` defaults to false) - a constant
 // on-screen thickness regardless of zoom/distance, same reasoning as
@@ -109,14 +108,11 @@ function buildHoleFillGeometry(loops: readonly (readonly THREE.Vector3[])[]): TH
   return geometry;
 }
 
-// Unlike voxels.ts's own edge wireframe (which reverted this exact fat-line
-// technique because ITS geometry is shared across SEVERAL renderers at once
-// with different resolutions - six-view, zone painting, and the main canvas
-// simultaneously), this object has no such conflict: RenderWindowComponent
-// only ever hands it to the ONE Ideal-World WorldCanvasComponent (every
-// other world gets null), and that same component's own previewFixtures()
-// hides it whenever six-view or zone-painting opens (openSixView/
-// openZonePainting both pass previewFixtures() as hiddenDuringView) - so
+// Fat lines need ONE resolution uniform, so this object must only ever be
+// drawn by a single renderer: RenderWindowComponent only ever hands it to
+// the ONE Ideal-World WorldCanvasComponent (every other world gets null),
+// and that same component's own previewFixtures() hides it whenever
+// six-view opens (openSixView passes previewFixtures() as hiddenDuringView) - so
 // exactly one renderer ever actually draws this, exactly like the floor
 // grid. updateHoleHighlightResolution below is that renderer's own
 // checkResize feeding this the ONE resolution it will ever need.

@@ -3,8 +3,7 @@ import { Injectable } from '@angular/core';
 // Deliberately app-controlled, proactive eviction instead of reacting to the
 // browser's own (unpredictable, all-at-once) eviction after the fact - see
 // [[project_webgl_context_architecture]] for the incident this exists to fix:
-// every canvas-owning lazy tool (zone-preview, six-view-overlay, zone-painting,
-// surface-zone-painting) holds its real WebGL context for the whole session
+// every canvas-owning lazy tool (six-view-overlay) holds its real WebGL context for the whole session
 // once first created (dispose() alone never frees it - only destroying the
 // actual <canvas> DOM element does), so simply using several tools in one
 // session accumulates contexts past the browser's per-page limit (commonly

@@ -37,9 +37,8 @@ export class SessionsService {
     // Reload-survival stand-in for a real backend (see
     // [[project_model_persistence]] - Solvix.Api has no endpoints yet).
     // This is the FIRST link in a whole chain of *StorageService-backed
-    // localStorage reads (this file, ModelStorageService, ImportedGeometryStorageService,
-    // VoxelizationStorageService, ZonePaintingStorageService,
-    // SurfaceZonePaintingStorageService) - every one of those is keyed by
+    // localStorage reads (this file, ModelStorageService,
+    // ImportedGeometryStorageService) - every one of those is keyed by
     // sessionId, so without restoring the SAME session ids here first (not
     // just always starting from one fresh blank session), none of the rest
     // of that data would ever be reachable again after a reload, even

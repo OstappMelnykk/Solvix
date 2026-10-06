@@ -39,7 +39,7 @@ describe('ToastContainerComponent', () => {
   });
 
   it('gives a success toast the toast--success class and a checkmark icon', () => {
-    notifications.success('Зону створено: 3 вокселів.');
+    notifications.success('Модель завантажено.');
     fixture.detectChanges();
     const element = toastElements()[0];
     expect(element.classList.contains('toast--success')).toBe(true);

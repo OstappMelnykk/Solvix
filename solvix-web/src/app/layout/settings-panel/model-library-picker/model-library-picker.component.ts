@@ -22,8 +22,7 @@ const THUMBNAIL_SIZE = 140;
 // WebGLRenderer this component owns for its own lifetime. Deliberately one
 // renderer reused sequentially across every card rather than one WebGL
 // context per card - the app already hit Chrome's ~16-context ceiling once
-// this session (ZonePaintingComponent/SurfaceZonePaintingComponent/
-// SixViewOverlayComponent all had to become lazy about their own contexts
+// this session (SixViewOverlayComponent had to become lazy about its own contexts
 // because of it), and a library grid can easily have more entries than that.
 @Component({
   selector: 'app-model-library-picker',
@@ -77,8 +76,7 @@ export class ModelLibraryPickerComponent implements OnInit, OnDestroy {
     this.cancelled = true;
     // dispose() alone only frees three.js's own CPU-side bookkeeping - it
     // does NOT ask the browser to actually free the underlying WebGL
-    // context (see the same fix in SixViewOverlayComponent/ZonePaintingComponent/
-    // SurfaceZonePaintingComponent's own teardownRenderers). forceContextLoss()
+    // context (see the same fix in SixViewOverlayComponent's own teardownRenderers). forceContextLoss()
     // is the actual, synchronous release this modal's context needs on close.
     this.renderer?.dispose();
     this.renderer?.forceContextLoss();

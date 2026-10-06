@@ -1,5 +1,4 @@
 import { Injectable, effect, inject } from '@angular/core';
-import { Subject } from 'rxjs';
 import * as THREE from 'three';
 import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
@@ -63,17 +62,6 @@ export class ImportedReferenceRenderService {
   // arranges to be the object's own geometric center. Absent = identity
   // (no rotation), the common case.
   private readonly rotationBySession = new KeyedStore<number, THREE.Quaternion>();
-  // Emits a session id every time refreshScaledReference actually rebuilds
-  // a live scaled clone for it (density change, rotation commit, reset,
-  // new import) - VoxelizationService subscribes to this to CLEAR a now-
-  // outdated voxelization result the moment the geometry it was computed
-  // from is gone (never to re-run automatically - voxelization only ever
-  // runs on the explicit "Вокселізувати" click). Exposed as an Observable,
-  // not injected the other way around - ImportedReferenceRenderService has
-  // no reason to know VoxelizationService exists, and injecting it here
-  // would be circular (VoxelizationService already injects this service).
-  private readonly referenceChanged = new Subject<number>();
-  readonly referenceChanged$ = this.referenceChanged.asObservable();
 
   constructor() {
     effect(() => {
@@ -190,14 +178,6 @@ export class ImportedReferenceRenderService {
       this.scaledReferenceBySession.delete(sessionId);
       this.rulerBySession.delete(sessionId);
       this.holeHighlightBySession.delete(sessionId);
-      // Still emits, even though there's no new reference to show - a
-      // consumer that cached something computed from the PREVIOUS
-      // reference (VoxelizationService's voxel preview) needs to know
-      // that reference is gone too, or it keeps showing a now-orphaned
-      // stale result forever (getScaledReference returns null here on,
-      // e.g., importing a second, degenerate/zero-extent file over a
-      // valid one - re-running silently no-ops with nothing to clear it).
-      this.referenceChanged.next(sessionId);
       return;
     }
     const clone = info.object.clone();
@@ -260,7 +240,6 @@ export class ImportedReferenceRenderService {
     }
 
     this.refreshRuler(sessionId);
-    this.referenceChanged.next(sessionId);
   }
 
   // Rebuilds ONLY the cached ruler, from the CURRENT import + density +

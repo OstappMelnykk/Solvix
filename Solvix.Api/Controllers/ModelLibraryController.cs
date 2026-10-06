@@ -19,9 +19,9 @@ public record ModelLibraryEntryDto(Guid Id, string FileName, long SizeBytes, Dat
 [Route("api/model-library")]
 public class ModelLibraryController(SolvixDbContext db, ModelLibraryStorage storage, ILogger<ModelLibraryController> logger) : ControllerBase
 {
-    // Same cap as MeshesController's own voxelize endpoint - these are the
-    // exact same kind of file (an STL/GLB reference mesh), just archived
-    // here instead of voxelized immediately.
+    // ~140MB covers the real 2.9M-triangle STL, with headroom for a heavier
+    // import - bounds just this endpoint, rather than raising Kestrel's
+    // default request-body limit for every endpoint.
     private const long MaxUploadBytes = 300_000_000;
 
     [HttpGet]
@@ -35,7 +35,7 @@ public class ModelLibraryController(SolvixDbContext db, ModelLibraryStorage stor
     }
 
     // Binary body, not a multipart form upload - same "raw bytes, filename
-    // out of band" shape as MeshesController.Voxelize, just with the name
+    // out of band" shape, with the name
     // carried as a query parameter (?fileName=...) instead of implied by a
     // fixed content type, since this endpoint has to accept more than one
     // format.
@@ -57,9 +57,9 @@ public class ModelLibraryController(SolvixDbContext db, ModelLibraryStorage stor
         long sizeBytes;
         using (var body = new MemoryStream())
         {
-            // Same "buffer the non-seekable request stream first" reasoning
-            // as MeshesController.Voxelize - AllowSynchronousIO is off by
-            // default, and this needs a definite length up front regardless.
+            // Buffer the non-seekable request stream first - AllowSynchronousIO
+            // is off by default, and this needs a definite length up front
+            // regardless.
             await Request.Body.CopyToAsync(body, cancellationToken);
             body.Position = 0;
             sizeBytes = await storage.SaveAsync(id, extension, body, cancellationToken);

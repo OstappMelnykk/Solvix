@@ -5,7 +5,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { SixViewOverlayService, SixViewSource } from '../../state/six-view-overlay.service';
 import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 import { WebglContextBudgetService } from '../../state/webgl-context-budget.service';
-import { VoxelizationService } from '../../state/voxelization.service';
 import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
 
 interface ViewDirection {
@@ -54,7 +53,6 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('canvas') private canvasRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
 
   private readonly overlay = inject(SixViewOverlayService);
-  private readonly voxelization = inject(VoxelizationService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly webglBudget = inject(WebglContextBudgetService);
 
@@ -70,7 +68,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   // contexts elsewhere in the app every single frame, confirmed live via a
   // flood of "WARNING: Too many active WebGL contexts" console warnings.
   private readonly renderers: (THREE.WebGLRenderer | null)[] = VIEW_DIRECTIONS.map(() => null);
-  // Same stable STL+voxel transparency fix as WorldCanvasComponent's own
+  // Same stable transparency fix as WorldCanvasComponent's own
   // main view (rendering/weighted-oit.ts) - one instance per panel, since
   // each panel is its own WebGLRenderer/WebGL context.
   private readonly oitRenderers: (WeightedOitRenderer | null)[] = VIEW_DIRECTIONS.map(() => null);
@@ -99,8 +97,8 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   // The SixViewSource last used to aim the 6 cameras - reset to null
   // whenever the overlay closes (see animate below), so reopening always
   // re-frames (and resets pan/zoom) from the model's CURRENT bounds, even
-  // against the same World/model reference as before (e.g. edited via
-  // voxel build while the overlay was closed).
+  // against the same World/model reference as before (e.g. after a
+  // rotation while the overlay was closed).
   private lastSource: SixViewSource | null = null;
   private frameId = 0;
   private viewReady = false;
@@ -113,15 +111,13 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   // canvas needs this, matching WorldCanvasComponent's own long-standing
   // handling, which these 6 canvases never had.
   private readonly onContextLost = (event: Event) => event.preventDefault();
-  // Same reasoning as ZonePaintingComponent's own onContextRestoredHandlers -
-  // one closure per panel, added in ensureRenderersReady, removed again in
+  // One closure per panel, added in ensureRenderersReady, removed again in
   // teardownRenderers. Without this, preventDefault() alone only asked the
   // browser to attempt a restore - nobody was listening for it actually
   // happening, so even a browser-restored context stayed a frozen/blank
   // panel forever.
   private readonly onContextRestoredHandlers: Array<() => void> = [];
-  // Same reasoning as ZonePaintingComponent's own panelGeneration/
-  // recreatingPanel/lastAttemptedCanvas/trackPanel - bumped only when a
+  // Bumped only when a
   // canvas's context was evicted and never came back, forcing Angular to
   // hand that ONE panel a genuinely new <canvas> element. The template used
   // to hardcode 6 separate panel blocks (no *ngFor) - converted to one
@@ -142,19 +138,17 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   private readonly lastAttemptedCanvas: (HTMLCanvasElement | null)[] = VIEW_DIRECTIONS.map(() => null);
   trackPanel = (_: number, i: number): string => `${i}-${this.panelGeneration[i]}`;
   // Plain data, not live three.js objects - mid-session context-loss
-  // recovery only (see ZonePaintingComponent's own savedCameraStates for the
-  // full reasoning). Updated every frame.
+  // recovery only (a fresh OrbitControls is built on recovery, so whatever
+  // it should look like has to be copied onto it afterward). Updated every
+  // frame.
   private readonly savedCameraStates: Array<{ position: THREE.Vector3; target: THREE.Vector3; zoom: number } | null> = VIEW_DIRECTIONS.map(
     () => null
   );
 
   // Deliberately does NOT create the 6 WebGLRenderers here - this used to,
   // always-mounted since app boot alongside the 3 WorldCanvasComponent
-  // contexts, ZonePaintingComponent's 4, and SurfaceZonePaintingComponent's
-  // 4 - even with those 2 painting tools ALSO made lazy (create-on-open,
-  // free-on-close, since they're never both open at once), a real report
-  // still showed the Ideal World canvas going blank right after finishing
-  // the STL painting flow: THREE.WebGLRenderer.dispose() asks the browser
+  // contexts. Even made lazy (create-on-open, free-on-close), a rapid
+  // open/close cycle can blank the Ideal World canvas: THREE.WebGLRenderer.dispose() asks the browser
   // to release a context but doesn't guarantee it happens immediately, so
   // a rapid open/close cycle can transiently exceed the browser's per-page
   // WebGL context limit (commonly 16 in Chrome) even when the STEADY-STATE
@@ -268,9 +262,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   // least-recently-used one). Either way, the only way to guarantee a
   // genuinely fresh, non-evicted context later is a genuinely new <canvas>
   // DOM element - bumping panelGeneration forces Angular to hand this ONE
-  // panel one via the template's own *ngFor/trackBy, same mechanism as
-  // ZonePaintingComponent/SurfaceZonePaintingComponent/ZonePreviewComponent's
-  // own equivalents. Safe to call on a panel that was never actually
+  // panel one via the template's own *ngFor/trackBy. Safe to call on a panel that was never actually
   // constructed yet (this.renderers[i] still null) - the dispose block
   // below is skipped, only the generation bump/budget unregister happen.
   private evictPanel(i: number): void {
@@ -343,31 +335,12 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     return this.overlay.active() === null;
   }
 
-  // Gates the voxel-fill/STL-reference opacity sliders (six-view-overlay.
-  // component.html) - meaningless outside the Ideal World (see SixViewSource's
-  // own doc comment), same as settings-panel.component.html's
-  // *ngIf="isIdealWorld()" for the identical pair of sliders there.
+  // Gates the STL-reference opacity slider (six-view-overlay.component.html)
+  // - meaningless outside the Ideal World (see SixViewSource's own doc
+  // comment), same as the settings panel's *ngIf="isIdealWorld()" for the
+  // identical slider there.
   showModelOpacityControls(): boolean {
     return this.overlay.active()?.isIdealWorld === true;
-  }
-
-  // Direct opacity passthrough (no [0,1]<->percent inversion) - matches
-  // imported-reference-controls.component.ts's own getVoxelOpacityPercent/
-  // onVoxelOpacityChange and getReferenceOpacityPercent/onReferenceOpacityChange,
-  // so the same slider position means the same thing here as it does on the
-  // main settings panel.
-  voxelOpacityPercent(): number {
-    const sessionId = this.overlay.active()?.sessionId;
-    return sessionId === undefined ? 0 : Math.round(this.voxelization.getOpacity(sessionId) * 100);
-  }
-
-  onVoxelOpacityChange(event: Event): void {
-    const sessionId = this.overlay.active()?.sessionId;
-    if (sessionId === undefined) {
-      return;
-    }
-    const percent = Number((event.target as HTMLInputElement).value);
-    this.voxelization.setOpacity(sessionId, percent / 100);
   }
 
   referenceOpacityPercent(): number {
@@ -457,8 +430,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   }
 
   // Plain-data snapshot of panel i's current camera/controls, kept up to
-  // date every frame - mid-session context-loss recovery only (see
-  // ZonePaintingComponent's own saveCameraState for the full reasoning).
+  // date every frame - mid-session context-loss recovery only.
   private saveCameraState(i: number, camera: THREE.OrthographicCamera, controls: OrbitControls): void {
     let saved = this.savedCameraStates[i];
     if (!saved) {
@@ -470,9 +442,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     saved.zoom = camera.zoom;
   }
 
-  // Fired when the browser actually restores a lost context on panel i -
-  // see ZonePaintingComponent's own restorePanelAfterContextLoss for the
-  // full reasoning.
+  // Fired when the browser actually restores a lost context on panel i.
   private restorePanelAfterContextLoss(i: number): void {
     const renderer = this.renderers[i];
     const camera = this.cameras[i];

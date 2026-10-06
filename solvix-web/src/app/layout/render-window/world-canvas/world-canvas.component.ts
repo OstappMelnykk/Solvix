@@ -10,16 +10,10 @@ import { SharedModelService } from '../../../state/shared-model.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
-import { ZonePaintingService } from '../../../state/zone-painting.service';
-import { SurfaceZonePaintingService } from '../../../state/surface-zone-painting.service';
-import { VoxelizationService } from '../../../state/voxelization.service';
-import { getVoxelCellByInstanceId } from '../../../geometry/scene-objects/voxels';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
 import { disposeRulerPreview } from '../../../geometry/ruler-preview';
 import { disposeHoleHighlight, setHoleMarkersVisible, updateHoleHighlightResolution } from '../../../geometry/scene-objects/hole-highlight';
-import { buildZoneOverlayGroup, disposeZoneOverlayGroup, setZoneOverlayOpacity } from '../../../geometry/scene-objects/zone-overlay';
-import { buildSurfaceZoneOverlay, disposeSurfaceZoneOverlay } from '../../../geometry/scene-objects/surface-zone-overlay';
 import { buildSceneLights } from '../../../geometry/scene-objects/scene-lights';
 import { buildAxesHelper } from '../../../geometry/scene-objects/axes-helper';
 import { buildFloorGrid, updateGridResolution } from '../../../geometry/scene-objects/floor-grid';
@@ -29,12 +23,6 @@ import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
-// Above this many CSS pixels of movement between pointerdown and pointerup,
-// treat the gesture as an OrbitControls drag, not a click-to-select - the
-// browser's native `click` event has no such threshold (it fires on
-// mouseup at the same DOM target regardless of how far the pointer moved
-// in between), so this is tracked by hand.
-const VOXEL_CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
 const DEFAULT_ORTHO_HALF_HEIGHT = 5;
@@ -97,10 +85,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // the surface (ImportedReferenceRenderService, geometry/scene-objects/hole-highlight.ts) -
   // a separate overlay, independently toggleable (ImportedReferenceDisplayService.holesVisible).
   @Input() holeHighlight: THREE.Object3D | null = null;
-  // Voxel preview is deliberately NOT an @Input like the overlays above -
-  // see updateVoxelPreview() for why (a disposal race that was a real,
-  // confirmed crash for this specific resource).
-
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   // Bumped only when this canvas's WebGL context was lost and the browser
@@ -109,9 +93,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // below handle the case where the browser DOES restore it; this is the
   // fallback for when it doesn't, which the spec never guarantees). Forces
   // Angular to hand this canvas a genuinely fresh <canvas> DOM element via
-  // the template's own *ngFor/trackBy - the same mechanism ZonePaintingComponent/
-  // SixViewOverlayComponent/ZonePreviewComponent already use for their own
-  // canvases, adapted here since this one is otherwise never conditionally
+  // the template's own *ngFor/trackBy - the same mechanism SixViewOverlayComponent
+  // already uses for its own canvases, adapted here since this one is otherwise never conditionally
   // destroyed at all.
   private canvasGeneration = 0;
   // Set the first frame a lost context is noticed, cleared once
@@ -128,7 +111,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private renderer!: THREE.WebGLRenderer;
   // Every actual draw of `scene` goes through this instead of calling
   // `this.renderer.render()` directly - see rendering/weighted-oit.ts for
-  // why (stable transparency between the STL reference and the voxel fill,
+  // why (stable transparency of the STL reference,
   // regardless of camera angle). It falls back to a plain direct render on
   // its own when nothing in the scene is tagged for it, so this is safe to
   // use unconditionally rather than branching here.
@@ -178,41 +161,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // pass, before ngAfterViewInit (and initScene, which creates gridHelper)
   // has even run, so reading gridHelper.visible directly there would throw.
   private gridVisible = true;
-  // Backing state for the "Показати зони" toggle (see hasAnyZones/
-  // toggleZonesOverlay/updateZoneOverlay) - whether the user WANTS to see
-  // it, independent of whether it's currently allowed to show (at least one
-  // zone exists). Rebuilt lazily in updateZoneOverlay whenever the session or
-  // ZonePaintingService.zonesRevision(sessionId) has changed since the last
-  // build (a per-zone color edit bumps this WITHOUT changing zones.length,
-  // so revision - not length - is what this must key on), same identity-
-  // cache reasoning as updateVoxelPreview above.
-  private zonesOverlayWanted = false;
-  private zoneOverlayGroup: THREE.Group | null = null;
-  private zoneOverlaySessionId: number | null = null;
-  private zoneOverlayRevision = -1;
-  // Same "wanted vs. currently allowed" split as zonesOverlayWanted above,
-  // for the "Показати зони на STL" toggle - the zone list interleaves STL
-  // painting per zone now (no single "saved, frozen forever" moment), so
-  // this rebuilds whenever getTriangleZones returns a DIFFERENT array
-  // instance than last time (recomputeTriangleZones always creates a fresh
-  // one - see SurfaceZonePaintingService's own comment), not just once per
-  // session.
-  private surfaceZonesOverlayWanted = false;
-  private surfaceZoneOverlayGroup: THREE.Object3D | null = null;
-  private surfaceZoneOverlaySessionId: number | null = null;
-  private surfaceZoneOverlayTriangleZone: Int16Array | null = null;
-  // Last shouldShow value updateSurfaceZoneOverlay computed - lets it touch
-  // currentImportedReference.visible only right at a real transition, not
-  // unconditionally on every one of its (every-World, every-frame) calls.
-  private surfaceZoneOverlayShown = false;
   private readonly referenceRender = inject(ImportedReferenceRenderService);
-  // Read directly (not via @Input) inside updateVoxelPreview() - see there
-  // for why.
-  private readonly voxelization = inject(VoxelizationService);
-  private readonly surfaceZonePainting = inject(SurfaceZonePaintingService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
-  private readonly zonePainting = inject(ZonePaintingService);
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -262,19 +213,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Same sharing model as currentDimensionLines/lastDimensionLines.
   private currentHoleHighlight: THREE.Object3D | null = null;
   private lastHoleHighlight: THREE.Object3D | null = null;
-  // Same sharing model as currentDimensionLines/lastDimensionLines - owned
-  // and disposed by VoxelizationService, not here.
-  private currentVoxelPreview: THREE.Object3D | null = null;
-  private lastVoxelPreview: THREE.Object3D | null = null;
-  // Click-to-select a single voxel (see handlePointerDown/Up below) -
-  // Ideal-World-only in practice, since currentVoxelPreview is only ever
-  // non-null there. Reused across clicks (raycaster/pointer are just scratch
-  // objects, no per-click allocation needed) rather than owned by
-  // VoxelizationService - picking is a property of THIS canvas's camera/DOM
-  // element, not of the voxelization result itself.
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly pointerNdc = new THREE.Vector2();
-  private pointerDownClient: { x: number; y: number } | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private readonly sharedModel = inject(SharedModelService);
   private lastSessionId: number | null = null;
@@ -300,19 +238,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.checkResize();
     this.oitRenderer.render(this.scene, this.camera);
   };
-  private onPointerDown = (event: PointerEvent) => {
-    this.pointerDownClient = { x: event.clientX, y: event.clientY };
-  };
-  private onPointerUp = (event: PointerEvent) => this.handleVoxelPointerUp(event);
-  // Right-click is repurposed as the "build" gesture (see
-  // handleVoxelPointerUp) - the browser's own context menu has no purpose
-  // over this 3D view and would otherwise pop up on every build click.
-  private onContextMenu = (event: Event) => event.preventDefault();
-  // Delete/Backspace removes whichever voxel is currently selected - the
-  // other half of the Minecraft-style build feature. Listens on `window`,
-  // not the canvas, since three.js canvases aren't focusable/focused by
-  // default - a canvas-scoped listener would simply never fire.
-  private onKeyDown = (event: KeyboardEvent) => this.handleVoxelDeleteKey(event);
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -329,19 +254,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.cdr.detectChanges();
 
     this.attachCanvasListeners(this.canvasRef.nativeElement);
-    // Window-scoped, not canvas-scoped (three.js canvases aren't focusable
-    // by default - see onKeyDown's own comment) - bound exactly once here,
-    // for this component's whole lifetime, unlike the canvas-scoped
-    // listeners above which get reattached to a fresh element every time
-    // recoverFromLostContext runs.
-    window.addEventListener('keydown', this.onKeyDown);
-
     this.animate();
   }
 
-  // Canvas-scoped listeners only (NOT the window-scoped keydown above) -
-  // shared between the initial setup (ngAfterViewInit) and
-  // recoverFromLostContext, which needs to rebind these same 5 to a
+  // Shared between the initial setup (ngAfterViewInit) and
+  // recoverFromLostContext, which needs to rebind these same 2 to a
   // genuinely new <canvas> element after a permanently-lost context. No
   // explicit removal from the OLD canvas is needed in that second case -
   // it's already been destroyed by Angular (the *ngFor/trackBy swap) by the
@@ -349,9 +266,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private attachCanvasListeners(canvas: HTMLCanvasElement): void {
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
-    canvas.addEventListener('pointerdown', this.onPointerDown);
-    canvas.addEventListener('pointerup', this.onPointerUp);
-    canvas.addEventListener('contextmenu', this.onContextMenu);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -369,7 +283,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateHoleHighlight();
-    this.updateVoxelPreview();
     this.updateSession();
     this.oitRenderer.render(this.scene, this.camera);
   }
@@ -390,15 +303,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
-    canvas.removeEventListener('pointerdown', this.onPointerDown);
-    canvas.removeEventListener('pointerup', this.onPointerUp);
-    canvas.removeEventListener('contextmenu', this.onContextMenu);
-    window.removeEventListener('keydown', this.onKeyDown);
     if (this.currentImportedReference) {
       disposeImportedReferenceClone(this.currentImportedReference);
     }
-    this.clearZoneOverlay();
-    this.clearSurfaceZoneOverlay();
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
     this.oitRenderer?.dispose();
@@ -559,7 +466,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateHoleHighlight();
-    this.updateVoxelPreview();
 
     // Each a fixed scene fixture (not per-session/model), same lifetime as
     // the whole component, so none of them needs cleanup/disposal logic of
@@ -820,156 +726,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
-  // Reads VoxelizationService/ImportedReferenceDisplayService DIRECTLY
-  // here, every frame - NOT via an @Input like the overlays above.
-  // Regression: an @Input is only refreshed when Angular actually runs
-  // change detection for this component, which is gated on its own
-  // (rAF-coalesced) schedule - a SEPARATE clock from this component's own
-  // `animate()` rAF loop. VoxelizationService disposes a superseded
-  // preview SYNCHRONOUSLY (run()/clearResult()), and BatchedMesh.dispose()
-  // leaves the object in a state that crashes renderer.render() if it's
-  // drawn again (nulls internal texture refs onBeforeRender then
-  // dereferences). If this component's own rAF fired before Angular's CD
-  // caught up, `this.voxelPreview` (the @Input) would still hold the
-  // now-disposed reference, and this method's own "nothing changed" guard
-  // would skip removing it - `renderer.render()` right after would then
-  // throw. Computing the value directly here, in the SAME synchronous
-  // call as the removal/render decision, makes that race impossible: JS
-  // is single-threaded, so whatever VoxelizationService disposed has
-  // already fully happened by the time this next runs, no matter which
-  // rAF queue got there first.
-  private updateVoxelPreview(): void {
-    const source =
-      this.worldIndex === IDEAL_WORLD_INDEX &&
-      this.sessionId !== null &&
-      this.importedReferenceDisplay.getStyle(this.sessionId).voxelPreviewVisible &&
-      // "Показати зони на STL" is meant to show ONLY the colored STL
-      // surface (per the user's own request) - the coarse voxel cubes
-      // sitting in roughly the same physical space would otherwise
-      // visually compete with (and largely hide) that fine-grained result.
-      !this.isSurfaceZonesOverlayVisible()
-        ? this.voxelization.getVoxelPreview(this.sessionId)
-        : null;
-    if (this.lastVoxelPreview === source) {
-      return;
-    }
-    this.lastVoxelPreview = source;
-
-    // Removes from the scene WITHOUT disposing - VoxelizationService owns
-    // disposal entirely (run()/clearResult()/pruneTo), since it's the only
-    // thing that actually knows when an object is retired for good versus
-    // just temporarily not the one to show (e.g. "Показати кубики" toggled
-    // off keeps the object valid in the service's cache; this component
-    // must not destroy it just because it stopped being asked to draw it).
-    if (this.currentVoxelPreview) {
-      this.scene.remove(this.currentVoxelPreview);
-      this.currentVoxelPreview = null;
-    }
-
-    if (source === null) {
-      return;
-    }
-
-    // Added directly, NOT cloned - already in world space (see
-    // buildVoxelPreview's own doc comment), unlike dimensionLines/ruler
-    // (whose clone() exists specifically to copy the reference's position/
-    // quaternion onto a per-canvas copy) - and BatchedMesh (the fill's
-    // renderer) can't support Object3D.clone() at all regardless.
-    this.currentVoxelPreview = source;
-    this.scene.add(this.currentVoxelPreview);
-    this.renderer.compile(this.scene, this.camera);
-  }
-
-  // Left-click selects a single voxel (highlighted red); right-click is the
-  // Minecraft-style build gesture - it adds a new voxel directly adjacent
-  // to whichever face was clicked. Both raycast against the current
-  // preview's BatchedMesh; only which service call the hit gets forwarded
-  // to differs. Fires on pointerup, gated by a movement threshold against
-  // the matching pointerdown (onPointerDown) so an OrbitControls
-  // drag-to-orbit gesture (mouse moves a lot between down and up) never
-  // gets misread as a click.
-  private handleVoxelPointerUp(event: PointerEvent): void {
-    const downClient = this.pointerDownClient;
-    this.pointerDownClient = null;
-    if (!downClient) {
-      return;
-    }
-    const movedPx = Math.hypot(event.clientX - downClient.x, event.clientY - downClient.y);
-    if (movedPx > VOXEL_CLICK_MOVE_THRESHOLD_PX) {
-      return;
-    }
-    // 0 = left (select), 2 = right (build) - anything else (e.g. the middle
-    // button, used for panning) is none of this component's business.
-    if (event.button !== 0 && event.button !== 2) {
-      return;
-    }
-    // Voxel selection/build only exists in the Ideal World
-    // (currentVoxelPreview is only ever non-null there), only on the
-    // currently-active canvas tab, never while the rotate gizmo is
-    // mid-drag (its own click already means something else - releasing a
-    // ring, not picking/building a voxel), and never for a session that's
-    // since closed.
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || !this.active || this.sessionId === null || this.rotateGizmo.dragging) {
-      return;
-    }
-
-    const preview = this.currentVoxelPreview;
-    const batchedFill = preview?.children.find((child): child is THREE.BatchedMesh => child instanceof THREE.BatchedMesh);
-    if (!batchedFill) {
-      if (event.button === 0) {
-        this.voxelization.selectVoxelInstance(this.sessionId, null);
-      }
-      return;
-    }
-
-    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
-    this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-    const hit = this.raycaster.intersectObject(batchedFill)[0];
-
-    if (event.button === 0) {
-      const instanceId = hit && hit.batchId !== undefined ? hit.batchId : null;
-      this.voxelization.selectVoxelInstance(this.sessionId, instanceId);
-      return;
-    }
-
-    // Right-click (build): missing a hit, its instance, its face, or the
-    // cell that instance resolves to all mean there's nothing to build
-    // onto here - silently do nothing, same as a select-click into empty
-    // space finding nothing to select.
-    if (!hit || hit.batchId === undefined || !hit.face || !preview) {
-      return;
-    }
-    const cell = getVoxelCellByInstanceId(preview, hit.batchId);
-    if (!cell) {
-      return;
-    }
-    this.voxelization.addVoxelOnFace(this.sessionId, cell, hit.face.normal);
-  }
-
-  // The other half of the Minecraft-style build: Delete/Backspace removes
-  // whichever voxel is currently selected (VoxelizationService owns both
-  // the selection and the removal - this just forwards the keypress).
-  private handleVoxelDeleteKey(event: KeyboardEvent): void {
-    if (event.key !== 'Delete' && event.key !== 'Backspace') {
-      return;
-    }
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || !this.active || this.sessionId === null) {
-      return;
-    }
-    // Don't hijack Delete/Backspace while the user is typing somewhere else
-    // in the UI (a settings-panel input, for instance) - this listener is
-    // on `window`, not scoped to the canvas, so it sees every keypress in
-    // the app regardless of what currently has focus.
-    const target = event.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-      return;
-    }
-    event.preventDefault();
-    this.voxelization.removeSelectedVoxel(this.sessionId);
-  }
-
   // Gates the STL-reference visibility toggle button below (world-canvas.
   // component.html) to the one canvas the reference actually lives on - same
   // reasoning as RenderWindowComponent.getImportedReference's own
@@ -1004,29 +760,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     const currentlyVisible = this.importedReferenceDisplay.getStyle(this.sessionId).visible;
     this.importedReferenceDisplay.setVisible(this.sessionId, !currentlyVisible);
-  }
-
-  // Backing text for the R2-violation overlay (world-canvas.component.html)
-  // - null hides it. deletionViolationBySession is keyed only by sessionId,
-  // not by World, so this is gated to the Ideal World the same way the
-  // voxel-build feature itself is (see handleVoxelDeleteKey/
-  // handleVoxelPointerUp above) - otherwise the Real/Solver World canvases
-  // for the same session would show it too. Component sizes aren't
-  // grammatically pluralized (same simplification the settings-panel's own
-  // "N кубів" status line already makes) - "+"-joined so the split itself
-  // is legible at a glance, not just the group count.
-  getDeletionViolationMessage(): string | null {
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
-      return null;
-    }
-    const violation = this.voxelization.getDeletionViolation(this.sessionId);
-    if (!violation) {
-      return null;
-    }
-    if (violation.kind === 'last-cube') {
-      return 'Видалення заборонено: це останній воксель - вокселізація не може бути порожньою';
-    }
-    return `Видалення заборонено: геометрія розпадеться на ${violation.componentSizes.length} частини (${violation.componentSizes.join(' + ')} кубів)`;
   }
 
   private updateSession(): void {
@@ -1096,10 +829,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.updateDimensionLines();
       this.updateRuler();
       this.updateHoleHighlight();
-      this.updateVoxelPreview();
-      this.updateZoneOverlay();
-      this.updateSurfaceZoneOverlay();
-      this.updateSession();
+        this.updateSession();
       this.updateSettleAnimation();
 
       // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
@@ -1260,28 +990,16 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return this.modelPresent;
   }
 
-  // Backing state + action for the on-canvas "Розмітка зон" button -
-  // docs/local-refinement/PROBLEMS.md, Проблема 2, Варіант D. Gated to the
-  // Ideal World (same reasoning as isImportedReferenceVisible - zoning is
-  // about the shape itself, not a per-World display concern) AND to a
-  // successful voxelization, since the tool paints over that grid's own
-  // (ix,iy,iz) indices - there's nothing to paint before it exists.
-  hasVoxelization(): boolean {
-    return this.sessionId !== null && this.voxelization.getStatus(this.sessionId).kind === 'ok';
-  }
-
   // Fixtures that are clutter, not content, in every fixed-axis "just show
-  // me the model" preview this canvas can feed (SixViewOverlayComponent,
-  // ZonePaintingComponent, and - via ZonePaintingSource.hiddenDuringView,
-  // carried through by its own openStep2ForZone - SurfaceZonePaintingComponent
-  // too): the floor grid, the interactive rotate-gizmo ring (meaningless
+  // me the model" preview this canvas can feed (SixViewOverlayComponent):
+  // the floor grid, the interactive rotate-gizmo ring (meaningless
   // outside THIS canvas's own orbit controls), and the dimension-lines/ruler
   // measurement overlays (ImportedReferenceDisplayService's
   // dimensionsVisible/rulerVisible toggles) - all still visible on THIS
   // canvas's own normal view the whole time, just hidden for the duration
   // of each preview's own render() calls (see each component's own animate()).
   // A snapshot at whichever moment the preview is opened, same as
-  // framingObjects/voxelPreview/stlMesh below - toggling dimension
+  // framingObjects below - toggling dimension
   // lines/ruler ON only AFTER a preview is already open won't retroactively
   // hide them there until it's reopened, matching how this already worked
   // for gridHelper/the rotate gizmo.
@@ -1297,196 +1015,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       fixtures.push(this.currentHoleHighlight);
     }
     return fixtures;
-  }
-
-  openZonePainting(): void {
-    if (this.worldIndex === IDEAL_WORLD_INDEX && this.sessionId !== null && this.currentVoxelPreview) {
-      this.zonePainting.open(this.sessionId, {
-        scene: this.scene,
-        voxelPreview: this.currentVoxelPreview,
-        stlMesh: this.currentImportedReference,
-        framingObjects: [this.currentVoxelPreview],
-        hiddenDuringView: this.previewFixtures()
-      });
-    }
-  }
-
-  // Backing state + action for the on-canvas "Показати зони" button - shows
-  // the same colored-zone overlay the zone-painting window's own 3D result
-  // panel shows (geometry/zone-overlay.ts, shared code), but directly on
-  // THIS canvas's normal, freely-orbitable view of the full-size model.
-  // Enabled once at least one zone exists - the zone list no longer has a
-  // single "fully covered and confirmed" moment (zones are committed one at
-  // a time, partial coverage is an accepted end state, unclaimed voxels
-  // fall back to the automatic check), so showing a partial result here is
-  // no longer a sign of something unfinished, just the current state.
-  hasAnyZones(): boolean {
-    if (this.sessionId === null) {
-      return false;
-    }
-    const coverage = this.zonePainting.coverage(this.sessionId);
-    return coverage !== null && coverage.assigned > 0;
-  }
-
-  isZonesOverlayVisible(): boolean {
-    return this.zonesOverlayWanted && this.hasAnyZones();
-  }
-
-  toggleZonesOverlay(): void {
-    this.zonesOverlayWanted = !this.zonesOverlayWanted;
-  }
-
-  // Lazily (re)builds the overlay group only when the session or the zone
-  // data itself has actually changed since the last build - called every
-  // frame from animate(), same pattern as updateVoxelPreview.
-  private updateZoneOverlay(): void {
-    // "Показати зони на STL" means ONLY the STL surface's zones show - the
-    // voxel color-box overlay would otherwise still float there
-    // independently (it's a separate object, unaffected by
-    // updateVoxelPreview hiding the plain voxel cubes on their own).
-    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isZonesOverlayVisible() && !this.isSurfaceZonesOverlayVisible();
-    if (!shouldShow) {
-      this.clearZoneOverlay();
-      return;
-    }
-
-    const sessionId = this.sessionId!;
-    const session = this.zonePainting.getSession(sessionId);
-    if (!session) {
-      this.clearZoneOverlay();
-      return;
-    }
-    const revision = this.zonePainting.zonesRevision(sessionId);
-    if (this.zoneOverlayGroup && this.zoneOverlaySessionId === sessionId && this.zoneOverlayRevision === revision) {
-      return; // already showing the current zone data - nothing to rebuild
-    }
-
-    if (this.zoneOverlayGroup) {
-      disposeZoneOverlayGroup(this.zoneOverlayGroup);
-      this.zoneOverlayGroup = null;
-    }
-    const opacity = this.zonePainting.getZoneOverlayOpacity(sessionId);
-    const group = buildZoneOverlayGroup(session.grid, session.zones, (ix, iy, iz) => this.zonePainting.zoneIdAt(sessionId, ix, iy, iz), opacity);
-    if (group) {
-      this.scene.add(group);
-    }
-    this.zoneOverlayGroup = group;
-    this.zoneOverlaySessionId = sessionId;
-    this.zoneOverlayRevision = revision;
-  }
-
-  private clearZoneOverlay(): void {
-    if (this.zoneOverlayGroup) {
-      disposeZoneOverlayGroup(this.zoneOverlayGroup);
-      this.zoneOverlayGroup = null;
-    }
-    this.zoneOverlaySessionId = null;
-    this.zoneOverlayRevision = -1;
-  }
-
-  // Backing value + action for the "Прозорість зон" slider next to
-  // "Показати зони" - cheap live update (setZoneOverlayOpacity just touches
-  // each material's opacity), not a full updateZoneOverlay rebuild, so
-  // dragging the slider stays smooth. Persisted per-session
-  // (ZonePaintingService.setZoneOverlayOpacity) - the SAME value the
-  // zone-painting window's own 3D result panel slider reads/writes, so
-  // adjusting it in either place carries over to the other.
-  zoneOverlayOpacity(): number {
-    return this.sessionId === null ? 0.75 : this.zonePainting.getZoneOverlayOpacity(this.sessionId);
-  }
-
-  setZoneOverlayOpacityFromInput(value: string): void {
-    if (this.sessionId === null) {
-      return;
-    }
-    const opacity = Number(value);
-    this.zonePainting.setZoneOverlayOpacity(this.sessionId, opacity);
-    if (this.zoneOverlayGroup) {
-      setZoneOverlayOpacity(this.zoneOverlayGroup, opacity);
-    }
-  }
-
-  // Backing state + action for the "Показати зони на STL" button - the
-  // step-2 (surface) counterpart to hasAnyZones/isZonesOverlayVisible/
-  // toggleZonesOverlay above. Enabled once at least one zone has any STL
-  // data at all, same "partial is a real end state" reasoning as the voxel
-  // version.
-  hasAnySurfaceZoning(): boolean {
-    if (this.sessionId === null) {
-      return false;
-    }
-    const coverage = this.surfaceZonePainting.coverage(this.sessionId);
-    return coverage !== null && coverage.assigned > 0;
-  }
-
-  isSurfaceZonesOverlayVisible(): boolean {
-    return this.surfaceZonesOverlayWanted && this.hasAnySurfaceZoning();
-  }
-
-  toggleSurfaceZonesOverlay(): void {
-    this.surfaceZonesOverlayWanted = !this.surfaceZonesOverlayWanted;
-  }
-
-  // Lazily builds the overlay once per session (never rebuilt after that -
-  // unlike updateZoneOverlay, step 2's data is frozen the moment save()
-  // succeeds, so there's no revision to key off) - called every frame from
-  // animate(), same pattern as updateZoneOverlay/updateVoxelPreview.
-  private updateSurfaceZoneOverlay(): void {
-    const shouldShow = this.worldIndex === IDEAL_WORLD_INDEX && this.isSurfaceZonesOverlayVisible();
-    // The overlay is a fully-opaque clone of the EXACT same STL geometry,
-    // at the exact same depth - leaving the original reference visible
-    // underneath it would z-fight (2 coincident opaque surfaces, flickering
-    // unpredictably by floating-point depth precision) rather than being
-    // cleanly occluded. Toggled here (not inside updateImportedReference's
-    // own rebuild logic) so flipping this on/off never triggers a pointless
-    // reference rebuild/re-gizmo-attach cycle - same object, just hidden.
-    //
-    // Only touched right AT the shouldShow transition, not unconditionally
-    // every frame: this runs for all 3 Worlds, every frame, regardless of
-    // which one is actually active - forcing .visible=true every single
-    // tick whenever shouldShow is false would fight any OTHER mechanism
-    // that legitimately wants this object hidden for its own reasons
-    // (its own visibility checkbox, a different overlay's own toggling)
-    // by re-asserting an opinion here nobody asked for on ticks where
-    // nothing actually changed.
-    if (shouldShow !== this.surfaceZoneOverlayShown && this.currentImportedReference) {
-      this.currentImportedReference.visible = !shouldShow;
-    }
-    this.surfaceZoneOverlayShown = shouldShow;
-    if (!shouldShow) {
-      this.clearSurfaceZoneOverlay();
-      return;
-    }
-
-    const sessionId = this.sessionId!;
-    const triangleZone = this.surfaceZonePainting.getTriangleZones(sessionId);
-    if (this.surfaceZoneOverlayGroup && this.surfaceZoneOverlaySessionId === sessionId && this.surfaceZoneOverlayTriangleZone === triangleZone) {
-      return; // already showing this exact triangleZone result - nothing to rebuild
-    }
-    if (this.surfaceZoneOverlayGroup) {
-      disposeSurfaceZoneOverlay(this.surfaceZoneOverlayGroup);
-      this.surfaceZoneOverlayGroup = null;
-    }
-    const session = this.surfaceZonePainting.getSession(sessionId);
-    if (!session || !triangleZone || !this.currentImportedReference) {
-      this.surfaceZoneOverlaySessionId = null;
-      this.surfaceZoneOverlayTriangleZone = null;
-      return;
-    }
-    const group = buildSurfaceZoneOverlay(this.currentImportedReference, triangleZone, session.voxelZones, 1);
-    this.scene.add(group);
-    this.surfaceZoneOverlayGroup = group;
-    this.surfaceZoneOverlaySessionId = sessionId;
-    this.surfaceZoneOverlayTriangleZone = triangleZone;
-  }
-
-  private clearSurfaceZoneOverlay(): void {
-    if (this.surfaceZoneOverlayGroup) {
-      disposeSurfaceZoneOverlay(this.surfaceZoneOverlayGroup);
-      this.surfaceZoneOverlayGroup = null;
-    }
-    this.surfaceZoneOverlaySessionId = null;
-    this.surfaceZoneOverlayTriangleZone = null;
   }
 
   openSixView(): void {

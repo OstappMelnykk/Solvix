@@ -201,9 +201,9 @@ export class SettingsPanelComponent {
   // (.glb), or drop in an .stl straight from a mechanical-parts library
   // (Thingiverse, GrabCAD) - see geometry/loaders/. The imported object is
   // reference geometry only (ImportedGeometryService), not the session's
-  // working model - future features (e.g. voxelization) will need a
-  // watertight mesh to work correctly, hence surfacing that check's result
-  // here instead of failing silently later.
+  // working model - a non-watertight mesh makes inside/outside tests
+  // ill-defined, hence surfacing that check's result here instead of
+  // failing silently later.
   onImportFile(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];

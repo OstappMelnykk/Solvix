@@ -5,13 +5,11 @@ import * as THREE from 'three';
 // Why this exists: plain WebGL alpha blending draws transparent triangles
 // in whatever order the GPU submits them, and three.js only helps by
 // sorting whole OBJECTS back-to-front by their origin - not per pixel. With
-// the imported STL reference and the voxel fill both translucent and
-// overlapping in depth, that per-object sort is unstable: which one "wins"
-// a given pixel flips as the camera orbits, so the render visibly swaps
-// which surface reads as in-front from one frame to the next. Merging STL
-// and voxel geometry into one combined mesh (briefly considered) would NOT
-// fix this - the GPU still rasterizes and blends triangles in submission
-// order, not depth order, no matter whose geometry they came from.
+// a translucent, self-overlapping imported STL reference, that per-object
+// sort is unstable: which surface "wins" a given pixel flips as the camera
+// orbits, so the render visibly swaps which surface reads as in-front from
+// one frame to the next. The GPU rasterizes and blends triangles in
+// submission order, not depth order, so merging geometry doesn't fix it.
 //
 // Weighted Blended OIT sidesteps sorting entirely: every transparent
 // fragment is accumulated into a sum (weighted by how opaque it is) instead
@@ -54,33 +52,29 @@ import * as THREE from 'three';
 //
 // Both accum and reveal targets share ONE THREE.DepthTexture, populated by
 // an initial opaque "background" pass (everything NOT tagged for OIT,
-// which is nearly everything: floor grid, axes, lights' helpers, voxel
-// edges/nodes/highlight, the zone-color overlay, and the STL reference
-// when in wireframe mode). Accum/reveal render with depth TEST on but
-// depth WRITE off, so transparent fragments correctly hide behind opaque
-// geometry (a wall in front of the voxel grid still occludes it) without
+// which is nearly everything: floor grid, axes, lights' helpers, hole
+// highlight, and the STL reference when in wireframe mode). Accum/reveal
+// render with depth TEST on but depth WRITE off, so transparent fragments
+// correctly hide behind opaque geometry without
 // transparent fragments occluding each other (the entire point).
 //
 // Visibility isolation uses plain `.visible` toggling on actual renderable
 // leaf objects (Mesh/Line/Points - InstancedMesh/BatchedMesh are Mesh
 // subclasses so `instanceof THREE.Mesh` already covers them), never
 // `THREE.Layers`: the same live THREE.Scene is also rendered by OTHER
-// cameras this class knows nothing about (SixViewOverlayComponent,
-// ZonePaintingComponent's panels), which would silently stop seeing
+// cameras this class knows nothing about (SixViewOverlayComponent's
+// panels), which would silently stop seeing
 // layer-restricted objects if this tagged them with a dedicated OIT layer.
-// Toggling `.visible` on leaves only (never on a parent Group) matches how
-// the voxel preview's own Group mixes a tagged BatchedMesh fill with
-// untagged edges/nodes/highlight as SIBLINGS in the same group - toggling
-// the container would take all of them with it.
+// Toggling `.visible` on leaves only (never on a parent Group) keeps tagged
+// and untagged siblings in the same group independent - toggling the
+// container would take all of them with it.
 
 const WEIGHTED_OIT_FLAG = 'weightedOit';
 
 // Call once, right after constructing a material, to opt it into the OIT
-// pipeline below. Only the STL reference's solid-mode material and the
-// voxel fill material are tagged - everything else (edges/nodes/highlight,
-// the zone overlay, wireframe STL) is thin enough, and rendered often
-// enough on TOP of the fill rather than genuinely self-overlapping, that
-// the existing simple depthWrite:false + renderOrder scheme already
+// pipeline below. Only the STL reference's solid-mode material is
+// tagged - everything else (hole highlight, wireframe STL) is thin enough
+// that the existing simple depthWrite:false + renderOrder scheme already
 // handles it without needing the extra render passes this costs.
 export function markForWeightedOit(material: THREE.Material): void {
   material.userData[WEIGHTED_OIT_FLAG] = true;
@@ -91,13 +85,13 @@ function isWeightedOit(material: THREE.Material | readonly THREE.Material[]): bo
   return first?.userData?.[WEIGHTED_OIT_FLAG] === true;
 }
 
-// A tagged material currently sitting at opacity>=1 (the fill/reference
-// opacity sliders both allow this) must NOT go through the accum/reveal
+// A tagged material currently sitting at opacity>=1 (the reference
+// opacity slider allows this) must NOT go through the accum/reveal
 // passes: weighted OIT deliberately never depth-sorts or occludes between
 // the fragments it blends together, on the assumption every one of them is
 // genuinely translucent to some degree. Feed it a fully-opaque fragment
-// anyway (e.g. a voxel's front face at opacity=1, with its own back face or
-// a neighboring cube's face landing on the very same pixel) and it AVERAGES
+// anyway (e.g. the reference's front face at opacity=1, with its own back face
+// landing on the very same pixel) and it AVERAGES
 // them instead of letting the front one hide the back one outright - the
 // residual "still a little see-through even at max opacity" this was
 // reported to cause. So this is checked fresh every frame (never baked into
@@ -274,8 +268,8 @@ export class WeightedOitRenderer {
     const oitLeaves = leaves.filter(leaf => isWeightedOit(leaf.material) && !isFullyOpaque(leaf.material));
 
     if (oitLeaves.length === 0) {
-      // Nothing tagged is even in the scene right now (e.g. no voxel
-      // preview built yet, STL in wireframe mode) - the whole point of
+      // Nothing tagged is even in the scene right now (e.g. no reference
+      // imported yet, STL in wireframe mode) - the whole point of
       // this class is moot, so skip straight to an ordinary direct render
       // rather than paying for 3 extra passes for nothing.
       this.renderer.setRenderTarget(null);

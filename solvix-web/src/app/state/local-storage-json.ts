@@ -1,6 +1,5 @@
 // Tiny shared helper for every *StorageService in this directory
-// (ModelStorageService, and its siblings for sessions/imported geometry/
-// voxelization/zones) - all wrapped in try/catch since localStorage can
+// (ModelStorageService, and its siblings for sessions/imported geometry) - all wrapped in try/catch since localStorage can
 // throw (private browsing with storage blocked, quota exceeded) and
 // JSON.parse can throw on corrupt/foreign data; losing reload-survival is
 // far better than crashing the app over either.
@@ -37,11 +36,11 @@ export function removeKey(key: string): void {
 const SOLVIX_KEY_PREFIX = 'solvix:';
 
 // The user-facing "почати з чистого листа" reset - wipes every session,
-// model, imported reference, voxelization and zone ever persisted, for
+// model and imported reference ever persisted, for
 // every session, not just the active one. Deliberately does NOT try to
 // also reset each root-scoped service's own in-memory state (KeyedStores,
 // signals, live GPU resources scattered across WorldCanvasComponent/
-// zone-painting/etc) - correctly tearing all of that down by hand is far
+// etc) - correctly tearing all of that down by hand is far
 // more invasive and error-prone than just reloading the page right after
 // this runs, which gets the exact same result (every service re-reads from
 // now-empty storage on construction) for free.
