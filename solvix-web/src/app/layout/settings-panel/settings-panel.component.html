@@ -1,5 +1,7 @@
 <div class="context">Session {{ sessionId() }} · World {{ worldIndex() }}</div>
 
+<app-mesh-editor-controls *ngIf="showsMeshEditor()" [sessionId]="sessionId()" [worldIndex]="worldIndex()" />
+
 <h4>Import</h4>
 <ng-container *ngIf="isIdealWorld(); else importElsewhere">
   <label class="tool">

@@ -1,4 +1,4 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -20,9 +20,14 @@ import { buildFloorGrid, updateGridResolution } from '../../../geometry/scene-ob
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
+import { MeshPick, MeshView, disposeMeshView } from '../../../geometry/mesh-editor-view';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
+// Above this many CSS pixels of movement between pointerdown and pointerup the
+// gesture was an OrbitControls drag, not a click - the browser's own `click`
+// has no such threshold, so it is tracked by hand.
+const CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
 const DEFAULT_ORTHO_HALF_HEIGHT = 5;
@@ -85,6 +90,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // the surface (ImportedReferenceRenderService, geometry/scene-objects/hole-highlight.ts) -
   // a separate overlay, independently toggleable (ImportedReferenceDisplayService.holesVisible).
   @Input() holeHighlight: THREE.Object3D | null = null;
+  // The mesh editor's drawing for this World (MeshEditorRenderService) - a
+  // fresh object whenever the server state or the selection changes. Added to
+  // the scene as is (each World gets its own, so no clone is needed) and
+  // disposed here when it is swapped out, since this canvas is the one that
+  // draws it.
+  @Input() meshView: MeshView | null = null;
+  // A click on a node or face of meshView, or on empty space (pick: null).
+  @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null }>();
+
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   // Bumped only when this canvas's WebGL context was lost and the browser
@@ -213,6 +227,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Same sharing model as currentDimensionLines/lastDimensionLines.
   private currentHoleHighlight: THREE.Object3D | null = null;
   private lastHoleHighlight: THREE.Object3D | null = null;
+  private currentMeshView: MeshView | null = null;
+  private lastMeshView: MeshView | null = null;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointerNdc = new THREE.Vector2();
+  private pointerDownClient: { x: number; y: number } | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private readonly sharedModel = inject(SharedModelService);
   private lastSessionId: number | null = null;
@@ -238,6 +257,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.checkResize();
     this.oitRenderer.render(this.scene, this.camera);
   };
+
+  private onPointerDown = (event: PointerEvent) => {
+    this.pointerDownClient = { x: event.clientX, y: event.clientY };
+  };
+  private onPointerUp = (event: PointerEvent) => this.handleClick(event);
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -266,6 +290,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private attachCanvasListeners(canvas: HTMLCanvasElement): void {
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointerup', this.onPointerUp);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -283,6 +309,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateHoleHighlight();
+    this.updateMeshView();
     this.updateSession();
     this.oitRenderer.render(this.scene, this.camera);
   }
@@ -303,8 +330,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerup', this.onPointerUp);
     if (this.currentImportedReference) {
       disposeImportedReferenceClone(this.currentImportedReference);
+    }
+    if (this.currentMeshView) {
+      disposeMeshView(this.currentMeshView);
     }
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
@@ -466,6 +498,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateHoleHighlight();
+    this.updateMeshView();
 
     // Each a fixed scene fixture (not per-session/model), same lifetime as
     // the whole component, so none of them needs cleanup/disposal logic of
@@ -726,6 +759,55 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
+  private updateMeshView(): void {
+    const source = this.meshView;
+    if (this.lastMeshView === source) {
+      return;
+    }
+    this.lastMeshView = source;
+
+    const hadMesh = this.currentMeshView !== null;
+    if (this.currentMeshView) {
+      this.scene.remove(this.currentMeshView.root);
+      disposeMeshView(this.currentMeshView);
+      this.currentMeshView = null;
+    }
+    if (source === null) {
+      return;
+    }
+    this.currentMeshView = source;
+    this.scene.add(source.root);
+    this.renderer.compile(this.scene, this.camera);
+    // The first cube of a session: aim the orbit at it instead of leaving the
+    // camera pointed at the world origin.
+    if (!hadMesh) {
+      this.centerOrbitTargetOn(source.root);
+    }
+  }
+
+  // A left click (not an orbit drag) picks whatever node or face is under the
+  // pointer; the parent decides what that means.
+  private handleClick(event: PointerEvent): void {
+    const down = this.pointerDownClient;
+    this.pointerDownClient = null;
+    if (!down || event.button !== 0 || !this.active || this.rotateGizmo.dragging) {
+      return;
+    }
+    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) {
+      return;
+    }
+    const view = this.currentMeshView;
+    if (!view) {
+      return;
+    }
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+    const hit = this.raycaster.intersectObjects(view.pickables, false)[0];
+    this.meshPick.emit({ pick: (hit?.object.userData['pick'] as MeshPick | undefined) ?? null });
+  }
+
   // Gates the STL-reference visibility toggle button below (world-canvas.
   // component.html) to the one canvas the reference actually lives on - same
   // reasoning as RenderWindowComponent.getImportedReference's own
@@ -829,7 +911,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.updateDimensionLines();
       this.updateRuler();
       this.updateHoleHighlight();
-        this.updateSession();
+      this.updateMeshView();
+      this.updateSession();
       this.updateSettleAnimation();
 
       // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
@@ -1020,6 +1103,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   openSixView(): void {
     if (this.currentModel && this.sessionId !== null) {
       const framingObjects: THREE.Object3D[] = [this.currentModel];
+      if (this.currentMeshView) {
+        framingObjects.push(this.currentMeshView.root);
+      }
       if (this.currentImportedReference) {
         framingObjects.push(this.currentImportedReference);
       }

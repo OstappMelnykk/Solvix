@@ -11,6 +11,8 @@
     [dimensionLines]="getDimensionLines(i)"
     [ruler]="getRuler(i)"
     [holeHighlight]="getHoleHighlight(i)"
+    [meshView]="getMeshView(i)"
+    (meshPick)="onMeshPick($event.pick)"
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />

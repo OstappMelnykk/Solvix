@@ -20,3 +20,7 @@ export const WORLDS_CONFIG: WorldConfig[] = [
 // this - previously each hardcoded its own separate `0`, which could silently
 // desync if WORLDS_CONFIG were ever reordered.
 export const IDEAL_WORLD_INDEX = 0;
+
+// Real World's index - where nodes of the mesh editor are moved (the Ideal
+// World shows the same mesh on its fixed integer lattice).
+export const REAL_WORLD_INDEX = 1;

@@ -1,0 +1,89 @@
+<h4>Редактор сітки</h4>
+
+<div class="stats">Куби: {{ hexCount() }} · Вузли: {{ nodeCount() }}</div>
+
+<div class="group">
+  <div class="pair">
+    <button class="tool" type="button" [disabled]="!canUndo()" (click)="undo()">Скасувати</button>
+    <button class="tool" type="button" [disabled]="!canRedo()" (click)="redo()">Повернути</button>
+  </div>
+  <button class="tool tool--primary" type="button" [disabled]="!canAddFirst()" (click)="addFirst()">Перший куб</button>
+</div>
+
+<div class="group">
+  <div class="group-label">Грані (клік по грані на сцені)</div>
+  <div class="hint" *ngIf="selectedFaces().length === 0">Оберіть грань; щоб з'єднати дві — оберіть другу.</div>
+  <div class="selected" *ngFor="let face of selectedFaces(); let i = index">
+    <b>{{ i === 0 ? 'Перша' : 'Друга' }}:</b> {{ faceLabel(face) }}<br />
+    <span class="status">{{ faceStatusText(face) }}</span>
+  </div>
+  <button class="tool" type="button" [disabled]="!canAttach()" (click)="attach()">Додати куб на грань</button>
+  <label class="row">
+    <span>Підлаштувати другу грань</span>
+    <input type="checkbox" [checked]="adaptSecond" (change)="onAdaptChange($event)" />
+  </label>
+  <button class="tool" type="button" [disabled]="!canLink()" (click)="link()">З'єднати дві грані</button>
+  <button class="tool" type="button" [disabled]="!canUnlink()" (click)="unlink()">Роз'єднати грань</button>
+  <button class="tool" type="button" [disabled]="selectedFaces().length === 0 && selectedNodeId() === null" (click)="clearSelection()">
+    Зняти виділення
+  </button>
+</div>
+
+<div class="group">
+  <div class="group-label">Вузол</div>
+  <ng-container *ngIf="selectedNodeId() !== null; else noNode">
+    <div class="selected"><b>Вузол {{ selectedNodeId() }}</b></div>
+    <ng-container *ngIf="isRealWorld; else idealHint">
+      <label class="row" *ngFor="let axis of axes">
+        <span>{{ axis.toUpperCase() }}</span>
+        <input type="number" step="0.01" [value]="nodeCoord(axis)" [disabled]="!canMoveNode()" (change)="onCoordChange(axis, $event)" />
+        <span class="nudges">
+          <button class="chip" type="button" [disabled]="!canMoveNode()" (click)="nudge(axis, -1)">−</button>
+          <button class="chip" type="button" [disabled]="!canMoveNode()" (click)="nudge(axis, 1)">+</button>
+        </span>
+      </label>
+      <label class="row">
+        <span>Крок</span>
+        <input type="number" min="0.001" step="0.01" [value]="nudgeStep" (change)="onNudgeStepChange($event)" />
+      </label>
+      <label class="row">
+        <span>Середини ребер разом з кутом</span>
+        <input type="checkbox" [checked]="carryEdgeMidpoints" (change)="onCarryChange($event)" />
+      </label>
+    </ng-container>
+    <ng-template #idealHint><div class="hint">Вузли рухаються у вкладці Real World.</div></ng-template>
+  </ng-container>
+  <ng-template #noNode><div class="hint">Клік по вузлу на сцені.</div></ng-template>
+</div>
+
+<div class="group">
+  <div class="group-label">Перевірка мапінгу</div>
+  <div class="row row--coords">
+    <span>Ideal</span>
+    <input type="number" step="0.1" [value]="mappingIdeal.x" (change)="onMappingInput('ideal', 'x', $event)" />
+    <input type="number" step="0.1" [value]="mappingIdeal.y" (change)="onMappingInput('ideal', 'y', $event)" />
+    <input type="number" step="0.1" [value]="mappingIdeal.z" (change)="onMappingInput('ideal', 'z', $event)" />
+  </div>
+  <button class="tool" type="button" [disabled]="hexCount() === 0" (click)="probeIdealToReal()">Ideal → Real</button>
+  <div class="row row--coords">
+    <span>Real</span>
+    <input type="number" step="0.1" [value]="mappingReal.x" (change)="onMappingInput('real', 'x', $event)" />
+    <input type="number" step="0.1" [value]="mappingReal.y" (change)="onMappingInput('real', 'y', $event)" />
+    <input type="number" step="0.1" [value]="mappingReal.z" (change)="onMappingInput('real', 'z', $event)" />
+  </div>
+  <button class="tool" type="button" [disabled]="hexCount() === 0" (click)="probeRealToIdeal()">Real → Ideal</button>
+  <div class="result" *ngIf="mappingResult">{{ mappingResult }}</div>
+</div>
+
+<div class="group">
+  <button class="tool" type="button" *ngIf="!isResetConfirming; else confirmBlock" [disabled]="hexCount() === 0 || busy" (click)="requestReset()">
+    Скинути сітку
+  </button>
+  <ng-template #confirmBlock>
+    <div class="selected">Видалити всі куби цієї сесії?</div>
+    <div class="pair">
+      <button class="tool" type="button" (click)="confirmReset()">Так</button>
+      <button class="tool" type="button" (click)="cancelReset()">Ні</button>
+    </div>
+  </ng-template>
+</div>

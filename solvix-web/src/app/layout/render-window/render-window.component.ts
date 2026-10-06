@@ -7,6 +7,9 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
+import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
+import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -31,6 +34,8 @@ export class RenderWindowComponent {
   private readonly importedGeometry = inject(ImportedGeometryService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
+  private readonly meshEditorRender = inject(MeshEditorRenderService);
+  private readonly meshSelection = inject(MeshEditorSelectionService);
   readonly worlds = WORLDS_CONFIG;
 
   // null when there's no active session - never matches a real worldIndex,
@@ -116,4 +121,25 @@ export class RenderWindowComponent {
     return this.importedReferenceRender.getHoleHighlight(sessionId);
   }
 
+  // The mesh editor's drawing for this World (Ideal: lattice positions, Real:
+  // real positions, Solver: nothing yet) - null until the session has a hex.
+  getMeshView(worldIndex: number): MeshView | null {
+    return this.meshEditorRender.getView(this.sessions.activeSessionId(), worldIndex);
+  }
+
+  // A click on the canvas: a node or face selects it (a second face makes the
+  // pair for "link"), empty space clears the selection.
+  onMeshPick(pick: MeshPick | null): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) {
+      return;
+    }
+    if (pick === null) {
+      this.meshSelection.clear(sessionId);
+    } else if (pick.kind === 'face') {
+      this.meshSelection.toggleFace(sessionId, { hex: pick.hex, face: pick.face });
+    } else {
+      this.meshSelection.selectNode(sessionId, pick.nodeId);
+    }
+  }
 }
