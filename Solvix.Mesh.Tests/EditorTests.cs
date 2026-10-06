@@ -222,3 +222,163 @@ public class LinkHexesTests
         Assert.That(editor.Mesh.Neighbor(3, HexFace.XPlus), Is.Null);
     }
 }
+
+public class RemoveHexTests
+{
+    // A(0,0) B(1,0) C(1,1) D(0,1), all four linked in a ring.
+    private static HexMeshEditor Ring()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(1, HexFace.YPlus);
+        editor.AddHexOnFace(0, HexFace.YPlus);
+        Assert.That(editor.LinkHexes(3, 2, LinkFit.Strict).Ok, Is.True);
+        return editor;
+    }
+
+    [Test]
+    public void Removing_a_leaf_drops_its_own_nodes_and_keeps_the_shared_ones()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+
+        Assert.That(editor.RemoveHex(1).Ok, Is.True);
+
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(1));
+        Assert.That(editor.Mesh.Nodes.Count, Is.EqualTo(20));
+        Assert.That(editor.Mesh.HexAtCell((1, 0, 0)), Is.Null);
+        Assert.That(editor.Mesh.Neighbor(0, HexFace.XPlus), Is.Null);
+        Assert.That(editor.Mesh.OwnersOf(editor.Mesh.Hex(0).NodeIds[1]).Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void A_bridge_cube_cannot_be_removed_and_the_reason_names_the_parts()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(1, HexFace.XPlus);   // chain 0-1-2
+        var before = editor.Mesh.ToState();
+
+        var result = editor.RemoveHex(1);
+
+        Assert.That(result.Ok, Is.False);
+        Assert.That(result.Error, Does.Contain("split the body into 2 parts"));
+        Assert.That(editor.Mesh.ToState().Nodes, Is.EquivalentTo(before.Nodes));
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void A_branching_hub_cannot_be_removed()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(0, HexFace.YPlus);    // B and C hang off A but are not linked to each other
+
+        Assert.That(editor.RemoveHex(0).Ok, Is.False);
+        Assert.That(editor.RemoveHex(1).Ok, Is.True);
+    }
+
+    [Test]
+    public void In_a_ring_any_cube_can_go_because_the_rest_stays_connected()
+    {
+        var editor = Ring();
+
+        Assert.That(editor.RemoveHex(1).Ok, Is.True);
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(3));
+        Assert.That(editor.Mesh.ComponentSizesWithout(0), Has.Count.EqualTo(1));   // the chain A-D-C: A is a leaf
+        Assert.That(editor.Mesh.ComponentSizesWithout(3), Has.Count.EqualTo(2));   // D is now the bridge
+    }
+
+    [Test]
+    public void The_last_cube_can_be_removed_and_a_first_cube_can_be_added_again_with_fresh_ids()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+
+        Assert.That(editor.RemoveHex(0).Ok, Is.True);
+        Assert.That(editor.Mesh.Hexes, Is.Empty);
+        Assert.That(editor.Mesh.Nodes, Is.Empty);
+
+        Assert.That(editor.AddFirstHex().Ok, Is.True);
+        Assert.That(editor.Mesh.Hexes.Single().Id, Is.EqualTo(1));   // ids are never reused
+    }
+
+    [Test]
+    public void Unknown_hex_is_refused()
+    {
+        Assert.That(new HexMeshEditor().RemoveHex(5).Error, Does.Contain("Unknown hex"));
+    }
+
+    [Test]
+    public void Removal_is_one_undo_step_and_undo_brings_everything_back()
+    {
+        var editor = Ring();
+        var before = editor.Mesh.ToState();
+
+        editor.RemoveHex(3);
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(3));
+        editor.Undo();
+
+        Assert.That(editor.Mesh.ToState().Nodes, Is.EquivalentTo(before.Nodes));
+        Assert.That(editor.Mesh.ToState().Links, Is.EquivalentTo(before.Links));
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(4));
+    }
+
+    // A(0,0,0) X(1,0,0) C(1,1,0): A and C touch along one vertical edge, joined only through X
+    // there - plus a path A-Z1-Z2-Z3-C over the top, so the body stays whole without X.
+    private static HexMeshEditor EdgeContact()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();                             // 0 = A
+        editor.AddHexOnFace(0, HexFace.XPlus);            // 1 = X
+        editor.AddHexOnFace(1, HexFace.YPlus);            // 2 = C
+        editor.AddHexOnFace(0, HexFace.ZPlus);            // 3 = Z1
+        editor.AddHexOnFace(3, HexFace.YPlus);            // 4 = Z2
+        editor.AddHexOnFace(4, HexFace.XPlus);            // 5 = Z3
+        Assert.That(editor.LinkHexes(5, 2, LinkFit.Strict).Ok, Is.True);
+        return editor;
+    }
+
+    [Test]
+    public void Nodes_that_two_cubes_shared_only_through_the_removed_cube_are_split_again()
+    {
+        var editor = EdgeContact();
+        var a = editor.Mesh.Hex(0);
+        var c = editor.Mesh.Hex(2);
+        // the vertical edge x=1,y=1: bottom corner, midpoint, and top corner
+        int bottomA = a.NodeIds[2], midA = a.NodeIds[18], topA = a.NodeIds[6];
+        int bottomC = c.NodeIds[0], midC = c.NodeIds[16], topC = c.NodeIds[4];
+        Assert.That((bottomA, midA, topA), Is.EqualTo((bottomC, midC, topC)));
+        var bottomPosition = editor.Mesh.Node(bottomA).Position;
+
+        Assert.That(editor.RemoveHex(1).Ok, Is.True);
+
+        Assert.That(a.NodeIds[2], Is.Not.EqualTo(c.NodeIds[0]));      // only X joined them: now independent
+        Assert.That(a.NodeIds[18], Is.Not.EqualTo(c.NodeIds[16]));
+        Assert.That(a.NodeIds[6], Is.EqualTo(c.NodeIds[4]));          // still joined through the top path
+        Assert.That(editor.Mesh.Node(a.NodeIds[2]).Position, Is.EqualTo(bottomPosition));
+        Assert.That(editor.Mesh.Node(c.NodeIds[0]).Position, Is.EqualTo(bottomPosition));
+        foreach (var node in editor.Mesh.Nodes)
+            Assert.That(editor.Mesh.OwnersOf(node.Id), Is.Not.Empty);
+    }
+
+    [Test]
+    public void The_mesh_stays_consistent_after_removals_every_node_is_owned_and_ids_resolve()
+    {
+        var editor = EdgeContact();
+        editor.RemoveHex(1);
+        editor.RemoveHex(5);
+
+        var state = editor.Mesh.ToState();
+        var nodeIds = state.Nodes.Select(n => n.Id).ToHashSet();
+        foreach (var hex in state.Hexes)
+            foreach (int id in hex.NodeIds) Assert.That(nodeIds.Contains(id), Is.True);
+        foreach (var node in editor.Mesh.Nodes)
+            Assert.That(editor.Mesh.OwnersOf(node.Id).All(o => editor.Mesh.Hex(o.Hex).NodeIds[o.Slot] == node.Id), Is.True);
+        Assert.That(editor.Mesh.ToFemMesh().ElementCount, Is.EqualTo(state.Hexes.Count));
+    }
+}

@@ -176,4 +176,21 @@ public class MeshBuilderFacadeTests
         Assert.That(result.State.Faces.Count(f => f.Status == "Candidate"), Is.EqualTo(0));
         Assert.That(facade.LinkHexes(1, 0, 2, false).Error, Does.Contain("not adjacent"));
     }
+
+    [Test]
+    public void Removing_a_cube_through_the_facade_and_the_refusal_of_a_bridge()
+    {
+        var facade = Square();   // chain D-A-B-C
+
+        var bridge = facade.RemoveHex(1, 0);
+        Assert.That(bridge.Ok, Is.False);
+        Assert.That(bridge.Error, Does.Contain("split the body"));
+        Assert.That(bridge.State.Hexes, Has.Count.EqualTo(4));
+
+        var leaf = facade.RemoveHex(1, 3);
+        Assert.That(leaf.Ok, Is.True, leaf.Error);
+        Assert.That(leaf.State.Hexes, Has.Count.EqualTo(3));
+        Assert.That(leaf.State.Hexes.Any(h => h.Id == 3), Is.False);
+        Assert.That(facade.RemoveHex(1, 99).Error, Does.Contain("Unknown hex"));
+    }
 }

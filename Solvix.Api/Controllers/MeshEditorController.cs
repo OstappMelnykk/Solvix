@@ -30,6 +30,9 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBa
     public ActionResult<MeshCommandResultDto> AddHexOnFace(int sessionId, int hexId, string face) =>
         meshBuilder.AddHexOnFace(sessionId, hexId, face);
 
+    [HttpDelete("hexes/{hexId:int}")]
+    public ActionResult<MeshCommandResultDto> RemoveHex(int sessionId, int hexId) => meshBuilder.RemoveHex(sessionId, hexId);
+
     [HttpPost("links")]
     public ActionResult<MeshCommandResultDto> LinkFaces(int sessionId, [FromBody] LinkFacesRequest request) =>
         meshBuilder.LinkFaces(sessionId, request.HexA, request.FaceA, request.HexB, request.FaceB, request.AdaptSecond);

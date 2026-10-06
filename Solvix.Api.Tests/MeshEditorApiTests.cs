@@ -153,4 +153,20 @@ public class MeshEditorApiTests
         Assert.That(link.GetProperty("ok").GetBoolean(), Is.True, link.GetProperty("error").ToString());
         Assert.That(link.GetProperty("state").GetProperty("links").GetArrayLength(), Is.EqualTo(4));
     }
+
+    [Test]
+    public async Task Deleting_a_cube_over_http_refuses_a_bridge_and_accepts_a_leaf()
+    {
+        await Post("/api/mesh-editor/1/hexes/first");
+        await Post("/api/mesh-editor/1/hexes/0/faces/XPlus/attach");
+        await Post("/api/mesh-editor/1/hexes/1/faces/XPlus/attach");
+
+        var bridge = Root(await _client.DeleteAsync("/api/mesh-editor/1/hexes/1"));
+        Assert.That(bridge.GetProperty("ok").GetBoolean(), Is.False);
+        Assert.That(bridge.GetProperty("error").GetString(), Does.Contain("split the body"));
+
+        var leaf = Root(await _client.DeleteAsync("/api/mesh-editor/1/hexes/2"));
+        Assert.That(leaf.GetProperty("ok").GetBoolean(), Is.True);
+        Assert.That(leaf.GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(2));
+    }
 }

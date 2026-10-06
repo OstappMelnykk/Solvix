@@ -13,6 +13,9 @@ public interface IMeshBuilderFacade
     /// <param name="adaptSecond">Fit the second face onto the first before linking, instead of requiring them to coincide.</param>
     MeshCommandResultDto LinkFaces(int sessionId, int hexA, string faceA, int hexB, string faceB, bool adaptSecond);
 
+    /// <summary>Deletes a cube; refused when the rest of the body would fall apart.</summary>
+    MeshCommandResultDto RemoveHex(int sessionId, int hexId);
+
     /// <summary>Makes two lattice-adjacent hexes neighbours; the shared face is found, not named.</summary>
     MeshCommandResultDto LinkHexes(int sessionId, int hexA, int hexB, bool adaptSecond);
 

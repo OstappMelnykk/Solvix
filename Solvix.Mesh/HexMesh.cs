@@ -128,6 +128,68 @@ public sealed class HexMesh
         return true;
     }
 
+    /// <summary>
+    /// Removes a hex together with its links and any node nobody else owns. Nodes
+    /// that other hexes shared only through this one are split again, so the
+    /// remaining hexes keep exactly the nodes their links justify.
+    /// </summary>
+    public void RemoveHex(int hexId)
+    {
+        var hex = _hexes[hexId];
+        foreach (var face in HexFaces.All)
+        {
+            if (!_links.TryGetValue((hexId, face), out int other)) continue;
+            _links.Remove((hexId, face));
+            _links.Remove((other, face.Opposite()));
+        }
+        var nodeIds = hex.NodeIds.Distinct().ToList();
+        foreach (int id in nodeIds)
+        {
+            _owners[id].RemoveAll(o => o.Hex == hexId);
+            if (_owners[id].Count == 0)
+            {
+                _owners.Remove(id);
+                _nodes.Remove(id);
+            }
+        }
+        _cells.Remove(hex.Cell);
+        _hexes.Remove(hexId);
+        foreach (int id in nodeIds)
+        {
+            if (_nodes.ContainsKey(id)) Rebuild(id);
+        }
+    }
+
+    /// <summary>
+    /// Sizes of the connected groups (through neighbour links) the body would
+    /// fall into if <paramref name="hexId"/> were removed; one entry means it
+    /// stays whole, none means it was the last hex.
+    /// </summary>
+    public IReadOnlyList<int> ComponentSizesWithout(int hexId)
+    {
+        var seen = new HashSet<int> { hexId };
+        var sizes = new List<int>();
+        foreach (var start in _hexes.Keys.OrderBy(i => i))
+        {
+            if (seen.Contains(start)) continue;
+            int size = 0;
+            var stack = new Stack<int>();
+            stack.Push(start);
+            seen.Add(start);
+            while (stack.Count > 0)
+            {
+                int current = stack.Pop();
+                size++;
+                foreach (var face in HexFaces.All)
+                {
+                    if (_links.TryGetValue((current, face), out int next) && seen.Add(next)) stack.Push(next);
+                }
+            }
+            sizes.Add(size);
+        }
+        return sizes;
+    }
+
     /// <summary>Removes the neighbour relation; nodes no longer connected through any link are split.</summary>
     public void Unlink(int hexId, HexFace face)
     {

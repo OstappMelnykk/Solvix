@@ -59,6 +59,20 @@ public sealed class HexMeshEditor
             : EditResult.Fail(error ?? "Link refused.");
     });
 
+    /// <summary>
+    /// Deletes a hex. Refused when that would split the body into separate
+    /// parts (docs/GEOMETRY_RULES.md, R2); deleting the last hex is allowed.
+    /// </summary>
+    public EditResult RemoveHex(int hexId) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");
+        var parts = Mesh.ComponentSizesWithout(hexId);
+        if (parts.Count > 1)
+            return EditResult.Fail($"Removing hex {hexId} would split the body into {parts.Count} parts ({string.Join(" + ", parts)} cubes).");
+        Mesh.RemoveHex(hexId);
+        return EditResult.Success;
+    });
+
     public EditResult UnlinkFace(int hexId, HexFace face) => Apply(() =>
     {
         if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");
