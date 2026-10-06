@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { of } from 'rxjs';
-import { MeshEditorControlsComponent } from './mesh-editor-controls.component';
+import { MeshEditorControlsComponent, SHORTCUTS } from './mesh-editor-controls.component';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
@@ -489,6 +489,51 @@ describe('MeshEditorControlsComponent', () => {
 
       expect(press('n').defaultPrevented).toBeFalse();
       expect(editor.addFirstHex).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('shortcuts popup', () => {
+    const press = (key: string, init: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true, ...init });
+      component.onKeyDown(event);
+      return event;
+    };
+
+    it('starts closed and the info button toggles it', () => {
+      expect(component.isHelpOpen).toBeFalse();
+      component.toggleHelp();
+      expect(component.isHelpOpen).toBeTrue();
+      component.closeHelp();
+      expect(component.isHelpOpen).toBeFalse();
+    });
+
+    it('? opens and closes it', () => {
+      expect(press('?').defaultPrevented).toBeTrue();
+      expect(component.isHelpOpen).toBeTrue();
+      press('?');
+      expect(component.isHelpOpen).toBeFalse();
+    });
+
+    it('Escape closes the popup first and leaves the selection alone', () => {
+      state = singleCubeState();
+      selection.toggleHex(1, 0);
+      component.toggleHelp();
+
+      press('Escape');
+      expect(component.isHelpOpen).toBeFalse();
+      expect(selection.hexes(1)).toEqual([0]);
+
+      press('Escape');
+      expect(selection.hexes(1)).toEqual([]);
+    });
+
+    it('lists every key the handler reacts to', () => {
+      const keys = SHORTCUTS.map(s => s.keys).join(' | ');
+
+      for (const expected of ['N', 'A', 'L', 'U', 'S', 'Delete', 'Esc', 'Ctrl/Cmd + Z', 'Shift', '?']) {
+        expect(keys).toContain(expected);
+      }
+      expect(component.shortcuts).toBe(SHORTCUTS);
     });
   });
 });

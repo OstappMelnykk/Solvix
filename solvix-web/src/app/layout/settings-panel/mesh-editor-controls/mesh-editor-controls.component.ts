@@ -16,6 +16,25 @@ const FACE_LABELS: Record<HexFaceName, string> = {
 
 type Axis = 'x' | 'y' | 'z';
 
+// What the info popup lists - kept next to the handler it describes
+// (onKeyDown) and mirrored in docs/EDITOR_SHORTCUTS.md.
+export const SHORTCUTS: readonly { readonly keys: string; readonly action: string }[] = [
+  { keys: 'Клік по грані', action: 'вибрати грань' },
+  { keys: 'Shift + клік', action: 'вибрати куб (1-й — основа, 2-й приєднується)' },
+  { keys: 'Клік по точці', action: 'вибрати вузол (Real World: стрілки для drag)' },
+  { keys: 'N', action: 'перший куб' },
+  { keys: 'A', action: 'додати куб на вибрану грань' },
+  { keys: 'L', action: 'зробити два куби сусідами' },
+  { keys: 'U', action: 'розірвати сусідство' },
+  { keys: 'S', action: 'поміняти місцями основу й приєднуваний' },
+  { keys: 'Delete / Backspace', action: 'видалити куб' },
+  { keys: 'Esc', action: 'зняти виділення' },
+  { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
+  { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
+  { keys: '← →  ↑ ↓  PgUp PgDn', action: 'зсув вузла по X, Z, Y (Shift — ×10)' },
+  { keys: '?', action: 'ця підказка' }
+];
+
 // Arrow keys move X (left/right) and Z (up = away from the viewer along -Z),
 // PageUp/PageDown move Y.
 const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
@@ -49,6 +68,8 @@ export class MeshEditorControlsComponent {
   adaptSecond = true;
   nudgeStep = 0.1;
   isResetConfirming = false;
+  isHelpOpen = false;
+  readonly shortcuts = SHORTCUTS;
   readonly axes: readonly Axis[] = ['x', 'y', 'z'];
 
   mappingIdeal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
@@ -333,6 +354,14 @@ export class MeshEditorControlsComponent {
     }
   }
 
+  toggleHelp(): void {
+    this.isHelpOpen = !this.isHelpOpen;
+  }
+
+  closeHelp(): void {
+    this.isHelpOpen = false;
+  }
+
   // --- history / reset -----------------------------------------------------
 
   undo(): void {
@@ -375,6 +404,18 @@ export class MeshEditorControlsComponent {
     const key = event.key.toLowerCase();
     const mod = event.ctrlKey || event.metaKey;
     let handled = true;
+
+    // The help popup comes first: `?` toggles it, Esc closes it (and only it).
+    if (key === '?' || (key === '/' && event.shiftKey)) {
+      this.isHelpOpen = !this.isHelpOpen;
+      event.preventDefault();
+      return;
+    }
+    if (key === 'escape' && this.isHelpOpen) {
+      this.isHelpOpen = false;
+      event.preventDefault();
+      return;
+    }
 
     if (mod && key === 'z') {
       if (event.shiftKey ? this.canRedo() : this.canUndo()) (event.shiftKey ? this.redo() : this.undo());

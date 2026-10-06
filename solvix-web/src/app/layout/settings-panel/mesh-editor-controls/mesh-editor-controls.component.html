@@ -1,4 +1,22 @@
-<h4>Редактор сітки</h4>
+<h4 class="title">
+  Редактор сітки
+  <button class="info" type="button" title="Шорткати (?)" aria-label="Шорткати" (click)="toggleHelp()">i</button>
+</h4>
+
+<div class="popup-backdrop" *ngIf="isHelpOpen" (click)="closeHelp()">
+  <div class="popup" role="dialog" aria-label="Шорткати" (click)="$event.stopPropagation()">
+    <div class="popup__header">
+      <span>Шорткати</span>
+      <button class="popup__close" type="button" aria-label="Закрити" (click)="closeHelp()">×</button>
+    </div>
+    <table>
+      <tr *ngFor="let row of shortcuts">
+        <td><kbd class="popup__keys">{{ row.keys }}</kbd></td>
+        <td>{{ row.action }}</td>
+      </tr>
+    </table>
+  </div>
+</div>
 
 <div class="stats">Куби: {{ hexCount() }} · Вузли: {{ nodeCount() }}</div>
 
@@ -144,21 +162,3 @@
     </div>
   </ng-template>
 </div>
-
-<details class="help">
-  <summary>Шорткати</summary>
-  <table>
-    <tr><td>Клік по грані</td><td>вибрати грань</td></tr>
-    <tr><td>Shift + клік по грані</td><td>вибрати куб (1-й — основа, 2-й — приєднується)</td></tr>
-    <tr><td>Клік по вузлу</td><td>вибрати вузол (Real World: з'являються стрілки)</td></tr>
-    <tr><td>A</td><td>додати куб на вибрану грань</td></tr>
-    <tr><td>L / U</td><td>зробити сусідами / розірвати сусідство</td></tr>
-    <tr><td>S</td><td>поміняти місцями основу й приєднуваний куб</td></tr>
-    <tr><td>Delete / Backspace</td><td>видалити куб (вибраний, або куб вибраної грані)</td></tr>
-    <tr><td>N</td><td>перший куб (коли сітка порожня)</td></tr>
-    <tr><td>Esc</td><td>зняти виділення</td></tr>
-    <tr><td>Ctrl/Cmd + Z</td><td>скасувати</td></tr>
-    <tr><td>Ctrl/Cmd + Shift + Z, Ctrl + Y</td><td>повернути</td></tr>
-    <tr><td>← → / ↑ ↓ / PgUp PgDn</td><td>зсув вибраного вузла по X / Z / Y (Shift ×10)</td></tr>
-  </table>
-</details>
