@@ -4,6 +4,7 @@ import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
+import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
 
 const FACE_LABELS: Record<HexFaceName, string> = {
   XMinus: 'X−',
@@ -419,6 +420,54 @@ export class MeshEditorControlsComponent {
   confirmReset(): void {
     this.isResetConfirming = false;
     if (this.sessionId !== null) this.editor.reset(this.sessionId);
+  }
+
+  // --- numbering: local (inside one cube) <-> global (the mesh node) ---------------
+
+  // The cube whose numbering is shown: the single picked cube, or the cube of the
+  // picked face.
+  inspectedHex(): number | null {
+    return this.removeTarget();
+  }
+
+  // One row per local node 0..19: its local coordinates (alpha, beta, gamma) - the
+  // arguments the shape function of that node is built from - the global id of the
+  // mesh node sitting in that slot, and where it is now.
+  numberingRows(): { local: number; kind: string; alpha: number; beta: number; gamma: number; node: number; x: number; y: number; z: number }[] {
+    const hexId = this.inspectedHex();
+    const hex = this.state?.hexes.find(h => h.id === hexId);
+    if (!hex) {
+      return [];
+    }
+    return hex.nodeIds.map((nodeId, local) => {
+      const node = this.state?.nodes.find(n => n.id === nodeId);
+      const [alpha, beta, gamma] = LOCAL_COORDS[local];
+      return {
+        local,
+        kind: local < 8 ? 'кут' : 'середина ребра',
+        alpha,
+        beta,
+        gamma,
+        node: nodeId,
+        x: Math.round((node?.x ?? 0) * 1e6) / 1e6,
+        y: Math.round((node?.y ?? 0) * 1e6) / 1e6,
+        z: Math.round((node?.z ?? 0) * 1e6) / 1e6
+      };
+    });
+  }
+
+  // For the selected node: the local number it has in every cube that owns it
+  // (a shared node is a different local number in each cube).
+  nodeOwnersText(): string {
+    const id = this.selectedNodeId();
+    if (id === null) {
+      return '';
+    }
+    const owners = (this.state?.hexes ?? [])
+      .map(h => ({ hex: h.id, local: h.nodeIds.indexOf(id) }))
+      .filter(o => o.local >= 0)
+      .map(o => `куб ${o.hex}: локальний №${o.local} (${o.local < 8 ? 'кут' : 'середина ребра'})`);
+    return owners.join('; ');
   }
 
   // --- keyboard shortcuts --------------------------------------------------

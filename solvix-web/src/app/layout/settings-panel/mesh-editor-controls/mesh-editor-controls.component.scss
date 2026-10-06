@@ -387,3 +387,36 @@ kbd {
   border-left: 3px solid #e2b93b;
   background: rgba(226, 185, 59, 0.08);
 }
+
+.numbering {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 11px;
+
+  summary {
+    cursor: pointer;
+    color: #9096a0;
+    font-weight: 600;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  th {
+    text-align: left;
+    color: #6f737a;
+    font-weight: 600;
+  }
+
+  td,
+  th {
+    padding: 1px 4px 1px 0;
+    white-space: nowrap;
+  }
+}

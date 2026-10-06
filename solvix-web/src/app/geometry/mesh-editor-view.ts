@@ -43,7 +43,7 @@ export interface MeshView {
 }
 
 // Same node layout as Solvix.Mesh's Hex20Reference.
-const LOCAL_COORDS: readonly (readonly [number, number, number])[] = [
+export const LOCAL_COORDS: readonly (readonly [number, number, number])[] = [
   [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
   [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1],
   [0, -1, -1], [1, 0, -1], [0, 1, -1], [-1, 0, -1],

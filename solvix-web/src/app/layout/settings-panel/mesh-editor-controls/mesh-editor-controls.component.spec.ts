@@ -587,4 +587,52 @@ describe('MeshEditorControlsComponent', () => {
       expect(component.shortcuts).toBe(SHORTCUTS);
     });
   });
+
+  describe('numbering: local <-> global', () => {
+    it('lists the 20 local nodes of the inspected cube with their coordinates and global ids', () => {
+      state = linkedPairState();
+      selection.toggleHex(1, 1);                       // cube 1: its XMinus face nodes are cube 0's
+
+      const rows = component.numberingRows();
+
+      expect(component.inspectedHex()).toBe(1);
+      expect(rows.length).toBe(20);
+      expect(rows[0]).toEqual(jasmine.objectContaining({ local: 0, kind: 'кут', alpha: -1, beta: -1, gamma: -1 }));
+      expect(rows[8]).toEqual(jasmine.objectContaining({ local: 8, kind: 'середина ребра', alpha: 0, beta: -1, gamma: -1 }));
+      expect(rows[19]).toEqual(jasmine.objectContaining({ local: 19, alpha: -1, beta: 1, gamma: 0 }));
+      // local 0 of cube 1 is the corner (+,-,-) of cube 0, i.e. cube 0's local node 1
+      expect(rows[0].node).toBe(linkedPairState().hexes[0].nodeIds[1]);
+      expect(rows[0].x).toBe(1);
+    });
+
+    it('shows nothing when no cube is inspected', () => {
+      state = singleCubeState();
+      expect(component.inspectedHex()).toBeNull();
+      expect(component.numberingRows()).toEqual([]);
+    });
+
+    it('inspects the cube of a picked face too', () => {
+      state = singleCubeState();
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+
+      expect(component.inspectedHex()).toBe(0);
+      expect(component.numberingRows().length).toBe(20);
+    });
+
+    it('tells, for a shared node, which local number it has in each cube that owns it', () => {
+      state = linkedPairState();
+      const shared = linkedPairState().hexes[0].nodeIds[1];
+      selection.selectNode(1, shared);
+
+      expect(component.nodeOwnersText()).toBe('куб 0: локальний №1 (кут); куб 1: локальний №0 (кут)');
+    });
+
+    it('a node owned by one cube has one entry, and no node selected gives an empty text', () => {
+      state = singleCubeState();
+      expect(component.nodeOwnersText()).toBe('');
+
+      selection.selectNode(1, 8);
+      expect(component.nodeOwnersText()).toBe('куб 0: локальний №8 (середина ребра)');
+    });
+  });
 });

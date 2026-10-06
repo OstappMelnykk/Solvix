@@ -96,6 +96,23 @@
   </button>
 </div>
 
+<details class="numbering" *ngIf="inspectedHex() !== null">
+  <summary>Нумерація вузлів куба {{ inspectedHex() }}: локальна ↔ глобальна</summary>
+  <div class="hint">
+    Функція форми вузла <i>i</i> будується з його локальних координат (α<sub>i</sub>, β<sub>i</sub>, γ<sub>i</sub>); положення точки куба
+    x(α,β,γ) = Σ φ<sub>i</sub>(α,β,γ) · x<sub>глобальний(i)</sub>.
+  </div>
+  <table>
+    <tr><th>лок.</th><th>α β γ</th><th>глоб.</th><th>X Y Z</th></tr>
+    <tr *ngFor="let row of numberingRows()">
+      <td>{{ row.local }}</td>
+      <td>{{ row.alpha }} {{ row.beta }} {{ row.gamma }}</td>
+      <td>{{ row.node }}</td>
+      <td>{{ row.x }} {{ row.y }} {{ row.z }}</td>
+    </tr>
+  </table>
+</details>
+
 <div class="group" *ngIf="candidates().length > 0">
   <div class="group-label">Поруч, але не сусіди</div>
   <div class="candidate" *ngFor="let c of candidates(); trackBy: trackCandidate">
@@ -107,7 +124,8 @@
 <div class="group">
   <div class="group-label">Вузол</div>
   <ng-container *ngIf="selectedNodeId() !== null; else noNode">
-    <div class="selected"><b>Вузол {{ selectedNodeId() }}</b></div>
+    <div class="selected"><b>Вузол {{ selectedNodeId() }}</b> (глобальний id)</div>
+    <div class="hint">{{ nodeOwnersText() }}</div>
     <ng-container *ngIf="isRealWorld; else idealHint">
       <div class="hint">Тягніть стрілки на сцені, вводьте число або тисніть клавіші: ← → (X), ↑ ↓ (Z), PageUp/PageDown (Y); Shift — ×10.</div>
       <label class="row" *ngFor="let axis of axes">
