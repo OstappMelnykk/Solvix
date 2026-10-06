@@ -1195,12 +1195,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // updateSession does on every session switch - without this, switching
   // away and back would bring the OLD (pre-reset) angle back.
   resetCamera(): void {
-    this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
-    this.orthographicCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    // A big body (a pipe 8 cubes across) lies outside the default view: look at the mesh instead, from
+    // the same diagonal direction, far enough to see all of it. A small or empty mesh keeps the default.
+    const framed = this.frameOfMesh();
+    const position = framed?.position ?? new THREE.Vector3(...DEFAULT_CAMERA_POSITION);
+    const target = framed?.target ?? new THREE.Vector3(...DEFAULT_ORBIT_TARGET);
+    this.perspectiveCamera.position.copy(position);
+    this.orthographicCamera.position.copy(position);
     this.orthographicCamera.zoom = 1;
-    this.orthoHalfHeight = DEFAULT_ORTHO_HALF_HEIGHT;
+    this.orthoHalfHeight = framed?.orthoHalfHeight ?? DEFAULT_ORTHO_HALF_HEIGHT;
     this.updateCameraFrustum(this.lastWidth, this.lastHeight);
-    this.controls.target.set(...DEFAULT_ORBIT_TARGET);
+    this.controls.target.copy(target);
 
     if (this.cameraMode !== 'perspective') {
       this.setActiveCamera(this.perspectiveCamera, 'perspective');
@@ -1214,5 +1219,27 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         target: this.controls.target.clone()
       });
     }
+  }
+
+  // Where to look to see the whole mesh, or null when the default view already does.
+  private frameOfMesh(): { position: THREE.Vector3; target: THREE.Vector3; orthoHalfHeight: number } | null {
+    const view = this.meshView;
+    if (!view) {
+      return null;
+    }
+    const box = new THREE.Box3().setFromObject(view.root);
+    if (box.isEmpty()) {
+      return null;
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const extent = Math.max(size.x, size.y, size.z);
+    const defaultDistance = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).length();
+    const distance = extent * 2.2;
+    if (distance <= defaultDistance) {
+      return null;
+    }
+    const target = box.getCenter(new THREE.Vector3());
+    const direction = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).normalize();
+    return { position: target.clone().addScaledVector(direction, distance), target, orthoHalfHeight: Math.max(DEFAULT_ORTHO_HALF_HEIGHT, extent * 0.75) };
   }
 }

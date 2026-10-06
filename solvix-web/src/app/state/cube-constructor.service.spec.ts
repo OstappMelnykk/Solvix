@@ -314,6 +314,7 @@ describe('CubeConstructorService', () => {
       http.match(`${api}/shapes/templates/preview`);
 
       expect(constructor_.groups().map(g => [g.name, g.kinds.map(k => k.name)])).toEqual([['Циліндричні', ['pipe']], ['Кулі', ['sphere']]]);
+      expect(constructor_.groups()).toBe(constructor_.groups());      // the same objects every time, so the buttons are not rebuilt
     });
 
     it('a preset keeps its family and only overrides its own values', () => {

@@ -71,6 +71,8 @@ export class CubeConstructorService {
   templatePreview: MeshTemplatePreviewDto | null = null;
   templateError: string | null = null;
   templateBusy = false;
+  private groupedLibrary: MeshTemplateLibraryDto | null = null;
+  private groupList: { name: string; kinds: MeshTemplateKindDto[] }[] = [];
   private previewTicket = 0;
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -120,14 +122,18 @@ export class CubeConstructorService {
     return this.library?.kinds.find(k => k.name === this.templateKind) ?? null;
   }
 
-  // The kind's groups in library order, each with its kinds - what the window lists.
+  // The kinds grouped in library order - what the window lists. Built once per library: the template
+  // iterates it on every change detection, and fresh objects each time would rebuild (and un-click) the buttons.
   groups(): { name: string; kinds: MeshTemplateKindDto[] }[] {
-    const groups: { name: string; kinds: MeshTemplateKindDto[] }[] = [];
-    for (const kind of this.library?.kinds ?? []) {
-      const group = groups.find(g => g.name === kind.group) ?? groups[groups.push({ name: kind.group, kinds: [] }) - 1];
-      group.kinds.push(kind);
+    if (this.groupedLibrary !== this.library) {
+      this.groupedLibrary = this.library;
+      this.groupList = [];
+      for (const kind of this.library?.kinds ?? []) {
+        const group = this.groupList.find(g => g.name === kind.group) ?? this.groupList[this.groupList.push({ name: kind.group, kinds: [] }) - 1];
+        group.kinds.push(kind);
+      }
     }
-    return groups;
+    return this.groupList;
   }
 
   // A different family: its parameters go back to their defaults.

@@ -115,16 +115,22 @@ public static class HexTemplates
     // few strengths and keep the first that leaves no cube folded (see Fit).
     internal sealed record Rounding(double EdgePull, double EdgeWidth, double CornerPull, double CornerWidth);
 
-    private static readonly Rounding[] RoundingCandidates =
+    // Every combination of a few edge and corner pushes, weakest first: the first one that keeps every cube
+    // valid is the one that bends the surface least.
+    private static readonly Rounding[] RoundingCandidates = BuildRoundingCandidates();
+
+    private static Rounding[] BuildRoundingCandidates()
     {
-        new(0.5, 2, 2, 4), new(0.5, 3, 2, 6), new(0.3, 2, 3, 4), new(1, 3, 3, 6), new(0.5, 4, 3, 8),
-        new(1, 4, 5, 8), new(2, 4, 5, 10), new(0.3, 1.5, 2, 3), new(0.5, 2, 1, 3), new(0.2, 2, 1, 2),
-        new(1, 6, 5, 14), new(2, 6, 8, 16), new(1, 8, 6, 20), new(2, 8, 10, 24),
-    };
+        var edges = new[] { (0.0, 1.0), (0.1, 1.5), (0.2, 2.0), (0.3, 2.0), (0.5, 2.0), (0.5, 3.0), (1.0, 3.0), (1.0, 4.0), (2.0, 4.0), (2.0, 6.0) };
+        var corners = new[] { (0.0, 1.0), (0.5, 2.0), (1.0, 3.0), (2.0, 4.0), (3.0, 4.0), (3.0, 6.0), (5.0, 8.0), (8.0, 12.0) };
+        return edges.SelectMany(e => corners.Select(c => new Rounding(e.Item1, e.Item2, c.Item1, c.Item2)))
+            .OrderBy(r => r.EdgePull + r.CornerPull).ThenBy(r => r.EdgeWidth + r.CornerWidth).ToArray();
+    }
 
-    private static int Folded(BodyPlan plan) => plan.Cells.Count(c => Hex20Geometry.MinDeterminant(c.Positions) <= 1e-12);
+    private static bool IsFolded(BodyCell cell) => Hex20Geometry.MinDeterminant(cell.Positions) <= 1e-12;
 
-    // Builds with each candidate rounding until no cube is folded; otherwise keeps the least folded body.
+    // Builds with each candidate rounding, weakest first, until no cube is folded. When none manages it,
+    // keeps the body with the fewest folded cubes (the editor flags those cubes as usual).
     private static BodyPlan Fit(Func<Rounding, BodyPlan> build)
     {
         BodyPlan? best = null;
@@ -132,9 +138,14 @@ public static class HexTemplates
         foreach (var rounding in RoundingCandidates)
         {
             var plan = build(rounding);
-            int folded = Folded(plan);
+            if (!plan.Cells.Any(IsFolded)) return plan;
+            if (best is null) best = plan;
+        }
+        foreach (var rounding in RoundingCandidates)
+        {
+            var plan = build(rounding);
+            int folded = plan.Cells.Count(IsFolded);
             if (folded < bestFolded) (best, bestFolded) = (plan, folded);
-            if (folded == 0) break;
         }
         return best!;
     }
