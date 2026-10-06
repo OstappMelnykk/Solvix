@@ -17,6 +17,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.MeshBuilder.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Data", "Solvix.Data\Solvix.Data.csproj", "{50184ECC-CADA-4D5A-BF5A-196016B06111}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Mesh", "Solvix.Mesh\Solvix.Mesh.csproj", "{40C2CB07-D2BD-49A5-B137-3F5157897476}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Mesh.Tests", "Solvix.Mesh.Tests\Solvix.Mesh.Tests.csproj", "{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,5 +59,13 @@ Global
 		{50184ECC-CADA-4D5A-BF5A-196016B06111}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{50184ECC-CADA-4D5A-BF5A-196016B06111}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{50184ECC-CADA-4D5A-BF5A-196016B06111}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Release|Any CPU.Build.0 = Release|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

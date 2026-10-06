@@ -11,6 +11,7 @@
 The backend is split into 5 .NET projects, following Dependency Inversion (Ports & Adapters): every project depends only on `Solvix.Contracts`, never on each other directly, so there are no circular dependencies and each piece can be changed or tested in isolation.
 
 - **`Solvix.Contracts`** — interfaces and message/DTO types only. No logic, no dependencies. The shared language every other project speaks.
+- **`Solvix.Mesh`** — the domain model of the CAD editor: curvilinear 20-node hexahedra (`Hex20`) assembled face-to-face in a `HexMesh`, with explicit neighbour links, shared nodes, the real/ideal world mapping and a solver-ready `FemMeshData` export. Pure library, no dependencies. Tests in `Solvix.Mesh.Tests`.
 - **`Solvix.Solver`** — the FEM solver, exposed behind a facade. Depends only on `Contracts`.
 - **`Solvix.MeshBuilder`** — mesh construction and local refinement logic, exposed behind a facade. Depends only on `Contracts`.
 - **`Solvix.Bridge`** — relay between `Solver` and `MeshBuilder`. Routes calls/events both ways (via `Contracts` interfaces, e.g. pub/sub for one side proactively pushing to the other) and can hold cross-cutting logic (validation, mapping, etc.) if the two sides' data models diverge. Never references `Solver`/`MeshBuilder` directly.
