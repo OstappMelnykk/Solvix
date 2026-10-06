@@ -1,0 +1,102 @@
+<h4>Розрахунок (МСЕ)</h4>
+<div class="stats">Куби: {{ hexCount() }} · закріплених граней: {{ fixedCount() }} · навантажених: {{ loadedCount() }}</div>
+
+<div class="group">
+  <div class="group-label">Матеріали</div>
+  <label class="row">
+    <span>За замовчуванням</span>
+    <select [value]="defaultMaterial()" (change)="onDefaultMaterial($event)">
+      <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
+    </select>
+  </label>
+  <label class="row">
+    <span>Вибраним кубам ({{ selectedCubes().length || 'усім' }})</span>
+    <select (change)="onMaterialOfSelection($event)">
+      <option value="">— вибрати —</option>
+      <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
+    </select>
+  </label>
+  <div class="hint">Shift + клік по кубу вибирає куб. Без вибору матеріал отримують усі куби.</div>
+  <div class="hint" *ngFor="let line of materialsInUse()">{{ line }}</div>
+
+  <button class="tool" type="button" (click)="isMaterialFormOpen = !isMaterialFormOpen">{{ isMaterialFormOpen ? '▾' : '▸' }} Свій матеріал</button>
+  <div *ngIf="isMaterialFormOpen">
+    <label class="row"><span>Назва</span><input type="text" [value]="newLabel" (input)="newLabel = $any($event.target).value" /></label>
+    <label class="row"><span>E, ГПа</span><input type="number" step="1" min="0" [value]="newYoungGPa" (change)="onYoung($event)" /></label>
+    <label class="row"><span>ν (0…0.5)</span><input type="number" step="0.01" min="0" max="0.49" [value]="newPoisson" (change)="onPoisson($event)" /></label>
+    <button class="tool" type="button" [disabled]="!canAddMaterial()" (click)="addMaterial()">Додати матеріал</button>
+  </div>
+</div>
+
+<div class="group">
+  <div class="group-label">Закріплення і тиск</div>
+  <div class="hint">Клік по зовнішній грані вибирає її. Закріплена грань — червона, під тиском — синя.</div>
+  <div class="pick" *ngIf="hasPickedFace()">{{ pickedFaceText() }}</div>
+  <label class="row">
+    <span>Тиск, МПа (+ у тіло)</span>
+    <input type="number" step="0.1" [value]="pressureMPa" (change)="onPressure($event)" />
+  </label>
+  <div class="pair">
+    <button class="tool" type="button" [disabled]="!hasPickedFace()" (click)="fixPicked(true)">Закріпити грань</button>
+    <button class="tool" type="button" [disabled]="!hasPickedFace()" (click)="fixPicked(false)">Зняти</button>
+  </div>
+  <div class="pair">
+    <button class="tool" type="button" [disabled]="!hasPickedFace()" (click)="loadPicked(true)">Тиск на грань</button>
+    <button class="tool" type="button" [disabled]="!hasPickedFace()" (click)="loadPicked(false)">Зняти</button>
+  </div>
+
+  <label class="row">
+    <span>Цілий бік</span>
+    <select [value]="side" (change)="onSide($event)">
+      <option *ngFor="let name of sides" [value]="name">{{ sideLabels[name] }}</option>
+    </select>
+  </label>
+  <div class="pair">
+    <button class="tool" type="button" (click)="fixSide(true)">Закріпити бік</button>
+    <button class="tool" type="button" (click)="fixSide(false)">Зняти</button>
+  </div>
+  <div class="pair">
+    <button class="tool" type="button" (click)="loadSide(true)">Тиск на бік</button>
+    <button class="tool" type="button" (click)="loadSide(false)">Зняти</button>
+  </div>
+  <button class="tool" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
+</div>
+
+<div class="group">
+  <div class="group-label">Розрахунок</div>
+  <button class="tool" type="button" [disabled]="isRunning()" (click)="validate()">Перевірити</button>
+  <div class="issues" *ngIf="validation() as v">
+    <div class="issue issue--ok" *ngIf="v.canSolve && v.issues.length === 0">Усе гаразд, можна рахувати.</div>
+    <div class="issue" *ngFor="let issue of v.issues" [class.issue--error]="issue.severity === 'error'" [class.issue--warning]="issue.severity === 'warning'">
+      {{ issue.severity === 'error' ? '✕' : '!' }} {{ issue.message }}
+    </div>
+  </div>
+  <button class="tool tool--primary" type="button" [disabled]="isRunning() || hexCount() === 0" (click)="solve()">Розрахувати</button>
+  <div class="progress" *ngIf="isRunning()">
+    <div class="progress__bar" [style.width.%]="progressPercent()"></div>
+  </div>
+  <div class="status" *ngIf="jobText()" [class.status--error]="job().state === 'failed'">{{ jobText() }}</div>
+  <button class="tool" type="button" *ngIf="isRunning()" (click)="cancel()">Скасувати розрахунок</button>
+</div>
+
+<div class="group" *ngIf="result()">
+  <div class="group-label">Результат</div>
+  <div class="status">{{ maxText() }} · {{ elapsedText() }}</div>
+  <label class="row">
+    <span>Показувати</span>
+    <select [value]="display().field" (change)="onField($event)">
+      <option value="vonMises">Напруження за Мізесом</option>
+      <option value="displacement">Переміщення</option>
+      <option value="none">Матеріали</option>
+    </select>
+  </label>
+  <label class="row">
+    <span>Деформація ×</span>
+    <input type="number" step="10" min="0" [value]="display().deformationScale" (change)="onScale($event)" />
+  </label>
+  <div class="legend" *ngIf="legend() as l">
+    <div class="legend__bar" [style.background]="l.gradient"></div>
+    <div class="legend__labels"><span>{{ l.min }}</span><span>{{ l.max }}</span></div>
+  </div>
+  <button class="tool" type="button" (click)="clearResult()">Прибрати результат</button>
+</div>

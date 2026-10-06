@@ -1,12 +1,13 @@
 import { Component, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
-import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
+import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { WorldRepresentation, WorldRepresentationService } from '../../state/world-representation.service';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { SolverRenderService } from '../../state/solver-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshEditorService } from '../../state/mesh-editor.service';
@@ -36,6 +37,7 @@ export class RenderWindowComponent {
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
   private readonly meshEditorRender = inject(MeshEditorRenderService);
+  private readonly solverRender = inject(SolverRenderService);
   private readonly meshSelection = inject(MeshEditorSelectionService);
   private readonly meshEditor = inject(MeshEditorService);
   readonly worlds = WORLDS_CONFIG;
@@ -126,7 +128,8 @@ export class RenderWindowComponent {
   // The mesh editor's drawing for this World (Ideal: lattice positions, Real:
   // real positions, Solver: nothing yet) - null until the session has a hex.
   getMeshView(worldIndex: number): MeshView | null {
-    return this.meshEditorRender.getView(this.sessions.activeSessionId(), worldIndex);
+    const sessionId = this.sessions.activeSessionId();
+    return worldIndex === SOLVER_WORLD_INDEX ? this.solverRender.getView(sessionId, worldIndex) : this.meshEditorRender.getView(sessionId, worldIndex);
   }
 
   // Nodes are dragged only in the Real World; the Ideal World's lattice is fixed.

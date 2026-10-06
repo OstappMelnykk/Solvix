@@ -5,6 +5,7 @@ import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-edito
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { SessionsService } from '../../../state/sessions.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
+import { SolverService } from '../../../state/solver.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
 
@@ -67,6 +68,7 @@ export class MeshEditorControlsComponent {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly sessions = inject(SessionsService);
   private readonly constructorWindow = inject(CubeConstructorService);
+  private readonly solver = inject(SolverService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
@@ -463,7 +465,11 @@ export class MeshEditorControlsComponent {
 
   confirmReset(): void {
     this.isResetConfirming = false;
-    if (this.sessionId !== null) this.editor.reset(this.sessionId);
+    if (this.sessionId !== null) {
+      this.editor.reset(this.sessionId);
+      // the server drops the supports and loads set for the old cubes (their ids start again from 0)
+      this.solver.forget(this.sessionId);
+    }
   }
 
   // --- numbering: local (inside one cube) <-> global (the mesh node) ---------------

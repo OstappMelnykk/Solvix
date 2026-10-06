@@ -15,5 +15,5 @@ public class SolverHub : Hub
 
 internal sealed class SignalRSolverNotifier(IHubContext<SolverHub> hub) : ISolverProgressNotifier
 {
-    public Task JobChanged(int sessionId, SolverJobDto job) => hub.Clients.Group(SolverHub.Group(sessionId)).SendAsync("jobChanged", job);
+    public Task JobChanged(int sessionId, SolverJobDto job) => hub.Clients.Group(SolverHub.Group(sessionId)).SendAsync("jobChanged", sessionId, job);
 }

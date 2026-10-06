@@ -24,3 +24,6 @@ export const IDEAL_WORLD_INDEX = 0;
 // Real World's index - where nodes of the mesh editor are moved (the Ideal
 // World shows the same mesh on its fixed integer lattice).
 export const REAL_WORLD_INDEX = 1;
+
+// Solver World's index - where materials, supports and pressures are set and the solution is shown.
+export const SOLVER_WORLD_INDEX = 2;

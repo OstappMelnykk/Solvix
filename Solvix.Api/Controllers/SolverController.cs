@@ -14,7 +14,7 @@ public record LoadFacesRequest(IReadOnlyList<SolverFaceDto> Faces, double? Press
 /// <summary>
 /// The FEM solver for one session: what to solve (materials, supports, pressures), whether it can be solved,
 /// the background solve and its result. Progress is also pushed over SignalR (<c>/hubs/solver</c>, group per
-/// session, message <c>jobChanged</c>). Pressure is in Pa, positive = pressing into the body.
+/// session, message <c>jobChanged(sessionId, job)</c>). Pressure is in Pa, positive = pressing into the body.
 /// </summary>
 [ApiController]
 [Route("api/solver/{sessionId:int}")]

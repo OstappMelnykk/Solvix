@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import { MeshEditorControlsComponent, SHORTCUTS } from './mesh-editor-controls.component';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
+import { SolverService } from '../../../state/solver.service';
 import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
@@ -17,6 +18,7 @@ describe('MeshEditorControlsComponent', () => {
   let busy: ReturnType<typeof signal<boolean>>;
   let component: MeshEditorControlsComponent;
   let constructorWindow: jasmine.SpyObj<CubeConstructorService>;
+  let solver: jasmine.SpyObj<SolverService>;
 
   const emptyState: MeshStateDto = { version: 0, canUndo: false, canRedo: false, nodes: [], hexes: [], links: [], faces: [], invalidHexes: [] };
 
@@ -30,10 +32,12 @@ describe('MeshEditorControlsComponent', () => {
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
+    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget']);
     TestBed.configureTestingModule({
       providers: [
         { provide: MeshEditorService, useValue: editor },
-        { provide: CubeConstructorService, useValue: constructorWindow }
+        { provide: CubeConstructorService, useValue: constructorWindow },
+        { provide: SolverService, useValue: solver }
       ]
     });
     selection = TestBed.inject(MeshEditorSelectionService);
@@ -335,6 +339,7 @@ describe('MeshEditorControlsComponent', () => {
     component.requestReset();
     component.confirmReset();
     expect(editor.reset).toHaveBeenCalledWith(1);
+    expect(solver.forget).toHaveBeenCalledWith(1);     // the old cubes' supports and loads are gone on the server
   });
 
   it('reports the mapping probe result, and "outside" when nothing was found', () => {
@@ -369,6 +374,7 @@ describe('MeshEditorControlsComponent', () => {
     expect(editor.addFirstHex).not.toHaveBeenCalled();
     expect(editor.undo).not.toHaveBeenCalled();
     expect(editor.reset).not.toHaveBeenCalled();
+    expect(solver.forget).not.toHaveBeenCalled();
     expect(component.hexCount()).toBe(0);
   });
 
