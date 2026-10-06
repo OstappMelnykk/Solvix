@@ -343,10 +343,11 @@ public class MeshBuilderFacadeTests
     {
         var facade = NewFacade();
 
-        var preview = facade.PreviewTemplate(Request("pipe", ("around", 6), ("along", 2)));
+        var preview = facade.PreviewTemplate(Request("pipe", ("sectors", 8), ("along", 2)));
 
         Assert.That(preview.Ok, Is.True, preview.Error);
-        Assert.That(preview.State!.Hexes, Has.Count.EqualTo(40));
+        Assert.That(preview.State!.Hexes, Has.Count.EqualTo(16));
+        Assert.That(preview.State.Links.Count, Is.EqualTo(8 * 2 + 8), "8 links round each of the 2 rings (the closing one included) and 8 between the rings");
         Assert.That(preview.FoldedCubes, Is.EqualTo(0));
         Assert.That(facade.GetState(1).Hexes, Is.Empty);
     }
@@ -371,7 +372,7 @@ public class MeshBuilderFacadeTests
         var facade = NewFacade();
 
         var unknown = facade.AddTemplate(1, Request("nope"));
-        var tooThick = facade.AddTemplate(1, Request("pipe", ("wallCells", 4), ("around", 8)));
+        var tooThick = facade.AddTemplate(1, Request("pipe", ("sectors", 7)));
         var preview = facade.PreviewTemplate(Request("sphere", ("around", 500)));
 
         Assert.That(unknown.Ok, Is.False);

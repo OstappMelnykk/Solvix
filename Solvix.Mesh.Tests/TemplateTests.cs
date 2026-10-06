@@ -47,13 +47,13 @@ public class TemplateTests
     [Test]
     public void The_round_kinds_stay_valid_whatever_the_number_of_cubes()
     {
-        foreach (int n in new[] { 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32 })
+        foreach (int n in new[] { 4, 6, 8, 10, 12, 16, 24, 32, 64 })
         {
-            Assert.That(Build("cylinder", V(("around", n), ("along", 2))).Mesh.InvalidHexes(), Is.Empty, $"cylinder {n}");
-            Assert.That(Build("pipe", V(("around", Math.Max(n, 4)), ("along", 2))).Mesh.InvalidHexes(), Is.Empty, $"pipe {n}");
-            Assert.That(Build("torus", V(("around", Math.Max(n, 6)))).Mesh.InvalidHexes(), Is.Empty, $"torus {n}");
-            Assert.That(Build("plate-hole", V(("around", Math.Max(n, 6)))).Mesh.InvalidHexes(), Is.Empty, $"plate {n}");
+            Assert.That(Build("pipe", V(("sectors", n), ("along", 2), ("wallCells", 2))).Mesh.InvalidHexes(), Is.Empty, $"pipe {n}");
+            Assert.That(Build("torus", V(("ringSectors", n), ("tubeSectors", 4 + n % 8 / 2 * 2))).Mesh.InvalidHexes(), Is.Empty, $"torus {n}");
         }
+        foreach (int n in new[] { 3, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 32 })
+            Assert.That(Build("cylinder", V(("around", n), ("along", 2))).Mesh.InvalidHexes(), Is.Empty, $"cylinder {n}");
         foreach (int n in new[] { 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 })
         {
             Assert.That(Build("sphere", V(("around", n))).Mesh.InvalidHexes(), Is.Empty, $"sphere {n}");
@@ -68,8 +68,9 @@ public class TemplateTests
     {
         Assert.That(Build("cylinder", V(("radiusX", 3), ("radiusZ", 0.5), ("topScale", 0.3))).Mesh.InvalidHexes(), Is.Empty);
         Assert.That(Build("pipe", V(("radiusX", 3), ("radiusZ", 1), ("wall", 0.4), ("topScale", 2))).Mesh.InvalidHexes(), Is.Empty);
+        Assert.That(Build("pipe", V(("sectors", 4), ("radiusX", 3), ("radiusZ", 0.5), ("wall", 0.2))).Mesh.InvalidHexes(), Is.Empty);
         Assert.That(Build("sphere", V(("radiusX", 4), ("radiusY", 0.5), ("radiusZ", 2))).Mesh.InvalidHexes(), Is.Empty);
-        Assert.That(Build("torus", V(("ringRadius", 5), ("tubeRadius", 0.2))).Mesh.InvalidHexes(), Is.Empty);
+        Assert.That(Build("torus", V(("ringRadius", 5), ("tubeRadius", 0.2), ("wall", 0.05))).Mesh.InvalidHexes(), Is.Empty);
     }
 
     [Test]
@@ -80,40 +81,70 @@ public class TemplateTests
     }
 
     [Test]
-    public void A_pipe_is_a_closed_ring_of_cells_around_an_empty_hole()
+    public void A_pipe_is_a_straight_row_of_cells_in_the_ideal_world_closed_by_a_link()
     {
-        var mesh = Build("pipe", V(("around", 6), ("wallCells", 1), ("along", 2))).Mesh;
+        var mesh = Build("pipe", V(("sectors", 6), ("wallCells", 1), ("along", 2))).Mesh;
 
-        Assert.That(mesh.Hexes.Count, Is.EqualTo((36 - 16) * 2));
-        Assert.That(mesh.HexAtCell((2, 0, 2)), Is.Null);                 // the hole
-        Assert.That(mesh.HexAtCell((0, 0, 0)), Is.Not.Null);
-        // the ring closes: walking round it through links returns to the start
+        Assert.That(mesh.Hexes.Count, Is.EqualTo(12));
+        Assert.That(mesh.Hexes.Select(h => h.Cell.I).Distinct().OrderBy(i => i), Is.EqualTo(new[] { 0, 1, 2, 3, 4, 5 }));   // a row
         var first = mesh.HexAtCell((0, 0, 0))!;
-        var seen = new HashSet<int> { first.Id };
-        var queue = new Queue<int>(new[] { first.Id });
-        while (queue.Count > 0)
-        {
-            int h = queue.Dequeue();
-            foreach (var f in HexFaces.All)
-                if (mesh.Neighbor(h, f) is int o && mesh.Hex(o).Cell.J == 0 && seen.Add(o)) queue.Enqueue(o);
-        }
-        Assert.That(seen.Count, Is.EqualTo(20));
+        var last = mesh.HexAtCell((5, 0, 0))!;
+        Assert.That(mesh.Neighbor(last.Id, HexFace.XPlus), Is.EqualTo(first.Id));          // the closing link
+        Assert.That(mesh.Neighbor(first.Id, HexFace.XMinus), Is.EqualTo(last.Id));
+        foreach (int s in HexFace.XPlus.Slots())
+            Assert.That(last.NodeIds[s], Is.EqualTo(first.NodeIds[HexFace.XPlus.PartnerSlot(s)]));   // and they share the seam nodes
+        // walking round through links returns to the start after exactly 6 steps
+        int current = first.Id, steps = 0;
+        do { current = mesh.Neighbor(current, HexFace.XPlus)!.Value; steps++; } while (current != first.Id && steps < 20);
+        Assert.That(steps, Is.EqualTo(6));
     }
 
     [Test]
-    public void A_pipe_stays_hollow_in_real_space_with_the_requested_radii()
+    public void Removing_one_sector_opens_the_ring_but_leaves_the_body_whole()
     {
-        var mesh = Build("pipe", V(("around", 8), ("wallCells", 1), ("radiusX", 2), ("radiusZ", 2), ("wall", 0.5), ("height", 3))).Mesh;
-        double c = 4;   // grid centre in real space for an 8-wide pipe
-        var radii = mesh.Nodes.Select(n => Math.Sqrt(Math.Pow(n.Position.X - c, 2) + Math.Pow(n.Position.Z - c, 2))).ToList();
+        var editor = Build("pipe", V(("sectors", 4), ("along", 1)));
 
-        Assert.That(radii.Min(), Is.EqualTo(1.5).Within(1e-9));          // the hole is exactly round
-        Assert.That(radii.Max(), Is.InRange(2.0, 2.0 * 1.25));           // the outside is round, only the four lattice corners bulge a little
+        var result = editor.RemoveHex(editor.Mesh.HexAtCell((1, 0, 0))!.Id);
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(3));
+        Assert.That(editor.Mesh.ComponentSizesWithout(-1), Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void A_pipe_has_all_its_nodes_exactly_on_the_two_circles()
+    {
+        var mesh = Build("pipe", V(("sectors", 4), ("wallCells", 1), ("radiusX", 2), ("radiusZ", 2), ("wall", 0.5), ("height", 3))).Mesh;
+        var radii = mesh.Nodes.Select(n => Math.Sqrt(Math.Pow(n.Position.X - 2, 2) + Math.Pow(n.Position.Z - 2, 2))).ToList();
+
+        // the corners and the mid-nodes of the arcs are on the inner or outer circle; mid-nodes of the radial edges halfway between
+        Assert.That(radii.All(r => Math.Abs(r - 2) < 1e-9 || Math.Abs(r - 1.75) < 1e-9 || Math.Abs(r - 1.5) < 1e-9), Is.True);
+        Assert.That(radii.Min(), Is.EqualTo(1.5).Within(1e-9));
+        Assert.That(radii.Max(), Is.EqualTo(2).Within(1e-9));
         Assert.That(mesh.Nodes.Max(n => n.Position.Y), Is.EqualTo(3).Within(1e-9));
-        // away from the corners the outer surface is exactly on the circle
-        var middle = mesh.Nodes.Where(n => n.Ideal.X == 0 && n.Ideal.Z is >= 6 and <= 10).ToList();
-        Assert.That(middle, Is.Not.Empty);
-        foreach (var n in middle) Assert.That(Math.Sqrt(Math.Pow(n.Position.X - c, 2) + Math.Pow(n.Position.Z - c, 2)), Is.EqualTo(2).Within(1e-9));
+        Assert.That(mesh.InvalidHexes(), Is.Empty);
+    }
+
+    [Test]
+    public void A_quarter_sector_deviates_from_the_circle_by_about_one_percent_and_an_eighth_by_far_less()
+    {
+        double Deviation(int sectors)
+        {
+            var mesh = Build("pipe", V(("sectors", sectors), ("along", 1), ("radiusX", 1), ("radiusZ", 1), ("wall", 0.5))).Mesh;
+            var hex = mesh.HexAtCell((0, 0, 0))!;
+            double worst = 0;
+            for (double a = -1; a <= 1; a += 0.05)
+            {
+                // the outer face of the sector: gamma = +1, middle of the height
+                var p = hex.Map(new Vec3(a, 0, 1));
+                double r = Math.Sqrt(Math.Pow(p.X - 1, 2) + Math.Pow(p.Z - 1, 2));
+                worst = Math.Max(worst, Math.Abs(r - 1));
+            }
+            return worst;
+        }
+
+        Assert.That(Deviation(4), Is.InRange(0.004, 0.015));
+        Assert.That(Deviation(16), Is.LessThan(Deviation(4) / 50));
     }
 
     [Test]
@@ -164,27 +195,33 @@ public class TemplateTests
     [Test]
     public void The_kind_stays_the_same_when_the_parameters_change()
     {
-        var small = Build("pipe", V(("around", 8), ("radiusX", 1), ("radiusZ", 1), ("wall", 0.2))).Mesh;
-        var big = Build("pipe", V(("around", 8), ("radiusX", 10), ("radiusZ", 10), ("wall", 3), ("height", 20), ("along", 8))).Mesh;
+        var small = Build("pipe", V(("sectors", 8), ("radiusX", 1), ("radiusZ", 1), ("wall", 0.2))).Mesh;
+        var big = Build("pipe", V(("sectors", 8), ("radiusX", 10), ("radiusZ", 10), ("wall", 3), ("height", 20), ("along", 8))).Mesh;
 
-        // same ring of cells in the plan view, only larger and longer
-        var plan = (HexMesh m) => m.Hexes.Where(h => h.Cell.J == 0).Select(h => (h.Cell.I, h.Cell.K)).OrderBy(x => x).ToList();
-        Assert.That(plan(big), Is.EqualTo(plan(small)));
+        // the same ring of cells in the ideal row, only larger and longer
+        var row = (HexMesh m) => m.Hexes.Where(h => h.Cell.J == 0).Select(h => (h.Cell.I, h.Cell.K)).OrderBy(x => x).ToList();
+        Assert.That(row(big), Is.EqualTo(row(small)));
         Assert.That(big.Hexes.Count, Is.EqualTo(small.Hexes.Count / 4 * 8));
         Assert.That(big.InvalidHexes(), Is.Empty);
     }
 
     [Test]
-    public void A_torus_closes_into_a_ring_and_its_tube_has_the_requested_radius()
+    public void A_torus_closes_both_ways_and_all_its_nodes_lie_on_the_two_tube_circles()
     {
-        var mesh = Build("torus", V(("around", 8), ("tubeCells", 2), ("ringRadius", 2), ("tubeRadius", 0.5))).Mesh;
+        var mesh = Build("torus", V(("ringSectors", 8), ("tubeSectors", 4), ("wallCells", 1), ("ringRadius", 2), ("tubeRadius", 0.5), ("wall", 0.2))).Mesh;
 
-        Assert.That(mesh.Hexes.Count, Is.EqualTo((64 - 16) * 2));
-        Assert.That(mesh.Nodes.Min(n => n.Position.Y), Is.InRange(-0.25, 0));
-        Assert.That(mesh.Nodes.Max(n => n.Position.Y), Is.InRange(1, 1.25));        // tube diameter 2 * 0.5, corners of the section bulge a little
-        double outer = mesh.Nodes.Max(n => Math.Sqrt(Math.Pow(n.Position.X - 4, 2) + Math.Pow(n.Position.Z - 4, 2)));
-        Assert.That(outer, Is.InRange(2.5, 2.5 * 1.25));
+        Assert.That(mesh.Hexes.Count, Is.EqualTo(32));
+        foreach (var hex in mesh.Hexes)
+            foreach (var face in new[] { HexFace.XPlus, HexFace.XMinus, HexFace.YPlus, HexFace.YMinus })
+                Assert.That(mesh.Neighbor(hex.Id, face), Is.Not.Null, $"{hex.Cell} {face}");     // every cube has its four ring neighbours
+        foreach (var n in mesh.Nodes)
+        {
+            double fromAxis = Math.Sqrt(Math.Pow(n.Position.X - 2.5, 2) + Math.Pow(n.Position.Z - 2.5, 2));
+            double r = Math.Sqrt(Math.Pow(fromAxis - 2, 2) + Math.Pow(n.Position.Y - 0.5, 2));
+            Assert.That(Math.Abs(r - 0.5) < 1e-9 || Math.Abs(r - 0.4) < 1e-9 || Math.Abs(r - 0.3) < 1e-9, Is.True, $"radius {r}");
+        }
         Assert.That(mesh.InvalidHexes(), Is.Empty);
+        Assert.That(mesh.ToFemMesh().ElementIds.Length, Is.EqualTo(32));
     }
 
     [Test]
@@ -276,14 +313,20 @@ public class TemplateTests
     }
 
     [Test]
-    public void The_ideal_world_maps_back_through_the_real_one_for_a_curved_body()
+    public void The_ideal_world_maps_back_through_the_real_one_for_a_curved_body_also_across_the_seam()
     {
-        var mesh = Build("pipe", V(("around", 6), ("wallCells", 1), ("along", 2))).Mesh;
-        var ideal = new Vec3(0.5, 0.5, 0.5);
+        var mesh = Build("pipe", V(("sectors", 6), ("wallCells", 1), ("along", 2))).Mesh;
 
-        Assert.That(mesh.TryMapIdealToReal(ideal, out var real), Is.True);
-        Assert.That(mesh.TryMapRealToIdeal(real, out var back), Is.True);
-        Assert.That((back - ideal).Length, Is.LessThan(1e-6));
+        foreach (var ideal in new[] { new Vec3(0.5, 0.5, 0.5), new Vec3(5.5, 1.5, 0.5), new Vec3(6, 0.5, 0.5), new Vec3(0, 0.5, 0.5) })
+        {
+            Assert.That(mesh.TryMapIdealToReal(ideal, out var real), Is.True, $"{ideal}");
+            Assert.That(mesh.TryMapRealToIdeal(real, out var back), Is.True, $"{ideal}");
+            Assert.That((back - ideal).Length, Is.LessThan(1e-6).Or.EqualTo(6).Within(1e-6), $"{ideal}");   // the seam is one place: 6 and 0 are the same point
+        }
+        // the two ends of the row are the same real point
+        mesh.TryMapIdealToReal(new Vec3(6, 0.5, 0.5), out var end);
+        mesh.TryMapIdealToReal(new Vec3(0, 0.5, 0.5), out var start);
+        Assert.That((end - start).Length, Is.LessThan(1e-9));
     }
 
     [Test]
@@ -291,7 +334,7 @@ public class TemplateTests
     {
         var pipe = HexTemplates.Kind("pipe");
 
-        Assert.That(() => pipe.Build(V(("wallCells", 4), ("around", 8))), Throws.ArgumentException.With.Message.Contains("порожнин"));
+        Assert.That(() => pipe.Build(V(("sectors", 7))), Throws.ArgumentException.With.Message.Contains("парною"));
         Assert.That(() => pipe.Build(V(("wall", 5))), Throws.ArgumentException.With.Message.Contains("радіус"));
         Assert.That(() => pipe.Build(V(("along", 500))), Throws.ArgumentException.With.Message.Contains("outside"));
         Assert.That(() => pipe.Build(V(("nonsense", 1))), Throws.ArgumentException.With.Message.Contains("nonsense"));
@@ -313,5 +356,40 @@ public class TemplateTests
         Assert.That(() => new BodyPlan(new[] { new BodyCell(0, 0, 0, positions), new BodyCell(0, 0, 0, positions) }), Throws.ArgumentException);
         Assert.That(() => new BodyPlan(new[] { new BodyCell(0, 0, 0, positions.Take(5).ToList()) }), Throws.ArgumentException);
         Assert.That(() => new BodyPlan(Array.Empty<BodyCell>()), Throws.ArgumentException);
+    }
+
+    [Test]
+    public void A_closed_axis_needs_at_least_three_cubes()
+    {
+        var cell = (int i) => new BodyCell(i, 0, 0, Enumerable.Range(0, 20).Select(_ => Vec3.Zero).ToList());
+
+        Assert.That(() => new BodyPlan(new[] { cell(0), cell(1) }, wrapI: true), Throws.ArgumentException.With.Message.Contains("at least 3"));
+        Assert.DoesNotThrow(() => new BodyPlan(new[] { cell(0), cell(1), cell(2) }, wrapI: true));
+    }
+
+    [Test]
+    public void The_seam_link_survives_a_snapshot_and_unlinking_it_splits_the_seam_nodes()
+    {
+        var editor = Build("pipe", V(("sectors", 4), ("along", 1)));
+        var again = HexMesh.FromState(editor.Mesh.ToState());
+        var first = again.HexAtCell((0, 0, 0))!;
+        var last = again.HexAtCell((3, 0, 0))!;
+        Assert.That(again.Neighbor(last.Id, HexFace.XPlus), Is.EqualTo(first.Id));
+        int nodesBefore = again.Nodes.Count;
+
+        again.Unlink(last.Id, HexFace.XPlus);
+
+        Assert.That(again.Nodes.Count, Is.EqualTo(nodesBefore + 8));                                // the 8 seam nodes are doubled
+        Assert.That(again.Neighbor(first.Id, HexFace.XMinus), Is.Null);
+        Assert.That(first.NodeIds.Intersect(last.NodeIds), Is.Empty);
+    }
+
+    [Test]
+    public void The_solver_export_shares_the_seam_nodes()
+    {
+        var fem = Build("pipe", V(("sectors", 4), ("along", 1), ("wallCells", 1))).Mesh.ToFemMesh();
+
+        // 4 cubes in a closed ring share their radial faces: 4 * 20 slots minus the 4 * 8 shared ones
+        Assert.That(fem.NodeCount, Is.EqualTo(4 * 20 - 4 * 8));
     }
 }
