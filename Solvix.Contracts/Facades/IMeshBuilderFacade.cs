@@ -30,6 +30,9 @@ public interface IMeshBuilderFacade
 
     MeshCommandResultDto Reset(int sessionId);
 
+    /// <summary>Drops the session's mesh and history completely (the client closed or restarted the session).</summary>
+    void DropSession(int sessionId);
+
     /// <summary>Ideal lattice point (units of one cell) to real space.</summary>
     MeshMappingResultDto MapIdealToReal(int sessionId, MeshPointDto ideal);
 

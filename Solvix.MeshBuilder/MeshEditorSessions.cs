@@ -18,6 +18,9 @@ internal sealed class MeshEditorSessions
         lock (session) return work(session.Editor);
     }
 
+    /// <summary>Forgets a session entirely - its mesh and its undo history. Unknown ids are ignored.</summary>
+    public void Remove(int sessionId) => _sessions.TryRemove(sessionId, out _);
+
     private sealed class Session
     {
         public HexMeshEditor Editor { get; } = new();

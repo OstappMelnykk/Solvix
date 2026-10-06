@@ -188,4 +188,19 @@ public class MeshEditorApiTests
             Assert.That(now.GetProperty("x").GetDouble(), Is.EqualTo(isMoved ? -0.4 : node.GetProperty("x").GetDouble()), $"node {id}");
         }
     }
+
+    [Test]
+    public async Task Deleting_a_session_over_http_returns_no_content_and_starts_it_over()
+    {
+        await Post("/api/mesh-editor/1/hexes/first");
+        await Post("/api/mesh-editor/2/hexes/first");
+
+        var response = await _client.DeleteAsync("/api/mesh-editor/1");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+        var state = Root(await _client.GetAsync("/api/mesh-editor/1/state"));
+        Assert.That(state.GetProperty("hexes").GetArrayLength(), Is.EqualTo(0));
+        Assert.That(state.GetProperty("canUndo").GetBoolean(), Is.False);
+        Assert.That(Root(await _client.GetAsync("/api/mesh-editor/2/state")).GetProperty("hexes").GetArrayLength(), Is.EqualTo(1));
+    }
 }

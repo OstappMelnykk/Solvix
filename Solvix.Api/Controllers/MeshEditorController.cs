@@ -20,6 +20,14 @@ public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoi
 [Route("api/mesh-editor/{sessionId:int}")]
 public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBase
 {
+    /// <summary>Forgets the session's mesh and undo history (the client closed or restarted it).</summary>
+    [HttpDelete]
+    public IActionResult DropSession(int sessionId)
+    {
+        meshBuilder.DropSession(sessionId);
+        return NoContent();
+    }
+
     [HttpGet("state")]
     public ActionResult<MeshStateDto> GetState(int sessionId) => meshBuilder.GetState(sessionId);
 

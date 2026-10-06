@@ -193,4 +193,30 @@ public class MeshBuilderFacadeTests
         Assert.That(leaf.State.Hexes.Any(h => h.Id == 3), Is.False);
         Assert.That(facade.RemoveHex(1, 99).Error, Does.Contain("Unknown hex"));
     }
+
+    [Test]
+    public void Dropping_a_session_forgets_its_mesh_and_history_but_not_other_sessions()
+    {
+        var facade = NewFacade();
+        facade.AddFirstHex(1);
+        facade.AddFirstHex(2);
+        Assert.That(facade.GetState(1).CanUndo, Is.True);
+
+        facade.DropSession(1);
+
+        var fresh = facade.GetState(1);
+        Assert.That(fresh.Hexes, Is.Empty);
+        Assert.That(fresh.CanUndo, Is.False);
+        Assert.That(fresh.Version, Is.EqualTo(0));
+        Assert.That(facade.GetState(2).Hexes, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void Dropping_an_unknown_session_is_harmless()
+    {
+        var facade = NewFacade();
+
+        Assert.DoesNotThrow(() => facade.DropSession(99));
+        Assert.DoesNotThrow(() => facade.DropSession(99));
+    }
 }

@@ -3,6 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
+import { SessionsService } from '../../../state/sessions.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
 
@@ -62,6 +63,7 @@ const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
 export class MeshEditorControlsComponent {
   private readonly editor = inject(MeshEditorService);
   private readonly selection = inject(MeshEditorSelectionService);
+  private readonly sessions = inject(SessionsService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
@@ -69,6 +71,7 @@ export class MeshEditorControlsComponent {
   adaptSecond = true;
   nudgeStep = 0.1;
   isResetConfirming = false;
+  isRestartConfirming = false;
   isHelpOpen = false;
   readonly shortcuts = SHORTCUTS;
   readonly axes: readonly Axis[] = ['x', 'y', 'z'];
@@ -427,6 +430,24 @@ export class MeshEditorControlsComponent {
 
   cancelReset(): void {
     this.isResetConfirming = false;
+  }
+
+  requestRestart(): void {
+    this.isRestartConfirming = true;
+  }
+
+  cancelRestart(): void {
+    this.isRestartConfirming = false;
+  }
+
+  // "Start over": the whole session - cubes, undo history, imported reference,
+  // selection, camera - is replaced by a brand-new empty one.
+  confirmRestart(): void {
+    this.isRestartConfirming = false;
+    if (this.sessionId !== null) {
+      this.selection.clear(this.sessionId);
+      this.sessions.restartSession(this.sessionId);
+    }
   }
 
   confirmReset(): void {

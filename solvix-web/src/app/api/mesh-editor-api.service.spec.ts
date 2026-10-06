@@ -44,6 +44,13 @@ describe('MeshEditorApiService', () => {
     expectCall('POST', 'links', { hexA: 3, faceA: 'XPlus', hexB: 2, faceB: 'XMinus', adaptSecond: true }).flush({});
   });
 
+  it('DELETEs the session itself', () => {
+    api.dropSession(5).subscribe();
+    const request = http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/5`);
+    expect(request.request.method).toBe('DELETE');
+    request.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
   it('DELETEs a cube', () => {
     api.removeHex(5, 3).subscribe();
     expectCall('DELETE', 'hexes/3').flush({});

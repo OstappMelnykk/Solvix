@@ -85,6 +85,11 @@ export class MeshEditorApiService {
     return `${environment.apiBaseUrl}/api/mesh-editor/${sessionId}/${path}`;
   }
 
+  // Forgets the session's mesh and undo history on the server (a closed or restarted session).
+  dropSession(sessionId: number): Observable<void> {
+    return this.http.delete<void>(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}`);
+  }
+
   getState(sessionId: number): Observable<MeshStateDto> {
     return this.http.get<MeshStateDto>(this.url(sessionId, 'state'));
   }

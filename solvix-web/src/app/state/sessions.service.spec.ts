@@ -107,4 +107,51 @@ describe('SessionsService', () => {
     expect(service.sessions().map(s => s.id)).toEqual(before);
     expect(service.activeSessionId()).toBe(activeBefore);
   });
+
+  describe('restartSession', () => {
+    it('replaces the session in place with a brand-new one and keeps it active', () => {
+      service.createSession();
+      service.createSession();
+      const [first, second, third] = service.sessions().map(s => s.id);
+      service.selectSession(second);
+
+      const fresh = service.restartSession(second);
+
+      expect(fresh).not.toBeNull();
+      expect(fresh).toBeGreaterThan(third);                          // never a reused id
+      expect(service.sessions().map(s => s.id)).toEqual([first, fresh!, third]);   // same position
+      expect(service.activeSessionId()).toBe(fresh);
+      expect(service.sessions()[1].name).toBe(`Session ${fresh}`);
+    });
+
+    it('leaves the active session alone when another one is restarted', () => {
+      service.createSession();
+      const [first, second] = service.sessions().map(s => s.id);
+      service.selectSession(second);
+
+      service.restartSession(first);
+
+      expect(service.activeSessionId()).toBe(second);
+    });
+
+    it('ignores an unknown id', () => {
+      const before = service.sessions();
+
+      expect(service.restartSession(999)).toBeNull();
+      expect(service.sessions()).toEqual(before);
+    });
+
+    it('is persisted, so a reload keeps the fresh session and does not bring the old id back', () => {
+      const old = service.sessions()[0].id;
+      const fresh = service.restartSession(old)!;
+
+      TestBed.resetTestingModule();
+      const reloaded = TestBed.inject(SessionsService);
+
+      expect(reloaded.sessions().map(s => s.id)).toEqual([fresh]);
+      expect(reloaded.activeSessionId()).toBe(fresh);
+      reloaded.createSession();
+      expect(reloaded.sessions()[1].id).toBeGreaterThan(fresh);
+    });
+  });
 });

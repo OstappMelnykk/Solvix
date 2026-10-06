@@ -149,6 +149,45 @@ describe('MeshEditorService', () => {
     expect(editor.carryEdgeMidpoints).toBeTrue();
   });
 
+  it('tells the server to forget a session that was closed, once, and no other', () => {
+    loadInitialState(singleCubeState());
+    sessions.createSession();
+    TestBed.flushEffects();
+    const second = sessions.activeSessionId()!;
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${second}/state`).flush(emptyState);
+
+    sessions.closeSession(sessionId);
+    TestBed.flushEffects();
+
+    const drop = http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}`);
+    expect(drop.request.method).toBe('DELETE');
+    drop.flush(null, { status: 204, statusText: 'No Content' });
+    TestBed.flushEffects();
+    http.expectNone(`${environment.apiBaseUrl}/api/mesh-editor/${second}`);
+  });
+
+  it('a restarted session drops the old id on the server and fetches the new empty one', () => {
+    loadInitialState(singleCubeState());
+
+    const fresh = sessions.restartSession(sessionId)!;
+    TestBed.flushEffects();
+
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}`).flush(null, { status: 204, statusText: 'No Content' });
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${fresh}/state`).flush(emptyState);
+    expect(editor.getState(sessionId)).toBeNull();
+    expect(editor.getState(fresh)).toEqual(emptyState);
+  });
+
+  it('a failed drop is ignored (no toast)', () => {
+    loadInitialState();
+
+    sessions.closeSession(sessionId);
+    TestBed.flushEffects();
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}`).flush('boom', { status: 500, statusText: 'Server Error' });
+
+    expect(notifications.toasts()).toEqual([]);
+  });
+
   it('prunes the cached state of a closed session', () => {
     loadInitialState(singleCubeState());
     sessions.createSession();
@@ -157,6 +196,7 @@ describe('MeshEditorService', () => {
 
     sessions.closeSession(sessionId);
     TestBed.flushEffects();
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}`).flush(null, { status: 204, statusText: 'No Content' });
 
     expect(editor.getState(sessionId)).toBeNull();
   });

@@ -29,6 +29,8 @@ export class MeshEditorService {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly stateBySession = new KeyedStore<number, MeshStateDto>();
   private readonly requested = new Set<number>();
+  // Every session id this service has seen open - to notice when one disappears.
+  private readonly seen = new Set<number>();
 
   // True while a command is in flight - the controls disable themselves so a
   // double click cannot send the same command twice.
@@ -54,6 +56,16 @@ export class MeshEditorService {
         for (const id of [...this.requested]) {
           if (!ids.includes(id)) this.requested.delete(id);
         }
+        // A session that was open and now is not is gone for good (closed or
+        // restarted): free its mesh on the server too. Best effort - a failure only
+        // leaves some memory there until the server restarts.
+        for (const id of [...this.seen]) {
+          if (!ids.includes(id)) {
+            this.seen.delete(id);
+            this.api.dropSession(id).subscribe({ error: () => undefined });
+          }
+        }
+        ids.forEach(id => this.seen.add(id));
         const active = this.sessions.activeSessionId();
         if (active !== null && !this.requested.has(active)) {
           this.requested.add(active);

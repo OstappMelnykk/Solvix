@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { of } from 'rxjs';
 import { MeshEditorControlsComponent, SHORTCUTS } from './mesh-editor-controls.component';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
+import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
@@ -540,6 +541,49 @@ describe('MeshEditorControlsComponent', () => {
 
       expect(press('n').defaultPrevented).toBeFalse();
       expect(editor.addFirstHex).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('start over (whole session)', () => {
+    it('asks first, and cancelling changes nothing', () => {
+      const sessions = TestBed.inject(SessionsService);
+      const before = sessions.sessions().map(s => s.id);
+      component.sessionId = before[0];
+
+      component.requestRestart();
+      expect(component.isRestartConfirming).toBeTrue();
+      component.cancelRestart();
+
+      expect(component.isRestartConfirming).toBeFalse();
+      expect(sessions.sessions().map(s => s.id)).toEqual(before);
+    });
+
+    it('confirming replaces the session with a fresh one and clears the selection', () => {
+      const sessions = TestBed.inject(SessionsService);
+      const old = sessions.sessions()[0].id;
+      component.sessionId = old;
+      selection.toggleHex(old, 3);
+      selection.selectNode(old, 7);
+
+      component.requestRestart();
+      component.confirmRestart();
+
+      expect(component.isRestartConfirming).toBeFalse();
+      expect(sessions.sessions().map(s => s.id)).not.toContain(old);
+      expect(sessions.sessions().length).toBe(1);
+      expect(sessions.activeSessionId()).toBe(sessions.sessions()[0].id);
+      expect(selection.hexes(old)).toEqual([]);
+      expect(selection.nodeId(old)).toBeNull();
+    });
+
+    it('does nothing without a session', () => {
+      const sessions = TestBed.inject(SessionsService);
+      const before = sessions.sessions().map(s => s.id);
+      component.sessionId = null;
+
+      component.confirmRestart();
+
+      expect(sessions.sessions().map(s => s.id)).toEqual(before);
     });
   });
 

@@ -49,6 +49,8 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
 
     public MeshCommandResultDto Reset(int sessionId) => Command(sessionId, e => e.Reset());
 
+    public void DropSession(int sessionId) => sessions.Remove(sessionId);
+
     public MeshMappingResultDto MapIdealToReal(int sessionId, MeshPointDto ideal) => sessions.With(sessionId, e =>
         e.Mesh.TryMapIdealToReal(new Vec3(ideal.X, ideal.Y, ideal.Z), out var real)
             ? new MeshMappingResultDto(true, new MeshPointDto(real.X, real.Y, real.Z))
