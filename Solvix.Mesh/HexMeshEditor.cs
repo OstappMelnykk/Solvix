@@ -24,13 +24,15 @@ public sealed class HexMeshEditor
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
 
-    public EditResult AddFirstHex() => Apply(() =>
-        Mesh.Hexes.Count > 0 ? EditResult.Fail("The mesh already has hexes.") : Run(() => Mesh.AddFirst()));
+    /// <param name="shape">A designed cube to start from; the plain unit cube when null.</param>
+    public EditResult AddFirstHex(HexShape? shape = null) => Apply(() =>
+        Mesh.Hexes.Count > 0 ? EditResult.Fail("The mesh already has hexes.") : Run(() => Mesh.AddFirst(shape)));
 
-    public EditResult AddHexOnFace(int hexId, HexFace face) => Apply(() =>
+    /// <param name="shape">A designed cube to attach (fitted onto the face); a plain extrusion of the face when null.</param>
+    public EditResult AddHexOnFace(int hexId, HexFace face, HexShape? shape = null) => Apply(() =>
     {
         if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");
-        return Run(() => Mesh.AddOnFace(hexId, face));
+        return Run(() => Mesh.AddOnFace(hexId, face, shape));
     });
 
     public EditResult LinkFaces(FaceRef first, FaceRef second, LinkFit fit) => Apply(() =>

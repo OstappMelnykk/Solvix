@@ -42,15 +42,19 @@ public sealed class HexMesh
     /// <summary>Linked neighbour across a face, or null.</summary>
     public int? Neighbor(int hexId, HexFace face) => _links.TryGetValue((hexId, face), out var n) ? n : null;
 
-    /// <summary>Creates the first unit cube: real coordinates equal ideal ones.</summary>
-    public Hex20 AddFirst()
+    /// <summary>
+    /// Creates the first cube: the unit cube (real coordinates equal ideal ones), or the
+    /// given designed <paramref name="shape"/> at exactly the positions it carries.
+    /// </summary>
+    public Hex20 AddFirst(HexShape? shape = null)
     {
         if (_hexes.Count > 0) throw new InvalidOperationException("The mesh already has hexes; use AddOnFace.");
         var hex = NewHex((0, 0, 0));
         for (int s = 0; s < Hex20Reference.NodeCount; s++)
         {
             var ideal = IdealOf(hex.Cell, s);
-            hex.NodeIds[s] = NewNode(new Vec3(ideal.X / 2.0, ideal.Y / 2.0, ideal.Z / 2.0), ideal).Id;
+            var position = shape is null ? new Vec3(ideal.X / 2.0, ideal.Y / 2.0, ideal.Z / 2.0) : shape.Positions[s];
+            hex.NodeIds[s] = NewNode(position, ideal).Id;
             Own(hex.NodeIds[s], hex.Id, s);
         }
         return hex;
@@ -64,8 +68,9 @@ public sealed class HexMesh
     /// host's own) matters - a deformation elsewhere in the host never leaks into the
     /// new cube, and an undeformed face gives an exact regular cube.
     /// </summary>
-    public Hex20 AddOnFace(int hostId, HexFace face)
+    public Hex20 AddOnFace(int hostId, HexFace face, HexShape? shape = null)
     {
+        if (shape is not null) return AddShapedOnFace(hostId, face, shape);
         var host = _hexes[hostId];
         if (_links.ContainsKey((hostId, face))) throw new InvalidOperationException("That face is already linked.");
         var (di, dj, dk) = face.Offset();
@@ -96,6 +101,59 @@ public sealed class HexMesh
             double weight = (Hex20Reference.LocalCoords[s, axis] * sign + 1) / 2.0;     // far face 1, halfway 1/2
             var position = Node(hex.NodeIds[counterpart]).Position + step * weight;
             hex.NodeIds[s] = NewNode(position, IdealOf(cell, s)).Id;
+            Own(hex.NodeIds[s], hex.Id, s);
+        }
+        _links[(hostId, face)] = hex.Id;
+        _links[(hex.Id, shared)] = hostId;
+        return hex;
+    }
+
+    /// <summary>
+    /// Attaches a designed cube to a face of <paramref name="hostId"/> and links them. The
+    /// cube is first carried rigidly so that its attaching face (the opposite of the host
+    /// face) sits on the host face - same centre, same orientation in the face's plane -
+    /// and then fitted: the 8 shared nodes become the host's own, and every other node
+    /// follows the difference between where its counterpart on that face landed and where
+    /// the host face really is (1 on the face, 1/2 halfway, 0 on the far face). A shape
+    /// whose face already matches the host's therefore keeps its form exactly; a
+    /// mismatched one is adapted to the face it joins.
+    /// </summary>
+    private Hex20 AddShapedOnFace(int hostId, HexFace face, HexShape shape)
+    {
+        var host = _hexes[hostId];
+        if (_links.ContainsKey((hostId, face))) throw new InvalidOperationException("That face is already linked.");
+        var (di, dj, dk) = face.Offset();
+        var cell = (host.Cell.I + di, host.Cell.J + dj, host.Cell.K + dk);
+        if (_cells.ContainsKey(cell)) throw new InvalidOperationException($"Cell {cell} is already occupied.");
+
+        var shared = face.Opposite();
+        int axis = face.Axis(), sign = face.Sign();
+        var (t1, t2) = axis switch { 0 => (1, 2), 1 => (0, 2), _ => (0, 1) };
+        int SlotOn(HexFace f, int u, int v) => f.Slots().First(s => Hex20Reference.LocalCoords[s, t1] == u && Hex20Reference.LocalCoords[s, t2] == v);
+
+        var hostFrame = FaceFrame.Of(face.Slots().Select(s => Node(host.NodeIds[s]).Position), (u, v) => Node(host.NodeIds[SlotOn(face, u, v)]).Position);
+        var shapeFrame = FaceFrame.Of(shared.Slots().Select(s => shape.Positions[s]), (u, v) => shape.Positions[SlotOn(shared, u, v)]);
+        if (hostFrame is null || shapeFrame is null)
+            throw new InvalidOperationException("A face of the host or of the cube is degenerate, so the cube cannot be fitted onto it.");
+
+        var carried = shape.Positions.Select(p => shapeFrame.Value.CarryTo(hostFrame.Value, p)).ToArray();
+        var hex = NewHex(cell);
+        for (int s = 0; s < Hex20Reference.NodeCount; s++)
+        {
+            int hostSlot = shared.PartnerSlot(s);
+            if (hostSlot < 0) continue;
+            hex.NodeIds[s] = host.NodeIds[hostSlot];
+            Own(hex.NodeIds[s], hex.Id, s);
+        }
+        for (int s = 0; s < Hex20Reference.NodeCount; s++)
+        {
+            if (shared.PartnerSlot(s) >= 0) continue;
+            int counterpart = Enumerable.Range(0, Hex20Reference.NodeCount).First(t =>
+                Hex20Reference.LocalCoords[t, axis] == -sign &&
+                Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[t, d] == Hex20Reference.LocalCoords[s, d]));
+            double outward = (Hex20Reference.LocalCoords[s, axis] * sign + 1) / 2.0;      // far face 1, halfway 1/2, shared face 0
+            var correction = Node(hex.NodeIds[counterpart]).Position - carried[counterpart];
+            hex.NodeIds[s] = NewNode(carried[s] + correction * (1 - outward), IdealOf(cell, s)).Id;
             Own(hex.NodeIds[s], hex.Id, s);
         }
         _links[(hostId, face)] = hex.Id;

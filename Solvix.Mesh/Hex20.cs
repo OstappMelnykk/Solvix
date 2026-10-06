@@ -29,38 +29,15 @@ public sealed class Hex20
     /// <summary>The 8-corner cube primitive (real positions).</summary>
     public Vec3[] Corners() => Enumerable.Range(0, Hex20Reference.CornerCount).Select(s => _mesh.Node(NodeIds[s]).Position).ToArray();
 
+    private IReadOnlyList<Vec3> Positions() => NodeIds.Select(id => _mesh.Node(id).Position).ToArray();
+
     /// <summary>Isoparametric map from the reference cube [-1,1]^3 to real space.</summary>
-    public Vec3 Map(Vec3 xi)
-    {
-        Span<double> phi = stackalloc double[Hex20Reference.NodeCount];
-        Hex20Reference.ShapeFunctions(xi.X, xi.Y, xi.Z, phi);
-        Vec3 p = Vec3.Zero;
-        for (int i = 0; i < Hex20Reference.NodeCount; i++) p += _mesh.Node(NodeIds[i]).Position * phi[i];
-        return p;
-    }
+    public Vec3 Map(Vec3 xi) => Hex20Geometry.Map(Positions(), xi);
 
     /// <summary>J[r, c] = d x_r / d xi_c.</summary>
-    public double[,] Jacobian(Vec3 xi)
-    {
-        var dPhi = new double[Hex20Reference.NodeCount, 3];
-        Hex20Reference.ShapeDerivatives(xi.X, xi.Y, xi.Z, dPhi);
-        var j = new double[3, 3];
-        for (int i = 0; i < Hex20Reference.NodeCount; i++)
-        {
-            var p = _mesh.Node(NodeIds[i]).Position;
-            for (int c = 0; c < 3; c++)
-            {
-                j[0, c] += dPhi[i, c] * p.X;
-                j[1, c] += dPhi[i, c] * p.Y;
-                j[2, c] += dPhi[i, c] * p.Z;
-            }
-        }
-        return j;
-    }
+    public double[,] Jacobian(Vec3 xi) => Hex20Geometry.Jacobian(Positions(), xi);
 
-    public double Determinant(Vec3 xi) => Det(Jacobian(xi));
-
-    private static readonly double[] GaussPoints = { -Math.Sqrt(0.6), 0, Math.Sqrt(0.6) };
+    public double Determinant(Vec3 xi) => Hex20Geometry.Determinant(Jacobian(xi));
 
     /// <summary>
     /// Smallest Jacobian determinant over the 27 Gauss points (what the solver
@@ -68,17 +45,7 @@ public sealed class Hex20
     /// one-to-one image of the cube only while this stays positive; a
     /// non-positive value means the hex is folded or degenerate.
     /// </summary>
-    public double MinDeterminant()
-    {
-        double min = double.MaxValue;
-        foreach (double a in GaussPoints)
-            foreach (double b in GaussPoints)
-                foreach (double g in GaussPoints)
-                    min = Math.Min(min, Determinant(new Vec3(a, b, g)));
-        for (int s = 0; s < Hex20Reference.NodeCount; s++)
-            min = Math.Min(min, Determinant(new Vec3(Hex20Reference.LocalCoords[s, 0], Hex20Reference.LocalCoords[s, 1], Hex20Reference.LocalCoords[s, 2])));
-        return min;
-    }
+    public double MinDeterminant() => Hex20Geometry.MinDeterminant(Positions());
 
     public bool IsValid(double minDeterminant = 1e-9) => MinDeterminant() > minDeterminant;
 
@@ -117,10 +84,7 @@ public sealed class Hex20
         return (Map(xi) - target).Length < tolerance;
     }
 
-    private static double Det(double[,] m) =>
-        m[0, 0] * (m[1, 1] * m[2, 2] - m[1, 2] * m[2, 1])
-        - m[0, 1] * (m[1, 0] * m[2, 2] - m[1, 2] * m[2, 0])
-        + m[0, 2] * (m[1, 0] * m[2, 1] - m[1, 1] * m[2, 0]);
+    private static double Det(double[,] m) => Hex20Geometry.Determinant(m);
 
     // Cramer's rule for J * x = r.
     private static Vec3 Solve(double[,] m, double det, Vec3 r)
