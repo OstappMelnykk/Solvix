@@ -7,7 +7,11 @@ import {
   MeshShapeCheckDto,
   MeshShapeDto,
   MeshShapeParametersDto,
-  MeshShapePresetDto
+  MeshShapePresetDto,
+  MeshTemplateKindDto,
+  MeshTemplateLibraryDto,
+  MeshTemplatePreviewDto,
+  MeshTemplateRequestDto
 } from '../api/mesh-editor-api.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
@@ -24,10 +28,13 @@ export function unitPositions(): MeshPointDto[] {
 export type ConstructorTarget =
   | { readonly kind: 'first'; readonly text: string }
   | { readonly kind: 'face'; readonly hex: number; readonly face: HexFaceName; readonly text: string }
+  | { readonly kind: 'body'; readonly text: string }
   | { readonly kind: 'none'; readonly text: string };
 
 const PARAMETER_KEYS: readonly (keyof MeshShapeParametersDto)[] = ['length', 'height', 'depth', 'taper', 'shearX', 'shearZ'];
 const CHECK_DELAY_MS = 250;
+
+export type ConstructorMode = 'cube' | 'template';
 
 // The cube constructor's draft: one cube designed on its own - the 20 node
 // positions, the parameters it was generated from, the picked node - before it
@@ -43,6 +50,8 @@ export class CubeConstructorService {
   private readonly notifications = inject(NotificationService);
 
   readonly isOpen = signal(false);
+  // 'cube': one cube designed node by node; 'template': a ready-made body (pipe, sphere...) with parameters.
+  mode: ConstructorMode = 'cube';
   readonly presets = signal<readonly MeshShapePresetDto[]>([]);
 
   positions: MeshPointDto[] = unitPositions();
@@ -55,6 +64,16 @@ export class CubeConstructorService {
   // views re-frame the cube then, and NOT while a node is being dragged.
   frameRevision = 0;
 
+  // --- template mode ---
+  library: MeshTemplateLibraryDto | null = null;
+  templateKind: string | null = null;
+  templateValues: Record<string, number> = {};
+  templatePreview: MeshTemplatePreviewDto | null = null;
+  templateError: string | null = null;
+  templateBusy = false;
+  private previewTicket = 0;
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+
   private checkTimer: ReturnType<typeof setTimeout> | null = null;
 
   open(): void {
@@ -65,8 +84,140 @@ export class CubeConstructorService {
     this.runCheck();
   }
 
+  setMode(mode: ConstructorMode): void {
+    if (this.mode === mode) {
+      return;
+    }
+    this.mode = mode;
+    this.revision++;
+    this.frameRevision++;
+    if (mode === 'template') {
+      this.loadLibrary();
+      if (this.templateKind !== null && this.templatePreview === null) {
+        this.refreshPreview();
+      }
+    }
+  }
+
+  // --- templates: the library of typical bodies ---
+
+  loadLibrary(): void {
+    if (this.library !== null) {
+      return;
+    }
+    this.api.templateLibrary().subscribe({
+      next: library => {
+        this.library = library;
+        if (this.templateKind === null && library.presets.length > 0) {
+          this.choosePreset(library.presets[0].name);
+        }
+      },
+      error: () => this.notifications.error('Не вдалось отримати бібліотеку шаблонів із сервера.')
+    });
+  }
+
+  kind(): MeshTemplateKindDto | null {
+    return this.library?.kinds.find(k => k.name === this.templateKind) ?? null;
+  }
+
+  // The kind's groups in library order, each with its kinds - what the window lists.
+  groups(): { name: string; kinds: MeshTemplateKindDto[] }[] {
+    const groups: { name: string; kinds: MeshTemplateKindDto[] }[] = [];
+    for (const kind of this.library?.kinds ?? []) {
+      const group = groups.find(g => g.name === kind.group) ?? groups[groups.push({ name: kind.group, kinds: [] }) - 1];
+      group.kinds.push(kind);
+    }
+    return groups;
+  }
+
+  // A different family: its parameters go back to their defaults.
+  chooseKind(name: string): void {
+    const kind = this.library?.kinds.find(k => k.name === name);
+    if (!kind) {
+      return;
+    }
+    this.templateKind = name;
+    this.templateValues = Object.fromEntries(kind.parameters.map(p => [p.key, p.default]));
+    this.refreshPreview();
+  }
+
+  // A ready-made variant: the family plus its own values (the rest stay at the defaults).
+  choosePreset(name: string): void {
+    const preset = this.library?.presets.find(p => p.name === name);
+    const kind = preset ? this.library?.kinds.find(k => k.name === preset.kind) : undefined;
+    if (!preset || !kind) {
+      return;
+    }
+    this.templateKind = kind.name;
+    this.templateValues = { ...Object.fromEntries(kind.parameters.map(p => [p.key, p.default])), ...preset.values };
+    this.refreshPreview();
+  }
+
+  // The family stays the same; only this number changes. Non-numbers are ignored.
+  setTemplateValue(key: string, value: number): void {
+    const parameter = this.kind()?.parameters.find(p => p.key === key);
+    if (!parameter || !Number.isFinite(value)) {
+      return;
+    }
+    this.templateValues = { ...this.templateValues, [key]: value };
+    this.schedulePreview();
+  }
+
+  templateRequest(): MeshTemplateRequestDto | null {
+    return this.templateKind === null ? null : { kind: this.templateKind, values: { ...this.templateValues } };
+  }
+
+  // Asks the server for the body as it would look (it does all the maths); a late answer to an
+  // outdated request is dropped.
+  refreshPreview(): void {
+    const request = this.templateRequest();
+    if (this.previewTimer !== null) {
+      clearTimeout(this.previewTimer);
+      this.previewTimer = null;
+    }
+    if (request === null) {
+      return;
+    }
+    const ticket = ++this.previewTicket;
+    this.templateBusy = true;
+    this.api.previewTemplate(request).subscribe({
+      next: preview => {
+        if (ticket !== this.previewTicket) {
+          return;
+        }
+        this.templateBusy = false;
+        this.templateError = preview.ok ? null : preview.error;
+        if (preview.ok) {
+          this.templatePreview = preview;
+          this.revision++;
+          this.frameRevision++;
+        }
+      },
+      error: () => {
+        if (ticket === this.previewTicket) {
+          this.templateBusy = false;
+          this.templateError = 'Сервер недоступний.';
+        }
+      }
+    });
+  }
+
+  private schedulePreview(): void {
+    if (this.previewTimer !== null) {
+      clearTimeout(this.previewTimer);
+    }
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = null;
+      this.refreshPreview();
+    }, CHECK_DELAY_MS);
+  }
+
   close(): void {
     this.isOpen.set(false);
+    if (this.previewTimer !== null) {
+      clearTimeout(this.previewTimer);
+      this.previewTimer = null;
+    }
     if (this.checkTimer !== null) {
       clearTimeout(this.checkTimer);
       this.checkTimer = null;
@@ -146,6 +297,12 @@ export class CubeConstructorService {
     if (sessionId === null || state === null) {
       return { kind: 'none', text: 'Немає відкритої сесії.' };
     }
+    if (this.mode === 'template') {
+      if (this.templatePreview === null || this.templateError !== null) {
+        return { kind: 'none', text: this.templateError ?? 'Виберіть шаблон.' };
+      }
+      return { kind: 'body', text: state.hexes.length === 0 ? 'Стане тілом сцени.' : 'Додасться окремим тілом поруч із наявним (без зв’язку з ним).' };
+    }
     if (state.hexes.length === 0) {
       return { kind: 'first', text: 'Стане першим кубом тіла.' };
     }
@@ -167,7 +324,12 @@ export class CubeConstructorService {
       this.notifications.warning(target.text);
       return;
     }
-    if (target.kind === 'first') {
+    if (target.kind === 'body') {
+      const request = this.templateRequest();
+      if (request !== null) {
+        this.editor.addTemplate(sessionId, request);
+      }
+    } else if (target.kind === 'first') {
       this.editor.addFirstHex(sessionId, this.shape());
     } else {
       this.editor.addHexOnFace(sessionId, target.hex, target.face, this.shape());

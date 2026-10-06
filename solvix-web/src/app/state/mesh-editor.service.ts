@@ -11,7 +11,8 @@ import {
   MeshMappingResultDto,
   MeshPointDto,
   MeshShapeDto,
-  MeshStateDto
+  MeshStateDto,
+  MeshTemplateRequestDto
 } from '../api/mesh-editor-api.service';
 
 // The client-side mirror of each session's mesh. The backend owns every
@@ -94,6 +95,10 @@ export class MeshEditorService {
 
   addFirstHex(sessionId: number, shape?: MeshShapeDto): void {
     this.run(sessionId, this.api.addFirstHex(sessionId, shape));
+  }
+
+  addTemplate(sessionId: number, request: MeshTemplateRequestDto): void {
+    this.run(sessionId, this.api.addTemplate(sessionId, request));
   }
 
   addHexOnFace(sessionId: number, hexId: number, face: HexFaceName, shape?: MeshShapeDto): void {

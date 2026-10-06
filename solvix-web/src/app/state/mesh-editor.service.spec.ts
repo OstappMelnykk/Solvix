@@ -70,6 +70,17 @@ describe('MeshEditorService', () => {
     expect(editor.busy()).toBeFalse();
   });
 
+  it('adds a template body through the session and takes the returned state', () => {
+    loadInitialState();
+
+    editor.addTemplate(sessionId, { kind: 'pipe', values: { around: 6 } });
+
+    const request = http.expectOne(url('bodies'));
+    expect(request.request.body).toEqual({ kind: 'pipe', values: { around: 6 } });
+    request.flush({ ok: true, error: null, state: singleCubeState(3) });
+    expect(editor.getState(sessionId)!.version).toBe(3);
+  });
+
   it('shows the reason of a refused command as a warning and still takes the returned state', () => {
     loadInitialState(singleCubeState());
 

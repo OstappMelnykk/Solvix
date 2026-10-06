@@ -130,6 +130,13 @@ describe('cube-constructor-view', () => {
       expect(picked).not.toBe((view.nodeMeshes.get(4)!.material as THREE.MeshBasicMaterial).color.getHex());
     });
 
+    it('can leave the node dots out for a big body that is only looked at', () => {
+      const view = buildMeshView(shapeToState(unitPositions()), 'real', { hexes: [], face: null, hoverFace: null, nodeId: null }, { subdivisions: 1, showNodes: false });
+
+      expect(view.nodeMeshes.size).toBe(0);
+      expect(view.pickables.length).toBe(6);        // only the faces
+    });
+
     it('moves a node with its position', () => {
       const moved = unitPositions().map((p, i) => (i === 6 ? { x: 2, y: 3, z: 4 } : p));
 

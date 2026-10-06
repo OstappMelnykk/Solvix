@@ -80,6 +80,50 @@ $accent-toggle: #da680b;
   }
 }
 
+.cc__modes {
+  display: flex;
+  gap: 2px;
+}
+
+.cc__mode {
+  padding: 5px 12px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:first-child {
+    border-radius: 6px 0 0 6px;
+  }
+
+  &:last-child {
+    border-radius: 0 6px 6px 0;
+  }
+}
+
+.cc__mode--on {
+  background: $accent-toggle;
+  border-color: $accent-toggle;
+  color: #fff;
+  font-weight: 700;
+}
+
+.cc__chip--on {
+  background: $accent-toggle;
+  border-color: $accent-toggle;
+}
+
+.cc__error {
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(224, 82, 82, 0.2);
+  color: #f0a8a8;
+  font-size: 11px;
+}
+
 .cc__button--primary {
   background: $accent-toggle;
   border-color: $accent-toggle;

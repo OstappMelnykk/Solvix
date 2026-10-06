@@ -39,6 +39,34 @@ describe('MeshEditorApiService', () => {
     expectCall('POST', 'hexes/3/faces/XPlus/attach').flush({});
   });
 
+  it('POSTs a designed shape with the first cube and with an attach, and nothing extra without one', () => {
+    const shape = { positions: [{ x: 0, y: 0, z: 0 }] };
+    api.addFirstHex(5, shape).subscribe();
+    expectCall('POST', 'hexes/first', { shape }).flush({});
+    api.addHexOnFace(5, 3, 'YPlus', shape).subscribe();
+    expectCall('POST', 'hexes/3/faces/YPlus/attach', { shape }).flush({});
+  });
+
+  it('talks to the session-free shape and template endpoints', () => {
+    const root = `${environment.apiBaseUrl}/api/mesh-editor/shapes`;
+    api.shapePresets().subscribe();
+    expect(http.expectOne(`${root}/presets`).request.method).toBe('GET');
+    api.buildShape({ length: 1, height: 1, depth: 1, taper: 1, shearX: 0, shearZ: 0 }).subscribe();
+    expect(http.expectOne(`${root}/parametric`).request.method).toBe('POST');
+    api.checkShape({ positions: [] }).subscribe();
+    expect(http.expectOne(`${root}/check`).request.method).toBe('POST');
+    api.templateLibrary().subscribe();
+    expect(http.expectOne(`${root}/templates`).request.method).toBe('GET');
+    api.previewTemplate({ kind: 'pipe', values: { around: 6 } }).subscribe();
+    const preview = http.expectOne(`${root}/templates/preview`);
+    expect(preview.request.body).toEqual({ kind: 'pipe', values: { around: 6 } });
+  });
+
+  it('POSTs a template body into the session', () => {
+    api.addTemplate(5, { kind: 'torus' }).subscribe();
+    expectCall('POST', 'bodies', { kind: 'torus' }).flush({});
+  });
+
   it('POSTs a link with both faces and the adapt flag', () => {
     api.linkFaces(5, 3, 'XPlus', 2, 'XMinus', true).subscribe();
     expectCall('POST', 'links', { hexA: 3, faceA: 'XPlus', hexB: 2, faceB: 'XMinus', adaptSecond: true }).flush({});

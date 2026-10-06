@@ -110,6 +110,8 @@ export interface MeshViewOptions {
   // pushed through the shape functions (1 = off). It shows how the 20 nodes bend
   // every point inside the cube.
   readonly subdivisions: number;
+  // Draw (and make pickable) the node dots; off for a big body that is only looked at. Default on.
+  readonly showNodes?: boolean;
 }
 
 const GRID_LINE_SAMPLES = 12;
@@ -306,7 +308,7 @@ export function buildMeshView(
   const hitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
   const cornerIds = new Set<number>();
   for (const hex of state.hexes) for (let slot = 0; slot < 8; slot++) cornerIds.add(hex.nodeIds[slot]);
-  for (const node of state.nodes) {
+  for (const node of options.showNodes === false ? [] : state.nodes) {
     const isCorner = cornerIds.has(node.id);
     const selected = selection.nodeId === node.id;
     const mesh = new THREE.Mesh(

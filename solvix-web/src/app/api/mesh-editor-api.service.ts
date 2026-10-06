@@ -98,6 +98,48 @@ export interface MeshShapePresetDto {
   readonly parameters: MeshShapeParametersDto;
 }
 
+export interface MeshTemplateParameterDto {
+  readonly key: string;
+  readonly label: string;
+  readonly default: number;
+  readonly min: number;
+  readonly max: number;
+  readonly integer: boolean;
+}
+
+// A family of bodies (pipe, sphere, torus...): the layout is fixed by the kind, the parameters only size it.
+export interface MeshTemplateKindDto {
+  readonly name: string;
+  readonly label: string;
+  readonly group: string;
+  readonly parameters: readonly MeshTemplateParameterDto[];
+}
+
+// A named starting point; parameters not listed keep the kind's defaults.
+export interface MeshTemplatePresetDto {
+  readonly name: string;
+  readonly label: string;
+  readonly kind: string;
+  readonly values: Readonly<Record<string, number>>;
+}
+
+export interface MeshTemplateLibraryDto {
+  readonly kinds: readonly MeshTemplateKindDto[];
+  readonly presets: readonly MeshTemplatePresetDto[];
+}
+
+export interface MeshTemplateRequestDto {
+  readonly kind: string;
+  readonly values?: Readonly<Record<string, number>>;
+}
+
+export interface MeshTemplatePreviewDto {
+  readonly ok: boolean;
+  readonly error: string | null;
+  readonly state: MeshStateDto | null;
+  readonly foldedCubes: number;
+}
+
 export interface MeshMappingResultDto {
   readonly found: boolean;
   readonly point: MeshPointDto | null;
@@ -139,6 +181,19 @@ export class MeshEditorApiService {
 
   buildShape(parameters: MeshShapeParametersDto): Observable<MeshShapeDto> {
     return this.http.post<MeshShapeDto>(`${environment.apiBaseUrl}/api/mesh-editor/shapes/parametric`, parameters);
+  }
+
+  templateLibrary(): Observable<MeshTemplateLibraryDto> {
+    return this.http.get<MeshTemplateLibraryDto>(`${environment.apiBaseUrl}/api/mesh-editor/shapes/templates`);
+  }
+
+  previewTemplate(request: MeshTemplateRequestDto): Observable<MeshTemplatePreviewDto> {
+    return this.http.post<MeshTemplatePreviewDto>(`${environment.apiBaseUrl}/api/mesh-editor/shapes/templates/preview`, request);
+  }
+
+  // Adds a template body (pipe, sphere...) to the session as a separate part.
+  addTemplate(sessionId: number, request: MeshTemplateRequestDto): Observable<MeshCommandResultDto> {
+    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'bodies'), request);
   }
 
   checkShape(shape: MeshShapeDto): Observable<MeshShapeCheckDto> {

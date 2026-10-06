@@ -7,7 +7,7 @@ import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { NotificationService } from './notification.service';
 import { SessionsService } from './sessions.service';
-import { MeshShapeDto, MeshShapePresetDto, MeshStateDto } from '../api/mesh-editor-api.service';
+import { MeshShapeDto, MeshShapePresetDto, MeshStateDto, MeshTemplateLibraryDto, MeshTemplatePreviewDto } from '../api/mesh-editor-api.service';
 import { LOCAL_COORDS } from '../geometry/mesh-editor-view';
 import { singleCubeState } from '../geometry/mesh-state.fixture.spec';
 
@@ -269,6 +269,168 @@ describe('CubeConstructorService', () => {
       expect(notifications.toasts()[0].kind).toBe('warning');
       expect(notifications.toasts()[0].message).toContain('виберіть вільну грань');
       expect(constructor_.isOpen()).toBeTrue();
+    });
+  });
+
+  describe('template mode', () => {
+    const library: MeshTemplateLibraryDto = {
+      kinds: [
+        { name: 'pipe', label: 'Труба', group: 'Циліндричні', parameters: [
+          { key: 'around', label: 'Кубів по діаметру', default: 8, min: 4, max: 40, integer: true },
+          { key: 'radiusX', label: 'Радіус', default: 1, min: 0.01, max: 1000, integer: false }
+        ] },
+        { name: 'sphere', label: 'Куля', group: 'Кулі', parameters: [{ key: 'around', label: 'Кубів', default: 6, min: 2, max: 12, integer: true }] }
+      ],
+      presets: [
+        { name: 'pipe', label: 'Труба', kind: 'pipe', values: {} },
+        { name: 'pipe-thick', label: 'Товста', kind: 'pipe', values: { around: 10 } },
+        { name: 'sphere', label: 'Куля', kind: 'sphere', values: {} }
+      ]
+    };
+    const previewOf = (cubes: number, folded = 0): MeshTemplatePreviewDto => ({ ok: true, error: null, state: { ...singleCubeState(), hexes: singleCubeState().hexes.slice(0, cubes) }, foldedCubes: folded });
+
+    function openLibrary(): void {
+      constructor_.setMode('template');
+      http.expectOne(`${api}/shapes/templates`).flush(library);
+    }
+
+    it('loads the library once and starts on the first preset, previewing it', () => {
+      openLibrary();
+
+      expect(constructor_.templateKind).toBe('pipe');
+      expect(constructor_.templateValues).toEqual({ around: 8, radiusX: 1 });
+      const preview = http.expectOne(`${api}/shapes/templates/preview`);
+      expect(preview.request.body).toEqual({ kind: 'pipe', values: { around: 8, radiusX: 1 } });
+      preview.flush(previewOf(1));
+      expect(constructor_.templatePreview?.state?.hexes.length).toBe(1);
+
+      constructor_.setMode('cube');
+      constructor_.setMode('template');
+      http.expectNone(`${api}/shapes/templates`);
+    });
+
+    it('groups the kinds in library order', () => {
+      openLibrary();
+      http.match(`${api}/shapes/templates/preview`);
+
+      expect(constructor_.groups().map(g => [g.name, g.kinds.map(k => k.name)])).toEqual([['Циліндричні', ['pipe']], ['Кулі', ['sphere']]]);
+    });
+
+    it('a preset keeps its family and only overrides its own values', () => {
+      openLibrary();
+      http.match(`${api}/shapes/templates/preview`);
+
+      constructor_.choosePreset('pipe-thick');
+
+      expect(constructor_.templateKind).toBe('pipe');
+      expect(constructor_.templateValues).toEqual({ around: 10, radiusX: 1 });
+      http.expectOne(`${api}/shapes/templates/preview`);
+    });
+
+    it('a different kind resets the parameters to its defaults; unknown kinds and presets change nothing', () => {
+      openLibrary();
+      http.match(`${api}/shapes/templates/preview`);
+      constructor_.setTemplateValue('radiusX', 5);
+
+      constructor_.chooseKind('nope');
+      constructor_.choosePreset('nope');
+      expect(constructor_.templateKind).toBe('pipe');
+
+      constructor_.chooseKind('sphere');
+      expect(constructor_.templateValues).toEqual({ around: 6 });
+      http.match(`${api}/shapes/templates/preview`);
+    });
+
+    it('changing a number keeps the kind and re-previews shortly after the last change', fakeAsync(() => {
+      openLibrary();
+      http.match(`${api}/shapes/templates/preview`);
+
+      constructor_.setTemplateValue('radiusX', 2);
+      tick(100);
+      constructor_.setTemplateValue('radiusX', 3);
+      constructor_.setTemplateValue('around', NaN);
+      constructor_.setTemplateValue('unknown', 9);
+      http.expectNone(`${api}/shapes/templates/preview`);
+      tick(250);
+
+      const preview = http.expectOne(`${api}/shapes/templates/preview`);
+      expect(preview.request.body).toEqual({ kind: 'pipe', values: { around: 8, radiusX: 3 } });
+      expect(constructor_.templateKind).toBe('pipe');
+    }));
+
+    it('drops the answer to an outdated request', () => {
+      openLibrary();
+      http.match(`${api}/shapes/templates/preview`);
+      constructor_.refreshPreview();
+      const stale = http.expectOne(`${api}/shapes/templates/preview`);
+      constructor_.refreshPreview();
+      const fresh = http.expectOne(`${api}/shapes/templates/preview`);
+
+      fresh.flush(previewOf(1));
+      stale.flush(previewOf(1, 99));
+
+      expect(constructor_.templatePreview?.foldedCubes).toBe(0);
+    });
+
+    it('shows the server\'s reason when the parameters do not make a body, and keeps the last good preview', () => {
+      loadState(emptyState);
+      openLibrary();
+      http.expectOne(`${api}/shapes/templates/preview`).flush(previewOf(1));
+
+      constructor_.refreshPreview();
+      http.expectOne(`${api}/shapes/templates/preview`).flush({ ok: false, error: 'Стінка занадто товста', state: null, foldedCubes: 0 });
+
+      expect(constructor_.templateError).toBe('Стінка занадто товста');
+      expect(constructor_.templatePreview?.state).not.toBeNull();
+      expect(constructor_.target().kind).toBe('none');
+      expect(constructor_.target().text).toBe('Стінка занадто товста');
+    });
+
+    it('a failed preview call says the server is down and is not busy', () => {
+      openLibrary();
+      http.expectOne(`${api}/shapes/templates/preview`).flush('x', { status: 500, statusText: 'Server Error' });
+
+      expect(constructor_.templateError).toBe('Сервер недоступний.');
+      expect(constructor_.templateBusy).toBeFalse();
+    });
+
+    it('re-frames the views whenever a new preview arrives', () => {
+      openLibrary();
+      const frame = constructor_.frameRevision;
+
+      http.expectOne(`${api}/shapes/templates/preview`).flush(previewOf(1));
+
+      expect(constructor_.frameRevision).toBe(frame + 1);
+    });
+
+    it('adds the previewed body to the session as a separate part and closes', () => {
+      loadState(emptyState);
+      openLibrary();
+      http.expectOne(`${api}/shapes/templates/preview`).flush(previewOf(1));
+      constructor_.isOpen.set(true);
+      expect(constructor_.target().kind).toBe('body');
+
+      constructor_.confirm();
+
+      const request = http.expectOne(`${api}/${sessionId}/bodies`);
+      expect(request.request.body).toEqual({ kind: 'pipe', values: { around: 8, radiusX: 1 } });
+      expect(constructor_.isOpen()).toBeFalse();
+      request.flush({ ok: true, error: null, state: singleCubeState() });
+    });
+
+    it('says the body goes next to the existing one, unlinked', () => {
+      loadState(singleCubeState());
+      openLibrary();
+      http.expectOne(`${api}/shapes/templates/preview`).flush(previewOf(1));
+
+      expect(constructor_.target().text).toContain('окремим тілом');
+    });
+
+    it('cannot add before a preview exists', () => {
+      loadState(emptyState);
+      constructor_.mode = 'template';
+
+      expect(constructor_.target().kind).toBe('none');
     });
   });
 });

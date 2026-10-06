@@ -1,11 +1,23 @@
 <div class="cc" *ngIf="draft.isOpen()">
   <div class="cc__header">
-    <span class="cc__title">Конструктор куба</span>
+    <span class="cc__title">Конструктор</span>
+    <div class="cc__modes">
+      <button type="button" class="cc__mode" [class.cc__mode--on]="draft.mode === 'cube'" (click)="draft.setMode('cube')">Один куб</button>
+      <button type="button" class="cc__mode" [class.cc__mode--on]="draft.mode === 'template'" (click)="draft.setMode('template')">Шаблони тіл</button>
+    </div>
     <span
+      *ngIf="draft.mode === 'cube'"
       class="cc__validity"
       [class.cc__validity--ok]="isValid() === true"
       [class.cc__validity--bad]="isValid() === false"
       >{{ validityText() }}</span
+    >
+    <span
+      *ngIf="draft.mode === 'template'"
+      class="cc__validity"
+      [class.cc__validity--ok]="templateIsValid() === true"
+      [class.cc__validity--bad]="templateIsValid() === false"
+      >{{ templateSummary() }}</span
     >
     <span class="cc__target">{{ draft.target().text }}</span>
     <button class="cc__button cc__button--primary" type="button" [disabled]="!canAdd()" (click)="draft.confirm()">Додати на сцену</button>
@@ -20,7 +32,46 @@
       </div>
     </div>
 
-    <div class="cc__side">
+    <div class="cc__side" *ngIf="draft.mode === 'template'">
+      <section *ngFor="let group of groups()">
+        <h5>{{ group.name }}</h5>
+        <div class="cc__presets">
+          <button
+            class="cc__chip"
+            type="button"
+            *ngFor="let kind of group.kinds"
+            [class.cc__chip--on]="draft.templateKind === kind.name"
+            (click)="draft.chooseKind(kind.name)"
+          >
+            {{ kind.label }}
+          </button>
+        </div>
+      </section>
+      <section *ngIf="draft.kind() as kind">
+        <h5>Готові варіанти</h5>
+        <div class="cc__presets">
+          <button class="cc__chip" type="button" *ngFor="let preset of presetsOfKind()" (click)="draft.choosePreset(preset.name)">{{ preset.label }}</button>
+        </div>
+      </section>
+      <section *ngIf="draft.kind() as kind">
+        <h5>Параметри: {{ kind.label }}</h5>
+        <label class="cc__row" *ngFor="let parameter of kind.parameters">
+          <span>{{ parameter.label }}</span>
+          <input
+            type="number"
+            [attr.step]="parameter.integer ? 1 : 0.05"
+            [attr.min]="parameter.min"
+            [attr.max]="parameter.max"
+            [value]="templateValue(parameter.key)"
+            (change)="onTemplateValue(parameter.key, $event)"
+          />
+        </label>
+        <div class="cc__error" *ngIf="draft.templateError">{{ draft.templateError }}</div>
+        <div class="cc__hint">Тип фігури лишається тим самим — змінюються лише розміри та кількість кубів. Кільця й оболонки в ідеальному світі — замкнений цикл комірок; плавність дають реальні вузли.</div>
+      </section>
+    </div>
+
+    <div class="cc__side" *ngIf="draft.mode === 'cube'">
       <section>
         <h5>Бібліотека форм</h5>
         <div class="cc__presets">

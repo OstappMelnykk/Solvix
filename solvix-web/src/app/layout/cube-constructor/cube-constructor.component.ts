@@ -146,6 +146,38 @@ export class CubeConstructorComponent implements OnDestroy {
     return this.draft.positions.map((_, slot) => ({ slot, kind: slot < 8 ? 'кут' : 'ребро' }));
   }
 
+  // --- templates ---
+
+  groups() {
+    return this.draft.groups();
+  }
+
+  templateValue(key: string): number {
+    return this.draft.templateValues[key];
+  }
+
+  onTemplateValue(key: string, event: Event): void {
+    this.draft.setTemplateValue(key, Number((event.target as HTMLInputElement).value));
+  }
+
+  presetsOfKind(): readonly { name: string; label: string }[] {
+    return (this.draft.library?.presets ?? []).filter(p => p.kind === this.draft.templateKind);
+  }
+
+  templateSummary(): string {
+    const preview = this.draft.templatePreview;
+    if (!preview?.state) {
+      return this.draft.templateBusy ? 'будуємо…' : 'шаблон не вибрано';
+    }
+    const cubes = preview.state.hexes.length;
+    return preview.foldedCubes > 0 ? `${cubes} кубів, з них вивернуті: ${preview.foldedCubes}` : `${cubes} кубів, усі коректні`;
+  }
+
+  templateIsValid(): boolean | null {
+    const preview = this.draft.templatePreview;
+    return preview?.state ? preview.foldedCubes === 0 : null;
+  }
+
   canAdd(): boolean {
     return this.draft.target().kind !== 'none';
   }
@@ -240,7 +272,7 @@ export class CubeConstructorComponent implements OnDestroy {
   private syncDraft(rects: ReturnType<typeof regionRects>, _width: number, _height: number): void {
     if (this.framedRevision !== this.draft.frameRevision) {
       this.framedRevision = this.draft.frameRevision;
-      const bounds = positionsBounds(this.draft.positions);
+      const bounds = positionsBounds(this.framedPoints());
       for (const region of ['front', 'side', 'top'] as const) {
         this.orthos[region] = orthoCameraFor(region, bounds, rects[region].width / rects[region].height);
       }
@@ -271,9 +303,25 @@ export class CubeConstructorComponent implements OnDestroy {
         this.scene.remove(this.view.root);
         disposeMeshView(this.view);
       }
-      this.view = buildMeshView(shapeToState(this.draft.positions), 'real', { hexes: [], face: null, hoverFace: null, nodeId: this.draft.selectedSlot });
-      this.scene.add(this.view.root);
+      this.view = null;
+      if (this.draft.mode === 'template') {
+        const state = this.draft.templatePreview?.state;
+        if (state) {
+          // A whole body is only looked at: no node dots (thousands of them), the curved faces and edges suffice.
+          this.view = buildMeshView(state, 'real', { hexes: [], face: null, hoverFace: null, nodeId: null }, { subdivisions: 1, showNodes: false });
+        }
+      } else {
+        this.view = buildMeshView(shapeToState(this.draft.positions), 'real', { hexes: [], face: null, hoverFace: null, nodeId: this.draft.selectedSlot });
+      }
+      if (this.view) {
+        this.scene.add(this.view.root);
+      }
     }
+  }
+
+  // What the cameras frame: the one cube's 20 nodes, or every node of the previewed body.
+  private framedPoints(): readonly { x: number; y: number; z: number }[] {
+    return this.draft.mode === 'template' ? (this.draft.templatePreview?.state?.nodes ?? []) : this.draft.positions;
   }
 
   // --- the mouse ---------------------------------------------------------------------
