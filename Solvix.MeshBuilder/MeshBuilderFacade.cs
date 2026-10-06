@@ -11,10 +11,31 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
 {
     public MeshStateDto GetState(int sessionId) => sessions.With(sessionId, MeshStateMapper.ToDto);
 
-    public MeshCommandResultDto AddFirstHex(int sessionId) => Command(sessionId, e => e.AddFirstHex());
+    public MeshCommandResultDto AddFirstHex(int sessionId, MeshShapeDto? shape = null)
+    {
+        if (!MeshStateMapper.TryShape(shape, out var parsed, out var error)) return Reject(sessionId, error!);
+        return Command(sessionId, e => e.AddFirstHex(parsed));
+    }
 
-    public MeshCommandResultDto AddHexOnFace(int sessionId, int hexId, string face) =>
-        WithFace(sessionId, face, f => e => e.AddHexOnFace(hexId, f));
+    public IReadOnlyList<MeshShapePresetDto> ShapePresets() => HexShapes.Presets
+        .Select(p => new MeshShapePresetDto(p.Name, p.Label, new MeshShapeParametersDto(p.Length, p.Height, p.Depth, p.Taper, p.ShearX, p.ShearZ)))
+        .ToList();
+
+    public MeshShapeDto BuildShape(MeshShapeParametersDto parameters) =>
+        MeshStateMapper.ToDto(HexShapes.Parametric(parameters.Length, parameters.Height, parameters.Depth, parameters.Taper, parameters.ShearX, parameters.ShearZ));
+
+    public MeshShapeCheckDto CheckShape(MeshShapeDto shape)
+    {
+        if (!MeshStateMapper.TryShape(shape, out var parsed, out var error)) return new MeshShapeCheckDto(false, 0, error);
+        double min = parsed!.MinDeterminant();
+        return new MeshShapeCheckDto(min > 1e-9, min, null);
+    }
+
+    public MeshCommandResultDto AddHexOnFace(int sessionId, int hexId, string face, MeshShapeDto? shape = null)
+    {
+        if (!MeshStateMapper.TryShape(shape, out var parsed, out var error)) return Reject(sessionId, error!);
+        return WithFace(sessionId, face, f => e => e.AddHexOnFace(hexId, f, parsed));
+    }
 
     public MeshCommandResultDto LinkFaces(int sessionId, int hexA, string faceA, int hexB, string faceB, bool adaptSecond)
     {

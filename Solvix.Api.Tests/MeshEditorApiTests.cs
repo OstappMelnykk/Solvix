@@ -203,4 +203,56 @@ public class MeshEditorApiTests
         Assert.That(state.GetProperty("canUndo").GetBoolean(), Is.False);
         Assert.That(Root(await _client.GetAsync("/api/mesh-editor/2/state")).GetProperty("hexes").GetArrayLength(), Is.EqualTo(1));
     }
+
+    // ---- the cube constructor ------------------------------------------------------------
+
+    [Test]
+    public async Task Presets_are_listed()
+    {
+        var response = await _client.GetAsync("/api/mesh-editor/shapes/presets");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var presets = Root(response).EnumerateArray().Select(p => p.GetProperty("name").GetString()).ToList();
+        Assert.That(presets, Does.Contain("unit").And.Contain("beam"));
+    }
+
+    [Test]
+    public async Task A_parametric_shape_is_built_checked_and_used_to_start_and_extend_the_body()
+    {
+        var built = await Post("/api/mesh-editor/shapes/parametric", new { length = 3.0, height = 1.0, depth = 1.0, taper = 1.0, shearX = 0.0, shearZ = 0.0 });
+        var positions = built.GetProperty("positions");
+        Assert.That(positions.GetArrayLength(), Is.EqualTo(20));
+
+        var check = await Post("/api/mesh-editor/shapes/check", new { positions });
+        Assert.That(check.GetProperty("valid").GetBoolean(), Is.True);
+        Assert.That(check.GetProperty("minDeterminant").GetDouble(), Is.EqualTo(3 / 8.0).Within(1e-9));
+
+        var first = await Post("/api/mesh-editor/1/hexes/first", new { shape = new { positions } });
+        Assert.That(first.GetProperty("ok").GetBoolean(), Is.True);
+        var second = await Post("/api/mesh-editor/1/hexes/0/faces/XPlus/attach", new { shape = new { positions } });
+        Assert.That(second.GetProperty("ok").GetBoolean(), Is.True, second.GetProperty("error").ToString());
+        var maxX = second.GetProperty("state").GetProperty("nodes").EnumerateArray().Max(n => n.GetProperty("x").GetDouble());
+        Assert.That(maxX, Is.EqualTo(6).Within(1e-9));
+    }
+
+    [Test]
+    public async Task Checking_a_shape_with_the_wrong_number_of_points_says_why()
+    {
+        var result = await Post("/api/mesh-editor/shapes/check", new { positions = new[] { new { x = 0.0, y = 0.0, z = 0.0 } } });
+
+        Assert.That(result.GetProperty("valid").GetBoolean(), Is.False);
+        Assert.That(result.GetProperty("error").GetString(), Does.Contain("20"));
+    }
+
+    [Test]
+    public async Task Attach_and_first_still_work_with_no_body_at_all()
+    {
+        var first = await _client.PostAsync("/api/mesh-editor/1/hexes/first", null);
+        Assert.That(first.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(Root(first).GetProperty("ok").GetBoolean(), Is.True);
+
+        var attach = await _client.PostAsync("/api/mesh-editor/1/hexes/0/faces/XPlus/attach", null);
+        Assert.That(attach.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(Root(attach).GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(2));
+    }
 }

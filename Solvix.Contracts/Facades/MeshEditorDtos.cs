@@ -30,5 +30,16 @@ public sealed record MeshCommandResultDto(bool Ok, string? Error, MeshStateDto S
 
 public sealed record MeshPointDto(double X, double Y, double Z);
 
+/// <summary>A cube designed on its own: the 20 node positions in slot order (0..7 corners, 8..19 edge midpoints).</summary>
+public sealed record MeshShapeDto(IReadOnlyList<MeshPointDto> Positions);
+
+public sealed record MeshShapeCheckDto(bool Valid, double MinDeterminant, string? Error);
+
+/// <param name="Taper">Top size / bottom size (1 = straight sides).</param>
+/// <param name="ShearX">Sideways travel along X per unit of height.</param>
+public sealed record MeshShapeParametersDto(double Length, double Height, double Depth, double Taper, double ShearX, double ShearZ);
+
+public sealed record MeshShapePresetDto(string Name, string Label, MeshShapeParametersDto Parameters);
+
 /// <param name="Found">False when the point lies outside the body.</param>
 public sealed record MeshMappingResultDto(bool Found, MeshPointDto? Point);

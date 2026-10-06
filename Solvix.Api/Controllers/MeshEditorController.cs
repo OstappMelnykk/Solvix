@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Solvix.Contracts.Facades;
 
 namespace Solvix.Api.Controllers;
@@ -6,6 +7,8 @@ namespace Solvix.Api.Controllers;
 public record LinkFacesRequest(int HexA, string FaceA, int HexB, string FaceB, bool AdaptSecond);
 
 public record LinkHexesRequest(int HexA, int HexB, bool AdaptSecond);
+
+public record AttachRequest(MeshShapeDto? Shape);
 
 public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = false);
 
@@ -31,12 +34,15 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBa
     [HttpGet("state")]
     public ActionResult<MeshStateDto> GetState(int sessionId) => meshBuilder.GetState(sessionId);
 
+    /// <summary>Starts the body; the optional body <c>{ shape }</c> is a designed cube (otherwise the unit cube).</summary>
     [HttpPost("hexes/first")]
-    public ActionResult<MeshCommandResultDto> AddFirstHex(int sessionId) => meshBuilder.AddFirstHex(sessionId);
+    public ActionResult<MeshCommandResultDto> AddFirstHex(int sessionId, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] AttachRequest? request = null) =>
+        meshBuilder.AddFirstHex(sessionId, request?.Shape);
 
+    /// <summary>Adds a cube on a face; the optional body <c>{ shape }</c> is a designed cube fitted onto the face (otherwise a plain extrusion).</summary>
     [HttpPost("hexes/{hexId:int}/faces/{face}/attach")]
-    public ActionResult<MeshCommandResultDto> AddHexOnFace(int sessionId, int hexId, string face) =>
-        meshBuilder.AddHexOnFace(sessionId, hexId, face);
+    public ActionResult<MeshCommandResultDto> AddHexOnFace(int sessionId, int hexId, string face, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] AttachRequest? request = null) =>
+        meshBuilder.AddHexOnFace(sessionId, hexId, face, request?.Shape);
 
     [HttpDelete("hexes/{hexId:int}")]
     public ActionResult<MeshCommandResultDto> RemoveHex(int sessionId, int hexId) => meshBuilder.RemoveHex(sessionId, hexId);

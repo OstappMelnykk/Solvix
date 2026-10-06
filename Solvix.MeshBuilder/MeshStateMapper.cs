@@ -23,6 +23,26 @@ internal static class MeshStateMapper
             mesh.InvalidHexes());
     }
 
+    public static MeshShapeDto ToDto(HexShape shape) => new(shape.Positions.Select(p => new MeshPointDto(p.X, p.Y, p.Z)).ToList());
+
+    // A missing shape is fine (null); a malformed one is reported, not thrown.
+    public static bool TryShape(MeshShapeDto? dto, out HexShape? shape, out string? error)
+    {
+        shape = null;
+        error = null;
+        if (dto is null) return true;
+        try
+        {
+            shape = new HexShape((dto.Positions ?? throw new ArgumentException("The shape has no positions.")).Select(p => new Vec3(p.X, p.Y, p.Z)));
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
+    }
+
     public static bool TryParseFace(string name, out HexFace face) =>
         Enum.TryParse(name, ignoreCase: false, out face) && Enum.IsDefined(face);
 }
