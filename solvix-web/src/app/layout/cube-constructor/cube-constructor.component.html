@@ -1,0 +1,77 @@
+<div class="cc" *ngIf="draft.isOpen()">
+  <div class="cc__header">
+    <span class="cc__title">Конструктор куба</span>
+    <span
+      class="cc__validity"
+      [class.cc__validity--ok]="isValid() === true"
+      [class.cc__validity--bad]="isValid() === false"
+      >{{ validityText() }}</span
+    >
+    <span class="cc__target">{{ draft.target().text }}</span>
+    <button class="cc__button cc__button--primary" type="button" [disabled]="!canAdd()" (click)="draft.confirm()">Додати на сцену</button>
+    <button class="cc__button" type="button" title="Esc" (click)="draft.close()">Закрити</button>
+  </div>
+
+  <div class="cc__body">
+    <div class="cc__viewports">
+      <canvas #canvas></canvas>
+      <div class="cc__labels">
+        <span class="cc__label" *ngFor="let region of regions">{{ regionLabels[region] }}</span>
+      </div>
+    </div>
+
+    <div class="cc__side">
+      <section>
+        <h5>Бібліотека форм</h5>
+        <div class="cc__presets">
+          <button class="cc__chip" type="button" *ngFor="let preset of draft.presets()" (click)="draft.applyPreset(preset.name)">
+            {{ preset.label }}
+          </button>
+          <span class="cc__hint" *ngIf="draft.presets().length === 0">Бібліотека недоступна (сервер).</span>
+        </div>
+      </section>
+
+      <section>
+        <h5>Параметри</h5>
+        <label class="cc__row" *ngFor="let field of parameterFields">
+          <span>{{ field.label }}</span>
+          <input type="number" [attr.step]="field.step" [attr.min]="field.min" [value]="parameter(field.key)" (change)="onParameter(field.key, $event)" />
+        </label>
+        <button class="cc__button" type="button" (click)="draft.applyParameters()">Побудувати за параметрами</button>
+        <button class="cc__button" type="button" (click)="draft.resetToUnit()">Скинути до одиничного куба</button>
+      </section>
+
+      <section>
+        <h5>Вузол</h5>
+        <ng-container *ngIf="draft.selectedSlot !== null; else noNode">
+          <div class="cc__selected">Вузол №{{ draft.selectedSlot }} ({{ selectedKind() }})</div>
+          <label class="cc__row" *ngFor="let axis of axes">
+            <span>{{ axis.toUpperCase() }}</span>
+            <input type="number" step="0.01" [value]="coordinate(draft.selectedSlot, axis)" (change)="onCoordinate(draft.selectedSlot, axis, $event)" />
+          </label>
+        </ng-container>
+        <ng-template #noNode>
+          <div class="cc__hint">Клікніть по точці на будь-якому з видів. У видах «Спереду», «Збоку», «Зверху» точку можна тягнути мишею: вона рухається лише в площині виду, <b>Shift</b> — по одній осі. У 3D вид обертається.</div>
+        </ng-template>
+      </section>
+
+      <section>
+        <h5 class="cc__toggle" (click)="isTableOpen = !isTableOpen">{{ isTableOpen ? '▾' : '▸' }} Таблиця 20 вузлів</h5>
+        <table class="cc__table" *ngIf="isTableOpen">
+          <tr>
+            <th>№</th>
+            <th>X</th>
+            <th>Y</th>
+            <th>Z</th>
+          </tr>
+          <tr *ngFor="let row of rows()" [class.cc__table-row--selected]="draft.selectedSlot === row.slot" (click)="draft.selectSlot(row.slot)">
+            <td [title]="row.kind">{{ row.slot }}</td>
+            <td *ngFor="let axis of axes">
+              <input type="number" step="0.01" [value]="coordinate(row.slot, axis)" (change)="onCoordinate(row.slot, axis, $event)" />
+            </td>
+          </tr>
+        </table>
+      </section>
+    </div>
+  </div>
+</div>

@@ -26,6 +26,7 @@
     <button class="tool" type="button" [disabled]="!canRedo()" title="Шорткат: Ctrl/Cmd+Shift+Z" (click)="redo()">Повернути</button>
   </div>
   <button class="tool tool--primary" type="button" [disabled]="!canAddFirst()" title="Шорткат: N" (click)="addFirst()">Перший куб <kbd>N</kbd></button>
+  <button class="tool" type="button" [disabled]="sessionId === null" title="Шорткат: C" (click)="openConstructor()">Конструктор куба… <kbd>C</kbd></button>
 </div>
 
 <div class="group">

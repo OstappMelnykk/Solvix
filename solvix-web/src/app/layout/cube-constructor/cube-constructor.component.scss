@@ -1,0 +1,240 @@
+$field-bg: #1e1f22;
+$field-border: rgba(255, 255, 255, 0.18);
+$accent: #39c5f2;
+$accent-toggle: #da680b;
+
+// Over the six-view overlay (1000), under toasts (1200) and the shortcuts popup (1300).
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  pointer-events: none;
+}
+
+.cc {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1e1f22;
+  color: #dfe1e5;
+  font-family: sans-serif;
+  pointer-events: auto;
+}
+
+.cc__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  padding: 10px 14px;
+  background: rgba(30, 31, 34, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+}
+
+.cc__title {
+  font-weight: 700;
+}
+
+.cc__validity {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.cc__validity--ok {
+  background: rgba(79, 180, 119, 0.25);
+  color: #8fe0b0;
+}
+
+.cc__validity--bad {
+  background: rgba(224, 82, 82, 0.25);
+  color: #f0a8a8;
+}
+
+.cc__target {
+  flex: 1;
+  color: #e2b93b;
+  font-size: 12px;
+}
+
+.cc__button {
+  padding: 6px 14px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: $accent-toggle;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.cc__button--primary {
+  background: $accent-toggle;
+  border-color: $accent-toggle;
+  color: #fff;
+  font-weight: 700;
+}
+
+.cc__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.cc__viewports {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.cc__viewports canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+// Region labels and the dividing lines, laid over the single canvas (no pointer events).
+.cc__labels {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  pointer-events: none;
+}
+
+.cc__label {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #9096a0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cc__side {
+  flex: none;
+  width: 340px;
+  padding: 10px 14px;
+  overflow-y: auto;
+  background: #2b2d30;
+  border-left: 1px solid $field-border;
+  font-size: 12px;
+
+  section {
+    margin-bottom: 14px;
+  }
+
+  h5 {
+    margin: 0 0 6px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid $field-border;
+    color: #9096a0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+}
+
+.cc__toggle {
+  cursor: pointer;
+}
+
+.cc__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cc__chip {
+  padding: 4px 9px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 12px;
+  color: #dfe1e5;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+}
+
+.cc__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+
+  input {
+    width: 90px;
+  }
+}
+
+.cc__side input[type='number'] {
+  background: $field-bg;
+  color: #dfe1e5;
+  border: 1px solid $field-border;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+
+  &:focus {
+    outline: none;
+    border-color: $accent;
+  }
+}
+
+.cc__side .cc__button {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.cc__selected {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.cc__hint {
+  color: #8a8f98;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.cc__table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    text-align: left;
+    color: #6f737a;
+    font-weight: 600;
+  }
+
+  td {
+    padding: 1px 3px 1px 0;
+  }
+
+  input {
+    width: 62px;
+    padding: 1px 4px;
+  }
+}
+
+.cc__table-row--selected td:first-child {
+  color: #ff6b6b;
+  font-weight: 700;
+}

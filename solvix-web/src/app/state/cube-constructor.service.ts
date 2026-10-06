@@ -51,6 +51,9 @@ export class CubeConstructorService {
   check: MeshShapeCheckDto | null = null;
   // Bumps on every change to the positions or the picked node - what the 3D view caches on.
   revision = 0;
+  // Bumps only when the whole shape is replaced (a preset, applied parameters, reset) - the
+  // views re-frame the cube then, and NOT while a node is being dragged.
+  frameRevision = 0;
 
   private checkTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -100,6 +103,7 @@ export class CubeConstructorService {
       next: shape => {
         this.positions = shape.positions.map(p => ({ x: p.x, y: p.y, z: p.z }));
         this.selectedSlot = null;
+        this.frameRevision++;
         this.changed();
       },
       error: () => this.notifications.error('Не вдалось побудувати форму: сервер недоступний.')
@@ -110,6 +114,7 @@ export class CubeConstructorService {
     this.parameters = { ...UNIT_PARAMETERS };
     this.positions = unitPositions();
     this.selectedSlot = null;
+    this.frameRevision++;
     this.changed();
   }
 

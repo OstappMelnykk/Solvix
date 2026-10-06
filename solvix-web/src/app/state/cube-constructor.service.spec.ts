@@ -118,6 +118,21 @@ describe('CubeConstructorService', () => {
     expect(notifications.toasts()[0].kind).toBe('error');
   });
 
+  it('re-frames the views only when the whole shape is replaced, not while a node moves', () => {
+    const frame = constructor_.frameRevision;
+
+    constructor_.setNodePosition(6, { x: 1.2, y: 1, z: 1 });
+    constructor_.selectSlot(2);
+    expect(constructor_.frameRevision).toBe(frame);
+
+    constructor_.resetToUnit();
+    expect(constructor_.frameRevision).toBe(frame + 1);
+
+    constructor_.applyParameters();
+    http.expectOne(`${api}/shapes/parametric`).flush(beamShape());
+    expect(constructor_.frameRevision).toBe(frame + 2);
+  });
+
   it('moves one node, ignores non-numbers and out-of-range slots, and bumps the revision', () => {
     const before = constructor_.revision;
 

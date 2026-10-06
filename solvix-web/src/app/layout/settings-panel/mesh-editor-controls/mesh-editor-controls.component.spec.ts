@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { of } from 'rxjs';
 import { MeshEditorControlsComponent, SHORTCUTS } from './mesh-editor-controls.component';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
+import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
@@ -15,6 +16,7 @@ describe('MeshEditorControlsComponent', () => {
   let selection: MeshEditorSelectionService;
   let busy: ReturnType<typeof signal<boolean>>;
   let component: MeshEditorControlsComponent;
+  let constructorWindow: jasmine.SpyObj<CubeConstructorService>;
 
   const emptyState: MeshStateDto = { version: 0, canUndo: false, canRedo: false, nodes: [], hexes: [], links: [], faces: [], invalidHexes: [] };
 
@@ -27,7 +29,13 @@ describe('MeshEditorControlsComponent', () => {
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
-    TestBed.configureTestingModule({ providers: [{ provide: MeshEditorService, useValue: editor }] });
+    constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MeshEditorService, useValue: editor },
+        { provide: CubeConstructorService, useValue: constructorWindow }
+      ]
+    });
     selection = TestBed.inject(MeshEditorSelectionService);
     component = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
     component.sessionId = 1;
@@ -408,6 +416,21 @@ describe('MeshEditorControlsComponent', () => {
       component.onKeyDown(event);
       return event;
     };
+
+    it('C opens the cube constructor window', () => {
+      const event = press('c');
+
+      expect(constructorWindow.open).toHaveBeenCalled();
+      expect(event.defaultPrevented).toBeTrue();
+    });
+
+    it('the constructor is not opened without a session', () => {
+      component.sessionId = null;
+
+      component.openConstructor();
+
+      expect(constructorWindow.open).not.toHaveBeenCalled();
+    });
 
     it('A adds a cube on the picked face', () => {
       state = singleCubeState();

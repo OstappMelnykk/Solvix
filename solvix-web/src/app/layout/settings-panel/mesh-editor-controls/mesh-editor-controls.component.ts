@@ -4,6 +4,7 @@ import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { SessionsService } from '../../../state/sessions.service';
+import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
 
@@ -26,6 +27,7 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Клік по точці', action: 'вибрати вузол (Real World: стрілки для drag)' },
   { keys: 'N', action: 'перший куб' },
   { keys: 'A', action: 'додати куб на вибрану грань' },
+  { keys: 'C', action: 'конструктор куба (окреме вікно)' },
   { keys: 'L', action: 'зробити два куби сусідами' },
   { keys: 'U', action: 'розірвати сусідство' },
   { keys: 'S', action: 'поміняти місцями основу й приєднуваний' },
@@ -64,6 +66,7 @@ export class MeshEditorControlsComponent {
   private readonly editor = inject(MeshEditorService);
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly sessions = inject(SessionsService);
+  private readonly constructorWindow = inject(CubeConstructorService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
@@ -313,6 +316,14 @@ export class MeshEditorControlsComponent {
     }
   }
 
+  // The constructor window: design one cube on its own (shapes, parameters, exact node
+  // coordinates), then add it as the first cube or fit it onto the picked face.
+  openConstructor(): void {
+    if (this.sessionId !== null) {
+      this.constructorWindow.open();
+    }
+  }
+
   addFirst(): void {
     if (this.sessionId !== null) this.editor.addFirstHex(this.sessionId);
   }
@@ -551,6 +562,8 @@ export class MeshEditorControlsComponent {
       if (this.canUnlink()) this.unlink();
     } else if (key === 's') {
       if (this.canSwap()) this.swap();
+    } else if (key === 'c') {
+      this.openConstructor();
     } else if (key === 'n') {
       if (this.canAddFirst()) this.addFirst();
     } else if (key === 'escape') {
