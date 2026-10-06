@@ -15,11 +15,11 @@ internal static class MeshStateMapper
             editor.CanRedo,
             state.Nodes.Select(n => new MeshNodeDto(n.Id, n.Position.X, n.Position.Y, n.Position.Z, n.IdealX, n.IdealY, n.IdealZ)).ToList(),
             state.Hexes.Select(h => new MeshHexDto(h.Id, h.I, h.J, h.K, h.NodeIds)).ToList(),
-            state.Links.Where(l => l.Hex < l.Other)
-                .Select(l => new MeshLinkDto(l.Hex, l.Face.ToString(), l.Other, l.OtherFace.ToString(), mesh.IsSeam(l.Hex, l.Face))).ToList(),
+            state.Links.Where(l => l.Face.Sign() > 0)
+                .Select(l => new MeshLinkDto(l.Hex, l.Face.ToString(), l.Other, l.Face.Opposite().ToString())).ToList(),
             mesh.AllFaceStates().Select(f => new MeshFaceDto(
                 f.Face.Hex, f.Face.Face.ToString(), f.Status.ToString(),
-                f.Other?.Hex, f.Other?.Face.ToString(), f.Coincident, f.Gap, f.Seam)).ToList(),
+                f.Other?.Hex, f.Other?.Face.ToString(), f.Coincident, f.Gap)).ToList(),
             mesh.InvalidHexes());
     }
 

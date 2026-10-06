@@ -61,9 +61,9 @@ public class FaceTests
         var (mesh, a, b, c, d) = Square();
 
         Assert.That(mesh.TryLinkFaces(new FaceRef(d.Id, HexFace.XPlus), new FaceRef(c.Id, HexFace.XPlus), LinkFit.Strict, out var e1), Is.False);
-        Assert.That(e1, Does.Contain("coincide"));
-        Assert.That(mesh.TryLinkFaces(new FaceRef(a.Id, HexFace.ZPlus), new FaceRef(c.Id, HexFace.XMinus), LinkFit.Strict, out var e2), Is.False);
-        Assert.That(e2, Does.Contain("coincide"));
+        Assert.That(e1, Does.Contain("face each other"));
+        Assert.That(mesh.TryLinkFaces(new FaceRef(a.Id, HexFace.XPlus), new FaceRef(c.Id, HexFace.XMinus), LinkFit.Strict, out var e2), Is.False);
+        Assert.That(e2, Does.Contain("not adjacent"));
         Assert.That(mesh.TryLinkFaces(new FaceRef(a.Id, HexFace.XPlus), new FaceRef(b.Id, HexFace.XMinus), LinkFit.Strict, out var e3), Is.False);
         Assert.That(e3, Does.Contain("already linked"));
         Assert.That(mesh.TryLinkFaces(new FaceRef(a.Id, HexFace.XPlus), new FaceRef(a.Id, HexFace.XMinus), LinkFit.Strict, out _), Is.False);

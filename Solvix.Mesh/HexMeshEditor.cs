@@ -54,18 +54,13 @@ public sealed class HexMeshEditor
             if (f.Offset() == delta) shared = f;
         if (shared is not HexFace face)
         {
-            // Not neighbouring cells: still possible when the user has moved nodes so
-            // that a face of one cube coincides with a face of the other (a seam).
-            if (Mesh.FindCoincidentFaces(hexA, hexB) is { } seam)
-                return Mesh.TryLinkFaces(seam.First, seam.Second, fit, out var seamError) ? EditResult.Success : EditResult.Fail(seamError ?? "Link refused.");
             int apart = new[] { delta.Item1, delta.Item2, delta.Item3 }.Count(d => d != 0);
             bool touching = Math.Abs(delta.Item1) <= 1 && Math.Abs(delta.Item2) <= 1 && Math.Abs(delta.Item3) <= 1;
             if (touching)
                 return EditResult.Fail(
                     $"These hexes touch only {(apart == 2 ? "along an edge" : "at a corner")}, not across a face, so they cannot be neighbours. " +
-                    "To connect them, add a hex that touches both, or move nodes until a face of one coincides with a face of the other " +
-                    "(nodes along the shared edge are already shared through their common neighbours).");
-            return EditResult.Fail("These hexes are not adjacent in the ideal lattice, and no face of one coincides with a face of the other.");
+                    "To connect them, add a hex that touches both (nodes along the shared edge are already shared through their common neighbours).");
+            return EditResult.Fail("These hexes are not adjacent in the ideal lattice.");
         }
         return Mesh.TryLinkFaces(new FaceRef(hexA, face), new FaceRef(hexB, face.Opposite()), fit, out var error)
             ? EditResult.Success

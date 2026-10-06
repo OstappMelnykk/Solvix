@@ -83,10 +83,10 @@ public class MeshBuilderFacadeTests
         var facade = Square();
         int version = facade.GetState(1).Version;
 
-        var result = facade.LinkFaces(1, 0, "ZPlus", 2, "ZMinus", adaptSecond: false);
+        var result = facade.LinkFaces(1, 0, "XPlus", 2, "XMinus", adaptSecond: false);
 
         Assert.That(result.Ok, Is.False);
-        Assert.That(result.Error, Does.Contain("coincide"));
+        Assert.That(result.Error, Does.Contain("not adjacent"));
         Assert.That(result.State.Version, Is.EqualTo(version));
     }
 
@@ -192,66 +192,5 @@ public class MeshBuilderFacadeTests
         Assert.That(leaf.State.Hexes, Has.Count.EqualTo(3));
         Assert.That(leaf.State.Hexes.Any(h => h.Id == 3), Is.False);
         Assert.That(facade.RemoveHex(1, 99).Error, Does.Contain("Unknown hex"));
-    }
-
-    // Three cubes around an edge: B(1,0,0) and C(0,1,0) around A, their facing faces moved onto one plane.
-    private static IMeshBuilderFacade EdgeTrio()
-    {
-        var facade = NewFacade();
-        facade.AddFirstHex(1);
-        facade.AddHexOnFace(1, 0, "XPlus");
-        facade.AddHexOnFace(1, 0, "YPlus");
-        var state = facade.GetState(1);
-        MeshPointDto Diagonal(double t, double z) => new(1 + 0.8 * t, 1 + 0.8 * t, z);
-        var slots = new (int slot, double t, double z)[0];
-        // YPlus face of B (hex 1): local (a, +1, g); XPlus face of C (hex 2): local (+1, b, g)
-        foreach (var (hexId, tAxis) in new[] { (1, 0), (2, 1) })
-        {
-            var hex = state.Hexes.Single(h => h.Id == hexId);
-            for (int slot = 0; slot < 20; slot++)
-            {
-                var local = Local(slot);
-                bool onFace = hexId == 1 ? local.y == 1 : local.x == 1;
-                if (!onFace) continue;
-                double t = ((tAxis == 0 ? local.x : local.y) + 1) / 2.0;
-                facade.MoveNode(1, hex.NodeIds[slot], Diagonal(t, (local.z + 1) / 2.0), false);
-            }
-        }
-        return facade;
-    }
-
-    private static (int x, int y, int z) Local(int slot)
-    {
-        int[][] c =
-        {
-            new[] { -1, -1, -1 }, new[] { 1, -1, -1 }, new[] { 1, 1, -1 }, new[] { -1, 1, -1 },
-            new[] { -1, -1, 1 }, new[] { 1, -1, 1 }, new[] { 1, 1, 1 }, new[] { -1, 1, 1 },
-            new[] { 0, -1, -1 }, new[] { 1, 0, -1 }, new[] { 0, 1, -1 }, new[] { -1, 0, -1 },
-            new[] { 0, -1, 1 }, new[] { 1, 0, 1 }, new[] { 0, 1, 1 }, new[] { -1, 0, 1 },
-            new[] { -1, -1, 0 }, new[] { 1, -1, 0 }, new[] { 1, 1, 0 }, new[] { -1, 1, 0 },
-        };
-        return (c[slot][0], c[slot][1], c[slot][2]);
-    }
-
-    [Test]
-    public void A_seam_candidate_is_reported_then_linked_and_flagged_as_a_seam()
-    {
-        var facade = EdgeTrio();
-        var before = facade.GetState(1);
-        var candidates = before.Faces.Where(f => f.Status == "Candidate" && f.Seam).ToList();
-        Assert.That(candidates, Has.Count.EqualTo(2));
-        Assert.That(candidates.Select(f => (f.Hex, f.OtherHex)), Is.EquivalentTo(new (int, int?)[] { (1, 2), (2, 1) }));
-        Assert.That(before.Links.Any(l => l.Seam), Is.False);
-
-        var result = facade.LinkHexes(1, 1, 2, adaptSecond: false);
-
-        Assert.That(result.Ok, Is.True, result.Error);
-        var seam = result.State.Links.Single(l => l.Seam);
-        Assert.That((seam.HexA, seam.HexB), Is.EqualTo((1, 2)));
-        Assert.That(seam.FaceA, Is.EqualTo("YPlus"));
-        Assert.That(seam.FaceB, Is.EqualTo("XPlus"));
-        Assert.That(result.State.Links.Count(l => !l.Seam), Is.EqualTo(2));
-        Assert.That(result.State.Faces.Count(f => f.Status == "Linked" && f.Seam), Is.EqualTo(2));
-        Assert.That(result.State.InvalidHexes, Is.Empty);
     }
 }

@@ -16,11 +16,7 @@ public enum FaceStatus
 /// <param name="Other">The face across (linked or candidate), or null when free.</param>
 /// <param name="Coincident">Whether the two faces coincide in real space (null when free).</param>
 /// <param name="Gap">Largest distance between corresponding nodes (null when free).</param>
-/// <param name="Seam">The two faces are not opposite faces of lattice-adjacent hexes: they meet only because the nodes were moved (a "seam").</param>
-public sealed record FaceState(FaceRef Face, FaceStatus Status, FaceRef? Other, bool? Coincident, double? Gap, bool Seam = false);
-
-/// <summary>What a face is glued to: the other hex, its face, and how the squares line up (<see cref="FaceOrientation"/>).</summary>
-public readonly record struct FaceLink(int Hex, HexFace Face, int Orientation);
+public sealed record FaceState(FaceRef Face, FaceStatus Status, FaceRef? Other, bool? Coincident, double? Gap);
 
 public enum LinkFit
 {
