@@ -44,60 +44,96 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.canAddFirst()).toBeFalse();
   });
 
-  it('lets a single free face receive a cube, and clears the selection afterwards', () => {
+  it('offers an add-a-cube button per free side of the single picked cube', () => {
+    state = linkedPairState();
+    selection.toggleHex(1, 0);
+
+    expect(component.canAttach('XMinus')).toBeTrue();
+    expect(component.canAttach('XPlus')).toBeFalse();   // linked to cube 1
+    selection.toggleHex(1, 1);
+    expect(component.canAttach('XMinus')).toBeFalse();  // two cubes picked: no attach
+  });
+
+  it('does not offer attaching to a side whose cell is taken by a not-yet-neighbour', () => {
+    const base = singleCubeState();
+    state = {
+      ...base,
+      faces: base.faces.map((f): MeshFaceDto => (f.face === 'XPlus' ? { ...f, status: 'Candidate', otherHex: 5, otherFace: 'XMinus', coincident: true, gap: 0 } : f))
+    };
+    selection.toggleHex(1, 0);
+
+    expect(component.canAttach('XPlus')).toBeFalse();
+    expect(component.canAttach('YPlus')).toBeTrue();
+  });
+
+  it('attaches on the chosen side of the picked cube', () => {
     state = singleCubeState();
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
+    selection.toggleHex(1, 0);
 
-    expect(component.canAttach()).toBeTrue();
-    component.attach();
+    component.attach('ZPlus');
 
-    expect(editor.addHexOnFace).toHaveBeenCalledWith(1, 0, 'XPlus');
-    expect(selection.faces(1)).toEqual([]);
+    expect(editor.addHexOnFace).toHaveBeenCalledWith(1, 0, 'ZPlus');
   });
 
-  it('does not offer attaching to a linked face, but offers unlinking it', () => {
-    state = linkedPairState();
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
+  it('previews the side a button would add to, and clears the preview', () => {
+    state = singleCubeState();
+    selection.toggleHex(1, 0);
 
-    expect(component.canAttach()).toBeFalse();
-    expect(component.canUnlink()).toBeTrue();
-    component.unlink();
-
-    expect(editor.unlinkFace).toHaveBeenCalledWith(1, 0, 'XPlus');
+    component.previewFace('YMinus');
+    expect(selection.hoverFace(1)).toEqual({ hex: 0, face: 'YMinus' });
+    component.previewFace(null);
+    expect(selection.hoverFace(1)).toBeNull();
   });
 
-  it('links the two cubes of the picked faces in click order, whichever faces were clicked', () => {
+  it('previews nothing unless exactly one cube is picked', () => {
     state = linkedPairState();
-    state = { ...state, links: [] };
-    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
-    selection.toggleFace(1, { hex: 0, face: 'ZMinus' });
+    selection.toggleHex(1, 0);
+    selection.toggleHex(1, 1);
+
+    component.previewFace('YMinus');
+
+    expect(selection.hoverFace(1)).toBeNull();
+  });
+
+  it('links the second picked cube to the first, which is the base', () => {
+    state = { ...linkedPairState(), links: [] };
+    selection.toggleHex(1, 1);
+    selection.toggleHex(1, 0);
 
     expect(component.selectedHexes()).toEqual([1, 0]);
     expect(component.canLink()).toBeTrue();
     component.link();
-    expect(editor.linkHexes).toHaveBeenCalledWith(1, 1, 0, true);
-    expect(selection.faces(1)).toEqual([]);
 
-    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
-    selection.toggleFace(1, { hex: 0, face: 'ZMinus' });
-    component.adaptSecond = false;
-    component.link();
-    expect(editor.linkHexes).toHaveBeenCalledWith(1, 1, 0, false);
+    expect(editor.linkHexes).toHaveBeenCalledWith(1, 1, 0, true);
+    expect(selection.hexes(1)).toEqual([]);
   });
 
-  it('counts a cube once even when two of its faces are picked, so that is not a pair', () => {
-    state = singleCubeState();
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
-    selection.toggleFace(1, { hex: 0, face: 'YPlus' });
+  it('swap exchanges base and adapting cube before the link goes out', () => {
+    state = { ...linkedPairState(), links: [] };
+    selection.toggleHex(1, 1);
+    selection.toggleHex(1, 0);
 
-    expect(component.selectedHexes()).toEqual([0]);
+    expect(component.canSwap()).toBeTrue();
+    component.swap();
+    component.adaptSecond = false;
+    component.link();
+
+    expect(editor.linkHexes).toHaveBeenCalledWith(1, 0, 1, false);
+  });
+
+  it('cannot swap or link with fewer than two cubes', () => {
+    state = singleCubeState();
+    expect(component.canSwap()).toBeFalse();
+    expect(component.canLink()).toBeFalse();
+    selection.toggleHex(1, 0);
+    expect(component.canSwap()).toBeFalse();
     expect(component.canLink()).toBeFalse();
   });
 
   it('cannot link cubes that are already neighbours, but can unlink them through their link', () => {
     state = linkedPairState();
-    selection.toggleFace(1, { hex: 0, face: 'YPlus' });
-    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
+    selection.toggleHex(1, 1);
+    selection.toggleHex(1, 0);
 
     expect(component.canLink()).toBeFalse();
     expect(component.pairStatusText()).toBe('вже сусіди');
@@ -105,41 +141,23 @@ describe('MeshEditorControlsComponent', () => {
     component.unlink();
 
     expect(editor.unlinkFace).toHaveBeenCalledWith(1, 0, 'XPlus');
-    expect(selection.faces(1)).toEqual([]);
+    expect(selection.hexes(1)).toEqual([]);
   });
 
-  it('deletes the cube of the picked face, only when exactly one cube is picked', () => {
+  it('says whether the two picked cubes are neighbours yet', () => {
+    state = { ...linkedPairState(), links: [] };
+    selection.toggleHex(1, 0);
+    selection.toggleHex(1, 1);
+
+    expect(component.pairStatusText()).toBe('ще не сусіди');
+  });
+
+  it('summarises the neighbours of a cube', () => {
     state = linkedPairState();
-    expect(component.canRemove()).toBeFalse();
 
-    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
-    selection.toggleFace(1, { hex: 1, face: 'ZPlus' });       // two faces, still one cube
-    expect(component.canRemove()).toBeTrue();
-    component.remove();
-    expect(editor.removeHex).toHaveBeenCalledWith(1, 1);
-    expect(selection.faces(1)).toEqual([]);
-
-    selection.toggleFace(1, { hex: 0, face: 'YPlus' });
-    selection.toggleFace(1, { hex: 1, face: 'YPlus' });       // two cubes
-    expect(component.canRemove()).toBeFalse();
-    editor.removeHex.calls.reset();
-    component.remove();
-    expect(editor.removeHex).not.toHaveBeenCalled();
-  });
-
-  it('cannot delete while a command is running', () => {
+    expect(component.neighborsText(0)).toBe('сусіди: 1');
     state = singleCubeState();
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
-    busy.set(true);
-
-    expect(component.canRemove()).toBeFalse();
-  });
-
-  it('cannot link fewer than two cubes', () => {
-    state = singleCubeState();
-    expect(component.canLink()).toBeFalse();
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
-    expect(component.canLink()).toBeFalse();
+    expect(component.neighborsText(0)).toBe('сусідів немає');
   });
 
   it('lists cubes that touch without being neighbours once per pair, and links one on request', () => {
@@ -179,15 +197,31 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.candidates()).toEqual([]);
   });
 
-  it('describes a face: free, linked and a candidate with its gap', () => {
-    const candidate: MeshFaceDto = { hex: 0, face: 'XPlus', status: 'Candidate', otherHex: 3, otherFace: 'XMinus', coincident: false, gap: 0.3 };
-    state = { ...singleCubeState(), faces: [candidate, ...singleCubeState().faces.filter(f => f.face !== 'XPlus')] };
-
-    expect(component.faceStatusText({ hex: 0, face: 'XMinus' })).toBe('вільна');
-    expect(component.faceStatusText({ hex: 0, face: 'XPlus' })).toContain('зазор 0.300');
+  it('deletes the picked cube, only when exactly one cube is picked', () => {
     state = linkedPairState();
-    expect(component.faceStatusText({ hex: 0, face: 'XPlus' })).toContain("з'єднана з кубом 1");
-    expect(component.faceLabel({ hex: 2, face: 'YMinus' })).toBe('Куб 2 · Y−');
+    expect(component.canRemove()).toBeFalse();
+
+    selection.toggleHex(1, 1);
+    expect(component.canRemove()).toBeTrue();
+    component.remove();
+    expect(editor.removeHex).toHaveBeenCalledWith(1, 1);
+    expect(selection.hexes(1)).toEqual([]);
+
+    selection.toggleHex(1, 0);
+    selection.toggleHex(1, 1);
+    expect(component.canRemove()).toBeFalse();
+    editor.removeHex.calls.reset();
+    component.remove();
+    expect(editor.removeHex).not.toHaveBeenCalled();
+  });
+
+  it('cannot delete or attach while a command is running', () => {
+    state = singleCubeState();
+    selection.toggleHex(1, 0);
+    busy.set(true);
+
+    expect(component.canRemove()).toBeFalse();
+    expect(component.canAttach('XPlus')).toBeFalse();
   });
 
   it('moves a selected node only in the Real World', () => {
@@ -277,5 +311,184 @@ describe('MeshEditorControlsComponent', () => {
     expect(editor.undo).not.toHaveBeenCalled();
     expect(editor.reset).not.toHaveBeenCalled();
     expect(component.hexCount()).toBe(0);
+  });
+
+  describe('picked face', () => {
+    it('describes the face and offers a cube on it only while it is free', () => {
+      state = linkedPairState();
+      selection.selectFace(1, { hex: 0, face: 'YPlus' });
+      expect(component.activeFaceText()).toBe('Куб 0 · Y+ — вільна');
+      expect(component.canAttachActiveFace()).toBeTrue();
+
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+      expect(component.activeFaceText()).toContain("з'єднана з кубом 1");
+      expect(component.canAttachActiveFace()).toBeFalse();
+    });
+
+    it('builds a cube on the picked face and clears the selection', () => {
+      state = singleCubeState();
+      selection.selectFace(1, { hex: 0, face: 'ZPlus' });
+
+      component.attachActiveFace();
+
+      expect(editor.addHexOnFace).toHaveBeenCalledWith(1, 0, 'ZPlus');
+      expect(selection.face(1)).toBeNull();
+    });
+
+    it('deletes the cube of the picked face when no cube is picked, but prefers a picked cube', () => {
+      state = linkedPairState();
+      selection.selectFace(1, { hex: 1, face: 'YPlus' });
+      expect(component.removeTarget()).toBe(1);
+
+      selection.toggleHex(1, 0);
+      expect(component.removeTarget()).toBe(0);
+
+      selection.toggleHex(1, 1);
+      expect(component.removeTarget()).toBeNull();     // two cubes picked: ambiguous
+      expect(component.canRemove()).toBeFalse();
+    });
+  });
+
+  describe('keyboard shortcuts', () => {
+    const press = (key: string, init: KeyboardEventInit = {}, target?: Element) => {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true, ...init });
+      if (target) Object.defineProperty(event, 'target', { value: target });
+      component.onKeyDown(event);
+      return event;
+    };
+
+    it('A adds a cube on the picked face', () => {
+      state = singleCubeState();
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+
+      const event = press('a');
+
+      expect(editor.addHexOnFace).toHaveBeenCalledWith(1, 0, 'XPlus');
+      expect(event.defaultPrevented).toBeTrue();
+    });
+
+    it('does nothing, but still swallows the key, when the command is not available', () => {
+      state = singleCubeState();
+
+      const event = press('a');
+
+      expect(editor.addHexOnFace).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBeTrue();   // a handled key even if disabled: no stray page action
+    });
+
+    it('Delete and Backspace delete the target cube', () => {
+      state = linkedPairState();
+      selection.toggleHex(1, 1);
+      press('Delete');
+      expect(editor.removeHex).toHaveBeenCalledWith(1, 1);
+
+      selection.toggleHex(1, 0);
+      press('Backspace');
+      expect(editor.removeHex).toHaveBeenCalledWith(1, 0);
+    });
+
+    it('L links the picked pair, S swaps the roles first, U unlinks', () => {
+      state = { ...linkedPairState(), links: [] };
+      selection.toggleHex(1, 1);
+      selection.toggleHex(1, 0);
+
+      press('s');
+      expect(selection.hexes(1)).toEqual([0, 1]);
+      press('l');
+      expect(editor.linkHexes).toHaveBeenCalledWith(1, 0, 1, true);
+
+      state = linkedPairState();
+      selection.toggleHex(1, 0);
+      selection.toggleHex(1, 1);
+      press('u');
+      expect(editor.unlinkFace).toHaveBeenCalledWith(1, 0, 'XPlus');
+    });
+
+    it('N adds the first cube to an empty mesh only', () => {
+      state = emptyState;
+      press('n');
+      expect(editor.addFirstHex).toHaveBeenCalledWith(1);
+
+      editor.addFirstHex.calls.reset();
+      state = singleCubeState();
+      press('n');
+      expect(editor.addFirstHex).not.toHaveBeenCalled();
+    });
+
+    it('Escape clears the selection', () => {
+      state = singleCubeState();
+      selection.toggleHex(1, 0);
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+
+      press('Escape');
+
+      expect(selection.hexes(1)).toEqual([]);
+      expect(selection.face(1)).toBeNull();
+    });
+
+    it('Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z and Ctrl+Y redo', () => {
+      state = { ...singleCubeState(), canUndo: true, canRedo: true };
+
+      press('z', { ctrlKey: true });
+      press('z', { metaKey: true });
+      expect(editor.undo).toHaveBeenCalledTimes(2);
+
+      press('z', { ctrlKey: true, shiftKey: true });
+      press('y', { ctrlKey: true });
+      expect(editor.redo).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not undo when there is nothing to undo', () => {
+      state = { ...singleCubeState(), canUndo: false };
+
+      press('z', { ctrlKey: true });
+
+      expect(editor.undo).not.toHaveBeenCalled();
+    });
+
+    it('arrow keys and PageUp/PageDown move the selected node, Shift multiplies by ten', () => {
+      state = singleCubeState();
+      selection.selectNode(1, 6);   // corner (1, 1, 1)
+      component.nudgeStep = 0.1;
+
+      press('ArrowRight');
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1.1, y: 1, z: 1 }, true);
+      press('ArrowUp');
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 0.9 }, true);
+      press('PageDown', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, true);
+    });
+
+    it('arrow keys do nothing without a selected node or outside the Real World', () => {
+      state = singleCubeState();
+      press('ArrowRight');
+      expect(editor.moveNode).not.toHaveBeenCalled();
+
+      selection.selectNode(1, 6);
+      component.worldIndex = IDEAL_WORLD_INDEX;
+      press('ArrowRight');
+      expect(editor.moveNode).not.toHaveBeenCalled();
+    });
+
+    it('ignores keys typed into an input, and unrelated or browser-modified keys', () => {
+      state = singleCubeState();
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+
+      const input = document.createElement('input');
+      const typed = press('a', {}, input);
+      expect(typed.defaultPrevented).toBeFalse();
+      expect(editor.addHexOnFace).not.toHaveBeenCalled();
+
+      expect(press('a', { ctrlKey: true }).defaultPrevented).toBeFalse();   // Ctrl+A is select-all
+      expect(press('q').defaultPrevented).toBeFalse();
+      expect(editor.addHexOnFace).not.toHaveBeenCalled();
+    });
+
+    it('does nothing without a session', () => {
+      component.sessionId = null;
+
+      expect(press('n').defaultPrevented).toBeFalse();
+      expect(editor.addFirstHex).not.toHaveBeenCalled();
+    });
   });
 });

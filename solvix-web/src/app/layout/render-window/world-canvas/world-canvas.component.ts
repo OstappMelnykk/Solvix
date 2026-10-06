@@ -97,7 +97,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // draws it.
   @Input() meshView: MeshView | null = null;
   // A click on a node or face of meshView, or on empty space (pick: null).
-  @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null }>();
+  // `additive` is true for Shift+click (pick the cube instead of the face).
+  @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null; additive: boolean }>();
   // The node (of meshView) that may be dragged with the translate gizmo - set
   // only for the World where nodes move (the Real World), null elsewhere.
   @Input() draggableNodeId: number | null = null;
@@ -863,7 +864,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
     const hit = this.raycaster.intersectObjects(view.pickables, false)[0];
-    this.meshPick.emit({ pick: (hit?.object.userData['pick'] as MeshPick | undefined) ?? null });
+    this.meshPick.emit({ pick: (hit?.object.userData['pick'] as MeshPick | undefined) ?? null, additive: event.shiftKey });
   }
 
   // Gates the STL-reference visibility toggle button below (world-canvas.

@@ -103,16 +103,16 @@ describe('MeshEditorService', () => {
     http.expectOne(url('state')).flush(emptyState);
   });
 
-  it('drops selected faces and nodes that the new state no longer has', () => {
+  it('drops selected cubes and nodes that the new state no longer has', () => {
     loadInitialState(singleCubeState());
-    selection.toggleFace(sessionId, { hex: 0, face: 'XPlus' });
-    selection.toggleFace(sessionId, { hex: 9, face: 'XPlus' });
+    selection.toggleHex(sessionId, 0);
+    selection.toggleHex(sessionId, 9);
     selection.selectNode(sessionId, 999);
 
     editor.refresh(sessionId);
     http.expectOne(url('state')).flush(singleCubeState(2));
 
-    expect(selection.faces(sessionId)).toEqual([{ hex: 0, face: 'XPlus' }]);
+    expect(selection.hexes(sessionId)).toEqual([0]);
     expect(selection.nodeId(sessionId)).toBeNull();
   });
 

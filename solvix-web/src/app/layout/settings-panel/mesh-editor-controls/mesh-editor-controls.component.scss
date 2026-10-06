@@ -237,3 +237,73 @@ h4 {
   padding: 2px 8px;
   flex: none;
 }
+
+.pick {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  padding: 3px 6px;
+  margin-bottom: 4px;
+  border-left: 3px solid;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pick--base {
+  border-color: #39c5f2;
+}
+
+.pick--adapting {
+  border-color: #c77dff;
+}
+
+.faces {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.faces .chip {
+  width: auto;
+  padding: 3px 0;
+}
+
+.pick--face {
+  border-color: #ffe14d;
+}
+
+kbd {
+  margin-left: 8px;
+  padding: 0 5px;
+  font-family: inherit;
+  font-size: 10px;
+  color: #9096a0;
+  border: 1px solid $field-border;
+  border-radius: 3px;
+}
+
+.help {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #b8bcc4;
+
+  summary {
+    cursor: pointer;
+    color: #9096a0;
+    text-transform: uppercase;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  td {
+    padding: 2px 6px 2px 0;
+    vertical-align: top;
+  }
+
+  td:first-child {
+    color: #dfe1e5;
+    white-space: nowrap;
+  }
+}

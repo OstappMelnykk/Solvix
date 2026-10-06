@@ -3,7 +3,7 @@ import { MeshFaceDto } from '../api/mesh-editor-api.service';
 import { FACE_NAMES, MeshPick, buildMeshView, disposeMeshView, faceAxis, faceSign, faceSlots, nodePosition } from './mesh-editor-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
-const noSelection = { faces: [], nodeId: null };
+const noSelection = { hexes: [], face: null, hoverFace: null, nodeId: null };
 
 function picks(pickables: THREE.Object3D[]): MeshPick[] {
   return pickables.map(o => o.userData['pick'] as MeshPick);
@@ -102,9 +102,9 @@ describe('mesh-editor-view', () => {
       expect(mid.z).toBeCloseTo(0.2, 6);
     });
 
-    it('colours a selected face and node differently from the rest', () => {
+    it('colours a picked cube and a selected node differently from the rest', () => {
       const plain = buildMeshView(singleCubeState(), 'real', noSelection);
-      const selected = buildMeshView(singleCubeState(), 'real', { faces: [{ hex: 0, face: 'XPlus' }], nodeId: 3 });
+      const selected = buildMeshView(singleCubeState(), 'real', { hexes: [0], face: null, hoverFace: null, nodeId: 3 });
 
       const colorOf = (view: ReturnType<typeof buildMeshView>, match: (p: MeshPick) => boolean) => {
         const object = view.pickables.find(o => match(o.userData['pick'] as MeshPick)) as THREE.Mesh;
@@ -117,7 +117,7 @@ describe('mesh-editor-view', () => {
       expect(colorOf(selected, isFace)).not.toBe(colorOf(plain, isFace));
       expect(nodeColor(selected, 3)).not.toBe(nodeColor(plain, 3));
       expect(nodeColor(selected, 4)).toBe(nodeColor(plain, 4));
-      expect(colorOf(selected, p => p.kind === 'face' && p.face === 'YPlus')).toBe(colorOf(plain, p => p.kind === 'face' && p.face === 'YPlus'));
+      expect(colorOf(selected, p => p.kind === 'face' && p.face === 'YPlus')).not.toBe(colorOf(plain, p => p.kind === 'face' && p.face === 'YPlus'));
     });
 
     it('colours free, linked and candidate faces differently', () => {
@@ -157,6 +157,72 @@ describe('mesh-editor-view', () => {
       expect(box.max.y).toBeCloseTo(1, 6);
       expect(box.min.z).toBeCloseTo(0, 6);
       expect(box.max.z).toBeCloseTo(1, 6);
+    });
+  });
+
+  describe('cube selection colours', () => {
+    const faceColor = (view: ReturnType<typeof buildMeshView>, hex: number, face: string) => {
+      const object = view.pickables.find(o => {
+        const p = o.userData['pick'] as MeshPick;
+        return p.kind === 'face' && p.hex === hex && p.face === face;
+      }) as THREE.Mesh;
+      return (object.material as THREE.MeshBasicMaterial).color.getHex();
+    };
+
+    it('tints every drawn face of the base cube and of the adapting cube differently', () => {
+      const state = linkedPairState();
+      const view = buildMeshView(state, 'real', { hexes: [0, 1], face: null, hoverFace: null, nodeId: null });
+      const plain = buildMeshView(state, 'real', noSelection);
+
+      const base = faceColor(view, 0, 'YPlus');
+      const adapting = faceColor(view, 1, 'YPlus');
+      expect(base).not.toBe(adapting);
+      expect(base).not.toBe(faceColor(plain, 0, 'YPlus'));
+      expect(adapting).not.toBe(faceColor(plain, 1, 'YPlus'));
+      // every face of the base shares one colour
+      expect(faceColor(view, 0, 'ZPlus')).toBe(base);
+    });
+
+    it('colours the shared face by the base cube whichever side is drawn', () => {
+      const state = linkedPairState();   // the shared face is drawn from hex 0's side
+
+      const baseIsOne = buildMeshView(state, 'real', { hexes: [1, 0], face: null, hoverFace: null, nodeId: null });
+      const baseIsZero = buildMeshView(state, 'real', { hexes: [0, 1], face: null, hoverFace: null, nodeId: null });
+      const onlyOne = buildMeshView(state, 'real', { hexes: [1], face: null, hoverFace: null, nodeId: null });
+
+      // the same pair, but roles swapped: the shared face follows the base (index 0)
+      expect(faceColor(baseIsOne, 0, 'XPlus')).toBe(faceColor(baseIsZero, 0, 'XPlus'));
+      // picking only cube 1 still tints the shared face drawn from cube 0's side
+      expect(faceColor(onlyOne, 0, 'XPlus')).not.toBe(faceColor(buildMeshView(state, 'real', noSelection), 0, 'XPlus'));
+    });
+
+    it('swapping the roles swaps the colours of the two cubes', () => {
+      const state = linkedPairState();
+      const a = buildMeshView(state, 'real', { hexes: [0, 1], face: null, hoverFace: null, nodeId: null });
+      const b = buildMeshView(state, 'real', { hexes: [1, 0], face: null, hoverFace: null, nodeId: null });
+
+      expect(faceColor(a, 0, 'YPlus')).toBe(faceColor(b, 1, 'YPlus'));
+      expect(faceColor(a, 1, 'YPlus')).toBe(faceColor(b, 0, 'YPlus'));
+    });
+
+    it('draws a picked face in its own colour, apart from cube picks and statuses', () => {
+      const state = singleCubeState();
+      const view = buildMeshView(state, 'real', { hexes: [], face: { hex: 0, face: 'XPlus' }, hoverFace: null, nodeId: null });
+      const plain = buildMeshView(state, 'real', noSelection);
+      const cube = buildMeshView(state, 'real', { hexes: [0], face: null, hoverFace: null, nodeId: null });
+
+      expect(faceColor(view, 0, 'XPlus')).not.toBe(faceColor(plain, 0, 'XPlus'));
+      expect(faceColor(view, 0, 'XPlus')).not.toBe(faceColor(cube, 0, 'XPlus'));
+      expect(faceColor(view, 0, 'YPlus')).toBe(faceColor(plain, 0, 'YPlus'));   // only the clicked face
+    });
+
+    it('draws the hovered face as a preview, apart from selection and status colours', () => {
+      const state = singleCubeState();
+      const view = buildMeshView(state, 'real', { hexes: [0], face: null, hoverFace: { hex: 0, face: 'XPlus' }, nodeId: null });
+      const picked = buildMeshView(state, 'real', { hexes: [0], face: null, hoverFace: null, nodeId: null });
+
+      expect(faceColor(view, 0, 'XPlus')).not.toBe(faceColor(picked, 0, 'XPlus'));
+      expect(faceColor(view, 0, 'YPlus')).toBe(faceColor(picked, 0, 'YPlus'));
     });
   });
 

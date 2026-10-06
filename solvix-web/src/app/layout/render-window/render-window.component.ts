@@ -143,19 +143,12 @@ export class RenderWindowComponent {
     }
   }
 
-  // A click on the canvas: a node or face selects it (a second face makes the
-  // pair for "link"), empty space clears the selection.
-  onMeshPick(pick: MeshPick | null): void {
+  // A click on the canvas - see MeshEditorSelectionService.applyPick for what
+  // each kind of click picks.
+  onMeshPick(pick: MeshPick | null, additive: boolean): void {
     const sessionId = this.sessions.activeSessionId();
-    if (sessionId === null) {
-      return;
-    }
-    if (pick === null) {
-      this.meshSelection.clear(sessionId);
-    } else if (pick.kind === 'face') {
-      this.meshSelection.toggleFace(sessionId, { hex: pick.hex, face: pick.face });
-    } else {
-      this.meshSelection.selectNode(sessionId, pick.nodeId);
+    if (sessionId !== null) {
+      this.meshSelection.applyPick(sessionId, pick, additive);
     }
   }
 }

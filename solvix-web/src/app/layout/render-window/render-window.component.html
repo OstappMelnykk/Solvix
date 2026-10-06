@@ -12,7 +12,7 @@
     [ruler]="getRuler(i)"
     [holeHighlight]="getHoleHighlight(i)"
     [meshView]="getMeshView(i)"
-    (meshPick)="onMeshPick($event.pick)"
+    (meshPick)="onMeshPick($event.pick, $event.additive)"
     [draggableNodeId]="getDraggableNodeId(i)"
     (nodeMoved)="onNodeMoved($event)"
     [active]="activeWorldIndex() === i"

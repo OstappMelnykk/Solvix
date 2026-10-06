@@ -22,7 +22,13 @@ export interface PickedNode {
 export type MeshPick = PickedFace | PickedNode;
 
 export interface MeshViewSelection {
-  readonly faces: readonly { readonly hex: number; readonly face: HexFaceName }[];
+  // Picked cubes in pick order: the first is the base (cyan), the second the one
+  // that adapts to it (violet).
+  readonly hexes: readonly number[];
+  // The face a plain click picked (yellow).
+  readonly face: { readonly hex: number; readonly face: HexFaceName } | null;
+  // The face whose "add a cube" button is hovered - drawn as a preview.
+  readonly hoverFace: { readonly hex: number; readonly face: HexFaceName } | null;
   readonly nodeId: number | null;
 }
 
@@ -81,7 +87,10 @@ const FACE_COLORS: Record<FaceStatus, number> = {
   Candidate: 0xe08a2e
 };
 const FACE_OPACITY: Record<FaceStatus, number> = { Free: 0.16, Linked: 0.22, Candidate: 0.4 };
-const SELECTED_FACE_COLOR = 0x39c5f2;
+const BASE_HEX_COLOR = 0x39c5f2;
+const ADAPTING_HEX_COLOR = 0xc77dff;
+const PREVIEW_FACE_COLOR = 0x6ee06e;
+const PICKED_FACE_COLOR = 0xffe14d;
 const SELECTED_NODE_COLOR = 0xff3b3b;
 const EDGE_COLOR = 0xe6e8ec;
 const CORNER_COLOR = 0xffffff;
@@ -185,10 +194,18 @@ export function buildMeshView(state: MeshStateDto, mode: MeshViewMode, selection
       slots.map(slot => positionOf(hex.nodeIds[slot])),
       slots.map(slot => [LOCAL_COORDS[slot][tangent[0]], LOCAL_COORDS[slot][tangent[1]]] as [number, number])
     );
-    const selected = selection.faces.some(f => f.hex === face.hex && f.face === face.face);
+    // A shared face is drawn once (from the lower-id hex) but belongs to both,
+    // so it is tinted when either side's cube is picked (the base wins).
+    const pickIndex = [selection.hexes.indexOf(face.hex), face.otherHex === null ? -1 : selection.hexes.indexOf(face.otherHex)]
+      .filter(i => i >= 0)
+      .sort((a, b) => a - b)[0];
+    const picked = pickIndex !== undefined;
+    const preview = selection.hoverFace?.hex === face.hex && selection.hoverFace.face === face.face;
+    const facePicked = selection.face?.hex === face.hex && selection.face.face === face.face;
+    const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : FACE_COLORS[face.status];
     const material = new THREE.MeshBasicMaterial({
-      color: selected ? SELECTED_FACE_COLOR : FACE_COLORS[face.status],
-      opacity: selected ? 0.55 : FACE_OPACITY[face.status],
+      color,
+      opacity: preview || facePicked ? 0.6 : picked ? 0.42 : FACE_OPACITY[face.status],
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide

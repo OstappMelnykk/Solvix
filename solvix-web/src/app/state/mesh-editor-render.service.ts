@@ -36,7 +36,9 @@ export class MeshEditorRenderService {
     if (cached && cached.key === key) return cached.view;
 
     const view = buildMeshView(state, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real', {
-      faces: this.selection.faces(sessionId),
+      hexes: this.selection.hexes(sessionId),
+      face: this.selection.face(sessionId),
+      hoverFace: this.selection.hoverFace(sessionId),
       nodeId: this.selection.nodeId(sessionId)
     });
     this.cache.set(cacheKey, { key, view });

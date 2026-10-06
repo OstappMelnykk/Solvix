@@ -57,7 +57,7 @@ describe('MeshEditorRenderService', () => {
     expect(first).not.toBeNull();
     expect(render.getView(sessionId, REAL_WORLD_INDEX)).toBe(first);
 
-    selection.toggleFace(sessionId, { hex: 0, face: 'XPlus' });
+    selection.toggleHex(sessionId, 0);
     const afterSelection = render.getView(sessionId, REAL_WORLD_INDEX);
     expect(afterSelection).not.toBe(first);
     expect(render.getView(sessionId, REAL_WORLD_INDEX)).toBe(afterSelection);

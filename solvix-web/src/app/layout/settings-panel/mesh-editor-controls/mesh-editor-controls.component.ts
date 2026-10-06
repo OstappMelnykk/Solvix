@@ -1,7 +1,7 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, HostListener, Input, inject } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { REAL_WORLD_INDEX } from '../../../config/app-settings';
-import { HexFaceName, MeshFaceDto, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
+import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 
@@ -15,6 +15,17 @@ const FACE_LABELS: Record<HexFaceName, string> = {
 };
 
 type Axis = 'x' | 'y' | 'z';
+
+// Arrow keys move X (left/right) and Z (up = away from the viewer along -Z),
+// PageUp/PageDown move Y.
+const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
+  arrowright: ['x', 1],
+  arrowleft: ['x', -1],
+  arrowdown: ['z', 1],
+  arrowup: ['z', -1],
+  pageup: ['y', 1],
+  pagedown: ['y', -1]
+};
 
 // Tools of the manual hex editor: build the body cube by cube, say which
 // faces are neighbours, move nodes, and probe the ideal<->real mapping. All
@@ -85,47 +96,27 @@ export class MeshEditorControlsComponent {
     return !this.busy && this.sessionId !== null && this.state !== null && this.hexCount() === 0;
   }
 
-  // --- faces ---------------------------------------------------------------
+  // --- cubes ---------------------------------------------------------------
 
-  selectedFaces(): readonly FaceRef[] {
-    return this.sessionId === null ? [] : this.selection.faces(this.sessionId);
+  readonly faceNames: readonly HexFaceName[] = ['XMinus', 'XPlus', 'YMinus', 'YPlus', 'ZMinus', 'ZPlus'];
+
+  // The picked cubes in pick order: the first is the base, the second is joined
+  // to it and adapts to it. (Clicking any face of a cube picks the cube.)
+  selectedHexes(): readonly number[] {
+    return this.sessionId === null ? [] : this.selection.hexes(this.sessionId);
   }
 
-  faceLabel(face: FaceRef): string {
-    return `Куб ${face.hex} · ${FACE_LABELS[face.face]}`;
+  faceLabel(face: HexFaceName): string {
+    return FACE_LABELS[face];
   }
 
-  faceState(face: FaceRef): MeshFaceDto | undefined {
-    return this.state?.faces.find(f => f.hex === face.hex && f.face === face.face);
-  }
-
-  faceStatusText(face: FaceRef): string {
-    const state = this.faceState(face);
-    if (!state) {
-      return '';
-    }
-    if (state.status === 'Linked') {
-      return `з'єднана з кубом ${state.otherHex}`;
-    }
-    if (state.status === 'Candidate') {
-      const gap = state.gap ?? 0;
-      return gap <= 1e-6
-        ? `поруч куб ${state.otherHex}, не сусід (грані збігаються)`
-        : `поруч куб ${state.otherHex}, не сусід (зазор ${gap.toFixed(3)})`;
-    }
-    return 'вільна';
-  }
-
-  canAttach(): boolean {
-    const faces = this.selectedFaces();
-    return !this.busy && faces.length === 1 && this.faceState(faces[0])?.status === 'Free';
-  }
-
-  // The cubes the picked faces belong to, in click order (a cube once, even
-  // if two of its faces were picked) - clicking any visible face of a cube
-  // selects the cube, which is how the cubes of a hidden shared face are named.
-  selectedHexes(): number[] {
-    return [...new Set(this.selectedFaces().map(face => face.hex))];
+  // Who a cube touches through links, for the little summary under each pick.
+  neighborsText(hexId: number): string {
+    const ids = (this.state?.links ?? [])
+      .filter(l => l.hexA === hexId || l.hexB === hexId)
+      .map(l => (l.hexA === hexId ? l.hexB : l.hexA))
+      .sort((a, b) => a - b);
+    return ids.length === 0 ? 'сусідів немає' : `сусіди: ${ids.join(', ')}`;
   }
 
   // The link between two cubes, if they are neighbours.
@@ -139,7 +130,70 @@ export class MeshEditorControlsComponent {
     if (this.selectedHexes().length !== 2) {
       return '';
     }
-    return this.linkBetween(a, b) ? 'вже сусіди' : 'не сусіди';
+    return this.linkBetween(a, b) ? 'вже сусіди' : 'ще не сусіди';
+  }
+
+  // The face a plain click picked, and whether a cube can be built on it.
+  activeFace(): FaceRef | null {
+    return this.sessionId === null ? null : this.selection.face(this.sessionId);
+  }
+
+  activeFaceText(): string {
+    const face = this.activeFace();
+    if (!face) {
+      return '';
+    }
+    const state = this.state?.faces.find(f => f.hex === face.hex && f.face === face.face);
+    const status = state?.status === 'Linked' ? `з'єднана з кубом ${state.otherHex}` : state?.status === 'Candidate' ? `зайнята кубом ${state.otherHex}` : 'вільна';
+    return `Куб ${face.hex} · ${FACE_LABELS[face.face]} — ${status}`;
+  }
+
+  canAttachActiveFace(): boolean {
+    const face = this.activeFace();
+    return !this.busy && face !== null && this.state?.faces.find(f => f.hex === face.hex && f.face === face.face)?.status === 'Free';
+  }
+
+  attachActiveFace(): void {
+    const face = this.activeFace();
+    if (this.sessionId !== null && face && this.canAttachActiveFace()) {
+      this.editor.addHexOnFace(this.sessionId, face.hex, face.face);
+      this.selection.clear(this.sessionId);
+    }
+  }
+
+  // Add-a-cube buttons, one per side of the single picked cube; a side is
+  // available only while nothing sits against it.
+  canAttach(face: HexFaceName): boolean {
+    const hexes = this.selectedHexes();
+    if (this.busy || hexes.length !== 1) {
+      return false;
+    }
+    return this.state?.faces.find(f => f.hex === hexes[0] && f.face === face)?.status === 'Free';
+  }
+
+  attach(face: HexFaceName): void {
+    const hexes = this.selectedHexes();
+    if (this.sessionId !== null && hexes.length === 1 && this.canAttach(face)) {
+      this.editor.addHexOnFace(this.sessionId, hexes[0], face);
+      this.selection.setHoverFace(this.sessionId, null);
+    }
+  }
+
+  // Shows where the new cube would go while the pointer is on its button.
+  previewFace(face: HexFaceName | null): void {
+    const hexes = this.selectedHexes();
+    if (this.sessionId === null) {
+      return;
+    }
+    this.selection.setHoverFace(this.sessionId, face !== null && hexes.length === 1 ? { hex: hexes[0], face } : null);
+  }
+
+  canSwap(): boolean {
+    return !this.busy && this.selectedHexes().length === 2;
+  }
+
+  swap(): void {
+    if (this.sessionId !== null) this.selection.swapHexes(this.sessionId);
   }
 
   canLink(): boolean {
@@ -148,14 +202,8 @@ export class MeshEditorControlsComponent {
   }
 
   canUnlink(): boolean {
-    if (this.busy) {
-      return false;
-    }
-    const faces = this.selectedFaces();
-    if (this.selectedHexes().length === 2) {
-      return this.linkBetween(this.selectedHexes()[0], this.selectedHexes()[1]) !== null;
-    }
-    return faces.length === 1 && this.faceState(faces[0])?.status === 'Linked';
+    const [a, b] = this.selectedHexes();
+    return !this.busy && this.selectedHexes().length === 2 && this.linkBetween(a, b) !== null;
   }
 
   // Cubes that sit face to face but are not neighbours - the ones the user can
@@ -182,15 +230,24 @@ export class MeshEditorControlsComponent {
     }
   }
 
-  // Deleting acts on exactly one cube - the one whose face is picked.
+  // Deleting acts on one cube: the single Shift-picked cube, or - when no cube
+  // is picked - the cube of the face that was clicked.
+  removeTarget(): number | null {
+    const hexes = this.selectedHexes();
+    if (hexes.length === 1) {
+      return hexes[0];
+    }
+    return hexes.length === 0 ? (this.activeFace()?.hex ?? null) : null;
+  }
+
   canRemove(): boolean {
-    return !this.busy && this.selectedHexes().length === 1;
+    return !this.busy && this.removeTarget() !== null;
   }
 
   remove(): void {
-    const hexes = this.selectedHexes();
-    if (this.sessionId !== null && hexes.length === 1) {
-      this.editor.removeHex(this.sessionId, hexes[0]);
+    const target = this.removeTarget();
+    if (this.sessionId !== null && target !== null) {
+      this.editor.removeHex(this.sessionId, target);
       this.selection.clear(this.sessionId);
     }
   }
@@ -199,14 +256,8 @@ export class MeshEditorControlsComponent {
     if (this.sessionId !== null) this.editor.addFirstHex(this.sessionId);
   }
 
-  attach(): void {
-    const faces = this.selectedFaces();
-    if (this.sessionId !== null && faces.length === 1) {
-      this.editor.addHexOnFace(this.sessionId, faces[0].hex, faces[0].face);
-      this.selection.clear(this.sessionId);
-    }
-  }
-
+  // The first picked cube is the base; the second is joined to it (and, with
+  // "adapt", fitted onto it). Swap exchanges the roles before linking.
   link(): void {
     const hexes = this.selectedHexes();
     if (this.sessionId !== null && hexes.length === 2) {
@@ -216,17 +267,12 @@ export class MeshEditorControlsComponent {
   }
 
   unlink(): void {
-    if (this.sessionId === null) {
+    const hexes = this.selectedHexes();
+    if (this.sessionId === null || hexes.length !== 2) {
       return;
     }
-    const hexes = this.selectedHexes();
-    const faces = this.selectedFaces();
-    if (hexes.length === 2) {
-      const link = this.linkBetween(hexes[0], hexes[1]);
-      if (link) this.editor.unlinkFace(this.sessionId, link.hex, link.face);
-    } else if (faces.length === 1) {
-      this.editor.unlinkFace(this.sessionId, faces[0].hex, faces[0].face);
-    }
+    const link = this.linkBetween(hexes[0], hexes[1]);
+    if (link) this.editor.unlinkFace(this.sessionId, link.hex, link.face);
     this.selection.clear(this.sessionId);
   }
 
@@ -271,12 +317,12 @@ export class MeshEditorControlsComponent {
     this.moveSelectedNode({ x: this.nodeCoord('x'), y: this.nodeCoord('y'), z: this.nodeCoord('z'), [axis]: value });
   }
 
-  nudge(axis: Axis, direction: 1 | -1): void {
+  nudge(axis: Axis, direction: 1 | -1, multiplier = 1): void {
     this.moveSelectedNode({
       x: this.nodeCoord('x'),
       y: this.nodeCoord('y'),
       z: this.nodeCoord('z'),
-      [axis]: this.nodeCoord(axis) + direction * this.nudgeStep
+      [axis]: this.nodeCoord(axis) + direction * this.nudgeStep * multiplier
     });
   }
 
@@ -308,6 +354,57 @@ export class MeshEditorControlsComponent {
   confirmReset(): void {
     this.isResetConfirming = false;
     if (this.sessionId !== null) this.editor.reset(this.sessionId);
+  }
+
+  // --- keyboard shortcuts --------------------------------------------------
+
+  // Shortcuts act on the same commands as the buttons, and only when the button
+  // would be enabled. Ignored while typing in a field. Listed for the user in the
+  // template (and in docs): A add, Del delete, L link, U unlink, S swap, N first
+  // cube, Esc clear, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo, arrows and
+  // PageUp/PageDown move the selected node (Shift = x10).
+  @HostListener('window:keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent): void {
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
+      return;
+    }
+    if (this.sessionId === null) {
+      return;
+    }
+    const key = event.key.toLowerCase();
+    const mod = event.ctrlKey || event.metaKey;
+    let handled = true;
+
+    if (mod && key === 'z') {
+      if (event.shiftKey ? this.canRedo() : this.canUndo()) (event.shiftKey ? this.redo() : this.undo());
+    } else if (mod && key === 'y') {
+      if (this.canRedo()) this.redo();
+    } else if (mod || event.altKey) {
+      handled = false;
+    } else if (key === 'a') {
+      if (this.canAttachActiveFace()) this.attachActiveFace();
+    } else if (key === 'delete' || key === 'backspace') {
+      if (this.canRemove()) this.remove();
+    } else if (key === 'l') {
+      if (this.canLink()) this.link();
+    } else if (key === 'u') {
+      if (this.canUnlink()) this.unlink();
+    } else if (key === 's') {
+      if (this.canSwap()) this.swap();
+    } else if (key === 'n') {
+      if (this.canAddFirst()) this.addFirst();
+    } else if (key === 'escape') {
+      this.clearSelection();
+    } else if (NUDGE_KEYS[key]) {
+      const [axis, direction] = NUDGE_KEYS[key];
+      if (this.canMoveNode()) this.nudge(axis, direction, event.shiftKey ? 10 : 1);
+    } else {
+      handled = false;
+    }
+    if (handled) {
+      event.preventDefault();
+    }
   }
 
   // --- mapping probe -------------------------------------------------------
