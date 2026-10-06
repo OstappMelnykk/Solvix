@@ -364,6 +364,22 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     this.reframeNextFrame = true;
   }
 
+  // What to tell the user about dragging nodes, depending on where they are:
+  // the Ideal World's lattice is fixed, and a view must be enlarged first.
+  headerHint(): string {
+    const source = this.overlay.active();
+    if (!source?.meshView) {
+      return '';
+    }
+    if (!source.nodesEditable) {
+      return 'Це Ideal World: вузли тут не рухаються. Щоб їх тягнути, відкрийте «6 сторін» у вкладці Real World.';
+    }
+    if (this.mainPanel === null) {
+      return 'Щоб тягнути вузли, збільште вид кнопкою ⤢ (або подвійним кліком по виду).';
+    }
+    return 'Тягніть точку у великому виді. Shift — по одній осі.';
+  }
+
   // True when nodes can be dragged in the main panel of this overlay.
   canDragNodes(): boolean {
     return this.mainPanel !== null && this.overlay.active()?.nodesEditable === true;

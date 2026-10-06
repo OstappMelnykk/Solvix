@@ -1,5 +1,6 @@
 <div class="six-view-overlay__header">
   <span class="six-view-overlay__title">Перегляд з 6 сторін</span>
+  <span class="six-view-overlay__header-hint" *ngIf="headerHint()">{{ headerHint() }}</span>
   <div class="six-view-overlay__opacity-controls" *ngIf="showModelOpacityControls()">
     <label class="six-view-overlay__opacity">
       Прозорість STL

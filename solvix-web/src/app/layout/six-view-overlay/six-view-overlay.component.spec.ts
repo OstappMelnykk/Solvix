@@ -71,4 +71,28 @@ describe('SixViewOverlayComponent (main panel)', () => {
 
     expect(component.dragText).toBeNull();
   });
+
+  describe('header hint', () => {
+    it('is empty with nothing open or without a mesh editor', () => {
+      expect(component.headerHint()).toBe('');
+      overlay.open({ ...source(true), meshView: undefined });
+      expect(component.headerHint()).toBe('');
+    });
+
+    it('tells the user in the Ideal World that nodes do not move there and where they do', () => {
+      overlay.open(source(false));
+
+      expect(component.headerHint()).toContain('Ideal World');
+      expect(component.headerHint()).toContain('Real World');
+    });
+
+    it('in the Real World first asks to enlarge a view, then explains the drag', () => {
+      overlay.open(source(true));
+      expect(component.headerHint()).toContain('⤢');
+
+      component.toggleMain(1);
+      expect(component.headerHint()).toContain('Тягніть точку');
+      expect(component.headerHint()).toContain('Shift');
+    });
+  });
 });

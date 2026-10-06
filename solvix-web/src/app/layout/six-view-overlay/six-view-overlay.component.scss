@@ -201,3 +201,11 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+.six-view-overlay__header-hint {
+  flex: 1;
+  margin: 0 16px;
+  color: #e2b93b;
+  font-size: 13px;
+  font-family: sans-serif;
+}
