@@ -53,7 +53,15 @@ public sealed class HexMeshEditor
         foreach (var f in HexFaces.All)
             if (f.Offset() == delta) shared = f;
         if (shared is not HexFace face)
+        {
+            int apart = new[] { delta.Item1, delta.Item2, delta.Item3 }.Count(d => d != 0);
+            bool touching = Math.Abs(delta.Item1) <= 1 && Math.Abs(delta.Item2) <= 1 && Math.Abs(delta.Item3) <= 1;
+            if (touching)
+                return EditResult.Fail(
+                    $"These hexes touch only {(apart == 2 ? "along an edge" : "at a corner")}, not across a face, so they cannot be neighbours. " +
+                    "To connect them, add a hex that touches both (nodes along the shared edge are already shared through their common neighbours).");
             return EditResult.Fail("These hexes are not adjacent in the ideal lattice.");
+        }
         return Mesh.TryLinkFaces(new FaceRef(hexA, face), new FaceRef(hexB, face.Opposite()), fit, out var error)
             ? EditResult.Success
             : EditResult.Fail(error ?? "Link refused.");

@@ -146,12 +146,48 @@ export class MeshEditorControlsComponent {
     return link ? { hex: link.hexA, face: link.faceA } : null;
   }
 
+  // How two cubes sit in the ideal lattice: only cubes in neighbouring cells
+  // (sharing a lattice face) can be made neighbours; cubes touching just along an
+  // edge or at a corner cannot, however the nodes are moved.
+  pairRelation(): 'face' | 'edge' | 'corner' | 'far' | null {
+    const [a, b] = this.selectedHexes();
+    const hexes = this.state?.hexes;
+    const first = hexes?.find(h => h.id === a);
+    const second = hexes?.find(h => h.id === b);
+    if (this.selectedHexes().length !== 2 || !first || !second) {
+      return null;
+    }
+    const d = [second.cellI - first.cellI, second.cellJ - first.cellJ, second.cellK - first.cellK];
+    if (d.some(x => Math.abs(x) > 1)) {
+      return 'far';
+    }
+    const apart = d.filter(x => x !== 0).length;
+    return apart === 1 ? 'face' : apart === 2 ? 'edge' : 'corner';
+  }
+
   pairStatusText(): string {
     const [a, b] = this.selectedHexes();
-    if (this.selectedHexes().length !== 2) {
-      return '';
+    switch (this.pairRelation()) {
+      case null:
+        return '';
+      case 'face':
+        return this.linkBetween(a, b) ? 'вже сусіди' : 'ще не сусіди';
+      case 'edge':
+        return 'торкаються лише ребром — сусідами по грані бути не можуть';
+      case 'corner':
+        return 'торкаються лише вершиною — сусідами бути не можуть';
+      default:
+        return 'не поруч у ідеальній решітці — сусідами бути не можуть';
     }
-    return this.linkBetween(a, b) ? 'вже сусіди' : 'ще не сусіди';
+  }
+
+  // The way out for cubes that only touch along an edge: a cube in the cell that
+  // touches both (they already share the nodes of that edge through it).
+  pairAdvice(): string {
+    const relation = this.pairRelation();
+    return relation === 'edge' || relation === 'corner'
+      ? 'Щоб з\'єднати їх, додайте між ними куб, який торкається обох гранню, і зробіть його сусідом обох.'
+      : '';
   }
 
   // The face a plain click picked, and whether a cube can be built on it.
@@ -219,7 +255,7 @@ export class MeshEditorControlsComponent {
 
   canLink(): boolean {
     const [a, b] = this.selectedHexes();
-    return !this.busy && this.selectedHexes().length === 2 && this.linkBetween(a, b) === null;
+    return !this.busy && this.pairRelation() === 'face' && this.linkBetween(a, b) === null;
   }
 
   canUnlink(): boolean {

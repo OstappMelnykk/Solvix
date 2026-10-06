@@ -53,6 +53,7 @@
     <div class="selected">
       Куб {{ selectedHexes()[1] }} → до куба {{ selectedHexes()[0] }}: <span class="status">{{ pairStatusText() }}</span>
     </div>
+    <div class="advice" *ngIf="pairAdvice()">{{ pairAdvice() }}</div>
     <button class="tool" type="button" [disabled]="!canSwap()" title="Шорткат: S" (click)="swap()">⇄ Поміняти місцями <kbd>S</kbd></button>
     <label class="row">
       <span>Другий підлаштовується під першого</span>

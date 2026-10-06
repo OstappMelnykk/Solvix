@@ -174,7 +174,7 @@ public class MeshBuilderFacadeTests
         Assert.That(result.Ok, Is.True, result.Error);
         Assert.That(result.State.Links, Has.Count.EqualTo(4));
         Assert.That(result.State.Faces.Count(f => f.Status == "Candidate"), Is.EqualTo(0));
-        Assert.That(facade.LinkHexes(1, 0, 2, false).Error, Does.Contain("not adjacent"));
+        Assert.That(facade.LinkHexes(1, 0, 2, false).Error, Does.Contain("not across a face"));
     }
 
     [Test]

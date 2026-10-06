@@ -152,6 +152,56 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.pairStatusText()).toBe('ще не сусіди');
   });
 
+  describe('cubes that cannot be neighbours', () => {
+    // linkedPairState has cubes 0 (cell 0,0,0) and 1 (cell 1,0,0); move cube 1's cell to test relations.
+    const withCell = (cell: [number, number, number]) => {
+      const base = linkedPairState();
+      state = { ...base, links: [], hexes: base.hexes.map(h => (h.id === 1 ? { ...h, cellI: cell[0], cellJ: cell[1], cellK: cell[2] } : h)) };
+      selection.toggleHex(1, 0);
+      selection.toggleHex(1, 1);
+    };
+
+    it('neighbouring cells can be linked', () => {
+      withCell([1, 0, 0]);
+
+      expect(component.pairRelation()).toBe('face');
+      expect(component.canLink()).toBeTrue();
+      expect(component.pairAdvice()).toBe('');
+    });
+
+    it('cubes touching only along an edge cannot, and the panel says what to do', () => {
+      withCell([1, 1, 0]);
+
+      expect(component.pairRelation()).toBe('edge');
+      expect(component.canLink()).toBeFalse();
+      expect(component.pairStatusText()).toContain('лише ребром');
+      expect(component.pairAdvice()).toContain('додайте між ними куб');
+    });
+
+    it('cubes touching only at a corner cannot either', () => {
+      withCell([1, 1, 1]);
+
+      expect(component.pairRelation()).toBe('corner');
+      expect(component.canLink()).toBeFalse();
+      expect(component.pairStatusText()).toContain('лише вершиною');
+    });
+
+    it('cubes further apart than one cell cannot', () => {
+      withCell([3, 0, 0]);
+
+      expect(component.pairRelation()).toBe('far');
+      expect(component.canLink()).toBeFalse();
+      expect(component.pairStatusText()).toContain('не поруч');
+    });
+
+    it('has no relation unless exactly two known cubes are picked', () => {
+      state = linkedPairState();
+      selection.toggleHex(1, 0);
+      expect(component.pairRelation()).toBeNull();
+      expect(component.pairStatusText()).toBe('');
+    });
+  });
+
   it('summarises the neighbours of a cube', () => {
     state = linkedPairState();
 

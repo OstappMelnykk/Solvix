@@ -190,7 +190,7 @@ public class LinkHexesTests
 
         var diagonal = editor.LinkHexes(0, 2, LinkFit.Strict);
         Assert.That(diagonal.Ok, Is.False);
-        Assert.That(diagonal.Error, Does.Contain("not adjacent"));
+        Assert.That(diagonal.Error, Does.Contain("not across a face"));
         Assert.That(editor.LinkHexes(0, 1, LinkFit.Strict).Error, Does.Contain("already linked"));
         Assert.That(editor.LinkHexes(0, 0, LinkFit.Strict).Ok, Is.False);
         Assert.That(editor.LinkHexes(0, 99, LinkFit.Strict).Error, Does.Contain("Unknown hex"));
@@ -380,5 +380,53 @@ public class RemoveHexTests
         foreach (var node in editor.Mesh.Nodes)
             Assert.That(editor.Mesh.OwnersOf(node.Id).All(o => editor.Mesh.Hex(o.Hex).NodeIds[o.Slot] == node.Id), Is.True);
         Assert.That(editor.Mesh.ToFemMesh().ElementCount, Is.EqualTo(state.Hexes.Count));
+    }
+}
+
+public class LinkRefusalMessageTests
+{
+    [Test]
+    public void Cubes_touching_along_an_edge_get_an_explanation_not_just_a_refusal()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(1, HexFace.YPlus);   // 0 and 2 touch along an edge only
+
+        var result = editor.LinkHexes(0, 2, LinkFit.Strict);
+
+        Assert.That(result.Ok, Is.False);
+        Assert.That(result.Error, Does.Contain("only along an edge"));
+        Assert.That(result.Error, Does.Contain("add a hex that touches both"));
+    }
+
+    [Test]
+    public void Cubes_touching_at_a_corner_and_far_apart_are_told_apart()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(1, HexFace.YPlus);
+        editor.AddHexOnFace(2, HexFace.ZPlus);   // cell (1,1,1): corner contact with 0 at (0,0,0)
+        editor.AddHexOnFace(3, HexFace.XPlus);   // cell (2,1,1): far from 0
+
+        Assert.That(editor.LinkHexes(0, 3, LinkFit.Strict).Error, Does.Contain("only at a corner"));
+        Assert.That(editor.LinkHexes(0, 4, LinkFit.Strict).Error, Does.Contain("not adjacent in the ideal lattice"));
+    }
+
+    [Test]
+    public void The_edge_nodes_of_two_cubes_that_touch_along_an_edge_are_already_shared_through_their_neighbour()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(1, HexFace.YPlus);
+
+        var a = editor.Mesh.Hex(0);
+        var c = editor.Mesh.Hex(2);
+
+        Assert.That(a.NodeIds[2], Is.EqualTo(c.NodeIds[0]));     // bottom of the shared vertical edge
+        Assert.That(a.NodeIds[18], Is.EqualTo(c.NodeIds[16]));   // its midpoint
+        Assert.That(a.NodeIds[6], Is.EqualTo(c.NodeIds[4]));     // its top
     }
 }
