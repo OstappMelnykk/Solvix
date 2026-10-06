@@ -1,5 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import * as THREE from 'three';
+import { MeshView } from '../geometry/mesh-editor-view';
 
 // What a "6 сторін" click hands the overlay: the source World's OWN Scene
 // (not a clone) - a THREE.Scene can be rendered by any number of
@@ -33,6 +34,12 @@ export interface SixViewSource {
   // its own render() calls and restores them straight after (see
   // SixViewOverlayComponent.animate).
   readonly hiddenDuringView: readonly THREE.Object3D[];
+  // The mesh editor's drawing currently in this World's scene (a different
+  // object after every state or selection change, hence a getter), so the
+  // overlay can pick and drag its nodes. Absent for Worlds without one.
+  readonly meshView?: () => MeshView | null;
+  // Whether nodes may be dragged in the views - true only for the Real World.
+  readonly nodesEditable?: boolean;
 }
 
 // Single shared instance for the whole app - every WorldCanvasComponent's

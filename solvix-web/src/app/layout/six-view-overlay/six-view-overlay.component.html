@@ -27,10 +27,27 @@
      continuity fix in ensureRenderersReady (this component's own comment)
      is what makes a genuinely fresh canvas+context on each reopen look
      correct instead of snapping to orbit the world origin. -->
-<div class="six-view-overlay__grid" *ngIf="!isHidden()">
-  <div class="six-view-overlay__panel" *ngFor="let i of panelIndices; trackBy: trackPanel">
+<div class="six-view-overlay__grid" [class.six-view-overlay__grid--has-main]="mainPanel !== null" *ngIf="!isHidden()">
+  <div
+    class="six-view-overlay__panel"
+    [class.six-view-overlay__panel--main]="isMain(i)"
+    *ngFor="let i of panelIndices; trackBy: trackPanel"
+    (dblclick)="toggleMain(i)"
+  >
     <canvas #canvas></canvas>
     <span class="six-view-overlay__label">{{ panelLabel(i) }}</span>
     <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(i)">⟲</button>
+    <button
+      type="button"
+      class="six-view-overlay__maximize"
+      [title]="isMain(i) ? 'Повернути сітку з 6 видів' : 'Зробити основним (збільшити); подвійний клік по виду — те саме'"
+      (click)="toggleMain(i)"
+    >
+      {{ isMain(i) ? '⤡' : '⤢' }}
+    </button>
+    <div class="six-view-overlay__drag-text" *ngIf="isMain(i) && dragText">{{ dragText }}</div>
+    <div class="six-view-overlay__hint" *ngIf="isMain(i) && canDragNodes() && !dragText">
+      Тягніть точку (вузол) — вона рухається в площині цього виду. Shift — по одній осі.
+    </div>
   </div>
 </div>

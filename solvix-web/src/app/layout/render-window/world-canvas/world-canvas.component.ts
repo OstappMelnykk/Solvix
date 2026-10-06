@@ -3,7 +3,7 @@ import { NgFor } from '@angular/common';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
-import { IDEAL_WORLD_INDEX } from '../../../config/app-settings';
+import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 import { SharedModelService } from '../../../state/shared-model.service';
@@ -1180,7 +1180,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         framingObjects,
         // AxesHelper stays (not part of previewFixtures) - orientation is
         // exactly what these 6 fixed-axis panels are about.
-        hiddenDuringView: this.previewFixtures()
+        hiddenDuringView: this.previewFixtures(),
+        meshView: () => this.currentMeshView,
+        nodesEditable: this.worldIndex === REAL_WORLD_INDEX
       });
     }
   }

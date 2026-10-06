@@ -78,6 +78,19 @@
   background: #000;
 }
 
+// One panel made large: it takes the left column, the other five stack in a
+// narrow strip beside it. Items without an explicit place (the five) flow into the
+// free right-hand cells.
+.six-view-overlay__grid--has-main {
+  grid-template-columns: 1fr 260px;
+  grid-template-rows: repeat(5, 1fr);
+}
+
+.six-view-overlay__panel--main {
+  grid-column: 1;
+  grid-row: 1 / span 5;
+}
+
 .six-view-overlay__panel {
   position: relative;
   overflow: hidden;
@@ -133,4 +146,58 @@
     outline: none;
     border-color: #39c5f2;
   }
+}
+
+// Next to the recenter button, same chip.
+.six-view-overlay__maximize {
+  position: absolute;
+  top: 6px;
+  right: 36px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: #dfe1e5;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #da680b;
+  }
+}
+
+.six-view-overlay__drag-text {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid #39c5f2;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  font-family: monospace;
+  pointer-events: none;
+}
+
+.six-view-overlay__hint {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 6px;
+  color: #b8bcc4;
+  font-size: 12px;
+  font-family: sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
 }
