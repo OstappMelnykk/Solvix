@@ -70,6 +70,34 @@ export interface MeshPointDto {
   readonly z: number;
 }
 
+// A cube designed on its own: the 20 node positions in slot order (0..7 corners,
+// 8..19 edge midpoints).
+export interface MeshShapeDto {
+  readonly positions: readonly MeshPointDto[];
+}
+
+export interface MeshShapeCheckDto {
+  readonly valid: boolean;
+  readonly minDeterminant: number;
+  readonly error: string | null;
+}
+
+export interface MeshShapeParametersDto {
+  readonly length: number;
+  readonly height: number;
+  readonly depth: number;
+  // Top size / bottom size (1 = straight sides).
+  readonly taper: number;
+  readonly shearX: number;
+  readonly shearZ: number;
+}
+
+export interface MeshShapePresetDto {
+  readonly name: string;
+  readonly label: string;
+  readonly parameters: MeshShapeParametersDto;
+}
+
 export interface MeshMappingResultDto {
   readonly found: boolean;
   readonly point: MeshPointDto | null;
@@ -94,12 +122,27 @@ export class MeshEditorApiService {
     return this.http.get<MeshStateDto>(this.url(sessionId, 'state'));
   }
 
-  addFirstHex(sessionId: number): Observable<MeshCommandResultDto> {
-    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'hexes/first'), {});
+  // `shape`: a designed cube to start from (the unit cube when absent).
+  addFirstHex(sessionId: number, shape?: MeshShapeDto): Observable<MeshCommandResultDto> {
+    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'hexes/first'), shape ? { shape } : {});
   }
 
-  addHexOnFace(sessionId: number, hexId: number, face: HexFaceName): Observable<MeshCommandResultDto> {
-    return this.http.post<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}/faces/${face}/attach`), {});
+  // `shape`: a designed cube, fitted onto the face (a plain extrusion of the face when absent).
+  addHexOnFace(sessionId: number, hexId: number, face: HexFaceName, shape?: MeshShapeDto): Observable<MeshCommandResultDto> {
+    return this.http.post<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}/faces/${face}/attach`), shape ? { shape } : {});
+  }
+
+  // The cube constructor's calls are not tied to a session: a shape is designed first.
+  shapePresets(): Observable<MeshShapePresetDto[]> {
+    return this.http.get<MeshShapePresetDto[]>(`${environment.apiBaseUrl}/api/mesh-editor/shapes/presets`);
+  }
+
+  buildShape(parameters: MeshShapeParametersDto): Observable<MeshShapeDto> {
+    return this.http.post<MeshShapeDto>(`${environment.apiBaseUrl}/api/mesh-editor/shapes/parametric`, parameters);
+  }
+
+  checkShape(shape: MeshShapeDto): Observable<MeshShapeCheckDto> {
+    return this.http.post<MeshShapeCheckDto>(`${environment.apiBaseUrl}/api/mesh-editor/shapes/check`, shape);
   }
 
   linkFaces(

@@ -10,6 +10,7 @@ import {
   MeshEditorApiService,
   MeshMappingResultDto,
   MeshPointDto,
+  MeshShapeDto,
   MeshStateDto
 } from '../api/mesh-editor-api.service';
 
@@ -91,12 +92,12 @@ export class MeshEditorService {
     });
   }
 
-  addFirstHex(sessionId: number): void {
-    this.run(sessionId, this.api.addFirstHex(sessionId));
+  addFirstHex(sessionId: number, shape?: MeshShapeDto): void {
+    this.run(sessionId, this.api.addFirstHex(sessionId, shape));
   }
 
-  addHexOnFace(sessionId: number, hexId: number, face: HexFaceName): void {
-    this.run(sessionId, this.api.addHexOnFace(sessionId, hexId, face));
+  addHexOnFace(sessionId: number, hexId: number, face: HexFaceName, shape?: MeshShapeDto): void {
+    this.run(sessionId, this.api.addHexOnFace(sessionId, hexId, face, shape));
   }
 
   linkFaces(sessionId: number, hexA: number, faceA: HexFaceName, hexB: number, faceB: HexFaceName, adaptSecond: boolean): void {
