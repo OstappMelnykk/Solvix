@@ -16,5 +16,5 @@ public sealed record NodeState(int Id, Vec3 Position, int IdealX, int IdealY, in
 
 public sealed record HexState(int Id, int I, int J, int K, int? ParentId, IReadOnlyList<int> NodeIds);
 
-/// <summary>One direction of a face link; a link between two hexes appears twice.</summary>
-public sealed record LinkState(int Hex, HexFace Face, int Other);
+/// <summary>One direction of a face link; a link between two hexes appears twice. <paramref name="Orientation"/> maps this face's squares onto the other's.</summary>
+public sealed record LinkState(int Hex, HexFace Face, int Other, HexFace OtherFace, int Orientation);

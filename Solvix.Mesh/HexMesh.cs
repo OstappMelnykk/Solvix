@@ -20,7 +20,7 @@ public sealed class HexMesh
     private readonly Dictionary<int, MeshNode> _nodes = new();
     private readonly Dictionary<int, Hex20> _hexes = new();
     private readonly Dictionary<(int, int, int), int> _cells = new();
-    private readonly Dictionary<(int Hex, HexFace Face), int> _links = new();
+    private readonly Dictionary<(int Hex, HexFace Face), FaceLink> _links = new();
     private readonly Dictionary<int, List<(int Hex, int Slot)>> _owners = new();
     private int _nextNodeId;
     private int _nextHexId;
@@ -40,7 +40,25 @@ public sealed class HexMesh
     public IReadOnlyList<(int Hex, int Slot)> OwnersOf(int nodeId) => _owners[nodeId];
 
     /// <summary>Linked neighbour across a face, or null.</summary>
-    public int? Neighbor(int hexId, HexFace face) => _links.TryGetValue((hexId, face), out var n) ? n : null;
+    public int? Neighbor(int hexId, HexFace face) => _links.TryGetValue((hexId, face), out var n) ? n.Hex : null;
+
+    /// <summary>What a face is glued to (other hex, its face, how the squares line up), or null.</summary>
+    public FaceLink? LinkOf(int hexId, HexFace face) => _links.TryGetValue((hexId, face), out var n) ? n : null;
+
+    /// <summary>
+    /// True when the link on this face joins faces that are not opposite faces of
+    /// lattice-adjacent hexes - a "seam", possible only because nodes were moved so
+    /// that the two faces coincide.
+    /// </summary>
+    public bool IsSeam(int hexId, HexFace face)
+    {
+        if (!_links.TryGetValue((hexId, face), out var link)) return false;
+        var (di, dj, dk) = face.Offset();
+        var a = _hexes[hexId].Cell;
+        var b = _hexes[link.Hex].Cell;
+        bool standard = link.Face == face.Opposite() && link.Orientation == FaceOrientation.Identity && (b.I - a.I, b.J - a.J, b.K - a.K) == (di, dj, dk);
+        return !standard;
+    }
 
     /// <summary>Creates the first unit cube: real coordinates equal ideal ones.</summary>
     public Hex20 AddFirst()
@@ -87,8 +105,8 @@ public sealed class HexMesh
             }
             Own(hex.NodeIds[s], hex.Id, s);
         }
-        _links[(hostId, face)] = hex.Id;
-        _links[(hex.Id, shared)] = hostId;
+        _links[(hostId, face)] = new FaceLink(hex.Id, shared, FaceOrientation.Identity);
+        _links[(hex.Id, shared)] = new FaceLink(hostId, face, FaceOrientation.Identity);
         return hex;
     }
 
@@ -104,13 +122,23 @@ public sealed class HexMesh
         var (di, dj, dk) = face.Offset();
         var b = HexAtCell((a.Cell.I + di, a.Cell.J + dj, a.Cell.K + dk));
         if (b is null) { error = "There is no hex across that face."; return false; }
-        if (_links.ContainsKey((a.Id, face)) || _links.ContainsKey((b.Id, face.Opposite())))
+        return LinkCore(new FaceRef(a.Id, face), new FaceRef(b.Id, face.Opposite()), FaceOrientation.Identity, tolerance, out error);
+    }
+
+    // Glues two faces: both must be unlinked and coincide in real space under the
+    // given orientation (a -> b); then the 8 node pairs merge and both directions
+    // of the link are recorded.
+    private bool LinkCore(FaceRef a, FaceRef b, int orientation, double tolerance, out string? error)
+    {
+        error = null;
+        if (_links.ContainsKey((a.Hex, a.Face)) || _links.ContainsKey((b.Hex, b.Face)))
         {
             error = "One of the two faces is already linked.";
             return false;
         }
-
-        var pairs = face.Slots().Select(s => (A: a.NodeIds[s], B: b.NodeIds[face.PartnerSlot(s)])).ToList();
+        var ha = _hexes[a.Hex];
+        var hb = _hexes[b.Hex];
+        var pairs = a.Face.Slots().Select(s => (A: ha.NodeIds[s], B: hb.NodeIds[a.Face.Partner(b.Face, orientation, s)])).ToList();
         foreach (var (na, nb) in pairs)
         {
             if (na != nb && (Node(na).Position - Node(nb).Position).Length > tolerance)
@@ -123,8 +151,8 @@ public sealed class HexMesh
         {
             if (na != nb) Merge(na, nb);
         }
-        _links[(a.Id, face)] = b.Id;
-        _links[(b.Id, face.Opposite())] = a.Id;
+        _links[(a.Hex, a.Face)] = new FaceLink(b.Hex, b.Face, orientation);
+        _links[(b.Hex, b.Face)] = new FaceLink(a.Hex, a.Face, FaceOrientation.Inverse(orientation));
         return true;
     }
 
@@ -138,9 +166,9 @@ public sealed class HexMesh
         var hex = _hexes[hexId];
         foreach (var face in HexFaces.All)
         {
-            if (!_links.TryGetValue((hexId, face), out int other)) continue;
+            if (!_links.TryGetValue((hexId, face), out var other)) continue;
             _links.Remove((hexId, face));
-            _links.Remove((other, face.Opposite()));
+            _links.Remove((other.Hex, other.Face));
         }
         var nodeIds = hex.NodeIds.Distinct().ToList();
         foreach (int id in nodeIds)
@@ -182,7 +210,7 @@ public sealed class HexMesh
                 size++;
                 foreach (var face in HexFaces.All)
                 {
-                    if (_links.TryGetValue((current, face), out int next) && seen.Add(next)) stack.Push(next);
+                    if (_links.TryGetValue((current, face), out var next) && seen.Add(next.Hex)) stack.Push(next.Hex);
                 }
             }
             sizes.Add(size);
@@ -193,80 +221,215 @@ public sealed class HexMesh
     /// <summary>Removes the neighbour relation; nodes no longer connected through any link are split.</summary>
     public void Unlink(int hexId, HexFace face)
     {
-        if (!_links.TryGetValue((hexId, face), out var otherId)) return;
+        if (!_links.TryGetValue((hexId, face), out var other)) return;
         _links.Remove((hexId, face));
-        _links.Remove((otherId, face.Opposite()));
+        _links.Remove((other.Hex, other.Face));
         foreach (int s in face.Slots()) Rebuild(_hexes[hexId].NodeIds[s]);
     }
 
     /// <summary>The 8 node ids lying on a face (4 corners then 4 midpoints, in slot order).</summary>
     public IReadOnlyList<int> FaceNodeIds(FaceRef face) => face.Face.Slots().Select(s => _hexes[face.Hex].NodeIds[s]).ToList();
 
-    /// <summary>What a face currently is: open, linked, or sitting against an unlinked hex (and how far apart the two faces are).</summary>
-    public FaceState GetFaceState(FaceRef face, double tolerance = 1e-6)
+    /// <summary>
+    /// What a face currently is: open, linked, or a candidate - sitting against an
+    /// unlinked hex in the ideal lattice (with the gap between the two faces), or
+    /// coinciding with some other unlinked face after nodes were moved (a seam).
+    /// </summary>
+    public FaceState GetFaceState(FaceRef face, double tolerance = 1e-6) => StateOf(face, CenterIndex(), tolerance);
+
+    public IReadOnlyList<FaceState> AllFaceStates(double tolerance = 1e-6)
     {
-        var hex = _hexes[face.Hex];
-        if (_links.TryGetValue((face.Hex, face.Face), out int linked))
-            return new FaceState(face, FaceStatus.Linked, new FaceRef(linked, face.Face.Opposite()), true, 0);
-        var (di, dj, dk) = face.Face.Offset();
-        var other = HexAtCell((hex.Cell.I + di, hex.Cell.J + dj, hex.Cell.K + dk));
-        if (other is null) return new FaceState(face, FaceStatus.Free, null, null, null);
-        double gap = FaceGap(face, new FaceRef(other.Id, face.Face.Opposite()));
-        return new FaceState(face, FaceStatus.Candidate, new FaceRef(other.Id, face.Face.Opposite()), gap <= tolerance, gap);
+        var centers = CenterIndex();
+        return _hexes.Values.OrderBy(h => h.Id).SelectMany(h => HexFaces.All.Select(f => StateOf(new FaceRef(h.Id, f), centers, tolerance))).ToList();
     }
 
-    public IReadOnlyList<FaceState> AllFaceStates(double tolerance = 1e-6) =>
-        _hexes.Values.OrderBy(h => h.Id).SelectMany(h => HexFaces.All.Select(f => GetFaceState(new FaceRef(h.Id, f), tolerance))).ToList();
+    private FaceState StateOf(FaceRef face, Dictionary<FaceRef, Vec3> centers, double tolerance)
+    {
+        var hex = _hexes[face.Hex];
+        if (_links.TryGetValue((face.Hex, face.Face), out var linked))
+            return new FaceState(face, FaceStatus.Linked, new FaceRef(linked.Hex, linked.Face), true, 0, IsSeam(face.Hex, face.Face));
 
-    /// <summary>Largest real-space distance between corresponding nodes of two opposite faces.</summary>
-    public double FaceGap(FaceRef a, FaceRef b)
+        var (di, dj, dk) = face.Face.Offset();
+        var neighbour = HexAtCell((hex.Cell.I + di, hex.Cell.J + dj, hex.Cell.K + dk));
+        if (neighbour is not null && !_links.ContainsKey((neighbour.Id, face.Face.Opposite())))
+        {
+            var across = new FaceRef(neighbour.Id, face.Face.Opposite());
+            double gap = FaceGap(face, across);
+            return new FaceState(face, FaceStatus.Candidate, across, gap <= tolerance, gap);
+        }
+
+        var seam = FindSeamPartner(face, centers, tolerance);
+        if (seam is { } found)
+            return new FaceState(face, FaceStatus.Candidate, found.Other, true, found.Gap, Seam: true);
+        return new FaceState(face, FaceStatus.Free, null, null, null);
+    }
+
+    /// <summary>Largest real-space distance between corresponding nodes of two glued faces (orientation maps a to b).</summary>
+    public double FaceGap(FaceRef a, FaceRef b, int orientation = FaceOrientation.Identity)
     {
         var ha = _hexes[a.Hex];
         var hb = _hexes[b.Hex];
-        return a.Face.Slots().Max(s => (Node(ha.NodeIds[s]).Position - Node(hb.NodeIds[a.Face.PartnerSlot(s)]).Position).Length);
+        return a.Face.Slots().Max(s => (Node(ha.NodeIds[s]).Position - Node(hb.NodeIds[a.Face.Partner(b.Face, orientation, s)]).Position).Length);
+    }
+
+    // Centres of every unlinked face: faces that coincide have the same centre,
+    // which makes a cheap first filter for the seam search.
+    private Dictionary<FaceRef, Vec3> CenterIndex()
+    {
+        var centers = new Dictionary<FaceRef, Vec3>();
+        foreach (var hex in _hexes.Values)
+        {
+            foreach (var face in HexFaces.All)
+            {
+                if (_links.ContainsKey((hex.Id, face))) continue;
+                var sum = Vec3.Zero;
+                foreach (int slot in face.Slots()) sum += Node(hex.NodeIds[slot]).Position;
+                centers[new FaceRef(hex.Id, face)] = sum * (1.0 / 8.0);
+            }
+        }
+        return centers;
+    }
+
+    // The best orientation (and its gap) of gluing face a to face b.
+    private (int Orientation, double Gap) BestOrientation(FaceRef a, FaceRef b)
+    {
+        int best = 0;
+        double bestGap = double.MaxValue;
+        for (int g = 0; g < FaceOrientation.Count; g++)
+        {
+            double gap = FaceGap(a, b, g);
+            if (gap < bestGap - 1e-12)
+            {
+                bestGap = gap;
+                best = g;
+            }
+        }
+        return (best, bestGap);
+    }
+
+    // Unit normal of a face pointing out of its hex.
+    private Vec3 OutwardNormal(FaceRef face)
+    {
+        var hex = _hexes[face.Hex];
+        Vec3 P(int u, int v) => Node(hex.NodeIds[face.Face.SlotAt(u, v)]).Position;
+        var tangentU = P(1, 0) - P(-1, 0);
+        var tangentV = P(0, 1) - P(0, -1);
+        var normal = new Vec3(
+            tangentU.Y * tangentV.Z - tangentU.Z * tangentV.Y,
+            tangentU.Z * tangentV.X - tangentU.X * tangentV.Z,
+            tangentU.X * tangentV.Y - tangentU.Y * tangentV.X);
+        var sum = Vec3.Zero;
+        foreach (int slot in face.Face.Slots()) sum += Node(hex.NodeIds[slot]).Position;
+        var outward = sum * (1.0 / 8.0) - hex.Map(Vec3.Zero);
+        double length = normal.Length;
+        if (length < 1e-12) return Vec3.Zero;
+        normal = normal * (1.0 / length);
+        return normal.X * outward.X + normal.Y * outward.Y + normal.Z * outward.Z < 0 ? normal * -1 : normal;
+    }
+
+    // Two faces can only be glued when their hexes lie on opposite sides of them.
+    private bool OpposedFaces(FaceRef a, FaceRef b)
+    {
+        var na = OutwardNormal(a);
+        var nb = OutwardNormal(b);
+        return na.X * nb.X + na.Y * nb.Y + na.Z * nb.Z < -0.5;
+    }
+
+    // Another unlinked face of another hex that coincides with this one in real
+    // space (opposite sides, same 8 nodes up to the square's symmetry) - what a
+    // user creates by dragging nodes until two faces meet.
+    private (FaceRef Other, int Orientation, double Gap)? FindSeamPartner(FaceRef face, Dictionary<FaceRef, Vec3> centers, double tolerance)
+    {
+        if (!centers.TryGetValue(face, out var center)) return null;
+        (FaceRef, int, double)? best = null;
+        foreach (var (other, otherCenter) in centers)
+        {
+            if (other.Hex == face.Hex || (otherCenter - center).Length > Math.Max(tolerance * 8, 1e-9)) continue;
+            var (orientation, gap) = BestOrientation(face, other);
+            if (gap > tolerance || !OpposedFaces(face, other)) continue;
+            if (best is null || gap < best.Value.Item3) best = (other, orientation, gap);
+        }
+        return best;
     }
 
     /// <summary>
-    /// Links two clicked faces. They must be opposite faces of lattice-adjacent
-    /// hexes (the ideal world is a lattice, so only those can be neighbours).
-    /// <see cref="LinkFit.Strict"/> needs the faces to coincide already;
-    /// <see cref="LinkFit.AdaptSecond"/> first fits the second hex's face onto
-    /// the first one, leaving sizes of both hexes' far faces alone.
+    /// The unlinked faces of two hexes that coincide in real space, if any - how a
+    /// pair of cubes that are not lattice neighbours can still be made neighbours.
+    /// </summary>
+    public (FaceRef First, FaceRef Second, double Gap)? FindCoincidentFaces(int hexA, int hexB, double tolerance = 1e-6)
+    {
+        (FaceRef, FaceRef, double)? best = null;
+        foreach (var fa in HexFaces.All)
+        {
+            var a = new FaceRef(hexA, fa);
+            if (_links.ContainsKey((hexA, fa))) continue;
+            foreach (var fb in HexFaces.All)
+            {
+                var b = new FaceRef(hexB, fb);
+                if (_links.ContainsKey((hexB, fb))) continue;
+                var (_, gap) = BestOrientation(a, b);
+                if (gap > tolerance || !OpposedFaces(a, b)) continue;
+                if (best is null || gap < best.Value.Item3) best = (a, b, gap);
+            }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Links two clicked faces. <see cref="LinkFit.Strict"/> needs the faces to
+    /// coincide already; <see cref="LinkFit.AdaptSecond"/> first fits the second
+    /// hex's face onto the first one (only for opposite faces of lattice-adjacent
+    /// hexes). Any other pair of faces - a seam - is accepted only when the two
+    /// faces already coincide, on opposite sides, with the best-matching orientation.
     /// </summary>
     public bool TryLinkFaces(FaceRef first, FaceRef second, LinkFit fit, out string? error, double tolerance = 1e-6)
     {
         error = null;
         if (!_hexes.ContainsKey(first.Hex) || !_hexes.ContainsKey(second.Hex)) { error = "Unknown hex."; return false; }
         if (first.Hex == second.Hex) { error = "A hex cannot be linked to itself."; return false; }
-        if (second.Face != first.Face.Opposite()) { error = "The two faces must face each other."; return false; }
-        var a = _hexes[first.Hex];
-        var (di, dj, dk) = first.Face.Offset();
-        if (second.Hex != HexAtCell((a.Cell.I + di, a.Cell.J + dj, a.Cell.K + dk))?.Id)
-        {
-            error = "These hexes are not adjacent in the ideal lattice.";
-            return false;
-        }
         if (_links.ContainsKey((first.Hex, first.Face)) || _links.ContainsKey((second.Hex, second.Face)))
         {
             error = "One of the two faces is already linked.";
             return false;
         }
-        if (fit == LinkFit.AdaptSecond && FaceGap(first, second) > tolerance) FitFace(second, first);
-        return TryLink(first.Hex, first.Face, out error, tolerance);
+
+        var a = _hexes[first.Hex];
+        var (di, dj, dk) = first.Face.Offset();
+        bool lattice = second.Face == first.Face.Opposite() && second.Hex == HexAtCell((a.Cell.I + di, a.Cell.J + dj, a.Cell.K + dk))?.Id;
+        if (lattice)
+        {
+            if (fit == LinkFit.AdaptSecond && FaceGap(first, second) > tolerance) FitFace(second, first, FaceOrientation.Identity);
+            return LinkCore(first, second, FaceOrientation.Identity, tolerance, out error);
+        }
+
+        var (orientation, gap) = BestOrientation(first, second);
+        if (gap > tolerance)
+        {
+            error = "These faces are not neighbours in the ideal lattice, so they can be linked only if they already coincide - " +
+                    $"move the nodes until they do (closest gap now {gap:0.###}).";
+            return false;
+        }
+        if (!OpposedFaces(first, second))
+        {
+            error = "The two hexes lie on the same side of these faces, so they cannot be glued there.";
+            return false;
+        }
+        return LinkCore(first, second, orientation, tolerance, out error);
     }
 
     // Moves `moving`'s face onto `target`'s and carries the rest of that hex
     // along: a node's displacement is the displacement of its counterpart on the
     // face, weighted 1 on the face, 1/2 mid-way, 0 on the far side - so the far
-    // face (and the hex's overall size) is left alone.
-    private void FitFace(FaceRef moving, FaceRef target)
+    // face (and the hex's overall size) is left alone. `orientation` maps the
+    // moving face's squares onto the target's.
+    private void FitFace(FaceRef moving, FaceRef target, int orientation)
     {
         var hm = _hexes[moving.Hex];
         var ht = _hexes[target.Hex];
         int axis = moving.Face.Axis(), sign = moving.Face.Sign();
         var correction = new Dictionary<int, Vec3>();
         foreach (int s in moving.Face.Slots())
-            correction[s] = Node(ht.NodeIds[moving.Face.PartnerSlot(s)]).Position - Node(hm.NodeIds[s]).Position;
+            correction[s] = Node(ht.NodeIds[moving.Face.Partner(target.Face, orientation, s)]).Position - Node(hm.NodeIds[s]).Position;
 
         var moves = new Dictionary<int, Vec3>();
         for (int s = 0; s < Hex20Reference.NodeCount; s++)
@@ -418,7 +581,7 @@ public sealed class HexMesh
         _nextHexId,
         _nodes.Values.OrderBy(n => n.Id).Select(n => new NodeState(n.Id, n.Position, n.Ideal.X, n.Ideal.Y, n.Ideal.Z)).ToList(),
         _hexes.Values.OrderBy(h => h.Id).Select(h => new HexState(h.Id, h.Cell.I, h.Cell.J, h.Cell.K, h.ParentId, h.NodeIds.ToArray())).ToList(),
-        _links.OrderBy(kv => kv.Key.Hex).ThenBy(kv => kv.Key.Face).Select(kv => new LinkState(kv.Key.Hex, kv.Key.Face, kv.Value)).ToList());
+        _links.OrderBy(kv => kv.Key.Hex).ThenBy(kv => kv.Key.Face).Select(kv => new LinkState(kv.Key.Hex, kv.Key.Face, kv.Value.Hex, kv.Value.Face, kv.Value.Orientation)).ToList());
 
     public static HexMesh FromState(HexMeshState state)
     {
@@ -439,7 +602,7 @@ public sealed class HexMesh
             mesh._hexes[h.Id] = hex;
             mesh._cells[hex.Cell] = hex.Id;
         }
-        foreach (var l in state.Links) mesh._links[(l.Hex, l.Face)] = l.Other;
+        foreach (var l in state.Links) mesh._links[(l.Hex, l.Face)] = new FaceLink(l.Other, l.OtherFace, l.Orientation);
         return mesh;
     }
 
@@ -526,9 +689,10 @@ public sealed class HexMesh
                 group.Add(cur);
                 foreach (var face in HexFaces.All)
                 {
-                    int partner = face.PartnerSlot(cur.Slot);
-                    if (partner < 0 || !_links.TryGetValue((cur.Hex, face), out int other)) continue;
-                    var next = (other, partner);
+                    if (!_links.TryGetValue((cur.Hex, face), out var link)) continue;
+                    int partner = face.Partner(link.Face, link.Orientation, cur.Slot);
+                    if (partner < 0) continue;
+                    var next = (link.Hex, partner);
                     if (component.ContainsKey(next) || !owners.Contains(next)) continue;
                     component[next] = groups.Count;
                     stack.Push(next);

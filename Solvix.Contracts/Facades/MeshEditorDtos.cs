@@ -10,10 +10,11 @@ public sealed record MeshNodeDto(int Id, double X, double Y, double Z, int Ideal
 /// <param name="NodeIds">The 20 node ids: slots 0..7 corners, 8..19 edge midpoints.</param>
 public sealed record MeshHexDto(int Id, int CellI, int CellJ, int CellK, IReadOnlyList<int> NodeIds);
 
-public sealed record MeshLinkDto(int HexA, string FaceA, int HexB, string FaceB);
+/// <param name="Seam">The two faces are not opposite faces of lattice-adjacent cubes: they meet only because nodes were moved (e.g. three cubes around an edge). In the ideal world the cubes stay in their own cells and the link is a seam.</param>
+public sealed record MeshLinkDto(int HexA, string FaceA, int HexB, string FaceB, bool Seam);
 
 /// <param name="Status">"Free", "Linked" or "Candidate".</param>
-public sealed record MeshFaceDto(int Hex, string Face, string Status, int? OtherHex, string? OtherFace, bool? Coincident, double? Gap);
+public sealed record MeshFaceDto(int Hex, string Face, string Status, int? OtherHex, string? OtherFace, bool? Coincident, double? Gap, bool Seam);
 
 public sealed record MeshStateDto(
     int Version,
