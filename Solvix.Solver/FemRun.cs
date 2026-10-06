@@ -187,10 +187,16 @@ internal static class FemRun
         return s;
     }
 
+    private static readonly double NearestGauss = Math.Sqrt(0.6);
+
     // ---- stress --------------------------------------------------------------------------
 
     // Hooke's law at each element's nodes with the element's own constants, averaged over the elements that
-    // share a node (the same recovery the solver uses; across a material interface the value is a blend).
+    // share a node (across a material interface the value is a blend). The strain is sampled not exactly at the
+    // node but at the Gauss point nearest to it (the node's local coordinates scaled by sqrt(3/5)): at a corner
+    // of a curved, barely-valid cube the Jacobian is almost singular and the strain there is meaningless, while
+    // at the Gauss point - where the stiffness is integrated - it is well defined. For a smooth field the two
+    // agree to the order of the element size.
     private static (double[,] Stress, double[] VonMises) Stresses(Input input, double[] u, CancellationToken cancel)
     {
         var mesh = input.Mesh;
@@ -217,7 +223,7 @@ internal static class FemRun
             }
             for (int k = 0; k < 20; k++)
             {
-                ShapeFunctions.EvalShapeDerivativesLocal(ShapeFunctions.LocalCoords[k, 0], ShapeFunctions.LocalCoords[k, 1], ShapeFunctions.LocalCoords[k, 2], dPhi);
+                ShapeFunctions.EvalShapeDerivativesLocal(NearestGauss * ShapeFunctions.LocalCoords[k, 0], NearestGauss * ShapeFunctions.LocalCoords[k, 1], NearestGauss * ShapeFunctions.LocalCoords[k, 2], dPhi);
                 Array.Clear(jac);
                 for (int i = 0; i < 20; i++)
                     for (int c = 0; c < 3; c++)

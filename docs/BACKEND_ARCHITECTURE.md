@@ -77,3 +77,12 @@ Solvix.Api
 Тобто структура гексів/вузлів, яку будуватиме ручний редактор, — це **новий код
 у новому місці** (ймовірний кандидат: `Solvix.MeshBuilder` або окремий проєкт
 `Solvix.Mesh`), а не розширення чогось наявного.
+
+## Solver (`Solvix.Solver`, `Solvix.Bridge`, `SolverController`)
+
+The FEM solver is the user's own project (`Solution1/FemSolver`), referenced by path (`FemSolverProject` MSBuild property in `Solvix.Solver.csproj`; override with `-p:FemSolverProject=...` on another machine). `Solvix.Solver` knows nothing about the mesh editor: `ISolverFacade` takes a plain `FemMeshDto` (flat positions + 20-node connectivity), `Solvix.Bridge` is the only place that joins it with `IMeshBuilderFacade.ExportFemMesh`.
+
+- **Set-up per session** (`SolverSetup`): a material library (steel, concrete, rubber, enamel, dentin... plus custom), a material per cube (default for the rest), clamped faces, uniform pressures on faces (Pa, positive = into the body). Keyed by editor hex ids; `Reset` of the mesh clears it (ids restart from 0).
+- **Per-cube materials**: `FemRun` assembles the stiffness itself with each element's own Lamé constants (the element physics - `ElementStiffness`, `LoadAssembler`, clamped faces - is the solver's), then solves with a Jacobi-preconditioned CG with progress and cancellation. With one material it equals `FemSolverCore` (tested). Stress is recovered at the Gauss point nearest each node (the node itself is near-singular at the lattice corners of a curved cube) and averaged over the elements sharing it, so across a material interface a node shows a blend.
+- **Checks before solving** (`SolverValidator`): no cubes, no support, folded cubes, a separate part without a support (it would float), invalid material, references to deleted cubes, a face both clamped and loaded.
+- **Background job**: one per session, with a ticket (a late message of an old run never overwrites a newer one); progress is pushed over SignalR (`/hubs/solver`, `Join(sessionId)`, message `jobChanged(sessionId, job)`) and can be polled (`GET api/solver/{id}/job`).
