@@ -84,6 +84,11 @@ export class MeshEditorService {
     this.run(sessionId, this.api.linkFaces(sessionId, hexA, faceA, hexB, faceB, adaptSecond));
   }
 
+  // The server refuses (and says why) when the body would fall apart.
+  removeHex(sessionId: number, hexId: number): void {
+    this.run(sessionId, this.api.removeHex(sessionId, hexId));
+  }
+
   linkHexes(sessionId: number, hexA: number, hexB: number, adaptSecond: boolean): void {
     this.run(sessionId, this.api.linkHexes(sessionId, hexA, hexB, adaptSecond));
   }

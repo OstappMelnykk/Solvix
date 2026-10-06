@@ -28,6 +28,9 @@
   </label>
   <button class="tool tool--primary" type="button" [disabled]="!canLink()" (click)="link()">Зробити сусідами</button>
   <button class="tool" type="button" [disabled]="!canUnlink()" (click)="unlink()">Розірвати сусідство</button>
+  <button class="tool tool--danger" type="button" [disabled]="!canRemove()" (click)="remove()">
+    Видалити куб{{ selectedHexes().length === 1 ? ' ' + selectedHexes()[0] : '' }}
+  </button>
   <button class="tool" type="button" [disabled]="selectedFaces().length === 0 && selectedNodeId() === null" (click)="clearSelection()">
     Зняти виділення
   </button>

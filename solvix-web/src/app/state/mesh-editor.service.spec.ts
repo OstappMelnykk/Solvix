@@ -128,6 +128,8 @@ describe('MeshEditorService', () => {
 
     editor.linkFaces(sessionId, 1, 'XPlus', 2, 'XMinus', false);
     expectAndFlush('POST', 'links', { hexA: 1, faceA: 'XPlus', hexB: 2, faceB: 'XMinus', adaptSecond: false });
+    editor.removeHex(sessionId, 7);
+    expectAndFlush('DELETE', 'hexes/7');
     editor.linkHexes(sessionId, 3, 2, true);
     expectAndFlush('POST', 'links/by-hexes', { hexA: 3, hexB: 2, adaptSecond: true });
     editor.unlinkFace(sessionId, 1, 'XPlus');

@@ -21,7 +21,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = true;
@@ -106,6 +106,33 @@ describe('MeshEditorControlsComponent', () => {
 
     expect(editor.unlinkFace).toHaveBeenCalledWith(1, 0, 'XPlus');
     expect(selection.faces(1)).toEqual([]);
+  });
+
+  it('deletes the cube of the picked face, only when exactly one cube is picked', () => {
+    state = linkedPairState();
+    expect(component.canRemove()).toBeFalse();
+
+    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
+    selection.toggleFace(1, { hex: 1, face: 'ZPlus' });       // two faces, still one cube
+    expect(component.canRemove()).toBeTrue();
+    component.remove();
+    expect(editor.removeHex).toHaveBeenCalledWith(1, 1);
+    expect(selection.faces(1)).toEqual([]);
+
+    selection.toggleFace(1, { hex: 0, face: 'YPlus' });
+    selection.toggleFace(1, { hex: 1, face: 'YPlus' });       // two cubes
+    expect(component.canRemove()).toBeFalse();
+    editor.removeHex.calls.reset();
+    component.remove();
+    expect(editor.removeHex).not.toHaveBeenCalled();
+  });
+
+  it('cannot delete while a command is running', () => {
+    state = singleCubeState();
+    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
+    busy.set(true);
+
+    expect(component.canRemove()).toBeFalse();
   });
 
   it('cannot link fewer than two cubes', () => {

@@ -182,6 +182,19 @@ export class MeshEditorControlsComponent {
     }
   }
 
+  // Deleting acts on exactly one cube - the one whose face is picked.
+  canRemove(): boolean {
+    return !this.busy && this.selectedHexes().length === 1;
+  }
+
+  remove(): void {
+    const hexes = this.selectedHexes();
+    if (this.sessionId !== null && hexes.length === 1) {
+      this.editor.removeHex(this.sessionId, hexes[0]);
+      this.selection.clear(this.sessionId);
+    }
+  }
+
   addFirst(): void {
     if (this.sessionId !== null) this.editor.addFirstHex(this.sessionId);
   }

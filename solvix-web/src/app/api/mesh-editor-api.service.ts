@@ -108,6 +108,10 @@ export class MeshEditorApiService {
     return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'links'), { hexA, faceA, hexB, faceB, adaptSecond });
   }
 
+  removeHex(sessionId: number, hexId: number): Observable<MeshCommandResultDto> {
+    return this.http.delete<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}`));
+  }
+
   // Links two lattice-adjacent cubes; the shared face is found by the server.
   linkHexes(sessionId: number, hexA: number, hexB: number, adaptSecond: boolean): Observable<MeshCommandResultDto> {
     return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'links/by-hexes'), { hexA, hexB, adaptSecond });

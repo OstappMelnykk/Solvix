@@ -44,6 +44,11 @@ describe('MeshEditorApiService', () => {
     expectCall('POST', 'links', { hexA: 3, faceA: 'XPlus', hexB: 2, faceB: 'XMinus', adaptSecond: true }).flush({});
   });
 
+  it('DELETEs a cube', () => {
+    api.removeHex(5, 3).subscribe();
+    expectCall('DELETE', 'hexes/3').flush({});
+  });
+
   it('POSTs a link between two cubes by id', () => {
     api.linkHexes(5, 3, 2, false).subscribe();
     expectCall('POST', 'links/by-hexes', { hexA: 3, hexB: 2, adaptSecond: false }).flush({});
