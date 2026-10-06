@@ -20,12 +20,14 @@ public sealed record SolverMaterialDto(string Name, string Label, double E, doub
 
 public sealed record SolverFaceDto(int Hex, string Face);
 
-/// <param name="Pressure">Uniform pressure in Pa, positive = pressing into the body.</param>
+/// <param name="Pressure">Uniform normal pressure Pn in Pa along the outward normal, as in the solver: negative = pressing into the body (compression), positive = pulling out.</param>
 public sealed record SolverLoadDto(int Hex, string Face, double Pressure);
 
 /// <summary>Everything the user sets for a solve: materials (a library, one per cube), supports and pressures on faces.</summary>
+/// <param name="Divisions">How many small elements each cube is cut into along its three axes (the solver's Nx, Ny, Nz).</param>
 public sealed record SolverSetupDto(
     int Version,
+    IReadOnlyList<int> Divisions,
     IReadOnlyList<SolverMaterialDto> Materials,
     string DefaultMaterial,
     IReadOnlyDictionary<int, string> HexMaterials,
@@ -41,10 +43,19 @@ public sealed record SolverValidationDto(bool CanSolve, IReadOnlyList<SolverIssu
 /// <param name="Progress">0..1.</param>
 public sealed record SolverJobDto(string State, double Progress, string Stage, string? Error, int Ticket);
 
-/// <summary>Per solver node (aligned with <see cref="FemMeshDto.NodeIds"/>): displacement and von Mises stress.</summary>
+/// <summary>
+/// The solution on the mesh the solver worked on (every cube cut into Divisions small elements). Values are per
+/// node of that mesh; <see cref="GridNodes"/> says which node sits at each grid point of each cube.
+/// </summary>
+/// <param name="Positions">x, y, z of each node (undeformed): length 3 * node count.</param>
+/// <param name="HexIds">The editor cube behind each block of <see cref="GridNodes"/>.</param>
+/// <param name="GridNodes">For each cube of <see cref="HexIds"/>, the node at each existing grid point (ix, iy, iz in 0..2n, at most one odd; iz slowest, ix fastest).</param>
 public sealed record SolverResultDto(
     int Ticket,
-    IReadOnlyList<int> NodeIds,
+    IReadOnlyList<int> Divisions,
+    IReadOnlyList<double> Positions,
+    IReadOnlyList<int> HexIds,
+    IReadOnlyList<int> GridNodes,
     IReadOnlyList<double> Ux,
     IReadOnlyList<double> Uy,
     IReadOnlyList<double> Uz,

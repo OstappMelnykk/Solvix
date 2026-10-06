@@ -18,7 +18,8 @@ internal static class SolverValidator
             Error("Немає жодного куба.");
             return new SolverValidationDto(false, issues);
         }
-        if (mesh.ElementCount > MaxElements) Error($"Забагато кубів для розрахунку: {mesh.ElementCount} (ліміт {MaxElements}).");
+        int elements = mesh.ElementCount * setup.Divisions.Nx * setup.Divisions.Ny * setup.Divisions.Nz;
+        if (elements > MaxElements) Error($"Забагато елементів для розрахунку: {elements} ({mesh.ElementCount} кубів × {setup.Divisions.Nx * setup.Divisions.Ny * setup.Divisions.Nz}; ліміт {MaxElements}). Зменште поділ або кількість кубів.");
 
         var alive = new HashSet<int>(mesh.ElementIds);
         if (mesh.FoldedHexes.Count > 0)

@@ -9,6 +9,10 @@ public class SolverTests
 {
     private const int Session = 1;
 
+    // The index of the first node of a result whose position satisfies the test.
+    private static int NodeWhere(SolverResultDto result, Func<double, double, double, bool> test) =>
+        Enumerable.Range(0, result.Ux.Count).First(i => test(result.Positions[3 * i], result.Positions[3 * i + 1], result.Positions[3 * i + 2]));
+
     // ---- conventions ------------------------------------------------------------------------------
 
     [Test]
@@ -30,13 +34,13 @@ public class SolverTests
         var facade = NewFacade();
         var editor = Bar(1);
         facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "ZMinus") }, true);
-        facade.SetLoads(Session, new[] { new SolverFaceDto(0, "ZPlus") }, -1000);   // negative = pulling outwards
+        facade.SetLoads(Session, new[] { new SolverFaceDto(0, "ZPlus") }, 1000);   // Pn > 0 = along the outward normal = pulling out
 
         var job = SolveAndWait(facade, Session, Export(editor));
 
         Assert.That(job.State, Is.EqualTo("done"), job.Error);
         var result = facade.GetResult(Session)!;
-        int top = Enumerable.Range(0, result.NodeIds.Count).First(i => editor.Mesh.Node(result.NodeIds[i]).Position.Z == 1);
+        int top = NodeWhere(result, (_, _, z) => z == 1);
         Assert.That(result.Uz[top], Is.GreaterThan(0));
     }
 
@@ -49,7 +53,7 @@ public class SolverTests
         var mesh = Export(editor);
         var facade = NewFacade();
         facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus") }, true);
-        facade.SetLoads(Session, new[] { new SolverFaceDto(2, "XPlus") }, 5e6);
+        facade.SetLoads(Session, new[] { new SolverFaceDto(2, "XPlus") }, -5e6);
         var job = SolveAndWait(facade, Session, mesh);
         Assert.That(job.State, Is.EqualTo("done"), job.Error);
         var ours = facade.GetResult(Session)!;
@@ -61,17 +65,24 @@ public class SolverTests
         var fixedDofs = BoundaryConditions.GetFixedDOFsFromFaceSet(femMesh, new HashSet<long> { 0L * 6 + 4 }).ToArray();
         var reference = FemSolverCore.Solve(new FemProblem { Mesh = femMesh, Material = new FemMaterial { E = 2.1e11, Nu = 0.3 }, FixedDofs = fixedDofs, LoadVector = load });
 
+        // our nodes are numbered in their own order: match them by position
+        string Key(double x, double y, double z) => $"{Math.Round(x, 9)}|{Math.Round(y, 9)}|{Math.Round(z, 9)}";
+        var ourNode = Enumerable.Range(0, ours.Ux.Count).ToDictionary(i => Key(ours.Positions[3 * i], ours.Positions[3 * i + 1], ours.Positions[3 * i + 2]));
+        Assert.That(ours.Ux.Count, Is.EqualTo(fem.NodeCount));
+        int Mine(int n) => ourNode[Key(fem.Positions[n, 0], fem.Positions[n, 1], fem.Positions[n, 2])];
+
         double scale = reference.Displacements.Max(Math.Abs);
         for (int n = 0; n < fem.NodeCount; n++)
         {
-            Assert.That(ours.Ux[n], Is.EqualTo(reference.Displacements[n]).Within(1e-6 * scale), $"ux {n}");
-            Assert.That(ours.Uy[n], Is.EqualTo(reference.Displacements[fem.NodeCount + n]).Within(1e-6 * scale), $"uy {n}");
-            Assert.That(ours.Uz[n], Is.EqualTo(reference.Displacements[2 * fem.NodeCount + n]).Within(1e-6 * scale), $"uz {n}");
+            int m = Mine(n);
+            Assert.That(ours.Ux[m], Is.EqualTo(reference.Displacements[n]).Within(1e-6 * scale), $"ux {n}");
+            Assert.That(ours.Uy[m], Is.EqualTo(reference.Displacements[fem.NodeCount + n]).Within(1e-6 * scale), $"uy {n}");
+            Assert.That(ours.Uz[m], Is.EqualTo(reference.Displacements[2 * fem.NodeCount + n]).Within(1e-6 * scale), $"uz {n}");
         }
         // the stress is recovered at the Gauss point nearest each node, so it differs from the node values of the
         // solver's own recovery near the clamp, but stays close overall
         double vmScale = reference.VonMises.Max();
-        double meanDifference = Enumerable.Range(0, fem.NodeCount).Average(n => Math.Abs(ours.VonMises[n] - reference.VonMises[n])) / vmScale;
+        double meanDifference = Enumerable.Range(0, fem.NodeCount).Average(n => Math.Abs(ours.VonMises[Mine(n)] - reference.VonMises[n])) / vmScale;
         Assert.That(meanDifference, Is.LessThan(0.05));
         Assert.That(ours.MaxVonMises, Is.EqualTo(vmScale).Within(0.2 * vmScale));
     }
@@ -87,7 +98,7 @@ public class SolverTests
         facade.SetHexMaterial(Session, new[] { 3, 4 }, "rubber0");
         facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus") }, true);
         double pressure = 1e5;
-        facade.SetLoads(Session, new[] { new SolverFaceDto(4, "XPlus") }, pressure);
+        facade.SetLoads(Session, new[] { new SolverFaceDto(4, "XPlus") }, -pressure);   // compression
         var editor = Bar(5);
 
         var job = SolveAndWait(facade, Session, Export(editor));
@@ -95,32 +106,32 @@ public class SolverTests
         Assert.That(job.State, Is.EqualTo("done"), job.Error);
         var result = facade.GetResult(Session)!;
         double expectedTip = -pressure * (3 / 2.0e11 + 2 / 1.0e7);
-        int tip = Enumerable.Range(0, result.NodeIds.Count).First(i => editor.Mesh.Node(result.NodeIds[i]).Position.X == 5);
+        int tip = NodeWhere(result, (x, _, _) => x == 5);
         Assert.That(result.Ux[tip], Is.EqualTo(expectedTip).Within(Math.Abs(expectedTip) * 1e-5));
         // the steel part barely moves compared with the rubber part
-        int junction = Enumerable.Range(0, result.NodeIds.Count).First(i => editor.Mesh.Node(result.NodeIds[i]).Position.X == 3);
+        int junction = NodeWhere(result, (x, _, _) => x == 3);
         Assert.That(result.Ux[junction], Is.EqualTo(-pressure * 3 / 2.0e11).Within(1e-9));
         // the stress is the pressure everywhere (away from the interface, where nodes blend their two sides)
-        int inSteel = Enumerable.Range(0, result.NodeIds.Count).First(i => editor.Mesh.Node(result.NodeIds[i]).Position.X == 1);
-        int inRubber = Enumerable.Range(0, result.NodeIds.Count).First(i => editor.Mesh.Node(result.NodeIds[i]).Position.X == 4.5);
+        int inSteel = NodeWhere(result, (x, _, _) => x == 1);
+        int inRubber = NodeWhere(result, (x, _, _) => x == 4.5);
         Assert.That(result.VonMises[inSteel], Is.EqualTo(pressure).Within(pressure * 1e-4));
         Assert.That(result.VonMises[inRubber], Is.EqualTo(pressure).Within(pressure * 1e-4));
     }
 
     [Test]
-    public void The_pressure_pushes_into_the_body_and_a_negative_one_pulls()
+    public void A_negative_pressure_presses_into_the_body_and_a_positive_one_pulls()
     {
         var facade = NewFacade();
         facade.UpsertMaterial(Session, new SolverMaterialDto("m0", "M", 1e9, 0.0));
         facade.SetDefaultMaterial(Session, "m0");
         facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus") }, true);
         var editor = Bar(2);
-        int tip() => Enumerable.Range(0, 100).First(i => editor.Mesh.Node(facade.GetResult(Session)!.NodeIds[i]).Position.X == 2);
+        int tip() => NodeWhere(facade.GetResult(Session)!, (x, _, _) => x == 2);
 
-        facade.SetLoads(Session, new[] { new SolverFaceDto(1, "XPlus") }, 1e4);
+        facade.SetLoads(Session, new[] { new SolverFaceDto(1, "XPlus") }, -1e4);
         SolveAndWait(facade, Session, Export(editor));
         double pushed = facade.GetResult(Session)!.Ux[tip()];
-        facade.SetLoads(Session, new[] { new SolverFaceDto(1, "XPlus") }, -1e4);
+        facade.SetLoads(Session, new[] { new SolverFaceDto(1, "XPlus") }, 1e4);
         SolveAndWait(facade, Session, Export(editor));
         double pulled = facade.GetResult(Session)!.Ux[tip()];
 
@@ -150,7 +161,7 @@ public class SolverTests
         var bottom = editor.Mesh.Hexes.Where(h => h.Cell.J == 0).Select(h => new SolverFaceDto(h.Id, "YMinus")).ToList();
         var top = editor.Mesh.Hexes.Where(h => h.Cell.J == 1).Select(h => new SolverFaceDto(h.Id, "YPlus")).ToList();
         facade.SetFixedFaces(Session, bottom, true);
-        facade.SetLoads(Session, top, 1e6);
+        facade.SetLoads(Session, top, -1e6);
 
         var job = SolveAndWait(facade, Session, Export(editor));
 

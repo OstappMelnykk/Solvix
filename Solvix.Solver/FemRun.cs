@@ -12,6 +12,7 @@ namespace Solvix.Solver;
 internal static class FemRun
 {
     public sealed record Input(
+        FineMesh Fine,
         FemMesh Mesh,
         double[] Lambda,
         double[] Mu,

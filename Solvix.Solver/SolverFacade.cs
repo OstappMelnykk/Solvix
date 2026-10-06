@@ -28,6 +28,12 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         return s.Setup.ToDto();
     });
 
+    public SolverSetupDto SetDivisions(int sessionId, int nx, int ny, int nz) => sessions.With(sessionId, s =>
+    {
+        s.Setup.SetDivisions(nx, ny, nz);
+        return s.Setup.ToDto();
+    });
+
     public SolverSetupDto SetFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces, bool fixedFaces) => sessions.With(sessionId, s =>
     {
         s.Setup.SetFixed(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)), fixedFaces);
@@ -104,11 +110,17 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
                 Publish(sessionId, ticket, new SolverJobDto("failed", 1, "", $"Ітерації не збіглися (нев'язка {output.Residual:E1}): система погано обумовлена, спробуйте менший контраст матеріалів або менше кубів.", ticket));
                 return;
             }
-            int n = mesh.NodeCount;
-            var ux = new double[n]; var uy = new double[n]; var uz = new double[n];
-            for (int i = 0; i < n; i++) { ux[i] = output.Displacements[i]; uy[i] = output.Displacements[n + i]; uz[i] = output.Displacements[2 * n + i]; }
+            var fine = input.Fine;
+            int n = fine.NodeCount;
+            var ux = new double[n]; var uy = new double[n]; var uz = new double[n]; var positions = new double[3 * n];
+            for (int i = 0; i < n; i++)
+            {
+                ux[i] = output.Displacements[i]; uy[i] = output.Displacements[n + i]; uz[i] = output.Displacements[2 * n + i];
+                for (int c = 0; c < 3; c++) positions[3 * i + c] = fine.Positions[i, c];
+            }
             double maxDisplacement = Enumerable.Range(0, n).Max(i => Math.Sqrt(ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]));
-            var result = new SolverResultDto(ticket, mesh.NodeIds, ux, uy, uz, output.VonMises, maxDisplacement, output.VonMises.Max(), clock.Elapsed.TotalSeconds);
+            var result = new SolverResultDto(ticket, new[] { fine.Divisions.Nx, fine.Divisions.Ny, fine.Divisions.Nz }, positions, mesh.ElementIds, fine.GridNodes,
+                ux, uy, uz, output.VonMises, maxDisplacement, output.VonMises.Max(), clock.Elapsed.TotalSeconds);
             sessions.With(sessionId, s =>
             {
                 if (s.Ticket == ticket) s.Result = result;
@@ -142,35 +154,32 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     private static FemRun.Input BuildInput(SolverSetup setup, FemMeshDto mesh)
     {
-        int nodes = mesh.NodeCount, elements = mesh.ElementCount;
-        var positions = new double[nodes, 3];
-        for (int n = 0; n < nodes; n++)
-            for (int c = 0; c < 3; c++) positions[n, c] = mesh.Positions[n * 3 + c];
-        var connectivity = new int[elements, 20];
-        for (int e = 0; e < elements; e++)
-            for (int s = 0; s < 20; s++) connectivity[e, s] = mesh.Connectivity[e * 20 + s];
-        var femMesh = new FemMesh { NodeCount = nodes, ElementCount = elements, Positions = positions, Connectivity = connectivity };
+        // every cube cut into nx*ny*nz small elements, as the solver's own mesh does
+        var (nx, ny, nz) = setup.Divisions;
+        var fine = FineMesh.Build(mesh, nx, ny, nz);
+        var femMesh = new FemMesh { NodeCount = fine.NodeCount, ElementCount = fine.ElementCount, Positions = fine.Positions, Connectivity = fine.Connectivity };
 
-        var lambda = new double[elements];
-        var mu = new double[elements];
-        for (int e = 0; e < elements; e++)
+        var lambda = new double[fine.ElementCount];
+        var mu = new double[fine.ElementCount];
+        for (int e = 0; e < fine.ElementCount; e++)
         {
-            var material = setup.MaterialsByName[setup.MaterialOf(mesh.ElementIds[e])];
+            var material = setup.MaterialsByName[setup.MaterialOf(mesh.ElementIds[fine.ParentOf[e]])];
             var fem = new FemMaterial { E = material.E, Nu = material.Nu };
             lambda[e] = fem.Lambda;
             mu[e] = fem.Mu;
         }
 
-        var index = new Dictionary<int, int>();
-        for (int e = 0; e < elements; e++) index[mesh.ElementIds[e]] = e;
-        long Key((int Hex, string Face) f) => (long)index[f.Hex] * 6 + (SolverFaces.TryParse(f.Face, out int face) ? face : 0);
+        var cubeIndex = new Dictionary<int, int>();
+        for (int e = 0; e < mesh.ElementCount; e++) cubeIndex[mesh.ElementIds[e]] = e;
+        // a face of a cube is the outward face of every small element on that side of it
+        IEnumerable<long> Keys((int Hex, string Face) f) => fine.BoundaryElements(cubeIndex[f.Hex], f.Face).Select(b => (long)b.Element * 6 + b.SolverFace);
 
-        var fixedFaces = new HashSet<long>(setup.Fixed.Where(f => index.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face)).Select(Key));
-        // one pass per distinct pressure; the editor's positive pressure presses into the body, the solver's Pn is along the outward normal
-        var loads = setup.Loads.Where(l => index.ContainsKey(l.Key.Hex) && SolverFaces.IsValid(l.Key.Face))
+        var fixedFaces = new HashSet<long>(setup.Fixed.Where(f => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face)).SelectMany(Keys));
+        // one pass per distinct pressure; Pn is the solver's: along the outward normal, negative = compression
+        var loads = setup.Loads.Where(l => cubeIndex.ContainsKey(l.Key.Hex) && SolverFaces.IsValid(l.Key.Face))
             .GroupBy(l => l.Value)
-            .Select(g => (new HashSet<long>(g.Select(l => Key(l.Key))), -g.Key))
+            .Select(g => (new HashSet<long>(g.SelectMany(l => Keys(l.Key))), g.Key))
             .ToList();
-        return new FemRun.Input(femMesh, lambda, mu, fixedFaces, loads);
+        return new FemRun.Input(fine, femMesh, lambda, mu, fixedFaces, loads);
     }
 }

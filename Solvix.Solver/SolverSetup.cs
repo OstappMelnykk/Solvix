@@ -17,6 +17,17 @@ internal sealed class SolverSetup
     public int Version { get; private set; }
     public string DefaultMaterial { get; private set; } = Materials.DefaultName;
 
+    public const int MaxDivision = 8;
+    public (int Nx, int Ny, int Nz) Divisions { get; private set; } = (1, 1, 1);
+
+    public bool SetDivisions(int nx, int ny, int nz)
+    {
+        if (new[] { nx, ny, nz }.Any(n => n < 1 || n > MaxDivision)) return false;
+        Divisions = (nx, ny, nz);
+        Version++;
+        return true;
+    }
+
     public IReadOnlyDictionary<string, SolverMaterialDto> MaterialsByName => _materials;
     public IReadOnlyDictionary<int, string> HexMaterials => _hexMaterials;
     public IReadOnlyCollection<(int Hex, string Face)> Fixed => _fixed;
@@ -86,6 +97,7 @@ internal sealed class SolverSetup
 
     public SolverSetupDto ToDto() => new(
         Version,
+        new[] { Divisions.Nx, Divisions.Ny, Divisions.Nz },
         _materials.Values.ToList(),
         DefaultMaterial,
         new Dictionary<int, string>(_hexMaterials),

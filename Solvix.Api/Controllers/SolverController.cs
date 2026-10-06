@@ -9,12 +9,14 @@ public record DefaultMaterialRequest(string Material);
 
 public record FixedFacesRequest(IReadOnlyList<SolverFaceDto> Faces, bool Fixed);
 
+public record DivisionsRequest(int Nx, int Ny, int Nz);
+
 public record LoadFacesRequest(IReadOnlyList<SolverFaceDto> Faces, double? Pressure);
 
 /// <summary>
 /// The FEM solver for one session: what to solve (materials, supports, pressures), whether it can be solved,
 /// the background solve and its result. Progress is also pushed over SignalR (<c>/hubs/solver</c>, group per
-/// session, message <c>jobChanged(sessionId, job)</c>). Pressure is in Pa, positive = pressing into the body.
+/// session, message <c>jobChanged(sessionId, job)</c>). Pressure is the solver's Pn in Pa: along the outward normal, negative = compression.
 /// </summary>
 [ApiController]
 [Route("api/solver/{sessionId:int}")]
@@ -29,6 +31,11 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     [HttpPut("default-material")]
     public ActionResult<SolverSetupDto> SetDefaultMaterial(int sessionId, [FromBody] DefaultMaterialRequest request) =>
         solver.SetDefaultMaterial(sessionId, request.Material);
+
+    /// <summary>How many small elements each cube is cut into along its axes (the solver's Nx, Ny, Nz; 1..8 each).</summary>
+    [HttpPut("divisions")]
+    public ActionResult<SolverSetupDto> SetDivisions(int sessionId, [FromBody] DivisionsRequest request) =>
+        solver.SetDivisions(sessionId, request.Nx, request.Ny, request.Nz);
 
     /// <summary>Gives cubes a material; a null or empty name returns them to the default one.</summary>
     [HttpPut("hexes/material")]

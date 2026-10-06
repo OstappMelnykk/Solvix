@@ -16,6 +16,9 @@ public interface ISolverFacade
 
     SolverSetupDto SetDefaultMaterial(int sessionId, string material);
 
+    /// <summary>How many small elements each cube is cut into along its axes (1..8 each), as the solver's Nx, Ny, Nz; invalid values change nothing.</summary>
+    SolverSetupDto SetDivisions(int sessionId, int nx, int ny, int nz);
+
     /// <summary>Fixes (or frees) faces: every node on a fixed face is clamped.</summary>
     SolverSetupDto SetFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces, bool fixedFaces);
 
