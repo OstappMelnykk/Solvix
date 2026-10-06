@@ -134,6 +134,85 @@ public sealed class HexMesh
         foreach (int s in face.Slots()) Rebuild(_hexes[hexId].NodeIds[s]);
     }
 
+    /// <summary>The 8 node ids lying on a face (4 corners then 4 midpoints, in slot order).</summary>
+    public IReadOnlyList<int> FaceNodeIds(FaceRef face) => face.Face.Slots().Select(s => _hexes[face.Hex].NodeIds[s]).ToList();
+
+    /// <summary>What a face currently is: open, linked, or sitting against an unlinked hex (and how far apart the two faces are).</summary>
+    public FaceState GetFaceState(FaceRef face, double tolerance = 1e-6)
+    {
+        var hex = _hexes[face.Hex];
+        if (_links.TryGetValue((face.Hex, face.Face), out int linked))
+            return new FaceState(face, FaceStatus.Linked, new FaceRef(linked, face.Face.Opposite()), true, 0);
+        var (di, dj, dk) = face.Face.Offset();
+        var other = HexAtCell((hex.Cell.I + di, hex.Cell.J + dj, hex.Cell.K + dk));
+        if (other is null) return new FaceState(face, FaceStatus.Free, null, null, null);
+        double gap = FaceGap(face, new FaceRef(other.Id, face.Face.Opposite()));
+        return new FaceState(face, FaceStatus.Candidate, new FaceRef(other.Id, face.Face.Opposite()), gap <= tolerance, gap);
+    }
+
+    public IReadOnlyList<FaceState> AllFaceStates(double tolerance = 1e-6) =>
+        _hexes.Values.OrderBy(h => h.Id).SelectMany(h => HexFaces.All.Select(f => GetFaceState(new FaceRef(h.Id, f), tolerance))).ToList();
+
+    /// <summary>Largest real-space distance between corresponding nodes of two opposite faces.</summary>
+    public double FaceGap(FaceRef a, FaceRef b)
+    {
+        var ha = _hexes[a.Hex];
+        var hb = _hexes[b.Hex];
+        return a.Face.Slots().Max(s => (Node(ha.NodeIds[s]).Position - Node(hb.NodeIds[a.Face.PartnerSlot(s)]).Position).Length);
+    }
+
+    /// <summary>
+    /// Links two clicked faces. They must be opposite faces of lattice-adjacent
+    /// hexes (the ideal world is a lattice, so only those can be neighbours).
+    /// <see cref="LinkFit.Strict"/> needs the faces to coincide already;
+    /// <see cref="LinkFit.AdaptSecond"/> first fits the second hex's face onto
+    /// the first one, leaving sizes of both hexes' far faces alone.
+    /// </summary>
+    public bool TryLinkFaces(FaceRef first, FaceRef second, LinkFit fit, out string? error, double tolerance = 1e-6)
+    {
+        error = null;
+        if (!_hexes.ContainsKey(first.Hex) || !_hexes.ContainsKey(second.Hex)) { error = "Unknown hex."; return false; }
+        if (first.Hex == second.Hex) { error = "A hex cannot be linked to itself."; return false; }
+        if (second.Face != first.Face.Opposite()) { error = "The two faces must face each other."; return false; }
+        var a = _hexes[first.Hex];
+        var (di, dj, dk) = first.Face.Offset();
+        if (second.Hex != HexAtCell((a.Cell.I + di, a.Cell.J + dj, a.Cell.K + dk))?.Id)
+        {
+            error = "These hexes are not adjacent in the ideal lattice.";
+            return false;
+        }
+        if (_links.ContainsKey((first.Hex, first.Face)) || _links.ContainsKey((second.Hex, second.Face)))
+        {
+            error = "One of the two faces is already linked.";
+            return false;
+        }
+        if (fit == LinkFit.AdaptSecond && FaceGap(first, second) > tolerance) FitFace(second, first);
+        return TryLink(first.Hex, first.Face, out error, tolerance);
+    }
+
+    // Moves `moving`'s face onto `target`'s and carries the rest of that hex
+    // along: a node's displacement is the displacement of its counterpart on the
+    // face, weighted 1 on the face, 1/2 mid-way, 0 on the far side - so the far
+    // face (and the hex's overall size) is left alone.
+    private void FitFace(FaceRef moving, FaceRef target)
+    {
+        var hm = _hexes[moving.Hex];
+        var ht = _hexes[target.Hex];
+        int axis = moving.Face.Axis(), sign = moving.Face.Sign();
+        var correction = new Dictionary<int, Vec3>();
+        foreach (int s in moving.Face.Slots())
+            correction[s] = Node(ht.NodeIds[moving.Face.PartnerSlot(s)]).Position - Node(hm.NodeIds[s]).Position;
+
+        var moves = new Dictionary<int, Vec3>();
+        for (int s = 0; s < Hex20Reference.NodeCount; s++)
+        {
+            int onFace = moving.Face.Slots().First(f => Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[f, d] == Hex20Reference.LocalCoords[s, d]));
+            double w = (1 + Hex20Reference.LocalCoords[s, axis] * sign) / 2.0;
+            moves[hm.NodeIds[s]] = Node(hm.NodeIds[s]).Position + correction[onFace] * w;
+        }
+        foreach (var (id, pos) in moves) _nodes[id].Position = pos;
+    }
+
     /// <summary>Cells that sit face to face but are not linked: candidates for the linking tool.</summary>
     public IReadOnlyList<(int HexA, HexFace Face, int HexB)> LinkCandidates()
     {
@@ -180,24 +259,7 @@ public sealed class HexMesh
     /// <summary>Moves a single node without touching any other.</summary>
     public void SetNodePosition(int nodeId, Vec3 position) => _nodes[nodeId].Position = position;
 
-    /// <summary>
-    /// Like <see cref="DragNode"/>, but refuses (and leaves everything as it
-    /// was) if the move would fold or degenerate any hex that owns a moved node.
-    /// </summary>
-    public bool TryDragNode(int nodeId, Vec3 newPosition, out IReadOnlyList<int> invalidatedHexes)
-    {
-        var before = _nodes.ToDictionary(kv => kv.Key, kv => kv.Value.Position);
-        DragNode(nodeId, newPosition);
-        var affected = _nodes.Where(kv => kv.Value.Position != before[kv.Key]).Select(kv => kv.Key)
-            .SelectMany(id => _owners[id].Select(o => o.Hex)).Distinct().ToList();
-        var bad = affected.Where(h => !_hexes[h].IsValid()).OrderBy(h => h).ToList();
-        invalidatedHexes = bad;
-        if (bad.Count == 0) return true;
-        foreach (var kv in before) _nodes[kv.Key].Position = kv.Value;
-        return false;
-    }
-
-    /// <summary>Hexes whose map is folded or degenerate.</summary>
+    /// <summary>Hexes whose map is folded or degenerate. Never blocks editing; the solver checks it before solving.</summary>
     public IReadOnlyList<int> InvalidHexes() => _hexes.Values.Where(h => !h.IsValid()).Select(h => h.Id).OrderBy(i => i).ToList();
 
     /// <summary>

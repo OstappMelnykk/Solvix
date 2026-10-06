@@ -30,7 +30,7 @@ public class MappingTests
         foreach (var node in mesh.Nodes.OrderBy(n => n.Id).ToList())
         {
             var d = new Vec3(rng.NextDouble() - 0.5, rng.NextDouble() - 0.5, rng.NextDouble() - 0.5) * (2 * amplitude);
-            Assert.That(mesh.TryDragNode(node.Id, node.Position + d, out _), Is.True);
+            mesh.DragNode(node.Id, node.Position + d);
         }
     }
 
@@ -119,20 +119,15 @@ public class MappingTests
     }
 
     [Test]
-    public void A_move_that_would_fold_a_hex_is_refused_and_leaves_the_mesh_untouched()
+    public void Dragging_is_never_refused_even_when_it_folds_a_hex()
     {
         var mesh = new HexMesh();
         var hex = mesh.AddFirst();
-        int corner = hex.NodeIds[0];
-        var before = mesh.Nodes.ToDictionary(n => n.Id, n => n.Position);
 
-        // pull a corner through the opposite corner
-        bool ok = mesh.TryDragNode(corner, new Vec3(1.5, 1.5, 1.5), out var bad);
+        mesh.DragNode(hex.NodeIds[0], new Vec3(1.5, 1.5, 1.5));
 
-        Assert.That(ok, Is.False);
-        Assert.That(bad, Does.Contain(hex.Id));
-        foreach (var n in mesh.Nodes) Assert.That(n.Position, Is.EqualTo(before[n.Id]));
-        Assert.That(hex.IsValid(), Is.True);
+        Assert.That(mesh.Node(hex.NodeIds[0]).Position, Is.EqualTo(new Vec3(1.5, 1.5, 1.5)));
+        Assert.That(mesh.InvalidHexes(), Does.Contain(hex.Id));
     }
 
     [Test]
