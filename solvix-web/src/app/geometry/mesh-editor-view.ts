@@ -136,7 +136,6 @@ const PREVIEW_FACE_COLOR = 0x6ee06e;
 const PICKED_FACE_COLOR = 0xffe14d;
 const SELECTED_NODE_COLOR = 0xff3b3b;
 const EDGE_COLOR = 0xe6e8ec;
-const SEAM_COLOR = 0xff8c1a;
 const CORNER_COLOR = 0xffffff;
 const MIDPOINT_COLOR = 0xf2d34a;
 
@@ -192,9 +191,8 @@ function buildFaceGeometry(slotPositions: THREE.Vector3[], slotUv: [number, numb
 // pair whose faces coincide is two surfaces in one place - drawing both would
 // z-fight, so only the lower-id side is drawn (clicking it still identifies a
 // real face of a real hex).
-function shouldDrawFace(face: MeshFaceDto, seam = false): boolean {
+function shouldDrawFace(face: MeshFaceDto): boolean {
   if (face.otherHex === null) return true;
-  if (seam) return true;   // a seam's two faces sit at the two ends of the ideal row: both are drawn
   if (face.status === 'Linked' || face.coincident === true) return face.hex < face.otherHex;
   return true;
 }
@@ -280,47 +278,9 @@ export function buildMeshView(
 
   // Faces, coloured by status.
   const hexById = new Map(state.hexes.map(hex => [hex.id, hex]));
-  // A link between cells that are not side by side on the lattice: the closing link of a ring. The ideal world
-  // is a straight row, so the two faces are far apart; they are both drawn and joined by an arch.
-  const isSeam = (face: MeshFaceDto): boolean => {
-    if (mode !== 'ideal' || face.status !== 'Linked' || face.otherHex === null) return false;
-    const a = hexById.get(face.hex);
-    const b = hexById.get(face.otherHex);
-    if (!a || !b) return false;
-    const axis = faceAxis(face.face);
-    const delta = [b.cellI - a.cellI, b.cellJ - a.cellJ, b.cellK - a.cellK];
-    return delta.some((d, i) => d !== (i === axis ? faceSign(face.face) : 0));
-  };
-  const seams = state.faces.filter(f => isSeam(f) && f.otherHex !== null && f.hex < f.otherHex);
-  if (seams.length > 0) {
-    const bounds = new THREE.Box3();
-    for (const hex of state.hexes) for (let slot = 0; slot < 8; slot++) bounds.expandByPoint(slotPosition(hex, slot));
-    const arches: number[] = [];
-    for (const seam of seams) {
-      const a = hexById.get(seam.hex)!;
-      const b = hexById.get(seam.otherHex!)!;
-      const centre = (hex: MeshHexDto, face: HexFaceName) => {
-        const c = new THREE.Vector3();
-        faceSlots(face).filter(slot => slot < 8).forEach(slot => c.add(slotPosition(hex, slot)));
-        return c.multiplyScalar(1 / 4);
-      };
-      const from = centre(a, seam.face);
-      const to = centre(b, seam.otherFace!);
-      // lift the arch over the body along an axis that is not the seam's own
-      const lift = (faceAxis(seam.face) + 1) % 3;
-      const height = bounds.max.getComponent(lift) + 0.8 + 0.06 * from.distanceTo(to);
-      const control = (point: THREE.Vector3) => point.clone().setComponent(lift, height);
-      const curve = new THREE.CubicBezierCurve3(from, control(from), control(to), to);
-      const points = curve.getPoints(40);
-      for (let i = 1; i < points.length; i++) arches.push(points[i - 1].x, points[i - 1].y, points[i - 1].z, points[i].x, points[i].y, points[i].z);
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(arches, 3));
-    root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: SEAM_COLOR })));
-  }
   for (const face of state.faces) {
     const hex = hexById.get(face.hex);
-    if (!hex || !shouldDrawFace(face, isSeam(face))) continue;
+    if (!hex || !shouldDrawFace(face)) continue;
     const axis = faceAxis(face.face);
     const tangent = [0, 1, 2].filter(d => d !== axis);
     const slots = faceSlots(face.face);
