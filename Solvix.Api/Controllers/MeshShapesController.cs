@@ -18,6 +18,14 @@ public class MeshShapesController(IMeshBuilderFacade meshBuilder) : ControllerBa
     [HttpPost("parametric")]
     public ActionResult<MeshShapeDto> Parametric([FromBody] MeshShapeParametersDto parameters) => meshBuilder.BuildShape(parameters);
 
+    /// <summary>The library of typical bodies (pipes, spheres...) with their parameters and presets.</summary>
+    [HttpGet("templates")]
+    public ActionResult<MeshTemplateLibraryDto> Templates() => meshBuilder.TemplateLibrary();
+
+    /// <summary>The body a template would produce, on its own: for the preview in the constructor.</summary>
+    [HttpPost("templates/preview")]
+    public ActionResult<MeshTemplatePreviewDto> Preview([FromBody] MeshTemplateRequestDto request) => meshBuilder.PreviewTemplate(request);
+
     [HttpPost("check")]
     public ActionResult<MeshShapeCheckDto> Check([FromBody] MeshShapeDto shape) => meshBuilder.CheckShape(shape);
 }

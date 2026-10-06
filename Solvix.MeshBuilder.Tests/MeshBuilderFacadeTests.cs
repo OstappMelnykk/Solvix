@@ -319,4 +319,67 @@ public class MeshBuilderFacadeTests
         Assert.That(undone.State.Hexes, Has.Count.EqualTo(1));
         Assert.That(facade.Redo(1).State.Hexes, Has.Count.EqualTo(2));
     }
+
+    // ---- the template library ------------------------------------------------------------
+
+    private static MeshTemplateRequestDto Request(string kind, params (string, double)[] values) =>
+        new(kind, values.ToDictionary(v => v.Item1, v => v.Item2));
+
+    [Test]
+    public void The_library_lists_kinds_with_parameters_and_presets_that_refer_to_them()
+    {
+        var library = NewFacade().TemplateLibrary();
+
+        Assert.That(library.Kinds.Select(k => k.Name), Does.Contain("pipe").And.Contain("sphere").And.Contain("torus"));
+        var pipe = library.Kinds.Single(k => k.Name == "pipe");
+        Assert.That(pipe.Parameters.Select(p => p.Key), Does.Contain("radiusX").And.Contain("wall").And.Contain("along"));
+        Assert.That(pipe.Parameters.All(p => p.Min < p.Max && p.Default >= p.Min && p.Default <= p.Max), Is.True);
+        Assert.That(library.Presets.All(p => library.Kinds.Any(k => k.Name == p.Kind)), Is.True);
+        Assert.That(library.Presets.Count, Is.GreaterThanOrEqualTo(30));
+    }
+
+    [Test]
+    public void Previewing_a_template_builds_its_body_without_touching_the_session()
+    {
+        var facade = NewFacade();
+
+        var preview = facade.PreviewTemplate(Request("pipe", ("around", 6), ("along", 2)));
+
+        Assert.That(preview.Ok, Is.True, preview.Error);
+        Assert.That(preview.State!.Hexes, Has.Count.EqualTo(40));
+        Assert.That(preview.FoldedCubes, Is.EqualTo(0));
+        Assert.That(facade.GetState(1).Hexes, Is.Empty);
+    }
+
+    [Test]
+    public void A_template_is_added_as_one_undoable_body_next_to_what_is_there()
+    {
+        var facade = NewFacade();
+        facade.AddFirstHex(1);
+
+        var result = facade.AddTemplate(1, Request("torus"));
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        Assert.That(result.State.Hexes.Count, Is.GreaterThan(10));
+        Assert.That(result.State.InvalidHexes, Is.Empty);
+        Assert.That(facade.Undo(1).State.Hexes, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void A_bad_template_request_is_a_refusal_with_a_message()
+    {
+        var facade = NewFacade();
+
+        var unknown = facade.AddTemplate(1, Request("nope"));
+        var tooThick = facade.AddTemplate(1, Request("pipe", ("wallCells", 4), ("around", 8)));
+        var preview = facade.PreviewTemplate(Request("sphere", ("around", 500)));
+
+        Assert.That(unknown.Ok, Is.False);
+        Assert.That(tooThick.Ok, Is.False);
+        Assert.That(tooThick.Error, Is.Not.Empty);
+        Assert.That(preview.Ok, Is.False);
+        Assert.That(preview.State, Is.Null);
+        Assert.That(facade.GetState(1).Hexes, Is.Empty);
+        Assert.That(facade.AddTemplate(1, new MeshTemplateRequestDto("", null)).Ok, Is.False);
+    }
 }

@@ -35,6 +35,15 @@ public interface IMeshBuilderFacade
     /// <summary>Drops the session's mesh and history completely (the client closed or restarted the session).</summary>
     void DropSession(int sessionId);
 
+    /// <summary>The library of typical bodies (pipes, cylinders, spheres...) with their parameters and presets.</summary>
+    MeshTemplateLibraryDto TemplateLibrary();
+
+    /// <summary>The body a template would produce, on its own, without touching any session.</summary>
+    MeshTemplatePreviewDto PreviewTemplate(MeshTemplateRequestDto request);
+
+    /// <summary>Adds a template body to the session as a separate part (one undo step).</summary>
+    MeshCommandResultDto AddTemplate(int sessionId, MeshTemplateRequestDto request);
+
     /// <summary>The ready-made shapes the constructor window offers.</summary>
     IReadOnlyList<MeshShapePresetDto> ShapePresets();
 

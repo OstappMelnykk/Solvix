@@ -17,6 +17,43 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
         return Command(sessionId, e => e.AddFirstHex(parsed));
     }
 
+    public MeshTemplateLibraryDto TemplateLibrary() => new(
+        HexTemplates.Kinds.Select(k => new MeshTemplateKindDto(k.Name, k.Label, k.Group,
+            k.Parameters.Select(p => new MeshTemplateParameterDto(p.Key, p.Label, p.Default, p.Min, p.Max, p.Integer)).ToList())).ToList(),
+        HexTemplates.Presets.Select(p => new MeshTemplatePresetDto(p.Name, p.Label, p.Kind, p.Values)).ToList());
+
+    public MeshTemplatePreviewDto PreviewTemplate(MeshTemplateRequestDto request)
+    {
+        if (!TryBuild(request, out var plan, out var error)) return new MeshTemplatePreviewDto(false, error, null, 0);
+        var scratch = new HexMeshEditor();
+        scratch.AddBody(plan!);
+        return new MeshTemplatePreviewDto(true, null, MeshStateMapper.ToDto(scratch), scratch.Mesh.InvalidHexes().Count);
+    }
+
+    public MeshCommandResultDto AddTemplate(int sessionId, MeshTemplateRequestDto request)
+    {
+        if (!TryBuild(request, out var plan, out var error)) return Reject(sessionId, error!);
+        return Command(sessionId, e => e.AddBody(plan!));
+    }
+
+    // Unknown kinds, out-of-range values and impossible combinations come back as a message, not an exception.
+    private static bool TryBuild(MeshTemplateRequestDto? request, out BodyPlan? plan, out string? error)
+    {
+        plan = null;
+        error = null;
+        if (request is null || string.IsNullOrWhiteSpace(request.Kind)) { error = "Choose a template."; return false; }
+        try
+        {
+            plan = HexTemplates.Kind(request.Kind).Build(request.Values);
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
+    }
+
     public IReadOnlyList<MeshShapePresetDto> ShapePresets() => HexShapes.Presets
         .Select(p => new MeshShapePresetDto(p.Name, p.Label, new MeshShapeParametersDto(p.Length, p.Height, p.Depth, p.Taper, p.ShearX, p.ShearZ)))
         .ToList();

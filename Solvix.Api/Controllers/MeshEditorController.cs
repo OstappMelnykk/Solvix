@@ -34,6 +34,11 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBa
     [HttpGet("state")]
     public ActionResult<MeshStateDto> GetState(int sessionId) => meshBuilder.GetState(sessionId);
 
+    /// <summary>Adds a template body (pipe, sphere...) as a separate part; one undo step.</summary>
+    [HttpPost("bodies")]
+    public ActionResult<MeshCommandResultDto> AddTemplate(int sessionId, [FromBody] MeshTemplateRequestDto request) =>
+        meshBuilder.AddTemplate(sessionId, request);
+
     /// <summary>Starts the body; the optional body <c>{ shape }</c> is a designed cube (otherwise the unit cube).</summary>
     [HttpPost("hexes/first")]
     public ActionResult<MeshCommandResultDto> AddFirstHex(int sessionId, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] AttachRequest? request = null) =>

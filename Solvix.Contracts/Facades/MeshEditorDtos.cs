@@ -39,6 +39,22 @@ public sealed record MeshShapeCheckDto(bool Valid, double MinDeterminant, string
 /// <param name="ShearX">Sideways travel along X per unit of height.</param>
 public sealed record MeshShapeParametersDto(double Length, double Height, double Depth, double Taper, double ShearX, double ShearZ);
 
+public sealed record MeshTemplateParameterDto(string Key, string Label, double Default, double Min, double Max, bool Integer);
+
+/// <summary>A family of bodies (pipe, sphere, torus...) and the parameters that size it; the family keeps its layout whatever the values.</summary>
+public sealed record MeshTemplateKindDto(string Name, string Label, string Group, IReadOnlyList<MeshTemplateParameterDto> Parameters);
+
+/// <summary>A named starting point: a kind with its own parameter values (parameters not listed keep their defaults).</summary>
+public sealed record MeshTemplatePresetDto(string Name, string Label, string Kind, IReadOnlyDictionary<string, double> Values);
+
+public sealed record MeshTemplateLibraryDto(IReadOnlyList<MeshTemplateKindDto> Kinds, IReadOnlyList<MeshTemplatePresetDto> Presets);
+
+public sealed record MeshTemplateRequestDto(string Kind, IReadOnlyDictionary<string, double>? Values);
+
+/// <param name="State">The body as it would look on its own (null when it could not be built).</param>
+/// <param name="FoldedCubes">How many of its cubes have a non-positive Jacobian.</param>
+public sealed record MeshTemplatePreviewDto(bool Ok, string? Error, MeshStateDto? State, int FoldedCubes);
+
 public sealed record MeshShapePresetDto(string Name, string Label, MeshShapeParametersDto Parameters);
 
 /// <param name="Found">False when the point lies outside the body.</param>
