@@ -91,9 +91,29 @@ public class SolverApiTests
         Assert.That(job.GetProperty("state").GetString(), Is.EqualTo("done"), job.ToString());
 
         var result = await Send(HttpMethod.Get, "/api/solver/1/result");
-        Assert.That(result.GetProperty("nodeIds").GetArrayLength(), Is.EqualTo(result.GetProperty("ux").GetArrayLength()));
+        Assert.That(result.GetProperty("positions").GetArrayLength(), Is.EqualTo(3 * result.GetProperty("ux").GetArrayLength()));
+        Assert.That(result.GetProperty("divisions").EnumerateArray().Select(d => d.GetInt32()), Is.EqualTo(new[] { 1, 1, 1 }));
+        Assert.That(result.GetProperty("hexIds").GetArrayLength(), Is.EqualTo(3));
         Assert.That(result.GetProperty("maxDisplacement").GetDouble(), Is.GreaterThan(0));
         Assert.That(result.GetProperty("maxVonMises").GetDouble(), Is.GreaterThan(0));
+    }
+
+    [Test]
+    public async Task The_division_is_set_and_ends_up_in_the_result()
+    {
+        await BuildBar(2);
+        var setup = await Send(HttpMethod.Put, "/api/solver/1/divisions", new { nx = 2, ny = 1, nz = 2 });
+        Assert.That(setup.GetProperty("divisions").EnumerateArray().Select(d => d.GetInt32()), Is.EqualTo(new[] { 2, 1, 2 }));
+        await Send(HttpMethod.Put, "/api/solver/1/faces/fixed", new { faces = new[] { new { hex = 0, face = "XMinus" } }, @fixed = true });
+        await Send(HttpMethod.Put, "/api/solver/1/faces/load", new { faces = new[] { new { hex = 1, face = "XPlus" } }, pressure = -1e5 });
+
+        await Send(HttpMethod.Post, "/api/solver/1/solve");
+        var job = await WaitForJob();
+
+        Assert.That(job.GetProperty("state").GetString(), Is.EqualTo("done"), job.ToString());
+        var result = await Send(HttpMethod.Get, "/api/solver/1/result");
+        Assert.That(result.GetProperty("divisions").EnumerateArray().Select(d => d.GetInt32()), Is.EqualTo(new[] { 2, 1, 2 }));
+        Assert.That(result.GetProperty("ux").GetArrayLength(), Is.GreaterThan(40));
     }
 
     [Test]
