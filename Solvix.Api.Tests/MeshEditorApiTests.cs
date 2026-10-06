@@ -265,13 +265,13 @@ public class MeshEditorApiTests
         Assert.That(library.GetProperty("kinds").EnumerateArray().Select(k => k.GetProperty("name").GetString()), Does.Contain("pipe"));
         Assert.That(library.GetProperty("presets").GetArrayLength(), Is.GreaterThanOrEqualTo(30));
 
-        var preview = await Post("/api/mesh-editor/shapes/templates/preview", new { kind = "pipe", values = new { sectors = 6, along = 1 } });
+        var preview = await Post("/api/mesh-editor/shapes/templates/preview", new { kind = "pipe", values = new { around = 6, along = 1 } });
         Assert.That(preview.GetProperty("ok").GetBoolean(), Is.True);
-        Assert.That(preview.GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(6));
+        Assert.That(preview.GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(20));
 
-        var added = await Post("/api/mesh-editor/1/bodies", new { kind = "pipe", values = new { sectors = 6, along = 1 } });
+        var added = await Post("/api/mesh-editor/1/bodies", new { kind = "pipe", values = new { around = 6, along = 1 } });
         Assert.That(added.GetProperty("ok").GetBoolean(), Is.True, added.GetProperty("error").ToString());
-        Assert.That(added.GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(6));
+        Assert.That(added.GetProperty("state").GetProperty("hexes").GetArrayLength(), Is.EqualTo(20));
 
         var refused = await Post("/api/mesh-editor/1/bodies", new { kind = "nope" });
         Assert.That(refused.GetProperty("ok").GetBoolean(), Is.False);

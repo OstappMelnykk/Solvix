@@ -235,13 +235,6 @@ public sealed class HexMesh
         int slots = Hex20Reference.NodeCount;
         var parent = Enumerable.Range(0, hexes.Count * slots).ToArray();
         int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
-        void Join(int h, HexFace face, int other)
-        {
-            foreach (int s in face.Slots())
-                parent[Find(h * slots + s)] = Find(other * slots + face.PartnerSlot(s));
-            _links[(hexes[h].Id, face)] = hexes[other].Id;
-            _links[(hexes[other].Id, face.Opposite())] = hexes[h].Id;
-        }
         for (int h = 0; h < hexes.Count; h++)
         {
             foreach (var face in HexFaces.All)
@@ -249,21 +242,11 @@ public sealed class HexMesh
                 if (face.Sign() < 0) continue;
                 var (fi, fj, fk) = face.Offset();
                 var cell = hexes[h].Cell;
-                if (index.TryGetValue((cell.I + fi, cell.J + fj, cell.K + fk), out int other)) Join(h, face, other);
-            }
-        }
-        // A periodic axis: the last layer's + face links to the first layer's - face.
-        var (min, max) = (plan.Min.ToArray(), plan.Max.ToArray());
-        for (int axis = 0; axis < 3; axis++)
-        {
-            if (!plan.WrapAxes[axis]) continue;
-            var face = (HexFace)(axis * 2 + 1);
-            for (int h = 0; h < hexes.Count; h++)
-            {
-                var c = new[] { plan.Cells[h].I, plan.Cells[h].J, plan.Cells[h].K };
-                if (c[axis] != max[axis]) continue;
-                c[axis] = min[axis];
-                if (index.TryGetValue((c[0] + di, c[1] + dj, c[2] + dk), out int first)) Join(h, face, first);
+                if (!index.TryGetValue((cell.I + fi, cell.J + fj, cell.K + fk), out int other)) continue;
+                foreach (int s in face.Slots())
+                    parent[Find(h * slots + s)] = Find(other * slots + face.PartnerSlot(s));
+                _links[(hexes[h].Id, face)] = hexes[other].Id;
+                _links[(hexes[other].Id, face.Opposite())] = hexes[h].Id;
             }
         }
         var nodeOf = new Dictionary<int, int>();

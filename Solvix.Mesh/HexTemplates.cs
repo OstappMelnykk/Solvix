@@ -85,7 +85,7 @@ public static class HexTemplates
         new(key, label, def, min, max, integer);
 
     // Cells of an nx*ny*nz grid kept by a mask, each node placed by `map` (ideal lattice point -> real).
-    private static BodyPlan Plan(int nx, int ny, int nz, Func<int, int, int, bool> keep, Func<Vec3, Vec3> map, bool wrapI = false, bool wrapJ = false)
+    private static BodyPlan Plan(int nx, int ny, int nz, Func<int, int, int, bool> keep, Func<Vec3, Vec3> map)
     {
         var cells = new List<BodyCell>();
         for (int i = 0; i < nx; i++)
@@ -101,7 +101,7 @@ public static class HexTemplates
                             k + (Hex20Reference.LocalCoords[s, 2] + 1) / 2.0));
                     cells.Add(new BodyCell(i, j, k, positions));
                 }
-        return new BodyPlan(cells, wrapI, wrapJ);
+        return new BodyPlan(cells);
     }
 
     // A cell's distance from the outside of an n-wide grid: 0 for the outer layer, 1 for the next...
@@ -192,7 +192,7 @@ public static class HexTemplates
 
     private static IReadOnlyList<TemplateKind> BuildKinds() => new[]
     {
-        Block(), BoxShell(), Cylinder(), Pipe(), Sphere(), HollowSphere(), Hemisphere(), Torus(),
+        Block(), BoxShell(), Cylinder(), Pipe(), Sphere(), HollowSphere(), Hemisphere(), Torus(), PlateWithHole(),
         LProfile(), TProfile(), UProfile(), Cross(), Stairs(),
     };
 
@@ -236,29 +236,26 @@ public static class HexTemplates
         }));
     });
 
-    // A ring of sectors: in the ideal world a straight row of `sectors` cells whose last cell is linked to the
-    // first (the ring closes through that link); in the real world every cell is a curved sector of the pipe wall
-    // with its nodes exactly on the circles (the edges are parabolas, so the arc between two nodes deviates by
-    // about 1% of the radius for a 90 degree sector, about 0.07% for 45). No cube sits in a lattice corner, so
-    // nothing has to be bent to keep the cubes valid.
-    private static TemplateKind Pipe() => new("pipe", "Труба (кільце з секторів)", "Циліндричні", new[]
+    private static TemplateKind Pipe() => new("pipe", "Труба (порожнина всередині)", "Циліндричні", new[]
     {
-        P("sectors", "Секторів по колу (парне)", 8, 4, 64, true), P("wallCells", "Шарів у стінці", 1, 1, 10, true), P("along", "Кубів вздовж осі", 4, 1, 60, true),
+        P("around", "Кубів по діаметру", 8, 4, 40, true), P("wallCells", "Стінка, кубів", 1, 1, 10, true), P("along", "Кубів вздовж осі", 4, 1, 60, true),
         P("radiusX", "Зовнішній радіус по X", 1, 0.01, 1000), P("radiusZ", "Зовнішній радіус по Z", 1, 0.01, 1000), P("height", "Довжина", 3, 0.01, 1000),
         P("wall", "Товщина стінки", 0.25, 0.001, 1000), P("topScale", "Кінець відносно початку (1 = пряма)", 1, 0.05, 20),
     }, v =>
     {
-        int sectors = v.Int("sectors"), m = v.Int("along"), t = v.Int("wallCells");
-        Require(sectors % 2 == 0, "Кількість секторів має бути парною (так замкнений ланцюг кубів ділиться на пари для згущення).");
+        int n = v.Int("around"), m = v.Int("along"), t = v.Int("wallCells");
+        Require(n - 2 * t >= 1, "Стінка у кубах занадто товста: у трубі має лишитись хоч один куб порожнини (збільште «кубів по діаметру»).");
         Require(v["wall"] < Math.Min(v["radiusX"], v["radiusZ"]), "Товщина стінки має бути меншою за радіус.");
-        double cx = v["radiusX"] * Math.Max(1, v["topScale"]), cz = v["radiusZ"] * Math.Max(1, v["topScale"]);
-        return Plan(sectors, m, t, (_, _, _) => true, p =>
+        double c = n / 2.0, h = c - t;
+        return Fit(r => Plan(n, m, n, (i, _, k) => Math.Min(Layer(i, n), Layer(k, n)) < t, p =>
         {
-            double phi = 2 * Math.PI * p.X / sectors, f = p.Z / t, yt = p.Y / m;
-            double scale = 1 + (v["topScale"] - 1) * yt;
-            double rx = (v["radiusX"] - v["wall"] + f * v["wall"]) * scale, rz = (v["radiusZ"] - v["wall"] + f * v["wall"]) * scale;
-            return new Vec3(cx + rx * Math.Cos(phi), v["height"] * yt, cz - rz * Math.Sin(phi));
-        }, wrapI: true);
+            double x = p.X - c, z = p.Z - c, rInf = Math.Max(Math.Abs(x), Math.Abs(z));
+            double f = Math.Clamp((rInf - h) / t, 0, 1), len = Math.Sqrt(x * x + z * z);
+            double dx = len < 1e-12 ? 0 : x / len, dz = len < 1e-12 ? 0 : z / len;
+            double yt = p.Y / m, s = (1 + (v["topScale"] - 1) * yt) * (1 + (Ridge2(x / c, z / c, n, r) - 1) * f);
+            double rx = (v["radiusX"] - v["wall"] + f * v["wall"]) * s, rz = (v["radiusZ"] - v["wall"] + f * v["wall"]) * s;
+            return new Vec3(c + rx * dx, v["height"] * yt, c + rz * dz);
+        }));
     });
 
     private static TemplateKind Sphere() => new("sphere", "Куля / еліпсоїд", "Кулі", new[]
@@ -315,26 +312,45 @@ public static class HexTemplates
             });
     }
 
-    // A hollow torus: sectors round the ring times sectors round the tube, both closing through links, so the
-    // ideal world is a flat slab of cells whose two pairs of opposite faces are identified.
-    private static TemplateKind Torus() => new("torus", "Тор (порожнистий бублик)", "Кільця", new[]
+    private static TemplateKind Torus() => new("torus", "Тор (бублик)", "Кільця", new[]
     {
-        P("ringSectors", "Секторів по кільцю (парне)", 12, 4, 64, true), P("tubeSectors", "Секторів по перерізу труби (парне)", 8, 4, 32, true),
-        P("wallCells", "Шарів у стінці", 1, 1, 5, true),
-        P("ringRadius", "Радіус кільця", 2, 0.01, 1000), P("tubeRadius", "Радіус труби", 0.6, 0.001, 1000), P("wall", "Товщина стінки", 0.15, 0.001, 1000),
+        P("around", "Кубів по зовнішньому діаметру", 8, 4, 40, true), P("tubeCells", "Кубів у перерізі труби", 2, 1, 10, true),
+        P("ringRadius", "Радіус кільця", 2, 0.01, 1000), P("tubeRadius", "Радіус труби", 0.6, 0.001, 1000),
     }, v =>
     {
-        int ring = v.Int("ringSectors"), tube = v.Int("tubeSectors"), t = v.Int("wallCells");
-        Require(ring % 2 == 0 && tube % 2 == 0, "Кількість секторів має бути парною.");
+        int n = v.Int("around"), t = v.Int("tubeCells");
+        Require(n - 2 * t >= 1, "Переріз труби завеликий для кільця: збільште «кубів по зовнішньому діаметру».");
         Require(v["tubeRadius"] < v["ringRadius"], "Радіус труби має бути меншим за радіус кільця.");
-        Require(v["wall"] < v["tubeRadius"], "Товщина стінки має бути меншою за радіус труби.");
-        double centre = v["ringRadius"] + v["tubeRadius"];
-        return Plan(ring, tube, t, (_, _, _) => true, p =>
+        double c = n / 2.0, h = c - t;
+        return Fit(r => Plan(n, t, n, (i, _, k) => Math.Min(Layer(i, n), Layer(k, n)) < t, p =>
         {
-            double phi = 2 * Math.PI * p.X / ring, psi = 2 * Math.PI * p.Y / tube, f = p.Z / t;
-            double r = v["tubeRadius"] - v["wall"] + f * v["wall"], rho = v["ringRadius"] + r * Math.Cos(psi);
-            return new Vec3(centre + rho * Math.Cos(phi), v["tubeRadius"] + r * Math.Sin(psi), centre - rho * Math.Sin(phi));
-        }, wrapI: true, wrapJ: true);
+            double x = p.X - c, z = p.Z - c, rInf = Math.Max(Math.Abs(x), Math.Abs(z)), len = Math.Sqrt(x * x + z * z);
+            double dx = len < 1e-12 ? 0 : x / len, dz = len < 1e-12 ? 0 : z / len;
+            var section = Disc(2 * Math.Clamp((rInf - h) / t, 0, 1) - 1, 2 * p.Y / t - 1, t, r);
+            double rho = (v["ringRadius"] + v["tubeRadius"] * section.X) * (1 + (Ridge2(x / c, z / c, n, r) - 1) * Math.Clamp((rInf - h) / t, 0, 1));
+            return new Vec3(c + rho * dx, v["tubeRadius"] * (1 + section.Y), c + rho * dz);
+        }));
+    });
+
+    private static TemplateKind PlateWithHole() => new("plate-hole", "Пластина з круглим отвором", "Кільця", new[]
+    {
+        P("around", "Кубів по стороні", 8, 4, 40, true), P("wallCells", "Кубів навколо отвору", 2, 1, 10, true), P("layers", "Шарів по висоті", 1, 1, 10, true),
+        P("size", "Сторона пластини", 4, 0.01, 1000), P("holeRadius", "Радіус отвору", 0.8, 0.001, 1000), P("thickness", "Товщина", 0.3, 0.001, 1000),
+    }, v =>
+    {
+        int n = v.Int("around"), t = v.Int("wallCells"), layers = v.Int("layers");
+        Require(n - 2 * t >= 1, "Навколо отвору забагато кубів: має лишитись хоч один куб отвору (збільште «кубів по стороні»).");
+        Require(v["holeRadius"] < v["size"] / 2, "Отвір має бути меншим за половину сторони пластини.");
+        double c = n / 2.0, h = c - t;
+        return Plan(n, layers, n, (i, _, k) => Math.Min(Layer(i, n), Layer(k, n)) < t, p =>
+        {
+            double x = p.X - c, z = p.Z - c, rInf = Math.Max(Math.Abs(x), Math.Abs(z)), len = Math.Sqrt(x * x + z * z);
+            double f = Math.Clamp((rInf - h) / t, 0, 1);
+            double dx = len < 1e-12 ? 0 : x / len, dz = len < 1e-12 ? 0 : z / len;
+            // along each ray from the hole's edge out to the plate's square edge
+            double edge = v["size"] / 2 / Math.Max(Math.Abs(dx), Math.Abs(dz)), radius = v["holeRadius"] + f * (edge - v["holeRadius"]);
+            return new Vec3(c + radius * dx, p.Y / layers * v["thickness"], c + radius * dz);
+        });
     });
 
     // The profiles keep square cells of a given size: only which cells exist differs.
@@ -416,12 +432,9 @@ public static class HexTemplates
         Preset("cone", "Конус", "cylinder", ("topScale", 0.1)),
         Preset("frustum", "Зрізаний конус", "cylinder", ("topScale", 0.5)),
         Preset("pipe", "Труба", "pipe"),
-        Preset("pipe-4", "Труба з 4 секторів", "pipe", ("sectors", 4)),
-        Preset("pipe-smooth", "Труба (гладка, 16 секторів)", "pipe", ("sectors", 16)),
-        Preset("pipe-thick", "Товстостінна труба", "pipe", ("wallCells", 2), ("wall", 0.5)),
+        Preset("pipe-thick", "Товстостінна труба", "pipe", ("wallCells", 2), ("wall", 0.5), ("around", 10)),
         Preset("pipe-long", "Довга труба", "pipe", ("along", 12), ("height", 8)),
         Preset("pipe-short", "Кільце (коротка труба)", "pipe", ("along", 1), ("height", 0.6), ("wall", 0.3)),
-        Preset("washer", "Шайба", "pipe", ("along", 1), ("height", 0.2), ("wall", 0.6), ("radiusX", 1.5), ("radiusZ", 1.5), ("wallCells", 2)),
         Preset("pipe-elliptic", "Еліптична труба", "pipe", ("radiusX", 1.6), ("radiusZ", 0.9)),
         Preset("pipe-cone", "Конічна труба", "pipe", ("topScale", 0.5)),
         Preset("sphere", "Куля", "sphere"),
@@ -433,8 +446,9 @@ public static class HexTemplates
         Preset("hemisphere", "Напівкуля", "hemisphere"),
         Preset("dome", "Купол (оболонка)", "hemisphere", ("around", 8), ("wallCells", 1)),
         Preset("torus", "Тор", "torus"),
-        Preset("torus-thin", "Тонкий тор", "torus", ("tubeSectors", 4), ("tubeRadius", 0.3), ("ringRadius", 2.5), ("wall", 0.1)),
-        Preset("torus-smooth", "Гладкий тор", "torus", ("ringSectors", 24), ("tubeSectors", 16)),
+        Preset("torus-thin", "Тонкий тор", "torus", ("around", 10), ("tubeCells", 1), ("tubeRadius", 0.3), ("ringRadius", 2.5)),
+        Preset("plate-hole", "Пластина з отвором", "plate-hole"),
+        Preset("washer", "Шайба", "plate-hole", ("around", 8), ("wallCells", 3), ("size", 3), ("holeRadius", 0.6), ("thickness", 0.2)),
         Preset("l-profile", "Кутик", "l-profile"),
         Preset("t-profile", "Тавр", "t-profile"),
         Preset("u-profile", "Швелер", "u-profile"),
