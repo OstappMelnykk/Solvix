@@ -13,6 +13,9 @@ public interface IMeshBuilderFacade
     /// <param name="adaptSecond">Fit the second face onto the first before linking, instead of requiring them to coincide.</param>
     MeshCommandResultDto LinkFaces(int sessionId, int hexA, string faceA, int hexB, string faceB, bool adaptSecond);
 
+    /// <summary>Makes two lattice-adjacent hexes neighbours; the shared face is found, not named.</summary>
+    MeshCommandResultDto LinkHexes(int sessionId, int hexA, int hexB, bool adaptSecond);
+
     MeshCommandResultDto UnlinkFace(int sessionId, int hexId, string face);
 
     /// <param name="carryEdgeMidpoints">A dragged corner also moves its edges' midpoints by half.</param>

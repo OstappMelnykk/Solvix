@@ -36,6 +36,29 @@ public sealed class HexMeshEditor
     public EditResult LinkFaces(FaceRef first, FaceRef second, LinkFit fit) => Apply(() =>
         Mesh.TryLinkFaces(first, second, fit, out var error) ? EditResult.Success : EditResult.Fail(error ?? "Link refused."));
 
+    /// <summary>
+    /// Makes two hexes neighbours without naming faces: when their ideal cells
+    /// touch, the shared face is the one between them. This is how the user
+    /// links cubes whose common face cannot be clicked from outside.
+    /// </summary>
+    public EditResult LinkHexes(int hexA, int hexB, LinkFit fit) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hexA)) return EditResult.Fail($"Unknown hex {hexA}.");
+        if (!Mesh.HasHex(hexB)) return EditResult.Fail($"Unknown hex {hexB}.");
+        if (hexA == hexB) return EditResult.Fail("A hex cannot be linked to itself.");
+        var a = Mesh.Hex(hexA).Cell;
+        var b = Mesh.Hex(hexB).Cell;
+        var delta = (b.I - a.I, b.J - a.J, b.K - a.K);
+        HexFace? shared = null;
+        foreach (var f in HexFaces.All)
+            if (f.Offset() == delta) shared = f;
+        if (shared is not HexFace face)
+            return EditResult.Fail("These hexes are not adjacent in the ideal lattice.");
+        return Mesh.TryLinkFaces(new FaceRef(hexA, face), new FaceRef(hexB, face.Opposite()), fit, out var error)
+            ? EditResult.Success
+            : EditResult.Fail(error ?? "Link refused.");
+    });
+
     public EditResult UnlinkFace(int hexId, HexFace face) => Apply(() =>
     {
         if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");

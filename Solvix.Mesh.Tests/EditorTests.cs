@@ -140,3 +140,85 @@ public class EditorTests
         Assert.That(steps, Is.EqualTo(200));
     }
 }
+
+public class LinkHexesTests
+{
+    // A(0,0) B(1,0) C(1,1) D(0,1); D is linked to A only, so D-C touch without being neighbours.
+    private static HexMeshEditor Square()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(1, HexFace.YPlus);
+        editor.AddHexOnFace(0, HexFace.YPlus);
+        return editor;
+    }
+
+    [Test]
+    public void Two_touching_hexes_are_linked_without_naming_a_face_in_either_order()
+    {
+        var editor = Square();
+
+        Assert.That(editor.LinkHexes(3, 2, LinkFit.Strict).Ok, Is.True);
+        Assert.That(editor.Mesh.Neighbor(3, HexFace.XPlus), Is.EqualTo(2));
+        Assert.That(editor.Mesh.Neighbor(2, HexFace.XMinus), Is.EqualTo(3));
+
+        editor.UnlinkFace(3, HexFace.XPlus);
+        Assert.That(editor.LinkHexes(2, 3, LinkFit.Strict).Ok, Is.True);   // reversed order finds the same face
+        Assert.That(editor.Mesh.Neighbor(3, HexFace.XPlus), Is.EqualTo(2));
+    }
+
+    [Test]
+    public void Linking_works_along_every_axis_direction()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        foreach (var face in new[] { HexFace.XMinus, HexFace.YMinus, HexFace.ZMinus, HexFace.ZPlus })
+        {
+            int id = editor.Mesh.Hexes.Count;
+            editor.AddHexOnFace(0, face);
+            editor.UnlinkFace(0, face);
+            Assert.That(editor.LinkHexes(id, 0, LinkFit.Strict).Ok, Is.True, face.ToString());
+            Assert.That(editor.Mesh.Neighbor(0, face), Is.EqualTo(id));
+        }
+    }
+
+    [Test]
+    public void Hexes_that_are_not_adjacent_or_are_already_linked_are_refused_with_a_reason()
+    {
+        var editor = Square();
+
+        var diagonal = editor.LinkHexes(0, 2, LinkFit.Strict);
+        Assert.That(diagonal.Ok, Is.False);
+        Assert.That(diagonal.Error, Does.Contain("not adjacent"));
+        Assert.That(editor.LinkHexes(0, 1, LinkFit.Strict).Error, Does.Contain("already linked"));
+        Assert.That(editor.LinkHexes(0, 0, LinkFit.Strict).Ok, Is.False);
+        Assert.That(editor.LinkHexes(0, 99, LinkFit.Strict).Error, Does.Contain("Unknown hex"));
+        Assert.That(editor.LinkHexes(98, 0, LinkFit.Strict).Error, Does.Contain("Unknown hex"));
+    }
+
+    [Test]
+    public void Adapt_fits_the_second_hex_onto_the_first_when_the_faces_have_drifted()
+    {
+        var editor = Square();
+        var cFace = editor.Mesh.FaceNodeIds(new FaceRef(2, HexFace.XMinus)).Where(n => editor.Mesh.OwnersOf(n).All(o => o.Hex == 2));
+        foreach (int n in cFace) editor.MoveNode(n, editor.Mesh.Node(n).Position + new Vec3(0.2, 0, 0), false);
+
+        Assert.That(editor.LinkHexes(3, 2, LinkFit.Strict).Ok, Is.False);
+        Assert.That(editor.LinkHexes(3, 2, LinkFit.AdaptSecond).Ok, Is.True);
+    }
+
+    [Test]
+    public void Linking_hexes_is_one_undo_step()
+    {
+        var editor = Square();
+        int nodes = editor.Mesh.Nodes.Count;
+
+        editor.LinkHexes(3, 2, LinkFit.Strict);
+        Assert.That(editor.Mesh.Nodes.Count, Is.LessThan(nodes));
+        editor.Undo();
+
+        Assert.That(editor.Mesh.Nodes.Count, Is.EqualTo(nodes));
+        Assert.That(editor.Mesh.Neighbor(3, HexFace.XPlus), Is.Null);
+    }
+}

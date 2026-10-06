@@ -24,6 +24,9 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
             e.LinkFaces(new FaceRef(hexA, first), new FaceRef(hexB, second), adaptSecond ? LinkFit.AdaptSecond : LinkFit.Strict));
     }
 
+    public MeshCommandResultDto LinkHexes(int sessionId, int hexA, int hexB, bool adaptSecond) =>
+        Command(sessionId, e => e.LinkHexes(hexA, hexB, adaptSecond ? LinkFit.AdaptSecond : LinkFit.Strict));
+
     public MeshCommandResultDto UnlinkFace(int sessionId, int hexId, string face) =>
         WithFace(sessionId, face, f => e => e.UnlinkFace(hexId, f));
 

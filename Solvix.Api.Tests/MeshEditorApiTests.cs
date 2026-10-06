@@ -139,4 +139,18 @@ public class MeshEditorApiTests
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
+
+    [Test]
+    public async Task Linking_two_cubes_by_id_over_http()
+    {
+        await Post("/api/mesh-editor/1/hexes/first");
+        await Post("/api/mesh-editor/1/hexes/0/faces/XPlus/attach");
+        await Post("/api/mesh-editor/1/hexes/1/faces/YPlus/attach");
+        await Post("/api/mesh-editor/1/hexes/0/faces/YPlus/attach");
+
+        var link = await Post("/api/mesh-editor/1/links/by-hexes", new { hexA = 3, hexB = 2, adaptSecond = false });
+
+        Assert.That(link.GetProperty("ok").GetBoolean(), Is.True, link.GetProperty("error").ToString());
+        Assert.That(link.GetProperty("state").GetProperty("links").GetArrayLength(), Is.EqualTo(4));
+    }
 }

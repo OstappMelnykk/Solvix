@@ -5,6 +5,8 @@ namespace Solvix.Api.Controllers;
 
 public record LinkFacesRequest(int HexA, string FaceA, int HexB, string FaceB, bool AdaptSecond);
 
+public record LinkHexesRequest(int HexA, int HexB, bool AdaptSecond);
+
 public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = true);
 
 /// <summary>
@@ -31,6 +33,10 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder) : ControllerBa
     [HttpPost("links")]
     public ActionResult<MeshCommandResultDto> LinkFaces(int sessionId, [FromBody] LinkFacesRequest request) =>
         meshBuilder.LinkFaces(sessionId, request.HexA, request.FaceA, request.HexB, request.FaceB, request.AdaptSecond);
+
+    [HttpPost("links/by-hexes")]
+    public ActionResult<MeshCommandResultDto> LinkHexes(int sessionId, [FromBody] LinkHexesRequest request) =>
+        meshBuilder.LinkHexes(sessionId, request.HexA, request.HexB, request.AdaptSecond);
 
     [HttpDelete("hexes/{hexId:int}/faces/{face}/link")]
     public ActionResult<MeshCommandResultDto> UnlinkFace(int sessionId, int hexId, string face) =>
