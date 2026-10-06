@@ -28,8 +28,12 @@ export interface MeshViewSelection {
 
 export interface MeshView {
   readonly root: THREE.Group;
-  // What a click can hit, nodes and faces; each carries its identity in userData.pick.
+  // What a click can hit: faces and the (larger, invisible) hit spheres around
+  // the nodes; each carries its identity in userData.pick.
   readonly pickables: THREE.Object3D[];
+  // The visible sphere of each node, by node id - the canvas moves one while
+  // its node is being dragged.
+  readonly nodeMeshes: ReadonlyMap<number, THREE.Mesh>;
 }
 
 // Same node layout as Solvix.Mesh's Hex20Reference.
@@ -65,8 +69,11 @@ export function faceSlots(face: HexFaceName): number[] {
 
 const EDGE_SEGMENTS = 10;
 const FACE_GRID = 8;
-const CORNER_RADIUS = 0.035;
-const MIDPOINT_RADIUS = 0.025;
+const CORNER_RADIUS = 0.045;
+const MIDPOINT_RADIUS = 0.032;
+// Click targets are larger than the dots drawn, so a node is easy to hit.
+const CORNER_HIT_RADIUS = 0.11;
+const MIDPOINT_HIT_RADIUS = 0.08;
 
 const FACE_COLORS: Record<FaceStatus, number> = {
   Free: 0x5b8fb9,
@@ -141,6 +148,7 @@ function shouldDrawFace(face: MeshFaceDto): boolean {
 export function buildMeshView(state: MeshStateDto, mode: MeshViewMode, selection: MeshViewSelection): MeshView {
   const root = new THREE.Group();
   const pickables: THREE.Object3D[] = [];
+  const nodeMeshes = new Map<number, THREE.Mesh>();
   const nodes = new Map(state.nodes.map(node => [node.id, node]));
   const positionOf = (id: number) => nodePosition(nodes.get(id)!, mode);
 
@@ -194,6 +202,9 @@ export function buildMeshView(state: MeshStateDto, mode: MeshViewMode, selection
   // Nodes: corners and midpoints, one sphere per node (a shared node once).
   const cornerGeometry = new THREE.SphereGeometry(CORNER_RADIUS, 10, 8);
   const midGeometry = new THREE.SphereGeometry(MIDPOINT_RADIUS, 8, 6);
+  const cornerHitGeometry = new THREE.SphereGeometry(CORNER_HIT_RADIUS, 8, 6);
+  const midHitGeometry = new THREE.SphereGeometry(MIDPOINT_HIT_RADIUS, 8, 6);
+  const hitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
   const cornerIds = new Set<number>();
   for (const hex of state.hexes) for (let slot = 0; slot < 8; slot++) cornerIds.add(hex.nodeIds[slot]);
   for (const node of state.nodes) {
@@ -205,12 +216,17 @@ export function buildMeshView(state: MeshStateDto, mode: MeshViewMode, selection
     );
     mesh.position.copy(nodePosition(node, mode));
     if (selected) mesh.scale.setScalar(1.6);
-    mesh.userData['pick'] = { kind: 'node', nodeId: node.id } satisfies PickedNode;
     root.add(mesh);
-    pickables.push(mesh);
+    nodeMeshes.set(node.id, mesh);
+
+    const hit = new THREE.Mesh(isCorner ? cornerHitGeometry : midHitGeometry, hitMaterial);
+    hit.position.copy(mesh.position);
+    hit.userData['pick'] = { kind: 'node', nodeId: node.id } satisfies PickedNode;
+    root.add(hit);
+    pickables.push(hit);
   }
 
-  return { root, pickables };
+  return { root, pickables, nodeMeshes };
 }
 
 // Frees everything buildMeshView made. Node spheres share two geometries, so

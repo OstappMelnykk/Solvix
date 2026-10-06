@@ -217,3 +217,18 @@ h4 {
     cursor: not-allowed;
   }
 }
+
+.candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.chip--wide {
+  width: auto;
+  padding: 2px 8px;
+  flex: none;
+}

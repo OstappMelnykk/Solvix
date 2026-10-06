@@ -36,7 +36,6 @@ export class MeshEditorControlsComponent {
   @Input({ required: true }) worldIndex!: number | null;
 
   adaptSecond = true;
-  carryEdgeMidpoints = true;
   nudgeStep = 0.1;
   isResetConfirming = false;
   readonly axes: readonly Axis[] = ['x', 'y', 'z'];
@@ -44,6 +43,15 @@ export class MeshEditorControlsComponent {
   mappingIdeal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
   mappingReal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
   mappingResult: string | null = null;
+
+  // Shared with the on-canvas drag gizmo (MeshEditorService.carryEdgeMidpoints).
+  get carryEdgeMidpoints(): boolean {
+    return this.editor.carryEdgeMidpoints;
+  }
+
+  set carryEdgeMidpoints(value: boolean) {
+    this.editor.carryEdgeMidpoints = value;
+  }
 
   get busy(): boolean {
     return this.editor.busy();
@@ -113,14 +121,60 @@ export class MeshEditorControlsComponent {
     return !this.busy && faces.length === 1 && this.faceState(faces[0])?.status === 'Free';
   }
 
+  // The cubes the picked faces belong to, in click order (a cube once, even
+  // if two of its faces were picked) - clicking any visible face of a cube
+  // selects the cube, which is how the cubes of a hidden shared face are named.
+  selectedHexes(): number[] {
+    return [...new Set(this.selectedFaces().map(face => face.hex))];
+  }
+
+  // The link between two cubes, if they are neighbours.
+  private linkBetween(a: number, b: number): { hex: number; face: HexFaceName } | null {
+    const link = this.state?.links.find(l => (l.hexA === a && l.hexB === b) || (l.hexA === b && l.hexB === a));
+    return link ? { hex: link.hexA, face: link.faceA } : null;
+  }
+
+  pairStatusText(): string {
+    const [a, b] = this.selectedHexes();
+    if (this.selectedHexes().length !== 2) {
+      return '';
+    }
+    return this.linkBetween(a, b) ? 'вже сусіди' : 'не сусіди';
+  }
+
   canLink(): boolean {
-    const faces = this.selectedFaces();
-    return !this.busy && faces.length === 2;
+    const [a, b] = this.selectedHexes();
+    return !this.busy && this.selectedHexes().length === 2 && this.linkBetween(a, b) === null;
   }
 
   canUnlink(): boolean {
+    if (this.busy) {
+      return false;
+    }
     const faces = this.selectedFaces();
-    return !this.busy && faces.length === 1 && this.faceState(faces[0])?.status === 'Linked';
+    if (this.selectedHexes().length === 2) {
+      return this.linkBetween(this.selectedHexes()[0], this.selectedHexes()[1]) !== null;
+    }
+    return faces.length === 1 && this.faceState(faces[0])?.status === 'Linked';
+  }
+
+  // Cubes that sit face to face but are not neighbours - the ones the user can
+  // activate as neighbours (the closing cube of a ring, for example).
+  candidates(): { a: number; b: number; text: string }[] {
+    const faces = this.state?.faces ?? [];
+    return faces
+      .filter(f => f.status === 'Candidate' && f.otherHex !== null && f.hex < f.otherHex)
+      .map(f => ({
+        a: f.hex,
+        b: f.otherHex!,
+        text: (f.gap ?? 0) <= 1e-6 ? 'грані збігаються' : `зазор ${(f.gap ?? 0).toFixed(3)}`
+      }));
+  }
+
+  linkCandidate(candidate: { a: number; b: number }): void {
+    if (this.sessionId !== null) {
+      this.editor.linkHexes(this.sessionId, candidate.a, candidate.b, this.adaptSecond);
+    }
   }
 
   addFirst(): void {
@@ -136,19 +190,26 @@ export class MeshEditorControlsComponent {
   }
 
   link(): void {
-    const faces = this.selectedFaces();
-    if (this.sessionId !== null && faces.length === 2) {
-      this.editor.linkFaces(this.sessionId, faces[0].hex, faces[0].face, faces[1].hex, faces[1].face, this.adaptSecond);
+    const hexes = this.selectedHexes();
+    if (this.sessionId !== null && hexes.length === 2) {
+      this.editor.linkHexes(this.sessionId, hexes[0], hexes[1], this.adaptSecond);
       this.selection.clear(this.sessionId);
     }
   }
 
   unlink(): void {
-    const faces = this.selectedFaces();
-    if (this.sessionId !== null && faces.length === 1) {
-      this.editor.unlinkFace(this.sessionId, faces[0].hex, faces[0].face);
-      this.selection.clear(this.sessionId);
+    if (this.sessionId === null) {
+      return;
     }
+    const hexes = this.selectedHexes();
+    const faces = this.selectedFaces();
+    if (hexes.length === 2) {
+      const link = this.linkBetween(hexes[0], hexes[1]);
+      if (link) this.editor.unlinkFace(this.sessionId, link.hex, link.face);
+    } else if (faces.length === 1) {
+      this.editor.unlinkFace(this.sessionId, faces[0].hex, faces[0].face);
+    }
+    this.selection.clear(this.sessionId);
   }
 
   clearSelection(): void {

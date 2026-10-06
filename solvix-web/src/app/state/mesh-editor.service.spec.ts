@@ -128,6 +128,8 @@ describe('MeshEditorService', () => {
 
     editor.linkFaces(sessionId, 1, 'XPlus', 2, 'XMinus', false);
     expectAndFlush('POST', 'links', { hexA: 1, faceA: 'XPlus', hexB: 2, faceB: 'XMinus', adaptSecond: false });
+    editor.linkHexes(sessionId, 3, 2, true);
+    expectAndFlush('POST', 'links/by-hexes', { hexA: 3, hexB: 2, adaptSecond: true });
     editor.unlinkFace(sessionId, 1, 'XPlus');
     expectAndFlush('DELETE', 'hexes/1/faces/XPlus/link');
     editor.moveNode(sessionId, 4, { x: 1, y: 2, z: 3 }, true);
@@ -136,6 +138,13 @@ describe('MeshEditorService', () => {
     expectAndFlush('POST', 'redo');
     editor.reset(sessionId);
     expectAndFlush('POST', 'reset');
+  });
+
+  it('keeps the carry-midpoints choice for both the fields and the drag gizmo, on by default', () => {
+    loadInitialState();
+    expect(editor.carryEdgeMidpoints).toBeTrue();
+    editor.carryEdgeMidpoints = false;
+    expect(editor.carryEdgeMidpoints).toBeFalse();
   });
 
   it('prunes the cached state of a closed session', () => {

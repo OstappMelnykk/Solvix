@@ -98,6 +98,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() meshView: MeshView | null = null;
   // A click on a node or face of meshView, or on empty space (pick: null).
   @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null }>();
+  // The node (of meshView) that may be dragged with the translate gizmo - set
+  // only for the World where nodes move (the Real World), null elsewhere.
+  @Input() draggableNodeId: number | null = null;
+  // Fired when a drag of the gizmo ends: where the user dropped the node.
+  @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
@@ -169,6 +174,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // forgotten, like AxesHelper) so its `visible` flag can be flipped from
   // the on-canvas toggle button below, independently per World.
   private gridHelper!: LineSegments2;
+  // Translate gizmo for the mesh editor's selected node. It drags an invisible
+  // proxy placed at the node; the drop position is reported on release (the
+  // server decides what the move does to the edges around it).
+  private nodeGizmo!: TransformControls;
+  private readonly nodeProxy = new THREE.Object3D();
+  private gizmoNodeId: number | null = null;
   // Mirrors gridHelper.visible for the template - a real default from
   // construction, same reasoning as `cameraMode` above: the template can
   // read isGridVisible() during Angular's very first change detection
@@ -340,6 +351,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
+    this.nodeGizmo?.dispose();
     this.oitRenderer?.dispose();
     this.renderer?.dispose();
   }
@@ -376,6 +388,26 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // land on a square/clean orientation instead of fighting to eyeball it.
     this.rotateGizmo.setRotationSnap(THREE.MathUtils.degToRad(45));
     this.scene.add(this.rotateGizmo.getHelper());
+
+    this.nodeGizmo = new TransformControls(this.camera, this.renderer.domElement);
+    this.nodeGizmo.setMode('translate');
+    this.nodeGizmo.setSize(0.9);
+    this.scene.add(this.nodeGizmo.getHelper());
+    // Live feedback while dragging: the dot follows the gizmo.
+    this.nodeGizmo.addEventListener('objectChange', () => {
+      const mesh = this.gizmoNodeId === null ? undefined : this.currentMeshView?.nodeMeshes.get(this.gizmoNodeId);
+      mesh?.position.copy(this.nodeProxy.position);
+    });
+    this.nodeGizmo.addEventListener('dragging-changed', event => {
+      if (event.value || this.gizmoNodeId === null) {
+        return;
+      }
+      const round = (value: number) => Math.round(value * 1e6) / 1e6;
+      this.nodeMoved.emit({
+        nodeId: this.gizmoNodeId,
+        position: { x: round(this.nodeProxy.position.x), y: round(this.nodeProxy.position.y), z: round(this.nodeProxy.position.z) }
+      });
+    });
 
     // Fires continuously while dragging a ring - keep the dimension-lines/
     // ruler overlays' ORIENTATION following live (cheap: just copies the
@@ -438,8 +470,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const hadAttachedReference = this.currentImportedReference !== null;
 
     this.scene.remove(this.rotateGizmo.getHelper());
+    this.scene.remove(this.nodeGizmo.getHelper());
     this.controls.dispose();
     this.rotateGizmo.dispose();
+    this.nodeGizmo.dispose();
     this.oitRenderer.dispose();
     this.renderer.dispose();
 
@@ -504,6 +538,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // the whole component, so none of them needs cleanup/disposal logic of
     // its own - see their own files under geometry/scene-objects/ for why
     // each looks the way it does.
+    this.scene.add(this.nodeProxy);
     this.scene.add(buildSceneLights());
     this.scene.add(buildAxesHelper());
 
@@ -759,6 +794,28 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
+  // Keeps the translate gizmo on the selected node (Real World only): placed at
+  // the node's dot, removed when nothing is selected or the node is gone.
+  private syncNodeGizmo(): void {
+    const id = this.draggableNodeId;
+    const mesh = id === null ? undefined : this.currentMeshView?.nodeMeshes.get(id);
+    if (!mesh) {
+      if (this.nodeGizmo.object) {
+        this.nodeGizmo.detach();
+      }
+      this.gizmoNodeId = null;
+      return;
+    }
+    if (this.nodeGizmo.dragging) {
+      return;
+    }
+    this.nodeProxy.position.copy(mesh.position);
+    if (this.nodeGizmo.object !== this.nodeProxy) {
+      this.nodeGizmo.attach(this.nodeProxy);
+    }
+    this.gizmoNodeId = id;
+  }
+
   private updateMeshView(): void {
     const source = this.meshView;
     if (this.lastMeshView === source) {
@@ -790,7 +847,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private handleClick(event: PointerEvent): void {
     const down = this.pointerDownClient;
     this.pointerDownClient = null;
-    if (!down || event.button !== 0 || !this.active || this.rotateGizmo.dragging) {
+    // A press on a gizmo handle is not a click on the scene.
+    if (!down || event.button !== 0 || !this.active || this.rotateGizmo.dragging || this.nodeGizmo.dragging || this.nodeGizmo.axis !== null) {
       return;
     }
     if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) {
@@ -912,6 +970,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.updateRuler();
       this.updateHoleHighlight();
       this.updateMeshView();
+      this.syncNodeGizmo();
       this.updateSession();
       this.updateSettleAnimation();
 
@@ -929,7 +988,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       // Suppress orbiting while a ring is actively being dragged - otherwise
       // OrbitControls' own pointer handling fights the gizmo's for the same
       // mouse drag.
-      this.controls.enabled = this.active && !this.rotateGizmo.dragging;
+      const nodeGizmoWanted = this.active && this.nodeGizmo.object !== undefined;
+      this.nodeGizmo.getHelper().visible = nodeGizmoWanted;
+      this.nodeGizmo.enabled = nodeGizmoWanted;
+      this.controls.enabled = this.active && !this.rotateGizmo.dragging && !this.nodeGizmo.dragging;
       this.controls.update();
     } catch (error) {
       console.error(`[WorldCanvasComponent] world ${this.worldIndex}: per-frame update failed, skipping this tick`, error);
@@ -1050,6 +1112,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.object = camera;
     this.controls.update();
     this.rotateGizmo.camera = camera;
+    this.nodeGizmo.camera = camera;
   }
 
   // Backing state + action for the on-canvas floor-grid visibility toggle

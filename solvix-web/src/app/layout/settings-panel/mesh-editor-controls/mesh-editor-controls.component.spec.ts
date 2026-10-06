@@ -21,9 +21,10 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
     ]);
     editor.getState.and.callFake(() => state);
+    editor.carryEdgeMidpoints = true;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     TestBed.configureTestingModule({ providers: [{ provide: MeshEditorService, useValue: editor }] });
     selection = TestBed.inject(MeshEditorSelectionService);
@@ -65,27 +66,85 @@ describe('MeshEditorControlsComponent', () => {
     expect(editor.unlinkFace).toHaveBeenCalledWith(1, 0, 'XPlus');
   });
 
-  it('links two selected faces in click order with the adapt flag', () => {
+  it('links the two cubes of the picked faces in click order, whichever faces were clicked', () => {
     state = linkedPairState();
-    selection.toggleFace(1, { hex: 1, face: 'XMinus' });
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
+    state = { ...state, links: [] };
+    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
+    selection.toggleFace(1, { hex: 0, face: 'ZMinus' });
 
+    expect(component.selectedHexes()).toEqual([1, 0]);
     expect(component.canLink()).toBeTrue();
     component.link();
-    expect(editor.linkFaces).toHaveBeenCalledWith(1, 1, 'XMinus', 0, 'XPlus', true);
+    expect(editor.linkHexes).toHaveBeenCalledWith(1, 1, 0, true);
+    expect(selection.faces(1)).toEqual([]);
 
-    selection.toggleFace(1, { hex: 1, face: 'XMinus' });
-    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
+    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
+    selection.toggleFace(1, { hex: 0, face: 'ZMinus' });
     component.adaptSecond = false;
     component.link();
-    expect(editor.linkFaces).toHaveBeenCalledWith(1, 1, 'XMinus', 0, 'XPlus', false);
+    expect(editor.linkHexes).toHaveBeenCalledWith(1, 1, 0, false);
   });
 
-  it('cannot link with fewer than two faces selected', () => {
+  it('counts a cube once even when two of its faces are picked, so that is not a pair', () => {
+    state = singleCubeState();
+    selection.toggleFace(1, { hex: 0, face: 'XPlus' });
+    selection.toggleFace(1, { hex: 0, face: 'YPlus' });
+
+    expect(component.selectedHexes()).toEqual([0]);
+    expect(component.canLink()).toBeFalse();
+  });
+
+  it('cannot link cubes that are already neighbours, but can unlink them through their link', () => {
+    state = linkedPairState();
+    selection.toggleFace(1, { hex: 0, face: 'YPlus' });
+    selection.toggleFace(1, { hex: 1, face: 'YPlus' });
+
+    expect(component.canLink()).toBeFalse();
+    expect(component.pairStatusText()).toBe('вже сусіди');
+    expect(component.canUnlink()).toBeTrue();
+    component.unlink();
+
+    expect(editor.unlinkFace).toHaveBeenCalledWith(1, 0, 'XPlus');
+    expect(selection.faces(1)).toEqual([]);
+  });
+
+  it('cannot link fewer than two cubes', () => {
     state = singleCubeState();
     expect(component.canLink()).toBeFalse();
     selection.toggleFace(1, { hex: 0, face: 'XPlus' });
     expect(component.canLink()).toBeFalse();
+  });
+
+  it('lists cubes that touch without being neighbours once per pair, and links one on request', () => {
+    const base = linkedPairState();
+    state = {
+      ...base,
+      links: [],
+      faces: base.faces.map((f): MeshFaceDto => (f.status === 'Linked' ? { ...f, status: 'Candidate', coincident: true, gap: 0 } : f))
+    };
+
+    const candidates = component.candidates();
+    expect(candidates.length).toBe(1);
+    expect(candidates[0]).toEqual({ a: 0, b: 1, text: 'грані збігаються' });
+
+    component.linkCandidate(candidates[0]);
+    expect(editor.linkHexes).toHaveBeenCalledWith(1, 0, 1, true);
+  });
+
+  it('shows the gap of a candidate pair whose faces have drifted apart', () => {
+    const base = linkedPairState();
+    state = {
+      ...base,
+      links: [],
+      faces: base.faces.map((f): MeshFaceDto => (f.status === 'Linked' ? { ...f, status: 'Candidate', coincident: false, gap: 0.25 } : f))
+    };
+
+    expect(component.candidates()[0].text).toBe('зазор 0.250');
+  });
+
+  it('has no candidates for a mesh without unlinked neighbours', () => {
+    state = linkedPairState();
+    expect(component.candidates()).toEqual([]);
   });
 
   it('describes a face: free, linked and a candidate with its gap', () => {

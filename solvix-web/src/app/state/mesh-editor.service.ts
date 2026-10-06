@@ -34,6 +34,11 @@ export class MeshEditorService {
   // double click cannot send the same command twice.
   readonly busy = signal(false);
 
+  // Whether dragging a corner node also carries the midpoints of its edges
+  // (they move by half, so the edges stay as curved as they were). Shared by
+  // the numeric fields and the on-canvas drag gizmo.
+  carryEdgeMidpoints = true;
+
   constructor() {
     effect(
       () => {
@@ -77,6 +82,10 @@ export class MeshEditorService {
 
   linkFaces(sessionId: number, hexA: number, faceA: HexFaceName, hexB: number, faceB: HexFaceName, adaptSecond: boolean): void {
     this.run(sessionId, this.api.linkFaces(sessionId, hexA, faceA, hexB, faceB, adaptSecond));
+  }
+
+  linkHexes(sessionId: number, hexA: number, hexB: number, adaptSecond: boolean): void {
+    this.run(sessionId, this.api.linkHexes(sessionId, hexA, hexB, adaptSecond));
   }
 
   unlinkFace(sessionId: number, hexId: number, face: HexFaceName): void {

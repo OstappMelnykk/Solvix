@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
-import { IDEAL_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
+import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { WorldRepresentation, WorldRepresentationService } from '../../state/world-representation.service';
 import { SessionsService } from '../../state/sessions.service';
@@ -9,6 +9,7 @@ import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../s
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
+import { MeshEditorService } from '../../state/mesh-editor.service';
 import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
@@ -36,6 +37,7 @@ export class RenderWindowComponent {
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
   private readonly meshEditorRender = inject(MeshEditorRenderService);
   private readonly meshSelection = inject(MeshEditorSelectionService);
+  private readonly meshEditor = inject(MeshEditorService);
   readonly worlds = WORLDS_CONFIG;
 
   // null when there's no active session - never matches a real worldIndex,
@@ -125,6 +127,20 @@ export class RenderWindowComponent {
   // real positions, Solver: nothing yet) - null until the session has a hex.
   getMeshView(worldIndex: number): MeshView | null {
     return this.meshEditorRender.getView(this.sessions.activeSessionId(), worldIndex);
+  }
+
+  // Nodes are dragged only in the Real World; the Ideal World's lattice is fixed.
+  getDraggableNodeId(worldIndex: number): number | null {
+    const sessionId = this.sessions.activeSessionId();
+    return worldIndex === REAL_WORLD_INDEX && sessionId !== null ? this.meshSelection.nodeId(sessionId) : null;
+  }
+
+  // The gizmo was dropped: send the node's new position to the server.
+  onNodeMoved(event: { nodeId: number; position: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId !== null) {
+      this.meshEditor.moveNode(sessionId, event.nodeId, event.position, this.meshEditor.carryEdgeMidpoints);
+    }
   }
 
   // A click on the canvas: a node or face selects it (a second face makes the

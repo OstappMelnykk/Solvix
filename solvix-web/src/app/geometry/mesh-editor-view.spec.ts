@@ -110,11 +110,13 @@ describe('mesh-editor-view', () => {
         const object = view.pickables.find(o => match(o.userData['pick'] as MeshPick)) as THREE.Mesh;
         return (object.material as THREE.MeshBasicMaterial).color.getHex();
       };
+      const nodeColor = (view: ReturnType<typeof buildMeshView>, id: number) =>
+        (view.nodeMeshes.get(id)!.material as THREE.MeshBasicMaterial).color.getHex();
       const isFace = (p: MeshPick) => p.kind === 'face' && p.face === 'XPlus';
-      const isNode = (p: MeshPick) => p.kind === 'node' && p.nodeId === 3;
 
       expect(colorOf(selected, isFace)).not.toBe(colorOf(plain, isFace));
-      expect(colorOf(selected, isNode)).not.toBe(colorOf(plain, isNode));
+      expect(nodeColor(selected, 3)).not.toBe(nodeColor(plain, 3));
+      expect(nodeColor(selected, 4)).toBe(nodeColor(plain, 4));
       expect(colorOf(selected, p => p.kind === 'face' && p.face === 'YPlus')).toBe(colorOf(plain, p => p.kind === 'face' && p.face === 'YPlus'));
     });
 
@@ -155,6 +157,22 @@ describe('mesh-editor-view', () => {
       expect(box.max.y).toBeCloseTo(1, 6);
       expect(box.min.z).toBeCloseTo(0, 6);
       expect(box.max.z).toBeCloseTo(1, 6);
+    });
+  });
+
+  describe('node targets', () => {
+    it('has a visible dot per node and a larger invisible pick sphere around it', () => {
+      const view = buildMeshView(singleCubeState(), 'real', noSelection);
+
+      expect(view.nodeMeshes.size).toBe(20);
+      const hit = view.pickables.find(o => (o.userData['pick'] as MeshPick).kind === 'node' && (o.userData['pick'] as { nodeId: number }).nodeId === 6) as THREE.Mesh;
+      const dot = view.nodeMeshes.get(6)!;
+      hit.geometry.computeBoundingSphere();
+      dot.geometry.computeBoundingSphere();
+      expect(hit.position.toArray()).toEqual(dot.position.toArray());
+      expect(hit.geometry.boundingSphere!.radius).toBeGreaterThan(dot.geometry.boundingSphere!.radius * 2);
+      expect((hit.material as THREE.MeshBasicMaterial).opacity).toBe(0);
+      expect(view.pickables.includes(dot)).toBeFalse();
     });
   });
 
