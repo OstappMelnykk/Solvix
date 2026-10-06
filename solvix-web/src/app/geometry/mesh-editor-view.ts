@@ -116,6 +116,8 @@ export interface MeshViewOptions {
 
 const GRID_LINE_SAMPLES = 12;
 const GRID_COLOR = 0x6f8fb8;
+const SUB_NODE_COLOR = 0xbfd9ff;
+const SUB_NODE_SIZE = 0.035;
 const EDGE_SEGMENTS = 10;
 const FACE_GRID = 8;
 const CORNER_RADIUS = 0.045;
@@ -264,6 +266,31 @@ export function buildMeshView(
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(gridVertices, 3));
       root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: GRID_COLOR, transparent: true, opacity: 0.6 })));
     }
+
+    // The nodes the divided cube would really have, as the solver builds them: a grid of (2n+1)^3 points of which
+    // only those with at most one odd index exist (corners and edge midpoints of every small cell), each at the
+    // shape-function image of its place. The cube's own 20 nodes are drawn as spheres, so they are left out here.
+    const subNodes: number[] = [];
+    for (const hex of state.hexes) {
+      const slotPositions = hex.nodeIds.map(id => positionOf(id));
+      const isParentNode = (ix: number, iy: number, iz: number) =>
+        [ix, iy, iz].every(i => i === 0 || i === cells || i === 2 * cells) && [ix, iy, iz].filter(i => i === cells).length <= 1;
+      for (let iz = 0; iz <= 2 * cells; iz++) {
+        for (let iy = 0; iy <= 2 * cells; iy++) {
+          for (let ix = 0; ix <= 2 * cells; ix++) {
+            if ((ix % 2) + (iy % 2) + (iz % 2) > 1) continue;
+            if (isParentNode(ix, iy, iz)) continue;
+            const point = mapHex(slotPositions, ix / cells - 1, iy / cells - 1, iz / cells - 1);
+            subNodes.push(point.x, point.y, point.z);
+          }
+        }
+      }
+    }
+    if (subNodes.length > 0) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(subNodes, 3));
+      root.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true })));
+    }
   }
 
   // Faces, coloured by status.
@@ -336,7 +363,7 @@ export function disposeMeshView(view: MeshView): void {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   view.root.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments || child instanceof THREE.Points) {
       geometries.add(child.geometry);
       (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => materials.add(m));
     }

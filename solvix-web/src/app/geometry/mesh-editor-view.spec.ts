@@ -351,6 +351,61 @@ describe('mesh-editor-view', () => {
       expect(lines[1].geometry.getAttribute('position').count).toBe(3 * 5 * 12 * 2);
     });
 
+    describe('the nodes of the divided cube', () => {
+      const pointsOf = (view: ReturnType<typeof buildMeshView>) => view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points);
+
+      it('are absent without a division', () => {
+        expect(pointsOf(buildMeshView(singleCubeState(), 'real', noSelection)).length).toBe(0);
+      });
+
+      it('are the solver\'s: 81 nodes for 2x2x2 small cells, 20 of them the cube\'s own, so 61 more', () => {
+        const points = pointsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 }));
+
+        expect(points.length).toBe(1);
+        expect(points[0].geometry.getAttribute('position').count).toBe(61);
+      });
+
+      it('count follows the serendipity rule for any n: (2n+1)^3 grid points with at most one odd index, minus the 20 parent nodes', () => {
+        const expected = (n: number) => {
+          let count = 0;
+          for (let a = 0; a <= 2 * n; a++) for (let b = 0; b <= 2 * n; b++) for (let c = 0; c <= 2 * n; c++) if ((a % 2) + (b % 2) + (c % 2) <= 1) count++;
+          return count - 20;
+        };
+        for (const n of [2, 3, 4]) {
+          const points = pointsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: n }));
+          expect(points[0].geometry.getAttribute('position').count).toBe(expected(n));
+        }
+      });
+
+      it('lie on the cube\'s map: on a straight cube the middle one of n = 2 is the centre of the cube', () => {
+        const position = pointsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 }))[0].geometry.getAttribute('position');
+
+        let hasCentre = false;
+        for (let i = 0; i < position.count; i++) {
+          if (Math.abs(position.getX(i) - 0.5) < 1e-6 && Math.abs(position.getY(i) - 0.5) < 1e-6 && Math.abs(position.getZ(i) - 0.5) < 1e-6) hasCentre = true;
+        }
+        expect(hasCentre).toBeTrue();
+      });
+
+      it('follow a bent node, like the lines do', () => {
+        const state = singleCubeState();
+        const bent = { ...state, nodes: state.nodes.map(n => (n.id === 6 ? { ...n, x: 2, y: 2, z: 2 } : n)) };
+        const sum = (v: ReturnType<typeof buildMeshView>) => Array.from(pointsOf(v)[0].geometry.getAttribute('position').array).reduce((a, b) => a + b, 0);
+
+        expect(sum(buildMeshView(bent, 'real', noSelection, { subdivisions: 3 }))).not.toBeCloseTo(sum(buildMeshView(state, 'real', noSelection, { subdivisions: 3 })), 3);
+      });
+
+      it('are freed with the view', () => {
+        const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 });
+        const geometry = pointsOf(view)[0].geometry;
+        const dispose = spyOn(geometry, 'dispose').and.callThrough();
+
+        disposeMeshView(view);
+
+        expect(dispose).toHaveBeenCalled();
+      });
+    });
+
     it('a straight cube gives straight, evenly spaced lines through the cube', () => {
       const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 });
       const position = segmentsOf(view)[1].geometry.getAttribute('position');
