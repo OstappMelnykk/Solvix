@@ -12,6 +12,8 @@ public record FixedFacesRequest(IReadOnlyList<SolverFaceDto> Faces, bool Fixed, 
 
 public record DivisionsRequest(int Nx, int Ny, int Nz);
 
+public record ElementMaterialRequest(IReadOnlyList<SolverElementDto> Elements, string? Material);
+
 /// <param name="Replace">When true (with a pressure), exactly these faces carry it, replacing every earlier pressure.</param>
 public record LoadFacesRequest(IReadOnlyList<SolverFaceDto> Faces, double? Pressure, bool Replace = false);
 
@@ -38,6 +40,11 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     [HttpPut("divisions")]
     public ActionResult<SolverSetupDto> SetDivisions(int sessionId, [FromBody] DivisionsRequest request) =>
         solver.SetDivisions(sessionId, request.Nx, request.Ny, request.Nz);
+
+    /// <summary>Gives small elements of divided cubes a material of their own; a null or empty name makes them follow their cube again.</summary>
+    [HttpPut("elements/material")]
+    public ActionResult<SolverSetupDto> SetElementMaterial(int sessionId, [FromBody] ElementMaterialRequest request) =>
+        solver.SetElementMaterial(sessionId, request.Elements, request.Material);
 
     /// <summary>Gives cubes a material; a null or empty name returns them to the default one.</summary>
     [HttpPut("hexes/material")]

@@ -189,7 +189,7 @@ public class SolverTests
         var setup = facade.SetLoads(Session, new[] { new SolverFaceDto(2, "XPlus") }, 1e5);
 
         Assert.That(setup.HexMaterials, Is.EquivalentTo(new Dictionary<int, string> { [1] = "rubber", [2] = "rubber" }));
-        Assert.That(setup.Fixed, Is.EqualTo(new[] { new SolverFaceDto(0, "XMinus") }));
+        Assert.That(setup.Fixed, Is.EqualTo(new[] { new SolverFaceDto(0, "XMinus", 0, 0) }));
         Assert.That(setup.Loads, Has.Count.EqualTo(1));
 
         facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus") }, false);
@@ -244,7 +244,7 @@ public class SolverTests
         var setup = facade.Prune(Session, new[] { 0, 1, 2 });
 
         Assert.That(setup.HexMaterials.Keys, Is.EqualTo(new[] { 0 }));
-        Assert.That(setup.Fixed, Is.EqualTo(new[] { new SolverFaceDto(0, "XMinus") }));
+        Assert.That(setup.Fixed, Is.EqualTo(new[] { new SolverFaceDto(0, "XMinus", 0, 0) }));
         Assert.That(setup.Loads, Is.Empty);
     }
 
@@ -269,8 +269,8 @@ public class SolverTests
         var fixedNow = facade.ReplaceFixedFaces(Session, new[] { new SolverFaceDto(2, "ZMinus"), new SolverFaceDto(3, "Nope") });
         var loadedNow = facade.ReplaceLoads(Session, new[] { new SolverFaceDto(1, "ZPlus") }, -2e6);
 
-        Assert.That(fixedNow.Fixed, Is.EqualTo(new[] { new SolverFaceDto(2, "ZMinus") }));
-        Assert.That(loadedNow.Loads, Is.EqualTo(new[] { new SolverLoadDto(1, "ZPlus", -2e6) }));
+        Assert.That(fixedNow.Fixed, Is.EqualTo(new[] { new SolverFaceDto(2, "ZMinus", 0, 0) }));
+        Assert.That(loadedNow.Loads, Is.EqualTo(new[] { new SolverLoadDto(1, "ZPlus", -2e6, 0, 0) }));
         Assert.That(facade.ReplaceLoads(Session, new[] { new SolverFaceDto(1, "ZPlus") }, double.NaN).Loads, Has.Count.EqualTo(1));   // a bad pressure changes nothing
     }
 }

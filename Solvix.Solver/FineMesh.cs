@@ -150,6 +150,20 @@ internal sealed class FineMesh
     private static readonly int[][] FaceSlots = Enumerable.Range(0, 6).Select(f =>
         Enumerable.Range(0, 20).Where(s => Local[s, f / 2] == (f % 2 == 0 ? -1 : 1)).ToArray()).ToArray();
 
+    /// <summary>The small element behind the small face (p, q) of a side of a cube, and the solver's local face index it shows outwards.</summary>
+    public (int Element, int SolverFace) BoundaryElement(int cube, string face, int p, int q)
+    {
+        int axis = face[0] - 'X', plus = face.EndsWith("Plus") ? 1 : 0;
+        var (nx, ny, nz) = Divisions;
+        var counts = new[] { nx, ny, nz };
+        var tangents = Enumerable.Range(0, 3).Where(d => d != axis).ToArray();
+        var index = new int[3];
+        index[axis] = plus == 1 ? counts[axis] - 1 : 0;
+        index[tangents[0]] = p;
+        index[tangents[1]] = q;
+        return (cube * ElementsPerCube + (index[2] * ny + index[1]) * nx + index[0], SolverFaces.TryParse(face, out int sf) ? sf : -1);
+    }
+
     /// <summary>Which small elements of a cube lie on a face of the cube, with the solver's local face index each shows outwards.</summary>
     public IEnumerable<(int Element, int SolverFace)> BoundaryElements(int cube, string face)
     {

@@ -34,28 +34,39 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         return s.Setup.ToDto();
     });
 
+    // the small faces a list of requests names: a request without (p, q) means the whole side of the cube
+    private static IEnumerable<SubFace> SubFaces(SolverSetup setup, IReadOnlyList<SolverFaceDto> faces) =>
+        faces.Where(f => SolverFaces.IsValid(f.Face)).SelectMany(f => setup.Expand(f.Hex, f.Face, f.P, f.Q));
+
     public SolverSetupDto ReplaceFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces) => sessions.With(sessionId, s =>
     {
-        s.Setup.ReplaceFixed(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)));
+        s.Setup.ReplaceFixed(SubFaces(s.Setup, faces));
         return s.Setup.ToDto();
     });
 
     public SolverSetupDto ReplaceLoads(int sessionId, IReadOnlyList<SolverFaceDto> faces, double pressure) => sessions.With(sessionId, s =>
     {
-        if (double.IsFinite(pressure)) s.Setup.ReplaceLoads(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)), pressure);
+        if (double.IsFinite(pressure)) s.Setup.ReplaceLoads(SubFaces(s.Setup, faces), pressure);
         return s.Setup.ToDto();
     });
 
     public SolverSetupDto SetFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces, bool fixedFaces) => sessions.With(sessionId, s =>
     {
-        s.Setup.SetFixed(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)), fixedFaces);
+        s.Setup.SetFixed(SubFaces(s.Setup, faces), fixedFaces);
         return s.Setup.ToDto();
     });
 
     public SolverSetupDto SetLoads(int sessionId, IReadOnlyList<SolverFaceDto> faces, double? pressure) => sessions.With(sessionId, s =>
     {
         if (pressure is null || double.IsFinite(pressure.Value))
-            s.Setup.SetLoads(faces.Where(f => SolverFaces.IsValid(f.Face)).Select(f => (f.Hex, f.Face)), pressure);
+            s.Setup.SetLoads(SubFaces(s.Setup, faces), pressure);
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto SetElementMaterial(int sessionId, IReadOnlyList<SolverElementDto> elements, string? material) => sessions.With(sessionId, s =>
+    {
+        if (string.IsNullOrEmpty(material) || s.Setup.MaterialsByName.ContainsKey(material))
+            s.Setup.SetElementMaterial(elements.Select(e => new ElementKey(e.Hex, e.Ex, e.Ey, e.Ez)), material);
         return s.Setup.ToDto();
     });
 
@@ -175,7 +186,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         var mu = new double[fine.ElementCount];
         for (int e = 0; e < fine.ElementCount; e++)
         {
-            var material = setup.MaterialsByName[setup.MaterialOf(mesh.ElementIds[fine.ParentOf[e]])];
+            var material = setup.MaterialsByName[setup.MaterialOf(new ElementKey(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e]))];
             var fem = new FemMaterial { E = material.E, Nu = material.Nu };
             lambda[e] = fem.Lambda;
             mu[e] = fem.Mu;
@@ -183,14 +194,19 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
         var cubeIndex = new Dictionary<int, int>();
         for (int e = 0; e < mesh.ElementCount; e++) cubeIndex[mesh.ElementIds[e]] = e;
-        // a face of a cube is the outward face of every small element on that side of it
-        IEnumerable<long> Keys((int Hex, string Face) f) => fine.BoundaryElements(cubeIndex[f.Hex], f.Face).Select(b => (long)b.Element * 6 + b.SolverFace);
+        // a small face of a cube is the outward face of the one small element behind it
+        long Key(SubFace f)
+        {
+            var (element, face) = fine.BoundaryElement(cubeIndex[f.Hex], f.Face, f.P, f.Q);
+            return (long)element * 6 + face;
+        }
+        bool Known(SubFace f) => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face);
 
-        var fixedFaces = new HashSet<long>(setup.Fixed.Where(f => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face)).SelectMany(Keys));
+        var fixedFaces = new HashSet<long>(setup.Fixed.Where(Known).Select(Key));
         // one pass per distinct pressure; Pn is the solver's: along the outward normal, negative = compression
-        var loads = setup.Loads.Where(l => cubeIndex.ContainsKey(l.Key.Hex) && SolverFaces.IsValid(l.Key.Face))
+        var loads = setup.Loads.Where(l => Known(l.Key))
             .GroupBy(l => l.Value)
-            .Select(g => (new HashSet<long>(g.SelectMany(l => Keys(l.Key))), g.Key))
+            .Select(g => (new HashSet<long>(g.Select(l => Key(l.Key))), g.Key))
             .ToList();
         return new FemRun.Input(fine, femMesh, lambda, mu, fixedFaces, loads);
     }

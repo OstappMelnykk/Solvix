@@ -26,7 +26,7 @@ internal static class SolverValidator
             Error($"Вивернуті або вироджені куби (виправте їх перед розрахунком): {string.Join(", ", mesh.FoldedHexes.Take(12))}{(mesh.FoldedHexes.Count > 12 ? "…" : "")}.");
 
         // materials in use
-        var used = mesh.ElementIds.Select(setup.MaterialOf).Distinct().ToList();
+        var used = mesh.ElementIds.Select(setup.MaterialOf).Concat(setup.ElementMaterials.Where(m => alive.Contains(m.Key.Hex)).Select(m => setup.MaterialOf(m.Key))).Distinct().ToList();
         foreach (var name in used)
         {
             if (!setup.MaterialsByName.TryGetValue(name, out var material)) { Error($"Невідомий матеріал «{name}»."); continue; }
@@ -42,7 +42,7 @@ internal static class SolverValidator
         if (fixedFaces.Count == 0) Error("Закріпіть хоча б одну грань: без опори тіло не має єдиного розв'язку.");
         if (loads.Count == 0) Warning("Немає навантаження: результат буде нульовим.");
         if (loads.Any(l => !double.IsFinite(l.Value))) Error("Тиск має бути скінченним числом.");
-        if (loads.Any(l => fixedFaces.Any(f => f.Hex == l.Key.Hex && f.Face == l.Key.Face)))
+        if (loads.Any(l => fixedFaces.Any(f => f == l.Key)))
             Warning("Деякі грані одночасно закріплені й навантажені: тиск на закріплених вузлах нічого не змінює.");
 
         // every separate part needs a support of its own, or it can float away

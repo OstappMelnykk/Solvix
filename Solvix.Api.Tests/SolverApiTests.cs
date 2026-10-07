@@ -193,4 +193,19 @@ public class SolverApiTests
         Assert.That(loadedNow.GetProperty("loads").GetArrayLength(), Is.EqualTo(1));
         Assert.That(loadedNow.GetProperty("loads")[0].GetProperty("pressure").GetDouble(), Is.EqualTo(-2e6));
     }
+
+    [Test]
+    public async Task A_single_small_face_and_a_single_small_element_can_be_set_over_http()
+    {
+        await Send(HttpMethod.Put, "/api/solver/1/divisions", new { nx = 2, ny = 2, nz = 2 });
+
+        var faces = await Send(HttpMethod.Put, "/api/solver/1/faces/fixed", new { faces = new[] { new { hex = 0, face = "XMinus", p = 1, q = 0 } }, @fixed = true });
+        var materials = await Send(HttpMethod.Put, "/api/solver/1/elements/material", new { elements = new[] { new { hex = 0, ex = 1, ey = 0, ez = 1 } }, material = "rubber" });
+
+        Assert.That(faces.GetProperty("fixed").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(faces.GetProperty("fixed")[0].GetProperty("p").GetInt32(), Is.EqualTo(1));
+        Assert.That(faces.GetProperty("fixed")[0].GetProperty("q").GetInt32(), Is.EqualTo(0));
+        Assert.That(materials.GetProperty("elementMaterials").GetArrayLength(), Is.EqualTo(1));
+        Assert.That(materials.GetProperty("elementMaterials")[0].GetProperty("material").GetString(), Is.EqualTo("rubber"));
+    }
 }

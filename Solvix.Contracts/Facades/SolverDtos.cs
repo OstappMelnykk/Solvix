@@ -18,10 +18,16 @@ public sealed record FemMeshDto(
 /// <summary>Isotropic linear elastic material. E in Pa.</summary>
 public sealed record SolverMaterialDto(string Name, string Label, double E, double Nu);
 
-public sealed record SolverFaceDto(int Hex, string Face);
+/// <summary>A face of a cube, or one small face of it: <c>P</c>, <c>Q</c> are the cell in the side's grid (p along the lower of the face's two tangent axes, q along the higher); null means the whole side.</summary>
+public sealed record SolverFaceDto(int Hex, string Face, int? P = null, int? Q = null);
+
+/// <summary>One small element of a divided cube, by its index along each of the cube's axes.</summary>
+public sealed record SolverElementDto(int Hex, int Ex, int Ey, int Ez);
+
+public sealed record SolverElementMaterialDto(int Hex, int Ex, int Ey, int Ez, string Material);
 
 /// <param name="Pressure">Uniform normal pressure Pn in Pa along the outward normal, as in the solver: negative = pressing into the body (compression), positive = pulling out.</param>
-public sealed record SolverLoadDto(int Hex, string Face, double Pressure);
+public sealed record SolverLoadDto(int Hex, string Face, double Pressure, int? P = null, int? Q = null);
 
 /// <summary>Everything the user sets for a solve: materials (a library, one per cube), supports and pressures on faces.</summary>
 /// <param name="Divisions">How many small elements each cube is cut into along its three axes (the solver's Nx, Ny, Nz).</param>
@@ -31,6 +37,7 @@ public sealed record SolverSetupDto(
     IReadOnlyList<SolverMaterialDto> Materials,
     string DefaultMaterial,
     IReadOnlyDictionary<int, string> HexMaterials,
+    IReadOnlyList<SolverElementMaterialDto> ElementMaterials,
     IReadOnlyList<SolverFaceDto> Fixed,
     IReadOnlyList<SolverLoadDto> Loads);
 

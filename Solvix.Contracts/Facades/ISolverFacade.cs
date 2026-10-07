@@ -14,6 +14,9 @@ public interface ISolverFacade
     /// <summary>Gives cubes a material (an empty or null name returns them to the default one).</summary>
     SolverSetupDto SetHexMaterial(int sessionId, IReadOnlyList<int> hexIds, string? material);
 
+    /// <summary>Gives small elements of a divided cube a material of their own (an empty or null name makes them follow their cube again).</summary>
+    SolverSetupDto SetElementMaterial(int sessionId, IReadOnlyList<SolverElementDto> elements, string? material);
+
     SolverSetupDto SetDefaultMaterial(int sessionId, string material);
 
     /// <summary>How many small elements each cube is cut into along its axes (1..8 each), as the solver's Nx, Ny, Nz; invalid values change nothing.</summary>
