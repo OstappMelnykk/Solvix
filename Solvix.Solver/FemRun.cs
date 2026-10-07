@@ -36,7 +36,7 @@ internal static class FemRun
         for (int e = 0; e < elements; e++)
         {
             cancel.ThrowIfCancellationRequested();
-            ElementStiffness.Compute(e, mesh, input.Lambda[e], input.Mu[e], dfiabg, ke);
+            ElementMatrix.Stiffness(e, mesh, input.Lambda[e], input.Mu[e], dfiabg, ke);
             for (int i = 0; i < 20; i++)
             {
                 int node = mesh.Connectivity[e, i];
@@ -237,9 +237,9 @@ internal static class FemRun
                 double dxx = 0, dxy = 0, dxz = 0, dyx = 0, dyy = 0, dyz = 0, dzx = 0, dzy = 0, dzz = 0;
                 for (int i = 0; i < 20; i++)
                 {
-                    double gx = inverse[0, 0] * dPhi[i, 0] + inverse[0, 1] * dPhi[i, 1] + inverse[0, 2] * dPhi[i, 2];
-                    double gy = inverse[1, 0] * dPhi[i, 0] + inverse[1, 1] * dPhi[i, 1] + inverse[1, 2] * dPhi[i, 2];
-                    double gz = inverse[2, 0] * dPhi[i, 0] + inverse[2, 1] * dPhi[i, 1] + inverse[2, 2] * dPhi[i, 2];
+                    double gx = ElementMatrix.Gradient(inverse, dPhi[i, 0], dPhi[i, 1], dPhi[i, 2], 0);
+                    double gy = ElementMatrix.Gradient(inverse, dPhi[i, 0], dPhi[i, 1], dPhi[i, 2], 1);
+                    double gz = ElementMatrix.Gradient(inverse, dPhi[i, 0], dPhi[i, 1], dPhi[i, 2], 2);
                     dxx += ux[i] * gx; dxy += ux[i] * gy; dxz += ux[i] * gz;
                     dyx += uy[i] * gx; dyy += uy[i] * gy; dyz += uy[i] * gz;
                     dzx += uz[i] * gx; dzy += uz[i] * gy; dzz += uz[i] * gz;
