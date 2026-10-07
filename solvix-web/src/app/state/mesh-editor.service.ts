@@ -46,10 +46,6 @@ export class MeshEditorService {
   // on-canvas gizmo and the six-view drag.
   carryEdgeMidpoints = false;
 
-  // How many cells each cube is cut into along every axis in the inner grid view
-  // (1 = no inner grid). A view setting only - nothing is sent to the server.
-  subdivisions = 1;
-
   constructor() {
     effect(
       () => {

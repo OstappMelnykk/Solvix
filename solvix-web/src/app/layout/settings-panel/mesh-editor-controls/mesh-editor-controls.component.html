@@ -152,12 +152,12 @@
 </div>
 
 <div class="group">
-  <div class="group-label">Внутрішня сітка (форми функцій)</div>
-  <div class="hint">Ділить кожен куб на n×n×n клітинок лініями α,β,γ = const, пропущеними через функції форми: видно, як 20 вузлів вигинають усі точки куба. 1 — вимкнено.</div>
-  <label class="row">
-    <span>Поділів на ребро</span>
-    <input type="number" min="1" max="8" step="1" [value]="subdivisions" (change)="onSubdivisionsChange($event)" />
-  </label>
+  <div class="group-label">Внутрішня сітка (як у солвері)</div>
+  <div class="hint">Ділить кожен куб на Nx×Ny×Nz елементів, як сітка солвера: лінії α,β,γ = const проходять через функції форми, а крапки — вузли поділеної сітки (усі, що існують в 20-вузловому елементі). Ті самі числа задають поділ у розрахунку. 1 — вимкнено.</div>
+  <div class="row row--coords">
+    <span>Nx · Ny · Nz</span>
+    <input *ngFor="let n of divisions(); let i = index" type="number" min="1" max="8" step="1" [value]="n" (change)="onDivisionChange(i, $event)" />
+  </div>
 </div>
 
 <div class="group">

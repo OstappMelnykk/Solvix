@@ -22,12 +22,14 @@ export interface SolverFaceDto {
 }
 
 export interface SolverLoadDto extends SolverFaceDto {
-  // Pa, positive = pressing into the body.
+  // The solver's Pn, Pa: along the outward normal, so negative = compression, positive = pulling out.
   readonly pressure: number;
 }
 
 export interface SolverSetupDto {
   readonly version: number;
+  // Small elements each cube is cut into along its three axes (the solver's Nx, Ny, Nz).
+  readonly divisions: readonly number[];
   readonly materials: readonly SolverMaterialDto[];
   readonly defaultMaterial: string;
   // hex id -> material name (cubes not listed use the default one).
@@ -57,10 +59,17 @@ export interface SolverJobDto {
   readonly ticket: number;
 }
 
-// Per solver node, aligned with nodeIds (editor node ids).
+// The solution on the mesh the solver worked on: every cube cut into `divisions` small elements. Values are per
+// node of that mesh; gridNodes says which node sits at each grid point of each cube.
 export interface SolverResultDto {
   readonly ticket: number;
-  readonly nodeIds: readonly number[];
+  readonly divisions: readonly number[];
+  // x, y, z of each node (undeformed), flat.
+  readonly positions: readonly number[];
+  // The editor cube of each block of gridNodes.
+  readonly hexIds: readonly number[];
+  // Per cube, the node at each existing grid point (ix, iy, iz in 0..2n, at most one odd; iz slowest, ix fastest).
+  readonly gridNodes: readonly number[];
   readonly ux: readonly number[];
   readonly uy: readonly number[];
   readonly uz: readonly number[];
@@ -91,12 +100,27 @@ export class SolverApiService {
   }
 
   // A null or empty name returns the cubes to the default material.
+  // How many small elements each cube is cut into along its axes (1..8 each).
+  setDivisions(sessionId: number, nx: number, ny: number, nz: number): Observable<SolverSetupDto> {
+    return this.http.put<SolverSetupDto>(this.url(sessionId, 'divisions'), { nx, ny, nz });
+  }
+
   setHexMaterial(sessionId: number, hexIds: readonly number[], material: string | null): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'hexes/material'), { hexIds, material });
   }
 
   setFixedFaces(sessionId: number, faces: readonly SolverFaceDto[], fixed: boolean): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'faces/fixed'), { faces, fixed });
+  }
+
+  // Exactly these faces become the clamped ones.
+  replaceFixed(sessionId: number, faces: readonly SolverFaceDto[]): Observable<SolverSetupDto> {
+    return this.http.put<SolverSetupDto>(this.url(sessionId, 'faces/fixed'), { faces, fixed: true, replace: true });
+  }
+
+  // Exactly these faces carry the pressure, replacing every earlier one.
+  replaceLoads(sessionId: number, faces: readonly SolverFaceDto[], pressure: number): Observable<SolverSetupDto> {
+    return this.http.put<SolverSetupDto>(this.url(sessionId, 'faces/load'), { faces, pressure, replace: true });
   }
 
   // A null pressure removes the load.

@@ -109,7 +109,7 @@ export interface MeshViewOptions {
   // Each cube is cut into n x n x n cells by lines of constant local coordinate,
   // pushed through the shape functions (1 = off). It shows how the 20 nodes bend
   // every point inside the cube.
-  readonly subdivisions: number;
+  readonly subdivisions: number | readonly [number, number, number];
   // Draw (and make pickable) the node dots; off for a big body that is only looked at. Default on.
   readonly showNodes?: boolean;
 }
@@ -235,22 +235,22 @@ export function buildMeshView(
   // Inside of each cube: lines of constant (alpha, beta, gamma) through the shape
   // functions. The 12 edges are drawn above already, so a line is skipped when
   // both of its fixed coordinates sit on the cube's boundary.
-  const cells = Math.max(1, Math.floor(options.subdivisions));
-  if (cells > 1) {
+  const counts = (Array.isArray(options.subdivisions) ? options.subdivisions : [options.subdivisions, options.subdivisions, options.subdivisions]).map(n => Math.max(1, Math.floor(n)));
+  if (counts.some(n => n > 1)) {
     const gridVertices: number[] = [];
     for (const hex of state.hexes) {
       const slotPositions = hex.nodeIds.map(id => positionOf(id));
       for (let axis = 0; axis < 3; axis++) {
         const [u, v] = [0, 1, 2].filter(d => d !== axis);
-        for (let k1 = 0; k1 <= cells; k1++) {
-          for (let k2 = 0; k2 <= cells; k2++) {
-            if ((k1 === 0 || k1 === cells) && (k2 === 0 || k2 === cells)) continue;
+        for (let k1 = 0; k1 <= counts[u]; k1++) {
+          for (let k2 = 0; k2 <= counts[v]; k2++) {
+            if ((k1 === 0 || k1 === counts[u]) && (k2 === 0 || k2 === counts[v])) continue;
             let previous: THREE.Vector3 | null = null;
             for (let s = 0; s <= GRID_LINE_SAMPLES; s++) {
               const local = [0, 0, 0];
               local[axis] = (s / GRID_LINE_SAMPLES) * 2 - 1;
-              local[u] = (k1 / cells) * 2 - 1;
-              local[v] = (k2 / cells) * 2 - 1;
+              local[u] = (k1 / counts[u]) * 2 - 1;
+              local[v] = (k2 / counts[v]) * 2 - 1;
               const point = mapHex(slotPositions, local[0], local[1], local[2]);
               if (previous) {
                 gridVertices.push(previous.x, previous.y, previous.z, point.x, point.y, point.z);
@@ -273,14 +273,16 @@ export function buildMeshView(
     const subNodes: number[] = [];
     for (const hex of state.hexes) {
       const slotPositions = hex.nodeIds.map(id => positionOf(id));
-      const isParentNode = (ix: number, iy: number, iz: number) =>
-        [ix, iy, iz].every(i => i === 0 || i === cells || i === 2 * cells) && [ix, iy, iz].filter(i => i === cells).length <= 1;
-      for (let iz = 0; iz <= 2 * cells; iz++) {
-        for (let iy = 0; iy <= 2 * cells; iy++) {
-          for (let ix = 0; ix <= 2 * cells; ix++) {
+      const isParentNode = (ix: number, iy: number, iz: number) => {
+        const index = [ix, iy, iz];
+        return index.every((i, d) => i === 0 || i === counts[d] || i === 2 * counts[d]) && index.filter((i, d) => i === counts[d]).length <= 1;
+      };
+      for (let iz = 0; iz <= 2 * counts[2]; iz++) {
+        for (let iy = 0; iy <= 2 * counts[1]; iy++) {
+          for (let ix = 0; ix <= 2 * counts[0]; ix++) {
             if ((ix % 2) + (iy % 2) + (iz % 2) > 1) continue;
             if (isParentNode(ix, iy, iz)) continue;
-            const point = mapHex(slotPositions, ix / cells - 1, iy / cells - 1, iz / cells - 1);
+            const point = mapHex(slotPositions, ix / counts[0] - 1, iy / counts[1] - 1, iz / counts[2] - 1);
             subNodes.push(point.x, point.y, point.z);
           }
         }

@@ -406,6 +406,25 @@ describe('mesh-editor-view', () => {
       });
     });
 
+    it('can divide each axis by its own number, like the solver\'s Nx, Ny, Nz', () => {
+      const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: [2, 1, 1] });
+      const lines = segmentsOf(view)[1].geometry.getAttribute('position');
+      const points = view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points)[0];
+
+      expect(lines.count).toBe(4 * 12 * 2);                                          // the middle plane x = 0.5 only: 2 lines along y and 2 along z, 12 samples each
+      expect(points.geometry.getAttribute('position').count).toBe(12);              // 32 nodes of a 2x1x1 division, 20 of them the cube's own
+      const xs = new Set<number>();
+      for (let i = 0; i < lines.count; i++) xs.add(Math.round(lines.getX(i) * 1e6) / 1e6);
+      expect([...xs]).toEqual([0.5]);
+    });
+
+    it('treats [n, n, n] like n and [1, 1, 1] like no division', () => {
+      const same = (a: THREE.Object3D, b: THREE.Object3D) => (a as THREE.LineSegments).geometry.getAttribute('position').count === (b as THREE.LineSegments).geometry.getAttribute('position').count;
+
+      expect(same(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: [3, 3, 3] }))[1], segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 3 }))[1])).toBeTrue();
+      expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: [1, 1, 1] })).length).toBe(1);
+    });
+
     it('a straight cube gives straight, evenly spaced lines through the cube', () => {
       const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 2 });
       const position = segmentsOf(view)[1].geometry.getAttribute('position');

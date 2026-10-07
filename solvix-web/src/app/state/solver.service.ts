@@ -6,6 +6,7 @@ import { NotificationService } from './notification.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
+import { MeshPick } from '../geometry/mesh-editor-view';
 import {
   SolverApiService,
   SolverFaceDto,
@@ -19,12 +20,34 @@ import { SolverHubClient } from '../api/solver-hub.client';
 
 export type ResultField = 'none' | 'vonMises' | 'displacement';
 
+// What a click on a face does in the Solver World, as in the solver's viewer: marks it as pressed (Load) or clamped (Fix).
+export type PickMode = 'load' | 'fix';
+
 // What is shown of a solve in the Solver World (a view setting only - nothing goes to the server).
 export interface SolverDisplay {
   field: ResultField;
   // How much the displacements are exaggerated when the body is drawn deformed (0 = undeformed).
   deformationScale: number;
+  // How opaque the cubes are drawn, 0..1 (1 = solid): lower it to see the edges and faces behind.
+  opacity: number;
 }
+
+// The six sides of a body by the solver's names: top = Z+, bottom = Z-, front = Y-, back = Y+, left = X-, right = X+.
+export const SIDES: readonly { readonly face: HexFaceName; readonly label: string; readonly title: string }[] = [
+  { face: 'ZPlus', label: 'Верх', title: 'Верхня сторона (Z+) — стандартний стиск' },
+  { face: 'ZMinus', label: 'Низ', title: 'Нижня сторона (Z−)' },
+  { face: 'YMinus', label: 'Перед', title: 'Передня сторона (Y−)' },
+  { face: 'YPlus', label: 'Зад', title: 'Задня сторона (Y+)' },
+  { face: 'XMinus', label: 'Ліво', title: 'Ліва сторона (X−)' },
+  { face: 'XPlus', label: 'Право', title: 'Права сторона (X+)' }
+];
+
+const OPPOSITE: Record<HexFaceName, HexFaceName> = {
+  XMinus: 'XPlus', XPlus: 'XMinus', YMinus: 'YPlus', YPlus: 'YMinus', ZMinus: 'ZPlus', ZPlus: 'ZMinus'
+};
+
+// The solver's default pressure: 1 MPa of compression.
+export const DEFAULT_PRESSURE = -1e6;
 
 interface SessionSolver {
   setup: SolverSetupDto | null;
@@ -32,6 +55,14 @@ interface SessionSolver {
   job: SolverJobDto;
   result: SolverResultDto | null;
   display: SolverDisplay;
+  mode: PickMode;
+  // Pn, Pa (the solver's convention: negative = compression).
+  pressure: number;
+  // The side chosen as a whole for the load / the clamping (null = faces picked one by one, or nothing).
+  loadSide: HexFaceName | null;
+  fixedSide: HexFaceName | null;
+  // True once the clamped faces were chosen by the user; until then they follow the load: the opposite side.
+  fixedChosen: boolean;
   // Bumps on every change a drawing of the Solver World depends on.
   revision: number;
 }
@@ -73,7 +104,12 @@ export class SolverService {
       validation: null,
       job: IDLE_JOB,
       result: null,
-      display: { field: 'vonMises', deformationScale: 1 },
+      display: { field: 'vonMises', deformationScale: 1, opacity: 1 },
+      mode: 'load',
+      pressure: DEFAULT_PRESSURE,
+      loadSide: null,
+      fixedSide: null,
+      fixedChosen: false,
       revision: 0
     }));
   }
@@ -134,6 +170,12 @@ export class SolverService {
     this.touch(sessionId);
   }
 
+  setOpacity(sessionId: number, opacity: number): void {
+    if (!Number.isFinite(opacity)) return;
+    this.entry(sessionId).display.opacity = Math.min(1, Math.max(0.05, opacity));
+    this.touch(sessionId);
+  }
+
   setDeformationScale(sessionId: number, scale: number): void {
     if (!Number.isFinite(scale) || scale < 0) return;
     this.entry(sessionId).display.deformationScale = scale;
@@ -182,52 +224,152 @@ export class SolverService {
     this.setMaterial(sessionId, hexes, material);
   }
 
-  // The picked face, only when it is a free (outer) face: a linked face is inside the body.
-  private pickedOuterFace(sessionId: number): SolverFaceDto | null {
-    const picked = this.selection.face(sessionId);
-    if (!picked) {
-      this.notifications.warning('Виберіть грань на сцені (клік по грані).');
-      return null;
-    }
-    const face = this.editor.getState(sessionId)?.faces.find(f => f.hex === picked.hex && f.face === picked.face);
-    if (face?.status === 'Linked') {
-      this.notifications.warning('Ця грань усередині тіла (зв’язана з іншим кубом): закріплювати й навантажувати можна лише зовнішні.');
-      return null;
-    }
-    return { hex: picked.hex, face: picked.face };
+  // --- faces: the solver's way ---
+
+  mode(sessionId: number): PickMode {
+    return this.entry(sessionId).mode;
   }
 
-  // Every outer face with this name - how a whole side of a body is clamped or pressed in one go.
+  setMode(sessionId: number, mode: PickMode): void {
+    this.entry(sessionId).mode = mode;
+    this.touch(sessionId);
+  }
+
+  pressure(sessionId: number): number {
+    return this.entry(sessionId).pressure;
+  }
+
+  loadSide(sessionId: number): HexFaceName | null {
+    return this.entry(sessionId).loadSide;
+  }
+
+  // The side shown as clamped: the one the user chose, or - while none was - the opposite of the load's side.
+  fixedSide(sessionId: number): HexFaceName | null {
+    const entry = this.entry(sessionId);
+    if (entry.fixedChosen) return entry.fixedSide;
+    return entry.loadSide === null ? null : OPPOSITE[entry.loadSide];
+  }
+
+  isFixedAuto(sessionId: number): boolean {
+    const entry = this.entry(sessionId);
+    return !entry.fixedChosen && entry.loadSide !== null;
+  }
+
+  // The cube's number of small faces: how many elements of the divided mesh carry what is set on a cube face.
+  private smallFacesPerCubeFace(sessionId: number, face: HexFaceName): number {
+    const [nx, ny, nz] = this.divisions(sessionId);
+    const counts = [nx, ny, nz];
+    const axis = face.charCodeAt(0) - 'X'.charCodeAt(0);
+    return counts.filter((_, d) => d !== axis).reduce((product, n) => product * n, 1);
+  }
+
+  loadedFaceCount(sessionId: number): number {
+    return (this.entry(sessionId).setup?.loads ?? []).reduce((sum, f) => sum + this.smallFacesPerCubeFace(sessionId, f.face), 0);
+  }
+
+  fixedFaceCount(sessionId: number): number {
+    return (this.entry(sessionId).setup?.fixed ?? []).reduce((sum, f) => sum + this.smallFacesPerCubeFace(sessionId, f.face), 0);
+  }
+
+  // Every outer face with this name - how a whole side of a body is chosen in one go.
   outerFaces(sessionId: number, face: HexFaceName): SolverFaceDto[] {
     return (this.editor.getState(sessionId)?.faces ?? []).filter(f => f.face === face && f.status !== 'Linked').map(f => ({ hex: f.hex, face: f.face }));
   }
 
-  fixPickedFace(sessionId: number, fixed: boolean): void {
-    const face = this.pickedOuterFace(sessionId);
-    if (face) this.apply(sessionId, this.api.setFixedFaces(sessionId, [face], fixed));
-  }
-
-  loadPickedFace(sessionId: number, pressure: number | null): void {
-    const face = this.pickedOuterFace(sessionId);
-    if (face) this.apply(sessionId, this.api.setLoads(sessionId, [face], pressure));
-  }
-
-  fixSide(sessionId: number, face: HexFaceName, fixed: boolean): void {
-    const faces = this.outerFaces(sessionId, face);
+  // "Навантажена грань": the whole side is pressed with the current Pn, replacing what was chosen before. If it is
+  // the side that was chosen as clamped, the clamping goes back to automatic (the opposite side).
+  selectLoadSide(sessionId: number, side: HexFaceName): void {
+    const entry = this.entry(sessionId);
+    const faces = this.outerFaces(sessionId, side);
     if (faces.length === 0) {
       this.notifications.warning('На цьому боці немає зовнішніх граней.');
       return;
     }
-    this.apply(sessionId, this.api.setFixedFaces(sessionId, faces, fixed));
+    entry.loadSide = side;
+    if (entry.fixedChosen && entry.fixedSide === side) {
+      entry.fixedChosen = false;
+      entry.fixedSide = null;
+    }
+    this.apply(sessionId, this.api.replaceLoads(sessionId, faces, entry.pressure), () => this.followAutoFixed(sessionId));
   }
 
-  loadSide(sessionId: number, face: HexFaceName, pressure: number | null): void {
-    const faces = this.outerFaces(sessionId, face);
+  // "Закріплена грань": the whole side is clamped; the same button again goes back to automatic.
+  selectFixedSide(sessionId: number, side: HexFaceName): void {
+    const entry = this.entry(sessionId);
+    if (entry.fixedChosen && entry.fixedSide === side) {
+      entry.fixedChosen = false;
+      entry.fixedSide = null;
+      this.followAutoFixed(sessionId, true);
+      return;
+    }
+    const faces = this.outerFaces(sessionId, side);
     if (faces.length === 0) {
       this.notifications.warning('На цьому боці немає зовнішніх граней.');
       return;
     }
-    this.apply(sessionId, this.api.setLoads(sessionId, faces, pressure));
+    entry.fixedChosen = true;
+    entry.fixedSide = side;
+    this.apply(sessionId, this.api.replaceFixed(sessionId, faces));
+  }
+
+  // While the clamping was not chosen it is the opposite of the load's side; with no load side, nothing is clamped.
+  private followAutoFixed(sessionId: number, force = false): void {
+    const entry = this.entry(sessionId);
+    if (entry.fixedChosen && !force) return;
+    const side = entry.loadSide === null ? null : OPPOSITE[entry.loadSide];
+    const faces = side === null ? [] : this.outerFaces(sessionId, side);
+    this.apply(sessionId, this.api.replaceFixed(sessionId, faces));
+  }
+
+  // Pn changes: every pressed face gets the new value.
+  setPressure(sessionId: number, pressure: number): void {
+    if (!Number.isFinite(pressure)) return;
+    const entry = this.entry(sessionId);
+    entry.pressure = pressure;
+    const loaded = entry.setup?.loads ?? [];
+    this.touch(sessionId);
+    if (loaded.length > 0) this.apply(sessionId, this.api.replaceLoads(sessionId, loaded.map(l => ({ hex: l.hex, face: l.face })), pressure));
+  }
+
+  // A click on the scene, as in the solver's viewer: in Load mode a face is marked as pressed (or unmarked), in Fix
+  // mode as clamped (or unmarked). Shift + click picks a cube instead (to give it a material).
+  pick(sessionId: number, pick: MeshPick | null, additive: boolean): void {
+    if (pick === null) return;
+    if (additive || pick.kind !== 'face') {
+      this.selection.applyPick(sessionId, pick, additive);
+      return;
+    }
+    this.toggleFace(sessionId, { hex: pick.hex, face: pick.face });
+  }
+
+  toggleFace(sessionId: number, face: SolverFaceDto): void {
+    const entry = this.entry(sessionId);
+    if (this.editor.getState(sessionId)?.faces.find(f => f.hex === face.hex && f.face === face.face)?.status === 'Linked') {
+      this.notifications.warning('Ця грань усередині тіла (зв’язана з іншим кубом): закріплювати й навантажувати можна лише зовнішні.');
+      return;
+    }
+    if (entry.mode === 'load') {
+      const loaded = this.pressureOn(sessionId, face.hex, face.face) !== null;
+      entry.loadSide = null;
+      this.apply(sessionId, this.api.setLoads(sessionId, [face], loaded ? null : entry.pressure));
+    } else {
+      const fixed = this.isFixed(sessionId, face.hex, face.face);
+      entry.fixedChosen = true;
+      entry.fixedSide = null;
+      this.apply(sessionId, this.api.setFixedFaces(sessionId, [face], !fixed));
+    }
+  }
+
+  // --- the division of the cubes into small elements ---
+
+  divisions(sessionId: number): readonly number[] {
+    return this.entry(sessionId).setup?.divisions ?? [1, 1, 1];
+  }
+
+  setDivisions(sessionId: number, nx: number, ny: number, nz: number): void {
+    const values = [nx, ny, nz].map(n => Math.floor(n));
+    if (values.some(n => !Number.isFinite(n) || n < 1 || n > 8)) return;
+    this.apply(sessionId, this.api.setDivisions(sessionId, values[0], values[1], values[2]));
   }
 
   clearSetup(sessionId: number): void {
@@ -277,13 +419,13 @@ export class SolverService {
 
   // --- internals ---
 
-  private apply(sessionId: number, request: Observable<SolverSetupDto>): void {
+  private apply(sessionId: number, request: Observable<SolverSetupDto>, then?: () => void): void {
     request.subscribe({
       next: setup => {
         this.acceptSetup(sessionId, setup);
-        // a changed set-up makes the old verdict and result stale
-        const entry = this.entry(sessionId);
-        entry.validation = null;
+        // a changed set-up makes the old verdict stale
+        this.entry(sessionId).validation = null;
+        then?.();
       },
       error: () => this.notifications.error('Не вдалось зберегти налаштування розрахунку.')
     });
@@ -313,10 +455,26 @@ export class SolverService {
         const entry = this.entry(sessionId);
         if (result.ticket < ticket) return;
         entry.result = result;
+        entry.display.deformationScale = SolverService.visibleScale(result);
         this.touch(sessionId);
       },
       error: () => this.notifications.error('Не вдалось отримати результат розрахунку.')
     });
+  }
+
+  // A displacement that is visible: the largest one drawn at a tenth of the body's size (the real ones are
+  // microscopic next to the model); never beyond the viewer's ×500000.
+  static visibleScale(result: SolverResultDto): number {
+    if (result.maxDisplacement <= 0 || result.positions.length < 3) return 1;
+    const low = [Infinity, Infinity, Infinity];
+    const high = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < result.positions.length; i++) {
+      low[i % 3] = Math.min(low[i % 3], result.positions[i]);
+      high[i % 3] = Math.max(high[i % 3], result.positions[i]);
+    }
+    const size = Math.hypot(high[0] - low[0], high[1] - low[1], high[2] - low[2]);
+    const scale = (0.1 * size) / result.maxDisplacement;
+    return Math.min(500000, scale >= 10 ? Math.round(scale / 10) * 10 : Math.round(scale * 10) / 10);
   }
 
   private startPolling(sessionId: number): void {

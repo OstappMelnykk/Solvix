@@ -10,6 +10,8 @@ import { SessionsService } from './sessions.service';
 import { MeshPick } from '../geometry/mesh-editor-view';
 import { singleCubeState } from '../geometry/mesh-state.fixture.spec';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
+import { SolverService } from './solver.service';
+import { SolverHubClient } from '../api/solver-hub.client';
 import * as THREE from 'three';
 
 describe('MeshEditorRenderService', () => {
@@ -22,7 +24,8 @@ describe('MeshEditorRenderService', () => {
   const emptyState: MeshStateDto = { version: 0, canUndo: false, canRedo: false, nodes: [], hexes: [], links: [], faces: [], invalidHexes: [] };
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    const hub = jasmine.createSpyObj<SolverHubClient>('SolverHubClient', ['onJobChanged', 'join', 'leave']);
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: SolverHubClient, useValue: hub }] });
     http = TestBed.inject(HttpTestingController);
     render = TestBed.inject(MeshEditorRenderService);
     editor = TestBed.inject(MeshEditorService);
@@ -71,8 +74,12 @@ describe('MeshEditorRenderService', () => {
     loadState(singleCubeState());
     const first = render.getView(sessionId, REAL_WORLD_INDEX);
 
-    editor.subdivisions = 3;
+    TestBed.inject(SolverService).setDivisions(sessionId, 3, 3, 3);
+    http.expectOne(`${environment.apiBaseUrl}/api/solver/${sessionId}/divisions`).flush({
+      version: 1, divisions: [3, 3, 3], materials: [], defaultMaterial: 'steel', hexMaterials: {}, fixed: [], loads: []
+    });
     const withGrid = render.getView(sessionId, REAL_WORLD_INDEX);
+    http.match(`${environment.apiBaseUrl}/api/solver/${sessionId}/setup`);
 
     expect(withGrid).not.toBe(first);
     expect(render.getView(sessionId, REAL_WORLD_INDEX)).toBe(withGrid);

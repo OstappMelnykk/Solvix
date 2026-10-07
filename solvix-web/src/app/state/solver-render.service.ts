@@ -41,8 +41,8 @@ export class SolverRenderService {
       result: this.solver.result(sessionId),
       field: display.field,
       deformationScale: display.deformationScale,
-      selectedHexes: this.selection.hexes(sessionId),
-      selectedFace: this.selection.face(sessionId)
+      opacity: display.opacity,
+      selectedHexes: this.selection.hexes(sessionId)
     });
     this.cache.set(sessionId, { key, view });
     return view;

@@ -1,28 +1,17 @@
 import { Component, Input, inject } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { FACE_NAMES } from '../../../geometry/mesh-editor-view';
 import { HexFaceName } from '../../../api/mesh-editor-api.service';
 import { SolverMaterialDto } from '../../../api/solver-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
-import { ResultField, SolverService } from '../../../state/solver.service';
-import { fieldRange, fieldValues, rampColor } from '../../../geometry/solver-view';
+import { ResultField, SIDES, SolverService } from '../../../state/solver.service';
 
 const MPA = 1e6;
 const GPA = 1e9;
 
-export const SIDE_LABELS: Record<HexFaceName, string> = {
-  XMinus: 'X− (ліворуч)',
-  XPlus: 'X+ (праворуч)',
-  YMinus: 'Y− (низ)',
-  YPlus: 'Y+ (верх)',
-  ZMinus: 'Z− (ззаду)',
-  ZPlus: 'Z+ (спереду)'
-};
-
-// The Solver World's panel: what to solve (a material per cube, clamped faces, pressures), whether it can be
-// solved, the solve itself with its progress, and how the solution is shown. Everything is decided on the
-// server; this forwards the choices and shows the answers.
+// The Solver World's panel, laid out like the solver's own sidebar: the mesh of small elements (Nx, Ny, Nz), the
+// material and the load (Pn and the side that carries it, the side that is clamped), the Solve button with its
+// warnings, and the results. Everything is decided on the server; this forwards the choices and shows the answers.
 @Component({
   selector: 'app-solver-controls',
   standalone: true,
@@ -37,21 +26,37 @@ export class SolverControlsComponent {
 
   @Input({ required: true }) sessionId!: number;
 
-  readonly sides = FACE_NAMES;
-  readonly sideLabels = SIDE_LABELS;
-  // Form fields (not sent anywhere until a button is pressed).
-  side: HexFaceName = 'ZMinus';
-  pressureMPa = 1;
+  readonly sides = SIDES;
+  readonly axes = ['Nx', 'Ny', 'Nz'] as const;
+  // Form fields of the custom material (not sent until the button is pressed).
   newLabel = '';
   newYoungGPa = 70;
   newPoisson = 0.3;
   isMaterialFormOpen = false;
 
-  // --- stats and set-up ---
+  // --- the mesh of small elements ---
 
   hexCount(): number {
     return this.editor.getState(this.sessionId)?.hexes.length ?? 0;
   }
+
+  divisions(): readonly number[] {
+    return this.solver.divisions(this.sessionId);
+  }
+
+  elementCount(): number {
+    return this.hexCount() * this.divisions().reduce((product, n) => product * n, 1);
+  }
+
+  onDivision(axis: number, event: Event): void {
+    const value = Math.floor(Number((event.target as HTMLInputElement).value));
+    if (!Number.isFinite(value)) return;
+    const next = [...this.divisions()];
+    next[axis] = Math.min(8, Math.max(1, value));
+    this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
+  }
+
+  // --- materials ---
 
   setup() {
     return this.solver.setup(this.sessionId);
@@ -63,14 +68,6 @@ export class SolverControlsComponent {
 
   defaultMaterial(): string {
     return this.setup()?.defaultMaterial ?? '';
-  }
-
-  fixedCount(): number {
-    return this.setup()?.fixed.length ?? 0;
-  }
-
-  loadedCount(): number {
-    return this.setup()?.loads.length ?? 0;
   }
 
   materialsInUse(): string[] {
@@ -93,22 +90,6 @@ export class SolverControlsComponent {
     return this.selection.hexes(this.sessionId);
   }
 
-  pickedFaceText(): string {
-    const face = this.selection.face(this.sessionId);
-    if (!face) return '';
-    const parts = [`Куб ${face.hex}, ${face.face}`];
-    if (this.solver.isFixed(this.sessionId, face.hex, face.face)) parts.push('закріплена');
-    const pressure = this.solver.pressureOn(this.sessionId, face.hex, face.face);
-    if (pressure !== null) parts.push(`тиск ${pressure / MPA} МПа`);
-    return parts.join(' · ');
-  }
-
-  hasPickedFace(): boolean {
-    return this.selection.face(this.sessionId) !== null;
-  }
-
-  // --- commands ---
-
   onDefaultMaterial(event: Event): void {
     this.solver.setDefaultMaterial(this.sessionId, (event.target as HTMLSelectElement).value);
   }
@@ -117,35 +98,6 @@ export class SolverControlsComponent {
     const select = event.target as HTMLSelectElement;
     if (select.value) this.solver.setMaterialOfSelection(this.sessionId, select.value);
     select.value = '';
-  }
-
-  fixPicked(fixed: boolean): void {
-    this.solver.fixPickedFace(this.sessionId, fixed);
-  }
-
-  loadPicked(apply: boolean): void {
-    this.solver.loadPickedFace(this.sessionId, apply ? this.pressureMPa * MPA : null);
-  }
-
-  onSide(event: Event): void {
-    this.side = (event.target as HTMLSelectElement).value as HexFaceName;
-  }
-
-  onPressure(event: Event): void {
-    const value = Number((event.target as HTMLInputElement).value);
-    if (Number.isFinite(value)) this.pressureMPa = value;
-  }
-
-  fixSide(fixed: boolean): void {
-    this.solver.fixSide(this.sessionId, this.side, fixed);
-  }
-
-  loadSide(apply: boolean): void {
-    this.solver.loadSide(this.sessionId, this.side, apply ? this.pressureMPa * MPA : null);
-  }
-
-  clearSetup(): void {
-    this.solver.clearSetup(this.sessionId);
   }
 
   canAddMaterial(): boolean {
@@ -172,6 +124,51 @@ export class SolverControlsComponent {
   private numberField(event: Event, apply: (value: number) => void): void {
     const value = Number((event.target as HTMLInputElement).value);
     if (Number.isFinite(value)) apply(value);
+  }
+
+  // --- the load and the clamping, as in the solver ---
+
+  pressure(): number {
+    return this.solver.pressure(this.sessionId);
+  }
+
+  onPressure(event: Event): void {
+    this.numberField(event, value => this.solver.setPressure(this.sessionId, value));
+  }
+
+  isLoadSide(side: HexFaceName): boolean {
+    return this.solver.loadSide(this.sessionId) === side;
+  }
+
+  isFixedSide(side: HexFaceName): boolean {
+    return this.solver.fixedSide(this.sessionId) === side && !this.solver.isFixedAuto(this.sessionId);
+  }
+
+  isFixedAutoSide(side: HexFaceName): boolean {
+    return this.solver.fixedSide(this.sessionId) === side && this.solver.isFixedAuto(this.sessionId);
+  }
+
+  selectLoadSide(side: HexFaceName): void {
+    this.solver.selectLoadSide(this.sessionId, side);
+  }
+
+  selectFixedSide(side: HexFaceName): void {
+    this.solver.selectFixedSide(this.sessionId, side);
+  }
+
+  loadedText(): string {
+    return `Навантажено: ${this.solver.loadedFaceCount(this.sessionId)} граней СЕ`;
+  }
+
+  fixedText(): string {
+    const count = this.solver.fixedFaceCount(this.sessionId);
+    const side = this.solver.fixedSide(this.sessionId);
+    if (this.solver.isFixedAuto(this.sessionId)) return `Закріплено: ${count} граней (авто)`;
+    return count > 0 || side ? `Закріплено: ${count} граней` : 'Закріплено: нічого';
+  }
+
+  clearSetup(): void {
+    this.solver.clearSetup(this.sessionId);
   }
 
   // --- solving ---
@@ -220,7 +217,7 @@ export class SolverControlsComponent {
     }
   }
 
-  // --- the solution ---
+  // --- the results ---
 
   result() {
     return this.solver.result(this.sessionId);
@@ -234,38 +231,28 @@ export class SolverControlsComponent {
     this.solver.setField(this.sessionId, (event.target as HTMLSelectElement).value as ResultField);
   }
 
-  onScale(event: Event): void {
-    this.numberField(event, value => this.solver.setDeformationScale(this.sessionId, value));
-  }
-
   clearResult(): void {
     this.solver.clearResult(this.sessionId);
   }
 
-  maxText(): string {
+  // The summary table: what the solver shows after a solve.
+  summary(): { label: string; value: string; title: string }[] {
     const result = this.result();
-    if (!result) return '';
-    return `макс. напруження ${(result.maxVonMises / MPA).toPrecision(4)} МПа · макс. переміщення ${result.maxDisplacement.toExponential(3)}`;
+    if (!result) return [];
+    const sci = (v: number, digits: number) => v.toExponential(digits);
+    return [
+      { label: 'Min uz', value: sci(Math.min(...result.uz), 4), title: 'Мінімальне переміщення uz по всіх вузлах' },
+      { label: 'Max |u|', value: sci(result.maxDisplacement, 4), title: 'Максимальна довжина вектора переміщення' },
+      { label: 'Max σ_vm', value: `${sci(result.maxVonMises, 3)} Па`, title: 'Максимальне напруження за Мізесом' },
+      { label: 'Min σ_vm', value: `${sci(Math.min(...result.vonMises), 3)} Па`, title: 'Мінімальне напруження за Мізесом' },
+      { label: 'Вузлів СЕ', value: String(result.ux.length), title: 'Вузли сітки, на якій розв\'язано задачу' },
+      { label: 'Час', value: `${result.elapsedSeconds.toFixed(2)} с`, title: 'Час розрахунку' }
+    ];
   }
 
-  // The values at the two ends of the colour bar, and the bar itself as a CSS gradient.
-  legend(): { min: string; max: string; gradient: string } | null {
-    const result = this.result();
-    const field = this.display().field;
-    if (!result || field === 'none') return null;
-    const values = fieldValues(result, field);
-    if (!values) return null;
-    const max = fieldRange(values).max;
-    const stops = [0, 0.25, 0.5, 0.75, 1].map(t => `#${rampColor(t).getHexString()} ${t * 100}%`);
-    return {
-      min: '0',
-      max: field === 'vonMises' ? `${(max / MPA).toPrecision(4)} МПа` : max.toExponential(3),
-      gradient: `linear-gradient(to right, ${stops.join(', ')})`
-    };
-  }
-
-  elapsedText(): string {
-    const result = this.result();
-    return result ? `${result.elapsedSeconds.toFixed(2)} с` : '';
+  // The pressure of a MPa value, for the hint under the Pn field.
+  pressureHint(): string {
+    const p = this.pressure();
+    return p < 0 ? `стиск, ${(-p / MPA).toPrecision(3)} МПа` : p > 0 ? `розтяг, ${(p / MPA).toPrecision(3)} МПа` : 'немає навантаження';
   }
 }

@@ -378,16 +378,20 @@ export class MeshEditorControlsComponent {
     this.carryEdgeMidpoints = (event.target as HTMLInputElement).checked;
   }
 
-  get subdivisions(): number {
-    return this.editor.subdivisions;
+  // The division of every cube into small elements, per axis - the solver's Nx, Ny, Nz. The same numbers draw the
+  // inner grid here and cut the cubes for the solve.
+  divisions(): readonly number[] {
+    return this.sessionId === null ? [1, 1, 1] : this.solver.divisions(this.sessionId);
   }
 
-  // The inner grid view: 1 (off) to 8 cells per edge.
-  onSubdivisionsChange(event: Event): void {
+  // 1 (off) to 8 small elements along an axis.
+  onDivisionChange(axis: number, event: Event): void {
+    if (this.sessionId === null) return;
     const value = Math.floor(Number((event.target as HTMLInputElement).value));
-    if (Number.isFinite(value)) {
-      this.editor.subdivisions = Math.min(8, Math.max(1, value));
-    }
+    if (!Number.isFinite(value)) return;
+    const next = [...this.divisions()];
+    next[axis] = Math.min(8, Math.max(1, value));
+    this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
   }
 
   onNudgeStepChange(event: Event): void {

@@ -23,6 +23,7 @@ describe('SolverService', () => {
   const meshApi = `${environment.apiBaseUrl}/api/mesh-editor`;
   const emptySetup: SolverSetupDto = {
     version: 0,
+    divisions: [1, 1, 1],
     materials: [
       { name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3 },
       { name: 'rubber', label: 'Гума', e: 1e7, nu: 0.45 }
@@ -34,7 +35,10 @@ describe('SolverService', () => {
   };
   const lastToast = () => notifications.toasts().slice(-1)[0];
   const job = (state: SolverJobDto['state'], progress = 0, ticket = 1, error: string | null = null): SolverJobDto => ({ state, progress, stage: 'Етап', error, ticket });
-  const result = (ticket = 1): SolverResultDto => ({ ticket, nodeIds: [0], ux: [0], uy: [0], uz: [0.001], vonMises: [5e6], maxDisplacement: 0.001, maxVonMises: 5e6, elapsedSeconds: 0.2 });
+  const result = (ticket = 1): SolverResultDto => ({
+    ticket, divisions: [1, 1, 1], positions: [0, 0, 0, 1, 0, 0], hexIds: [0], gridNodes: [0, 1],
+    ux: [0, 0], uy: [0, 0], uz: [0, 0.001], vonMises: [0, 5e6], maxDisplacement: 0.001, maxVonMises: 5e6, elapsedSeconds: 0.2
+  });
 
   beforeEach(() => {
     localStorage.clear();
@@ -84,62 +88,144 @@ describe('SolverService', () => {
     expect(solver.materialOf(sessionId, 0)).toBe('steel');
   });
 
-  describe('face supports and loads', () => {
-    it('clamps the picked free face and takes the answer as the new set-up', () => {
-      loadSetup();
-      selection.selectFace(sessionId, { hex: 0, face: 'XMinus' });
+  describe('choosing faces, as in the solver', () => {
+    const faces = (request: { request: { body: { faces: unknown } } }) => request.request.body.faces;
 
-      solver.fixPickedFace(sessionId, true);
-
-      const request = http.expectOne(`${api}/${sessionId}/faces/fixed`);
-      expect(request.request.method).toBe('PUT');
-      expect(request.request.body).toEqual({ faces: [{ hex: 0, face: 'XMinus' }], fixed: true });
-      request.flush({ ...emptySetup, version: 1, fixed: [{ hex: 0, face: 'XMinus' }] });
-      expect(solver.isFixed(sessionId, 0, 'XMinus')).toBeTrue();
-      expect(solver.isFixed(sessionId, 0, 'XPlus')).toBeFalse();
+    it('starts in Load mode with the solver\'s default Pn of 1 MPa of compression', () => {
+      expect(solver.mode(sessionId)).toBe('load');
+      expect(solver.pressure(sessionId)).toBe(-1e6);
+      expect(solver.loadSide(sessionId)).toBeNull();
+      expect(solver.fixedSide(sessionId)).toBeNull();
+      expect(solver.isFixedAuto(sessionId)).toBeFalse();
     });
 
-    it('presses the picked face and removes the pressure with null', () => {
+    it('a whole side is pressed with Pn, replacing what was pressed, and the opposite side is clamped on its own', () => {
       loadSetup();
-      selection.selectFace(sessionId, { hex: 1, face: 'XPlus' });
 
-      solver.loadPickedFace(sessionId, 2e6);
-      const request = http.expectOne(`${api}/${sessionId}/faces/load`);
-      expect(request.request.body).toEqual({ faces: [{ hex: 1, face: 'XPlus' }], pressure: 2e6 });
-      request.flush({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: 2e6 }] });
-      expect(solver.pressureOn(sessionId, 1, 'XPlus')).toBe(2e6);
+      solver.selectLoadSide(sessionId, 'XPlus');           // cube 1's XPlus is outer, cube 0's is linked
+      const load = http.expectOne(`${api}/${sessionId}/faces/load`);
+      expect(load.request.body).toEqual({ faces: [{ hex: 1, face: 'XPlus' }], pressure: -1e6, replace: true });
+      load.flush({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -1e6 }] });
 
-      solver.loadPickedFace(sessionId, null);
+      const fixedRequest = http.expectOne(`${api}/${sessionId}/faces/fixed`);
+      expect(fixedRequest.request.body).toEqual({ faces: [{ hex: 0, face: 'XMinus' }], fixed: true, replace: true });
+      fixedRequest.flush({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -1e6 }], fixed: [{ hex: 0, face: 'XMinus' }] });
+      expect(solver.loadSide(sessionId)).toBe('XPlus');
+      expect(solver.fixedSide(sessionId)).toBe('XMinus');
+      expect(solver.isFixedAuto(sessionId)).toBeTrue();
+    });
+
+    it('a clamped side chosen by the user is kept when the load moves, and a second click returns to automatic', () => {
+      loadSetup();
+      solver.selectFixedSide(sessionId, 'YMinus');
+      const chosen = http.expectOne(`${api}/${sessionId}/faces/fixed`);
+      expect(faces(chosen)).toEqual([{ hex: 0, face: 'YMinus' }, { hex: 1, face: 'YMinus' }]);
+      chosen.flush({ ...emptySetup, fixed: [{ hex: 0, face: 'YMinus' }, { hex: 1, face: 'YMinus' }] });
+      expect(solver.isFixedAuto(sessionId)).toBeFalse();
+      expect(solver.fixedSide(sessionId)).toBe('YMinus');
+
+      solver.selectLoadSide(sessionId, 'XPlus');
+      http.expectOne(`${api}/${sessionId}/faces/load`).flush({ ...emptySetup });
+      http.expectNone(`${api}/${sessionId}/faces/fixed`);               // the chosen clamping stays
+
+      solver.selectFixedSide(sessionId, 'YMinus');                       // the same button again: automatic
+      const auto = http.expectOne(`${api}/${sessionId}/faces/fixed`);
+      expect(faces(auto)).toEqual([{ hex: 0, face: 'XMinus' }]);        // the opposite of the load's XPlus
+      expect(solver.isFixedAuto(sessionId)).toBeTrue();
+    });
+
+    it('pressing the side that was clamped hands the clamping back to automatic', () => {
+      loadSetup();
+      solver.selectFixedSide(sessionId, 'XPlus');
+      http.expectOne(`${api}/${sessionId}/faces/fixed`).flush(emptySetup);
+
+      solver.selectLoadSide(sessionId, 'XPlus');
+      http.expectOne(`${api}/${sessionId}/faces/load`).flush(emptySetup);
+
+      expect(solver.isFixedAuto(sessionId)).toBeTrue();
+      expect(solver.fixedSide(sessionId)).toBe('XMinus');
+      http.expectOne(`${api}/${sessionId}/faces/fixed`);
+    });
+
+    it('lists the outer faces of a side, leaving out the faces inside the body', () => {
+      expect(solver.outerFaces(sessionId, 'XPlus')).toEqual([{ hex: 1, face: 'XPlus' }]);
+      expect(solver.outerFaces(sessionId, 'XMinus')).toEqual([{ hex: 0, face: 'XMinus' }]);
+      expect(solver.outerFaces(sessionId, 'YPlus').map(f => f.hex)).toEqual([0, 1]);
+    });
+
+    it('a click on a face marks it as pressed in Load mode and unmarks it the next time', () => {
+      loadSetup();
+
+      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
+      const on = http.expectOne(`${api}/${sessionId}/faces/load`);
+      expect(on.request.body).toEqual({ faces: [{ hex: 0, face: 'YPlus' }], pressure: -1e6 });
+      on.flush({ ...emptySetup, loads: [{ hex: 0, face: 'YPlus', pressure: -1e6 }] });
+      expect(solver.pressureOn(sessionId, 0, 'YPlus')).toBe(-1e6);
+
+      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
       expect(http.expectOne(`${api}/${sessionId}/faces/load`).request.body.pressure).toBeNull();
     });
 
-    it('refuses a face inside the body (linked to another cube) and an empty pick, with a hint', () => {
+    it('in Fix mode the same click clamps and unclamps, and marks the clamping as chosen', () => {
       loadSetup();
-      selection.selectFace(sessionId, { hex: 0, face: 'XPlus' });   // linked to cube 1
+      solver.setMode(sessionId, 'fix');
 
-      solver.fixPickedFace(sessionId, true);
+      solver.pick(sessionId, { kind: 'face', hex: 1, face: 'ZMinus' }, false);
+      const on = http.expectOne(`${api}/${sessionId}/faces/fixed`);
+      expect(on.request.body).toEqual({ faces: [{ hex: 1, face: 'ZMinus' }], fixed: true });
+      on.flush({ ...emptySetup, fixed: [{ hex: 1, face: 'ZMinus' }] });
+      expect(solver.isFixed(sessionId, 1, 'ZMinus')).toBeTrue();
+      expect(solver.isFixedAuto(sessionId)).toBeFalse();
+
+      solver.pick(sessionId, { kind: 'face', hex: 1, face: 'ZMinus' }, false);
+      expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.fixed).toBeFalse();
+    });
+
+    it('Shift + click picks a cube (for its material) instead of marking a face', () => {
+      loadSetup();
+
+      solver.pick(sessionId, { kind: 'face', hex: 1, face: 'YPlus' }, true);
+
+      expect(selection.hexes(sessionId)).toEqual([1]);
+      http.expectNone(`${api}/${sessionId}/faces/load`);
+    });
+
+    it('a click on nothing does nothing', () => {
+      loadSetup();
+
+      solver.pick(sessionId, null, false);
+
+      http.expectNone(`${api}/${sessionId}/faces/load`);
+    });
+
+    it('refuses a face inside the body (linked to another cube) with a hint', () => {
+      loadSetup();
+
+      solver.toggleFace(sessionId, { hex: 0, face: 'XPlus' });
+
       expect(lastToast().message).toContain('усередині тіла');
-
-      selection.clear(sessionId);
-      solver.fixPickedFace(sessionId, true);
-      expect(lastToast().message).toContain('Виберіть грань');
-      http.expectNone(`${api}/${sessionId}/faces/fixed`);
+      http.expectNone(`${api}/${sessionId}/faces/load`);
     });
 
-    it('clamps a whole side: every outer face with that name, and none of the inner ones', () => {
-      loadSetup();
+    it('a new Pn goes to every pressed face, and is only remembered when nothing is pressed', () => {
+      loadSetup({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -1e6 }] });
 
-      solver.fixSide(sessionId, 'XPlus', true);          // cube 1's XPlus is outer, cube 0's is linked
-      const request = http.expectOne(`${api}/${sessionId}/faces/fixed`);
-      expect(request.request.body.faces).toEqual([{ hex: 1, face: 'XPlus' }]);
-      request.flush(emptySetup);
+      solver.setPressure(sessionId, -3e6);
+      const request = http.expectOne(`${api}/${sessionId}/faces/load`);
+      expect(request.request.body).toEqual({ faces: [{ hex: 1, face: 'XPlus' }], pressure: -3e6, replace: true });
+      request.flush({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -3e6 }] });
+      expect(solver.pressure(sessionId)).toBe(-3e6);
+
+      solver.setPressure(sessionId, NaN);
+      expect(solver.pressure(sessionId)).toBe(-3e6);
     });
 
-    it('says when a side has no outer faces', () => {
-      loadSetup();
-      TestBed.inject(SessionsService);
-      const faces = solver.outerFaces(sessionId, 'XPlus');
-      expect(faces.map(f => f.hex)).toEqual([1]);
+    it('counts the faces of the divided mesh: a cube face is nx*ny*nz / n_axis small faces', () => {
+      loadSetup({ ...emptySetup, divisions: [2, 3, 4], loads: [{ hex: 0, face: 'XMinus', pressure: -1e6 }, { hex: 1, face: 'ZPlus', pressure: -1e6 }], fixed: [{ hex: 0, face: 'YPlus' }] });
+
+      expect(solver.loadedFaceCount(sessionId)).toBe(3 * 4 + 2 * 3);      // X face: ny*nz, Z face: nx*ny
+      expect(solver.fixedFaceCount(sessionId)).toBe(2 * 4);               // Y face: nx*nz
+      expect(solver.divisions(sessionId)).toEqual([2, 3, 4]);
     });
 
     it('a changed set-up makes the old verdict stale', () => {
@@ -147,22 +233,45 @@ describe('SolverService', () => {
       solver.validate(sessionId);
       http.expectOne(`${api}/${sessionId}/validate`).flush({ canSolve: true, issues: [] });
       expect(solver.validation(sessionId)).not.toBeNull();
-      selection.selectFace(sessionId, { hex: 0, face: 'XMinus' });
 
-      solver.fixPickedFace(sessionId, true);
-      http.expectOne(`${api}/${sessionId}/faces/fixed`).flush(emptySetup);
+      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
+      http.expectOne(`${api}/${sessionId}/faces/load`).flush(emptySetup);
 
       expect(solver.validation(sessionId)).toBeNull();
     });
 
     it('reports a failed save as an error toast', () => {
       loadSetup();
-      selection.selectFace(sessionId, { hex: 0, face: 'XMinus' });
 
-      solver.fixPickedFace(sessionId, true);
-      http.expectOne(`${api}/${sessionId}/faces/fixed`).flush('x', { status: 500, statusText: 'Server Error' });
+      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
+      http.expectOne(`${api}/${sessionId}/faces/load`).flush('x', { status: 500, statusText: 'Server Error' });
 
       expect(lastToast().kind).toBe('error');
+    });
+  });
+
+  describe('the division of the cubes', () => {
+    it('defaults to 1x1x1 and is sent per axis', () => {
+      expect(solver.divisions(sessionId)).toEqual([1, 1, 1]);
+      loadSetup();
+
+      solver.setDivisions(sessionId, 2, 3, 4);
+
+      const request = http.expectOne(`${api}/${sessionId}/divisions`);
+      expect(request.request.body).toEqual({ nx: 2, ny: 3, nz: 4 });
+      request.flush({ ...emptySetup, divisions: [2, 3, 4] });
+      expect(solver.divisions(sessionId)).toEqual([2, 3, 4]);
+    });
+
+    it('sends nothing for a value out of 1..8 or not a number, and rounds down', () => {
+      loadSetup();
+
+      solver.setDivisions(sessionId, 0, 1, 1);
+      solver.setDivisions(sessionId, 1, 9, 1);
+      solver.setDivisions(sessionId, 1, 1, NaN);
+      http.expectNone(`${api}/${sessionId}/divisions`);
+      solver.setDivisions(sessionId, 2.9, 1, 1);
+      expect(http.expectOne(`${api}/${sessionId}/divisions`).request.body.nx).toBe(2);
     });
   });
 
@@ -220,6 +329,7 @@ describe('SolverService', () => {
 
       expect(solver.isRunning(sessionId)).toBeFalse();
       expect(solver.result(sessionId)?.maxVonMises).toBe(5e6);
+      expect(solver.display(sessionId).deformationScale).toBe(100);       // the displacement 1e-3 on a body 1 long, drawn at a tenth
     }));
 
     it('does not start a second solve while one runs', fakeAsync(() => {
@@ -325,8 +435,26 @@ describe('SolverService', () => {
       solver.setDeformationScale(sessionId, -1);
       solver.setDeformationScale(sessionId, NaN);
 
-      expect(solver.display(sessionId)).toEqual({ field: 'displacement', deformationScale: 50 });
+      expect(solver.display(sessionId)).toEqual({ field: 'displacement', deformationScale: 50, opacity: 1 });
       expect(solver.revision(sessionId)).toBe(before + 2);
+    });
+
+    it('keeps the opacity between 5% and 100% and ignores junk', () => {
+      solver.setOpacity(sessionId, 0.4);
+      expect(solver.display(sessionId).opacity).toBe(0.4);
+      solver.setOpacity(sessionId, 0);
+      expect(solver.display(sessionId).opacity).toBe(0.05);
+      solver.setOpacity(sessionId, 7);
+      expect(solver.display(sessionId).opacity).toBe(1);
+      solver.setOpacity(sessionId, NaN);
+      expect(solver.display(sessionId).opacity).toBe(1);
+    });
+
+    it('chooses a deformation that can be seen when a result arrives: the biggest displacement at a tenth of the body', () => {
+      expect(SolverService.visibleScale({ ...result(), maxDisplacement: 1e-5 })).toBe(10000);       // body 1 long
+      expect(SolverService.visibleScale({ ...result(), maxDisplacement: 1e-12 })).toBe(500000);     // never beyond the viewer's limit
+      expect(SolverService.visibleScale({ ...result(), maxDisplacement: 0 })).toBe(1);
+      expect(SolverService.visibleScale({ ...result(), maxDisplacement: 0.05 })).toBe(2);
     });
 
     it('forgets everything about a session after the mesh was reset', () => {

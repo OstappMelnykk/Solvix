@@ -1,0 +1,35 @@
+<div class="bar">
+  <button type="button" [class.active]="mode() === 'load'" title="Клік по грані позначає її як навантажену (зелена). Увімкнено за замовчуванням." (click)="setMode('load')">Load</button>
+  <button type="button" [class.active]="mode() === 'fix'" title="Клік по грані позначає її як закріплену (синя). Якщо жодної не вибрано — береться протилежна до навантаженої." (click)="setMode('fix')">Fix</button>
+
+  <label class="slider" title="Прозорість кубів: зменшіть, щоб бачити ребра й грані позаду">
+    Прозорість
+    <div class="row">
+      <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" />
+      <span class="value">{{ opacityPercent() }}%</span>
+    </div>
+  </label>
+
+  <label class="slider" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення (мікрони) на ×1 непомітні.">
+    Деформація
+    <div class="row">
+      <span class="x">×</span>
+      <input type="number" class="num" min="0" max="500000" step="10" [value]="scale()" (change)="onScaleNumber($event)" />
+      <input type="range" min="0" max="100" step="1" [value]="scaleSlider()" (input)="onScaleSlider($event)" />
+    </div>
+    <span class="hint">{{ shownText() }}</span>
+  </label>
+</div>
+
+<div class="face-legend">
+  <span class="item"><span class="swatch swatch--load"></span>Навантаження: <b>{{ loadedText() }}</b></span>
+  <span class="item"><span class="swatch swatch--fix"></span>Закріплено: <b>{{ fixedText() }}</b></span>
+  <span class="hint">Режим: <b>{{ mode() === 'load' ? 'load' : 'fix' }}</b> · клік по грані — вибрати / зняти · Shift + клік — вибрати куб (для матеріалу)</span>
+</div>
+
+<div class="legend" *ngIf="legend() as l">
+  <span class="legend__max">{{ l.max }}</span>
+  <div class="legend__bar" [style.background]="l.gradient"></div>
+  <span class="legend__min">{{ l.min }}</span>
+  <div class="legend__label">{{ l.label }}</div>
+</div>

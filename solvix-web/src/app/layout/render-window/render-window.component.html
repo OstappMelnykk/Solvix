@@ -18,4 +18,5 @@
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />
+  <app-solver-overlay *ngIf="activeWorldIndex() === solverWorldIndex && sessions.activeSessionId() !== null" [sessionId]="sessions.activeSessionId()!" />
 </div>

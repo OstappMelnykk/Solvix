@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
+import { SolverService } from './solver.service';
 import { MeshView, buildMeshView } from '../geometry/mesh-editor-view';
 
 interface Cached {
@@ -21,6 +22,7 @@ interface Cached {
 export class MeshEditorRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly selection = inject(MeshEditorSelectionService);
+  private readonly solver = inject(SolverService);
   private readonly cache = new Map<string, Cached>();
 
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
@@ -31,7 +33,7 @@ export class MeshEditorRenderService {
       this.cache.delete(cacheKey);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.editor.subdivisions}`;
+    const key = `${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 
@@ -44,7 +46,7 @@ export class MeshEditorRenderService {
         hoverFace: this.selection.hoverFace(sessionId),
         nodeId: this.selection.nodeId(sessionId)
       },
-      { subdivisions: this.editor.subdivisions }
+      { subdivisions: this.solver.divisions(sessionId) as [number, number, number] }
     );
     this.cache.set(cacheKey, { key, view });
     return view;

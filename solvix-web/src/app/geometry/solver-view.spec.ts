@@ -1,11 +1,13 @@
 import * as THREE from 'three';
+import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
-import { MeshPick, disposeMeshView } from './mesh-editor-view';
-import { SolverViewInput, buildSolverView, fieldRange, fieldValues, materialColor, rampColor } from './solver-view';
+import { LOCAL_COORDS, MeshPick, disposeMeshView, mapHex } from './mesh-editor-view';
+import { SolverViewInput, buildSolverView, fieldRange, fieldValues, gridPoints, materialColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
   version: 0,
+  divisions: [1, 1, 1],
   materials: [],
   defaultMaterial: 'steel',
   hexMaterials: {},
@@ -14,17 +16,30 @@ const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
   ...over
 });
 
-const resultFor = (nodeIds: number[], values: (id: number) => { u?: [number, number, number]; vm?: number }): SolverResultDto => ({
-  ticket: 1,
-  nodeIds,
-  ux: nodeIds.map(id => values(id).u?.[0] ?? 0),
-  uy: nodeIds.map(id => values(id).u?.[1] ?? 0),
-  uz: nodeIds.map(id => values(id).u?.[2] ?? 0),
-  vonMises: nodeIds.map(id => values(id).vm ?? 0),
-  maxDisplacement: 0,
-  maxVonMises: 0,
-  elapsedSeconds: 0
-});
+// A result for a state, every cube with nodes of its own at the grid points of its division; `at` gives the
+// displacement and the stress of a node from where it sits.
+const resultFor = (
+  state: MeshStateDto,
+  divisions: [number, number, number],
+  at: (x: number, y: number, z: number) => { u?: [number, number, number]; vm?: number } = () => ({})
+): SolverResultDto => {
+  const [nx, ny, nz] = divisions;
+  const points = gridPoints(nx, ny, nz);
+  const nodes = new Map(state.nodes.map(n => [n.id, n]));
+  const positions: number[] = [];
+  const ux: number[] = [], uy: number[] = [], uz: number[] = [], vm: number[] = [], gridNodes: number[] = [];
+  for (const hex of state.hexes) {
+    const slots = LOCAL_COORDS.map((_, s) => new THREE.Vector3(nodes.get(hex.nodeIds[s])!.x, nodes.get(hex.nodeIds[s])!.y, nodes.get(hex.nodeIds[s])!.z));
+    for (const [ix, iy, iz] of points) {
+      const p = mapHex(slots, ix / nx - 1, iy / ny - 1, iz / nz - 1);
+      const value = at(p.x, p.y, p.z);
+      gridNodes.push(positions.length / 3);
+      positions.push(p.x, p.y, p.z);
+      ux.push(value.u?.[0] ?? 0); uy.push(value.u?.[1] ?? 0); uz.push(value.u?.[2] ?? 0); vm.push(value.vm ?? 0);
+    }
+  }
+  return { ticket: 1, divisions, positions, hexIds: state.hexes.map(h => h.id), gridNodes, ux, uy, uz, vonMises: vm, maxDisplacement: 0, maxVonMises: 0, elapsedSeconds: 0 };
+};
 
 const input = (over: Partial<SolverViewInput> = {}): SolverViewInput => ({
   state: linkedPairState(),
@@ -32,14 +47,23 @@ const input = (over: Partial<SolverViewInput> = {}): SolverViewInput => ({
   result: null,
   field: 'vonMises',
   deformationScale: 1,
+  opacity: 1,
   selectedHexes: [],
-  selectedFace: null,
   ...over
 });
 
 const meshes = (root: THREE.Object3D) => root.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
 const colorsOf = (mesh: THREE.Mesh) => Array.from(mesh.geometry.getAttribute('color').array);
 const positionsOf = (mesh: THREE.Mesh) => Array.from(mesh.geometry.getAttribute('position').array);
+const firstColor = (mesh: THREE.Mesh) => new THREE.Color(colorsOf(mesh)[0], colorsOf(mesh)[1], colorsOf(mesh)[2]);
+const faceMesh = (view: ReturnType<typeof buildSolverView>, face: string, hex?: number) =>
+  view.pickables.find(p => {
+    const pick = p.userData['pick'] as { hex: number; face: string };
+    return pick.face === face && (hex === undefined || pick.hex === hex);
+  }) as THREE.Mesh;
+const overlays = (view: ReturnType<typeof buildSolverView>) => meshes(view.root).filter(m => (m.material as THREE.MeshBasicMaterial).transparent && !view.pickables.includes(m));
+const lineVertexCount = (view: ReturnType<typeof buildSolverView>) =>
+  (view.root.children.find(c => c instanceof THREE.LineSegments) as THREE.LineSegments).geometry.getAttribute('position').count;
 
 describe('solver-view', () => {
   describe('colours', () => {
@@ -59,17 +83,31 @@ describe('solver-view', () => {
   });
 
   describe('fields', () => {
-    const result = resultFor([1, 2, 3], id => ({ u: [id, 0, 0], vm: id * 10 }));
+    const result = { ...resultFor(singleCubeState(), [1, 1, 1]), ux: [3, 0], uy: [4, 0], uz: [0, 2], vonMises: [10, 30] } as SolverResultDto;
 
     it('von Mises values come straight from the result, displacement as the length of the vector', () => {
-      expect(fieldValues(result, 'vonMises')).toEqual([10, 20, 30]);
-      expect(fieldValues(result, 'displacement')).toEqual([1, 2, 3]);
+      expect(fieldValues(result, 'vonMises')).toEqual([10, 30]);
+      expect(fieldValues(result, 'displacement')).toEqual([5, 2]);
       expect(fieldValues(result, 'none')).toBeNull();
     });
 
     it('the range of a field, and of nothing', () => {
       expect(fieldRange([3, 1, 2])).toEqual({ min: 1, max: 3 });
       expect(fieldRange([])).toEqual({ min: 0, max: 0 });
+    });
+  });
+
+  describe('the grid of a divided cube', () => {
+    it('lists the points with at most one odd index, iz slowest and ix fastest', () => {
+      const points = gridPoints(1, 1, 1);
+
+      expect(points.length).toBe(20);
+      expect(points[0]).toEqual([0, 0, 0]);
+      expect(points[1]).toEqual([1, 0, 0]);
+      expect(points[2]).toEqual([2, 0, 0]);
+      expect(points.every(([x, y, z]) => (x % 2) + (y % 2) + (z % 2) <= 1)).toBeTrue();
+      expect(gridPoints(2, 2, 2).length).toBe(81);
+      expect(gridPoints(2, 1, 3).length).toBe(70);
     });
   });
 
@@ -86,38 +124,45 @@ describe('solver-view', () => {
       disposeMeshView(view);
     });
 
-    it('draws the curved edges of every cube as one set of lines', () => {
+    it('draws the curved edges of the outer faces as one set of lines: 4 per face, 8 segments each', () => {
       const view = buildSolverView(input());
-      const lines = view.root.children.filter(c => c instanceof THREE.LineSegments) as THREE.LineSegments[];
 
-      expect(lines.length).toBe(1);
-      expect(lines[0].geometry.getAttribute('position').count).toBe(2 * 12 * 10 * 2);   // 2 cubes x 12 edges x 10 segments x 2 ends
+      expect(view.root.children.filter(c => c instanceof THREE.LineSegments).length).toBe(1);
+      expect(lineVertexCount(view)).toBe(10 * 4 * 8 * 2);
+      disposeMeshView(view);
+    });
+
+    it('cuts every face into the small faces of the division, with their own edges', () => {
+      const view = buildSolverView(input({ state: singleCubeState(), setup: setup({ divisions: [2, 1, 3] }) }));
+
+      // faces: X (1*3 small faces) x2, Y (2*3) x2, Z (2*1) x2 = 22 small faces, 4 edges each
+      expect(lineVertexCount(view)).toBe(22 * 4 * 8 * 2);
+      const zPlus = positionsOf(faceMesh(view, 'ZPlus'));
+      const xs = new Set(zPlus.filter((_, i) => i % 3 === 0).map(v => Math.round(v * 1e6) / 1e6));
+      expect(xs.has(0.5)).toBeTrue();                     // the line between the two small faces along x
+      const ys = new Set(zPlus.filter((_, i) => i % 3 === 1).map(v => Math.round(v * 1e6) / 1e6));
+      expect([...ys].every(y => y >= 0 && y <= 1)).toBeTrue();
       disposeMeshView(view);
     });
 
     it('colours a cube by its material while there is no result', () => {
       const view = buildSolverView(input({ setup: setup({ hexMaterials: { '1': 'rubber' } }) }));
-      const faceOf = (hex: number) => view.pickables.find(p => (p.userData['pick'] as { hex: number }).hex === hex) as THREE.Mesh;
 
-      const steel = new THREE.Color(colorsOf(faceOf(0))[0], colorsOf(faceOf(0))[1], colorsOf(faceOf(0))[2]);
-      const rubber = new THREE.Color(colorsOf(faceOf(1))[0], colorsOf(faceOf(1))[1], colorsOf(faceOf(1))[2]);
-      expect(steel.r).toBeCloseTo(materialColor('steel').r, 5);
-      expect(rubber.g).toBeCloseTo(materialColor('rubber').g, 5);
-      expect(steel.getHex()).not.toBe(rubber.getHex());
+      expect(firstColor(faceMesh(view, 'YPlus', 0)).r).toBeCloseTo(materialColor('steel').r, 5);
+      expect(firstColor(faceMesh(view, 'YPlus', 1)).g).toBeCloseTo(materialColor('rubber').g, 5);
+      expect(firstColor(faceMesh(view, 'YPlus', 0)).getHex()).not.toBe(firstColor(faceMesh(view, 'YPlus', 1)).getHex());
       disposeMeshView(view);
     });
 
-    it('overlays clamped faces in red and pressed faces in blue, on the faces that carry them only', () => {
+    it('overlays clamped faces in blue and pressed faces in green, on the faces that carry them only', () => {
       const plain = buildSolverView(input());
-      const marked = buildSolverView(input({ setup: setup({ fixed: [{ hex: 0, face: 'XMinus' }], loads: [{ hex: 1, face: 'XPlus', pressure: 1e6 }] }) }));
-      const overlays = (v: ReturnType<typeof buildSolverView>) => meshes(v.root).filter(m => (m.material as THREE.MeshBasicMaterial).transparent);
+      const marked = buildSolverView(input({ setup: setup({ fixed: [{ hex: 0, face: 'XMinus' }], loads: [{ hex: 1, face: 'XPlus', pressure: -1e6 }] }) }));
 
       expect(overlays(plain).length).toBe(0);
-      const found = overlays(marked);
-      expect(found.length).toBe(2);
-      const hexes = found.map(m => new THREE.Color(colorsOf(m)[0], colorsOf(m)[1], colorsOf(m)[2]).getHex());
-      expect(hexes).toContain(0xe05252);
-      expect(hexes).toContain(0x39a6f2);
+      const colours = overlays(marked).map(m => firstColor(m).getHex());
+      expect(colours.length).toBe(2);
+      expect(colours).toContain(0x3388ff);
+      expect(colours).toContain(0x44ff44);
       disposeMeshView(plain);
       disposeMeshView(marked);
     });
@@ -125,44 +170,49 @@ describe('solver-view', () => {
     it('does not overlay a clamped face that is inside the body', () => {
       const view = buildSolverView(input({ setup: setup({ fixed: [{ hex: 0, face: 'XPlus' }] }) }));
 
-      expect(meshes(view.root).filter(m => (m.material as THREE.MeshBasicMaterial).transparent).length).toBe(0);
+      expect(overlays(view).length).toBe(0);
       disposeMeshView(view);
     });
 
     it('colours by the field after a solve: the highest value is red, the lowest blue, and it varies across a face', () => {
       const state = singleCubeState();
-      const result = resultFor(state.nodes.map(n => n.id), id => ({ vm: state.nodes[id].z * 1e6 }));   // stress grows with height
+      const result = resultFor(state, [1, 1, 1], (_x, _y, z) => ({ vm: z * 1e6 }));        // stress grows with height
 
       const view = buildSolverView(input({ state, result, field: 'vonMises' }));
-      const top = view.pickables.find(p => (p.userData['pick'] as { face: string }).face === 'ZPlus') as THREE.Mesh;
-      const bottom = view.pickables.find(p => (p.userData['pick'] as { face: string }).face === 'ZMinus') as THREE.Mesh;
 
-      expect(new THREE.Color(colorsOf(top)[0], colorsOf(top)[1], colorsOf(top)[2]).getHex()).toBe(0xe4572e);
-      expect(new THREE.Color(colorsOf(bottom)[0], colorsOf(bottom)[1], colorsOf(bottom)[2]).getHex()).toBe(0x2b3cc4);
-      const side = view.pickables.find(p => (p.userData['pick'] as { face: string }).face === 'XPlus') as THREE.Mesh;
-      const sideColors = colorsOf(side);
-      expect(new Set(sideColors.map(c => c.toFixed(3))).size).toBeGreaterThan(3);      // a gradient, not one colour
+      expect(firstColor(faceMesh(view, 'ZPlus')).getHex()).toBe(0xe4572e);
+      expect(firstColor(faceMesh(view, 'ZMinus')).getHex()).toBe(0x2b3cc4);
+      expect(new Set(colorsOf(faceMesh(view, 'XPlus')).map(c => c.toFixed(3))).size).toBeGreaterThan(3);   // a gradient, not one colour
+      disposeMeshView(view);
+    });
+
+    it('colours the small faces from the nodes of the divided mesh: a field that changes along x differs between the two halves', () => {
+      const state = singleCubeState();
+      const result = resultFor(state, [2, 1, 1], x => ({ vm: x * 1e6 }));
+
+      const view = buildSolverView(input({ state, result, setup: setup({ divisions: [2, 1, 1] }) }));
+      const colors = colorsOf(faceMesh(view, 'ZPlus'));
+      const reds = [];
+      for (let i = 0; i < colors.length; i += 3) reds.push(colors[i]);
+
+      expect(Math.max(...reds)).toBeGreaterThan(Math.min(...reds) + 0.2);
       disposeMeshView(view);
     });
 
     it('"materials" as the field keeps the material colours even with a result', () => {
       const state = singleCubeState();
-      const result = resultFor(state.nodes.map(n => n.id), () => ({ vm: 5e6 }));
+      const result = resultFor(state, [1, 1, 1], () => ({ vm: 5e6 }));
 
       const view = buildSolverView(input({ state, result, field: 'none' }));
-      const face = view.pickables[0] as THREE.Mesh;
 
-      expect(colorsOf(face)[0]).toBeCloseTo(materialColor('steel').r, 5);
+      expect(firstColor(view.pickables[0] as THREE.Mesh).r).toBeCloseTo(materialColor('steel').r, 5);
       disposeMeshView(view);
     });
 
     it('draws the body deformed by the displacement times the scale, and not at all with scale 0 or without a result', () => {
       const state = singleCubeState();
-      const result = resultFor(state.nodes.map(n => n.id), () => ({ u: [0, 0, 0.1] }));
-      const topZ = (v: ReturnType<typeof buildSolverView>) => {
-        const face = v.pickables.find(p => (p.userData['pick'] as { face: string }).face === 'ZPlus') as THREE.Mesh;
-        return positionsOf(face)[2];
-      };
+      const result = resultFor(state, [1, 1, 1], () => ({ u: [0, 0, 0.1] }));
+      const topZ = (v: ReturnType<typeof buildSolverView>) => positionsOf(faceMesh(v, 'ZPlus'))[2];
 
       const shifted = buildSolverView(input({ state, result, deformationScale: 5 }));
       const still = buildSolverView(input({ state, result, deformationScale: 0 }));
@@ -174,28 +224,63 @@ describe('solver-view', () => {
       [shifted, still, none].forEach(disposeMeshView);
     });
 
-    it('tints the picked cubes and marks the picked face', () => {
+    it('tints the picked cubes only', () => {
       const plain = buildSolverView(input());
-      const picked = buildSolverView(input({ selectedHexes: [0], selectedFace: { hex: 1, face: 'XPlus' } }));
-      const firstFace = (v: ReturnType<typeof buildSolverView>, hex: number) => v.pickables.find(p => (p.userData['pick'] as { hex: number }).hex === hex) as THREE.Mesh;
+      const picked = buildSolverView(input({ selectedHexes: [0] }));
 
-      expect(colorsOf(firstFace(picked, 0))[0]).not.toBeCloseTo(colorsOf(firstFace(plain, 0))[0], 3);
-      expect(colorsOf(firstFace(picked, 1))[0]).toBeCloseTo(colorsOf(firstFace(plain, 1))[0], 5);
-      const marks = meshes(picked.root).filter(m => (m.material as THREE.MeshBasicMaterial).transparent);
-      expect(marks.length).toBe(1);
-      expect(new THREE.Color(colorsOf(marks[0])[0], colorsOf(marks[0])[1], colorsOf(marks[0])[2]).getHex()).toBe(0xffe14d);
+      expect(firstColor(faceMesh(picked, 'YPlus', 0)).r).not.toBeCloseTo(firstColor(faceMesh(plain, 'YPlus', 0)).r, 3);
+      expect(firstColor(faceMesh(picked, 'YPlus', 1)).r).toBeCloseTo(firstColor(faceMesh(plain, 'YPlus', 1)).r, 5);
       disposeMeshView(plain);
       disposeMeshView(picked);
     });
 
     it('a field that is zero everywhere is one colour, not NaN', () => {
       const state = singleCubeState();
-      const result = resultFor(state.nodes.map(n => n.id), () => ({ vm: 0 }));
+      const result = resultFor(state, [1, 1, 1], () => ({ vm: 0 }));
 
       const view = buildSolverView(input({ state, result }));
 
       expect(colorsOf(view.pickables[0] as THREE.Mesh).every(Number.isFinite)).toBeTrue();
       disposeMeshView(view);
+    });
+
+    describe('the see-through setting', () => {
+      const material = (view: ReturnType<typeof buildSolverView>) => (view.pickables[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+
+      it('draws the cubes solid at 100%', () => {
+        const view = buildSolverView(input({ opacity: 1 }));
+
+        expect(material(view).transparent).toBeFalse();
+        expect(material(view).opacity).toBe(1);
+        expect(material(view).depthWrite).toBeTrue();
+        disposeMeshView(view);
+      });
+
+      it('makes them see-through below 100%, without writing depth so the faces behind show', () => {
+        const view = buildSolverView(input({ opacity: 0.4 }));
+
+        expect(material(view).transparent).toBeTrue();
+        expect(material(view).opacity).toBeCloseTo(0.4, 5);
+        expect(material(view).depthWrite).toBeFalse();
+        disposeMeshView(view);
+      });
+
+      it('never goes fully invisible or beyond solid', () => {
+        const faint = buildSolverView(input({ opacity: 0 }));
+        const over = buildSolverView(input({ opacity: 3 }));
+
+        expect(material(faint).opacity).toBeGreaterThan(0);
+        expect(material(over).opacity).toBe(1);
+        disposeMeshView(faint);
+        disposeMeshView(over);
+      });
+
+      it('keeps the marked faces equally visible whatever the cube opacity', () => {
+        const view = buildSolverView(input({ opacity: 0.2, setup: setup({ fixed: [{ hex: 0, face: 'XMinus' }] }) }));
+
+        expect((overlays(view)[0].material as THREE.MeshBasicMaterial).opacity).toBeCloseTo(0.6, 5);
+        disposeMeshView(view);
+      });
     });
   });
 });

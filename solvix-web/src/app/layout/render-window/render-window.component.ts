@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { NgFor } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { WorldRepresentation, WorldRepresentationService } from '../../state/world-representation.service';
@@ -7,6 +7,8 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { SolverOverlayComponent } from '../solver-overlay/solver-overlay.component';
+import { SolverService } from '../../state/solver.service';
 import { SolverRenderService } from '../../state/solver-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
@@ -25,7 +27,7 @@ import * as THREE from 'three';
 @Component({
   selector: 'app-render-window',
   standalone: true,
-  imports: [NgFor, WorldTabsComponent, WorldCanvasComponent],
+  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent],
   templateUrl: './render-window.component.html',
   styleUrl: './render-window.component.scss'
 })
@@ -38,9 +40,11 @@ export class RenderWindowComponent {
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
   private readonly meshEditorRender = inject(MeshEditorRenderService);
   private readonly solverRender = inject(SolverRenderService);
+  private readonly solver = inject(SolverService);
   private readonly meshSelection = inject(MeshEditorSelectionService);
   private readonly meshEditor = inject(MeshEditorService);
   readonly worlds = WORLDS_CONFIG;
+  readonly solverWorldIndex = SOLVER_WORLD_INDEX;
 
   // null when there's no active session - never matches a real worldIndex,
   // so every WorldCanvasComponent ends up [hidden] and inactive, same as if
@@ -150,8 +154,9 @@ export class RenderWindowComponent {
   // each kind of click picks.
   onMeshPick(pick: MeshPick | null, additive: boolean): void {
     const sessionId = this.sessions.activeSessionId();
-    if (sessionId !== null) {
-      this.meshSelection.applyPick(sessionId, pick, additive);
-    }
+    if (sessionId === null) return;
+    // in the Solver World a click on a face marks it as pressed or clamped (see SolverService.pick)
+    if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick, additive);
+    else this.meshSelection.applyPick(sessionId, pick, additive);
   }
 }

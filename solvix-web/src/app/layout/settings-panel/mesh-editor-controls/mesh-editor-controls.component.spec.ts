@@ -32,7 +32,8 @@ describe('MeshEditorControlsComponent', () => {
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
-    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget']);
+    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions']);
+    solver.divisions.and.returnValue([1, 2, 3]);
     TestBed.configureTestingModule({
       providers: [
         { provide: MeshEditorService, useValue: editor },
@@ -617,21 +618,29 @@ describe('MeshEditorControlsComponent', () => {
   });
 
   describe('inner grid setting', () => {
-    const type = (value: string) => component.onSubdivisionsChange({ target: { value } } as unknown as Event);
+    const type = (axis: number, value: string) => component.onDivisionChange(axis, { target: { value } } as unknown as Event);
 
-    it('stores the cells per edge in the editor, clamped to 1..8, ignoring non-numbers', () => {
-      editor.subdivisions = 1;
+    it('shows the divisions of the solver, per axis', () => {
+      expect(component.divisions()).toEqual([1, 2, 3]);
+    });
 
-      type('4');
-      expect(component.subdivisions).toBe(4);
-      type('99');
-      expect(editor.subdivisions).toBe(8);
-      type('0');
-      expect(editor.subdivisions).toBe(1);
-      type('2.9');
-      expect(editor.subdivisions).toBe(2);
-      type('abc');
-      expect(editor.subdivisions).toBe(2);
+    it('sends one changed axis with the others kept, clamped to 1..8, ignoring non-numbers', () => {
+      type(0, '4');
+      type(1, '99');
+      type(2, '0');
+      type(0, '2.9');
+      type(1, 'abc');
+
+      expect(solver.setDivisions.calls.allArgs()).toEqual([[1, 4, 2, 3], [1, 1, 8, 3], [1, 1, 2, 1], [1, 2, 2, 3]]);
+    });
+
+    it('does nothing without a session', () => {
+      component.sessionId = null;
+
+      type(0, '4');
+
+      expect(solver.setDivisions).not.toHaveBeenCalled();
+      expect(component.divisions()).toEqual([1, 1, 1]);
     });
   });
 

@@ -69,7 +69,7 @@ describe('SolverRenderService', () => {
     loadMesh();
     render.getView(sessionId, SOLVER_WORLD_INDEX);
     http.expectOne(`${environment.apiBaseUrl}/api/solver/${sessionId}/setup`).flush({
-      version: 1, materials: [], defaultMaterial: 'steel', hexMaterials: {}, fixed: [{ hex: 0, face: 'XMinus' }], loads: []
+      version: 1, divisions: [1, 1, 1], materials: [], defaultMaterial: 'steel', hexMaterials: {}, fixed: [{ hex: 0, face: 'XMinus' }], loads: []
     });
 
     const view = render.getView(sessionId, SOLVER_WORLD_INDEX)!;
