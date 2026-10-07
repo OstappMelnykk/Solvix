@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { SolverViewInput, buildHighlight, buildSolverView, faceName, fieldRange, fieldValues, gridPoints, materialColor, rampColor } from './solver-view';
+import { SolverViewInput, buildHighlight, buildSolverView, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -52,7 +52,7 @@ const input = (over: Partial<SolverViewInput> = {}): SolverViewInput => ({
   ...over
 });
 
-const resolutionOf = (divisions: readonly number[]) => Math.max(2, Math.ceil(8 / Math.max(...divisions)));
+const resolutionOf = faceResolution;
 const meshes = (root: THREE.Object3D) => root.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
 const cubeMeshes = (view: ReturnType<typeof buildSolverView>) => view.pickables as THREE.Mesh[];
 const overlays = (view: ReturnType<typeof buildSolverView>) => meshes(view.root).filter(m => !view.pickables.includes(m));
@@ -448,8 +448,9 @@ describe('solver-view', () => {
       const quad = group.children.find(c => c instanceof THREE.Mesh) as THREE.Mesh;
       const lines = group.children.find(c => c instanceof THREE.LineSegments) as THREE.LineSegments;
 
-      expect(quad.geometry.getAttribute('position').count).toBe(4);
-      expect(lines.geometry.getAttribute('position').count).toBe(4 * 4 * 2);       // 4 edges, 4 segments each
+      const stride = (faceResolution([2, 2, 1]) + 1) ** 2;
+      expect(quad.geometry.getAttribute('position').count).toBe(stride);              // a smooth grid, not four corners
+      expect(lines.geometry.getAttribute('position').count).toBe(4 * 6 * 2);          // 4 edges, 6 segments each
       expect(quad.geometry.getAttribute('position').getX(0)).toBeCloseTo(0.5, 6);
       expect(quad.geometry.getAttribute('position').getZ(0)).toBeCloseTo(1, 6);
     });
@@ -458,7 +459,7 @@ describe('solver-view', () => {
       const group = buildHighlight(base(), { ...none, faces: [{ hex: 0, face: 'XMinus' }] });
       const quad = group.children.find(c => c instanceof THREE.Mesh) as THREE.Mesh;
 
-      expect(quad.geometry.getAttribute('position').count).toBe(4 * (2 * 1));      // ny * nz cells on an X side
+      expect(quad.geometry.getAttribute('position').count).toBe((faceResolution([2, 2, 1]) + 1) ** 2 * (2 * 1));      // ny * nz cells on an X side
     });
 
     it('outlines the elements a material would be given to: 12 curved edges each', () => {
@@ -475,7 +476,7 @@ describe('solver-view', () => {
       const group = buildHighlight(base(), { ...none, pointed });
       const quad = group.children.find(c => c instanceof THREE.Mesh) as THREE.Mesh;
 
-      expect(quad.geometry.getAttribute('position').count).toBe(4);
+      expect(quad.geometry.getAttribute('position').count).toBe((faceResolution([2, 2, 1]) + 1) ** 2);
       expect(quad.geometry.getAttribute('position').getX(0)).toBeCloseTo(1, 6);       // the Plus face of an element at x index 1 of 2: x = 1
     });
 
@@ -526,5 +527,46 @@ describe('solver-view', () => {
       expect(view.root.children).toContain(second);
       disposeMeshView(view);
     });
+  });
+});
+
+describe('the coats over the material', () => {
+  const state = singleCubeState();
+  // a cube whose top is bulged by moving the midpoint node of one of its top edges: the surface is curved, not flat
+  const bulged: MeshStateDto = { ...state, nodes: state.nodes.map(n => (n.id === 14 ? { ...n, z: 1.3 } : n)) };
+
+  const zRange = (positions: THREE.BufferAttribute | THREE.InterleavedBufferAttribute) => {
+    const zs = Array.from({ length: positions.count }, (_, i) => positions.getZ(i));
+    return Math.max(...zs) - Math.min(...zs);
+  };
+
+  it('a highlighted small face follows a curved surface instead of cutting across it', () => {
+    const group = buildHighlight(input({ state: bulged, setup: setup() }), { faces: [{ hex: 0, face: 'ZPlus', p: 0, q: 0 }], elements: [], pointed: null });
+    const quad = group.children.find(c => c instanceof THREE.Mesh) as THREE.Mesh;
+
+    expect(zRange(quad.geometry.getAttribute('position'))).toBeGreaterThan(0.2);      // a flat quad through the four corners would have no height
+  });
+
+  it('a clamped face is the same surface as the material under it, vertex for vertex', () => {
+    const view = buildSolverView(input({ state: bulged, setup: setup({ fixed: [{ hex: 0, face: 'ZPlus', p: 0, q: 0 }] }) }));
+    const coat = overlays(view)[0].geometry.getAttribute('position');
+    const material = faceVertex(view, 0, 'ZPlus').mesh.geometry.getAttribute('position');
+    const stride = (faceResolution([1, 1, 1]) + 1) ** 2;
+    const at = picksOf(cubeMeshes(view)[0]).findIndex(p => p.face === 'ZPlus');
+
+    expect(coat.count).toBe(stride);
+    for (let i = 0; i < stride; i++) {
+      expect(coat.getX(i)).toBeCloseTo(material.getX(at * stride + i), 6);
+      expect(coat.getY(i)).toBeCloseTo(material.getY(at * stride + i), 6);
+      expect(coat.getZ(i)).toBeCloseTo(material.getZ(at * stride + i), 6);
+    }
+    expect(zRange(coat)).toBeGreaterThan(0.2);
+    disposeMeshView(view);
+  });
+
+  it('a division finer than the face resolution still gets a smooth coat', () => {
+    expect(faceResolution([1, 1, 1])).toBe(12);
+    expect(faceResolution([8, 8, 8])).toBe(3);
+    expect(faceResolution([2, 1, 1])).toBe(6);
   });
 });

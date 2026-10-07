@@ -238,8 +238,41 @@ interface DrawnFace {
   readonly outer: boolean;
 }
 
+// How finely a small face is cut when drawn: smooth enough to follow the curved surface whatever the division. The
+// same grid carries the material, the clamp and load coats and the highlight, so they lie on one another exactly.
+export function faceResolution(divisions: readonly number[]): number {
+  return Math.max(3, Math.ceil(12 / Math.max(...divisions)));
+}
+
 // Triangles of one small face - a (resolution x resolution) grid, two triangles per cell.
 const trianglesPerFace = (resolution: number) => 2 * resolution * resolution;
+
+// Appends the smooth surface of a small face (its 8 nodes through the face shape functions) to a vertex/index list.
+function appendSurface(positions: number[], indices: number[], face: SmallFace, resolution: number, onVertex?: (u: number, v: number, value: number) => void): void {
+  const base = positions.length / 3;
+  const stride = resolution + 1;
+  for (let iv = 0; iv <= resolution; iv++) {
+    for (let iu = 0; iu <= resolution; iu++) {
+      const u = (iu / resolution) * 2 - 1;
+      const v = (iv / resolution) * 2 - 1;
+      const point = new THREE.Vector3();
+      let value = 0;
+      for (let k = 0; k < 8; k++) {
+        const w = faceShape(k, u, v);
+        point.addScaledVector(face.positions[k], w);
+        value += w * face.values[k];
+      }
+      positions.push(point.x, point.y, point.z);
+      onVertex?.(u, v, value);
+    }
+  }
+  for (let iv = 0; iv < resolution; iv++) {
+    for (let iu = 0; iu < resolution; iu++) {
+      const a = base + iv * stride + iu;
+      indices.push(a, a + 1, a + stride, a + 1, a + stride + 1, a + stride);
+    }
+  }
+}
 
 export function buildSolverView(input: SolverViewInput): MeshView {
   const { state, setup, result, field } = input;
@@ -323,7 +356,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   }
 
   // ---- geometry: one mesh per cube, and one merged set of lines -----------------------------------------------------
-  const resolution = Math.max(2, Math.ceil(8 / Math.max(...counts)));
+  const resolution = faceResolution(counts);
   const triangles = trianglesPerFace(resolution);
   const lines: number[] = [];
 
@@ -331,32 +364,12 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    const stride = resolution + 1;
     for (const face of faces) {
       const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
-      const base = positions.length / 3;
-      for (let iv = 0; iv <= resolution; iv++) {
-        for (let iu = 0; iu <= resolution; iu++) {
-          const u = (iu / resolution) * 2 - 1;
-          const v = (iv / resolution) * 2 - 1;
-          const point = new THREE.Vector3();
-          let value = 0;
-          for (let k = 0; k < 8; k++) {
-            const w = faceShape(k, u, v);
-            point.addScaledVector(small.positions[k], w);
-            value += w * small.values[k];
-          }
-          positions.push(point.x, point.y, point.z);
-          const color = colorOf(face, value);
-          colors.push(color.r, color.g, color.b);
-        }
-      }
-      for (let iv = 0; iv < resolution; iv++) {
-        for (let iu = 0; iu < resolution; iu++) {
-          const a = base + iv * stride + iu;
-          indices.push(a, a + 1, a + stride, a + 1, a + stride + 1, a + stride);
-        }
-      }
+      appendSurface(positions, indices, small, resolution, (_u, _v, value) => {
+        const color = colorOf(face, value);
+        colors.push(color.r, color.g, color.b);
+      });
     }
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -462,14 +475,12 @@ export function buildHighlight(input: SolverViewInput, targets: HighlightTargets
 
   const quads: number[] = [];
   const quadIndices: number[] = [];
+  const resolution = faceResolution(geometry.counts);
   const addQuad = (hex: MeshHexDto, axis: number, t: number, p: number, q: number) => {
     const small = geometry.smallFace(hex, axis, t, p, q);
-    const base = quads.length / 3;
-    const corners = [0, 1, 2, 3].map(i => small.positions[i]);
-    // lifted a little towards the viewer's side of the face so it does not z-fight with the face itself
-    corners.forEach(c => quads.push(c.x, c.y, c.z));
-    quadIndices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    for (const [a, m, b] of FACE_EDGES) pushEdge(lines, small.positions[a], small.positions[m], small.positions[b], 4);
+    // the same smooth surface as the material underneath, so the highlight reads as a coat laid over it
+    appendSurface(quads, quadIndices, small, resolution);
+    for (const [a, m, b] of FACE_EDGES) pushEdge(lines, small.positions[a], small.positions[m], small.positions[b], 6);
   };
 
   let used = 0;
