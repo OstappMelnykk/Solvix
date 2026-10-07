@@ -42,34 +42,72 @@ describe('SolverRenderService', () => {
     expect(render.getView(sessionId, SOLVER_WORLD_INDEX)).toBeNull();
   });
 
-  it('draws the body in the Solver World, and keeps the same view until something changes', () => {
+  it('draws the body in the Solver World, one mesh per cube, and keeps the same view until something changes', () => {
     loadMesh();
 
     const view = render.getView(sessionId, SOLVER_WORLD_INDEX);
 
     expect(view).not.toBeNull();
-    expect(view!.pickables.length).toBe(10);
+    expect(view!.pickables.length).toBe(2);
     expect(render.getView(sessionId, SOLVER_WORLD_INDEX)).toBe(view);
   });
 
-  it('rebuilds when the selection or the display settings change', () => {
+  it('rebuilds when the display settings or the hidden materials change, but not when the pointer moves', () => {
     loadMesh();
     const first = render.getView(sessionId, SOLVER_WORLD_INDEX);
 
-    selection.selectFace(sessionId, { hex: 0, face: 'XMinus' });
-    const afterPick = render.getView(sessionId, SOLVER_WORLD_INDEX);
     solver.setField(sessionId, 'displacement');
     const afterField = render.getView(sessionId, SOLVER_WORLD_INDEX);
+    solver.toggleHidden(sessionId, 'steel');
+    const afterHide = render.getView(sessionId, SOLVER_WORLD_INDEX);
+    solver.setHover(sessionId, { kind: 'face', hex: 0, face: 'YPlus', p: 0, q: 0, element: [0, 0, 0], inner: false });
+    const afterHover = render.getView(sessionId, SOLVER_WORLD_INDEX);
 
-    expect(afterPick).not.toBe(first);
-    expect(afterField).not.toBe(afterPick);
+    expect(afterField).not.toBe(first);
+    expect(afterHide).not.toBe(afterField);
+    expect(afterHover).toBe(afterHide);
   });
 
-  it('shows a clamped face once the set-up arrives from the server', () => {
+  it('draws what a click would act on into the view without rebuilding it, and takes it away when the pointer leaves', () => {
+    loadMesh();
+    const view = render.getView(sessionId, SOLVER_WORLD_INDEX)!;
+    const before = view.root.children.length;
+    solver.setTool(sessionId, 'load');
+    const rebuilt = render.getView(sessionId, SOLVER_WORLD_INDEX)!;
+
+    solver.setHover(sessionId, { kind: 'face', hex: 0, face: 'YPlus', p: 0, q: 0, element: [0, 0, 0], inner: false });
+    render.refreshHighlight(sessionId);
+    expect(rebuilt.root.children.length).toBeGreaterThan(before);
+    expect(render.getView(sessionId, SOLVER_WORLD_INDEX)).toBe(rebuilt);
+
+    solver.setHover(sessionId, null);
+    render.refreshHighlight(sessionId);
+    expect(rebuilt.root.children.length).toBe(before);
+  });
+
+  it('keeps the highlight when the view is rebuilt under a hovering pointer', () => {
+    loadMesh();
+    solver.setTool(sessionId, 'load');
+    solver.setHover(sessionId, { kind: 'face', hex: 0, face: 'YPlus', p: 0, q: 0, element: [0, 0, 0], inner: false });
+    const first = render.getView(sessionId, SOLVER_WORLD_INDEX)!;
+
+    solver.setField(sessionId, 'displacement');
+    const second = render.getView(sessionId, SOLVER_WORLD_INDEX)!;
+
+    expect(second).not.toBe(first);
+    expect(second.root.children.some(c => c.renderOrder === 10)).toBeTrue();
+  });
+
+  it('does nothing about a highlight without a view', () => {
+    expect(() => render.refreshHighlight(sessionId)).not.toThrow();
+  });
+
+  it('shows a clamped small face once the set-up arrives from the server', () => {
     loadMesh();
     render.getView(sessionId, SOLVER_WORLD_INDEX);
     http.expectOne(`${environment.apiBaseUrl}/api/solver/${sessionId}/setup`).flush({
-      version: 1, divisions: [1, 1, 1], materials: [], defaultMaterial: 'steel', hexMaterials: {}, fixed: [{ hex: 0, face: 'XMinus' }], loads: []
+      version: 1, divisions: [1, 1, 1], materials: [], defaultMaterial: 'steel', hexMaterials: {}, elementMaterials: [],
+      fixed: [{ hex: 0, face: 'XMinus', p: 0, q: 0 }], loads: []
     });
 
     const view = render.getView(sessionId, SOLVER_WORLD_INDEX)!;

@@ -16,9 +16,25 @@ export interface SolverMaterialDto {
   readonly nu: number;
 }
 
+// A face of a cube, or one small face of it: p, q are the cell in the side's grid (p along the lower of the face's
+// two tangent axes, q along the higher); absent means the whole side.
 export interface SolverFaceDto {
   readonly hex: number;
   readonly face: HexFaceName;
+  readonly p?: number;
+  readonly q?: number;
+}
+
+// One small element of a divided cube, by its index along each of the cube's axes.
+export interface SolverElementDto {
+  readonly hex: number;
+  readonly ex: number;
+  readonly ey: number;
+  readonly ez: number;
+}
+
+export interface SolverElementMaterialDto extends SolverElementDto {
+  readonly material: string;
 }
 
 export interface SolverLoadDto extends SolverFaceDto {
@@ -34,6 +50,8 @@ export interface SolverSetupDto {
   readonly defaultMaterial: string;
   // hex id -> material name (cubes not listed use the default one).
   readonly hexMaterials: Readonly<Record<string, string>>;
+  // Small elements with a material of their own, different from their cube's.
+  readonly elementMaterials: readonly SolverElementMaterialDto[];
   readonly fixed: readonly SolverFaceDto[];
   readonly loads: readonly SolverLoadDto[];
 }
@@ -103,6 +121,11 @@ export class SolverApiService {
   // How many small elements each cube is cut into along its axes (1..8 each).
   setDivisions(sessionId: number, nx: number, ny: number, nz: number): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'divisions'), { nx, ny, nz });
+  }
+
+  // Gives small elements a material of their own; a null or empty name makes them follow their cube again.
+  setElementMaterial(sessionId: number, elements: readonly SolverElementDto[], material: string | null): Observable<SolverSetupDto> {
+    return this.http.put<SolverSetupDto>(this.url(sessionId, 'elements/material'), { elements, material });
   }
 
   setHexMaterial(sessionId: number, hexIds: readonly number[], material: string | null): Observable<SolverSetupDto> {

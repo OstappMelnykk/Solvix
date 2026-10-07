@@ -4,9 +4,9 @@ import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { NotificationService } from './notification.service';
 import { MeshEditorService } from './mesh-editor.service';
-import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
-import { MeshPick } from '../geometry/mesh-editor-view';
+import { PickedFace } from '../geometry/mesh-editor-view';
+import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, elementTargets, faceTargets, sameFace, smallFacesOf } from '../geometry/solver-targets';
 import {
   SolverApiService,
   SolverFaceDto,
@@ -19,9 +19,6 @@ import {
 import { SolverHubClient } from '../api/solver-hub.client';
 
 export type ResultField = 'none' | 'vonMises' | 'displacement';
-
-// What a click on a face does in the Solver World, as in the solver's viewer: marks it as pressed (Load) or clamped (Fix).
-export type PickMode = 'load' | 'fix';
 
 // What is shown of a solve in the Solver World (a view setting only - nothing goes to the server).
 export interface SolverDisplay {
@@ -55,7 +52,18 @@ interface SessionSolver {
   job: SolverJobDto;
   result: SolverResultDto | null;
   display: SolverDisplay;
-  mode: PickMode;
+  // What a click does (view = nothing), how far it reaches, how deep below the clicked face a material goes, and which
+  // material is painted.
+  tool: Tool;
+  scope: Scope;
+  depth: number;
+  activeMaterial: string;
+  // Materials whose elements are not drawn, so what is behind them shows.
+  hidden: Set<string>;
+  // Also draw the faces between the elements (the grid inside the body).
+  showInner: boolean;
+  // The small face under the mouse.
+  hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
   pressure: number;
   // The side chosen as a whole for the load / the clamping (null = faces picked one by one, or nothing).
@@ -81,7 +89,6 @@ export class SolverService {
   private readonly sessions = inject(SessionsService);
   private readonly notifications = inject(NotificationService);
   private readonly editor = inject(MeshEditorService);
-  private readonly selection = inject(MeshEditorSelectionService);
   private readonly store = new KeyedStore<number, SessionSolver>();
   private readonly requested = new Set<number>();
   private readonly polling = new Map<number, ReturnType<typeof setInterval>>();
@@ -105,7 +112,13 @@ export class SolverService {
       job: IDLE_JOB,
       result: null,
       display: { field: 'vonMises', deformationScale: 1, opacity: 1 },
-      mode: 'load',
+      tool: 'view',
+      scope: 'cell',
+      depth: 0,
+      activeMaterial: 'rubber',
+      hidden: new Set<string>(),
+      showInner: false,
+      hover: null,
       pressure: DEFAULT_PRESSURE,
       loadSide: null,
       fixedSide: null,
@@ -155,12 +168,38 @@ export class SolverService {
     return setup === null ? null : (setup.hexMaterials[hexId] ?? setup.defaultMaterial);
   }
 
-  isFixed(sessionId: number, hex: number, face: HexFaceName): boolean {
-    return this.entry(sessionId).setup?.fixed.some(f => f.hex === hex && f.face === face) ?? false;
+  // The material of one small element: its own, or its cube's.
+  elementMaterial(sessionId: number, hex: number, ex: number, ey: number, ez: number): string | null {
+    const setup = this.entry(sessionId).setup;
+    if (setup === null) return null;
+    return setup.elementMaterials.find(m => m.hex === hex && m.ex === ex && m.ey === ey && m.ez === ez)?.material ?? setup.hexMaterials[hex] ?? setup.defaultMaterial;
   }
 
-  pressureOn(sessionId: number, hex: number, face: HexFaceName): number | null {
-    return this.entry(sessionId).setup?.loads.find(l => l.hex === hex && l.face === face)?.pressure ?? null;
+  // How many small elements have each material (the legend of the palette).
+  materialCounts(sessionId: number): Map<string, number> {
+    const setup = this.entry(sessionId).setup;
+    const state = this.editor.getState(sessionId);
+    const counts = new Map<string, number>();
+    if (!setup || !state) return counts;
+    const per = this.divisions(sessionId).reduce((product, n) => product * n, 1);
+    const own = new Map<number, number>();
+    for (const m of setup.elementMaterials) {
+      counts.set(m.material, (counts.get(m.material) ?? 0) + 1);
+      own.set(m.hex, (own.get(m.hex) ?? 0) + 1);
+    }
+    for (const hex of state.hexes) {
+      const name = setup.hexMaterials[hex.id] ?? setup.defaultMaterial;
+      counts.set(name, (counts.get(name) ?? 0) + per - (own.get(hex.id) ?? 0));
+    }
+    return counts;
+  }
+
+  isFixed(sessionId: number, hex: number, face: HexFaceName, p?: number, q?: number): boolean {
+    return this.entry(sessionId).setup?.fixed.some(f => f.hex === hex && f.face === face && (p === undefined || (f.p === p && f.q === q))) ?? false;
+  }
+
+  pressureOn(sessionId: number, hex: number, face: HexFaceName, p?: number, q?: number): number | null {
+    return this.entry(sessionId).setup?.loads.find(l => l.hex === hex && l.face === face && (p === undefined || (l.p === p && l.q === q)))?.pressure ?? null;
   }
 
   // --- view settings ---
@@ -174,6 +213,104 @@ export class SolverService {
     if (!Number.isFinite(opacity)) return;
     this.entry(sessionId).display.opacity = Math.min(1, Math.max(0.05, opacity));
     this.touch(sessionId);
+  }
+
+  // --- the tools: what a click does ---
+
+  tool(sessionId: number): Tool {
+    return this.entry(sessionId).tool;
+  }
+
+  setTool(sessionId: number, tool: Tool): void {
+    const entry = this.entry(sessionId);
+    entry.tool = tool;
+    // a scope that means nothing for the new tool falls back to the small one
+    if (!this.scopesOf(tool).includes(entry.scope)) entry.scope = 'cell';
+    entry.hover = null;
+    this.touch(sessionId);
+  }
+
+  scopesOf(tool: Tool): readonly Scope[] {
+    return tool === 'material' ? MATERIAL_SCOPES : tool === 'view' ? [] : FACE_SCOPES;
+  }
+
+  scope(sessionId: number): Scope {
+    return this.entry(sessionId).scope;
+  }
+
+  setScope(sessionId: number, scope: Scope): void {
+    this.entry(sessionId).scope = scope;
+    this.touch(sessionId);
+  }
+
+  depth(sessionId: number): number {
+    return this.entry(sessionId).depth;
+  }
+
+  // How many small elements below the clicked face the material reaches: 0 = the element right behind it.
+  setDepth(sessionId: number, depth: number): void {
+    const [nx, ny, nz] = this.divisions(sessionId);
+    this.entry(sessionId).depth = Math.min(Math.max(nx, ny, nz) - 1, Math.max(0, Math.floor(depth)));
+    this.touch(sessionId);
+  }
+
+  activeMaterial(sessionId: number): string {
+    return this.entry(sessionId).activeMaterial;
+  }
+
+  setActiveMaterial(sessionId: number, name: string): void {
+    this.entry(sessionId).activeMaterial = name;
+    this.touch(sessionId);
+  }
+
+  isHidden(sessionId: number, material: string): boolean {
+    return this.entry(sessionId).hidden.has(material);
+  }
+
+  hiddenMaterials(sessionId: number): ReadonlySet<string> {
+    return this.entry(sessionId).hidden;
+  }
+
+  toggleHidden(sessionId: number, material: string): void {
+    const hidden = this.entry(sessionId).hidden;
+    if (!hidden.delete(material)) hidden.add(material);
+    this.touch(sessionId);
+  }
+
+  showInner(sessionId: number): boolean {
+    return this.entry(sessionId).showInner;
+  }
+
+  setShowInner(sessionId: number, show: boolean): void {
+    this.entry(sessionId).showInner = show;
+    this.touch(sessionId);
+  }
+
+  // The small face under the mouse. Does not bump the revision: the view is not rebuilt, only its highlight redrawn.
+  hover(sessionId: number): PickedFace | null {
+    return this.entry(sessionId).hover;
+  }
+
+  setHover(sessionId: number, pick: PickedFace | null): boolean {
+    const entry = this.entry(sessionId);
+    const same = entry.hover === pick || (entry.hover !== null && pick !== null && entry.hover.hex === pick.hex && entry.hover.face === pick.face
+      && entry.hover.p === pick.p && entry.hover.q === pick.q && entry.hover.inner === pick.inner && entry.hover.element?.join() === pick.element?.join());
+    if (same) return false;
+    entry.hover = pick;
+    return true;
+  }
+
+  // What a click on the small face under the mouse would act on, for the highlight.
+  highlightTargets(sessionId: number): HighlightTargetsInput | null {
+    const entry = this.entry(sessionId);
+    const pick = entry.hover;
+    if (!pick || entry.tool === 'view') return null;
+    const divisions = this.divisions(sessionId);
+    if (entry.tool === 'material') {
+      return { faces: [], elements: elementTargets(pick, entry.scope, entry.depth, divisions), pointed: pick };
+    }
+    if (pick.inner) return { faces: [], elements: [], pointed: pick };
+    return { faces: faceTargets(pick, entry.scope, this.editor.getState(sessionId), divisions), elements: [], pointed: pick };
   }
 
   setDeformationScale(sessionId: number, scale: number): void {
@@ -217,23 +354,7 @@ export class SolverService {
     if (hexIds.length > 0) this.apply(sessionId, this.api.setHexMaterial(sessionId, hexIds, material));
   }
 
-  // The material of the picked cubes (or of every cube when none is picked).
-  setMaterialOfSelection(sessionId: number, material: string): void {
-    const picked = this.selection.hexes(sessionId);
-    const hexes = picked.length > 0 ? picked : (this.editor.getState(sessionId)?.hexes.map(h => h.id) ?? []);
-    this.setMaterial(sessionId, hexes, material);
-  }
-
   // --- faces: the solver's way ---
-
-  mode(sessionId: number): PickMode {
-    return this.entry(sessionId).mode;
-  }
-
-  setMode(sessionId: number, mode: PickMode): void {
-    this.entry(sessionId).mode = mode;
-    this.touch(sessionId);
-  }
 
   pressure(sessionId: number): number {
     return this.entry(sessionId).pressure;
@@ -255,20 +376,13 @@ export class SolverService {
     return !entry.fixedChosen && entry.loadSide !== null;
   }
 
-  // The cube's number of small faces: how many elements of the divided mesh carry what is set on a cube face.
-  private smallFacesPerCubeFace(sessionId: number, face: HexFaceName): number {
-    const [nx, ny, nz] = this.divisions(sessionId);
-    const counts = [nx, ny, nz];
-    const axis = face.charCodeAt(0) - 'X'.charCodeAt(0);
-    return counts.filter((_, d) => d !== axis).reduce((product, n) => product * n, 1);
-  }
-
+  // The setup lists every small face, so these are the counts of the divided mesh's faces.
   loadedFaceCount(sessionId: number): number {
-    return (this.entry(sessionId).setup?.loads ?? []).reduce((sum, f) => sum + this.smallFacesPerCubeFace(sessionId, f.face), 0);
+    return this.entry(sessionId).setup?.loads.length ?? 0;
   }
 
   fixedFaceCount(sessionId: number): number {
-    return (this.entry(sessionId).setup?.fixed ?? []).reduce((sum, f) => sum + this.smallFacesPerCubeFace(sessionId, f.face), 0);
+    return this.entry(sessionId).setup?.fixed.length ?? 0;
   }
 
   // Every outer face with this name - how a whole side of a body is chosen in one go.
@@ -331,33 +445,51 @@ export class SolverService {
     if (loaded.length > 0) this.apply(sessionId, this.api.replaceLoads(sessionId, loaded.map(l => ({ hex: l.hex, face: l.face })), pressure));
   }
 
-  // A click on the scene, as in the solver's viewer: in Load mode a face is marked as pressed (or unmarked), in Fix
-  // mode as clamped (or unmarked). Shift + click picks a cube instead (to give it a material).
-  pick(sessionId: number, pick: MeshPick | null, additive: boolean): void {
-    if (pick === null) return;
-    if (additive || pick.kind !== 'face') {
-      this.selection.applyPick(sessionId, pick, additive);
-      return;
-    }
-    this.toggleFace(sessionId, { hex: pick.hex, face: pick.face });
-  }
-
-  toggleFace(sessionId: number, face: SolverFaceDto): void {
+  // A click on the scene: with the Load or Fix tool the small faces it reaches are marked as pressed or clamped (or
+  // unmarked, when they all were); with the Material tool they get the chosen material; with View nothing happens.
+  pick(sessionId: number, pick: PickedFace | null): void {
+    if (pick === null || pick.kind !== 'face') return;
     const entry = this.entry(sessionId);
-    if (this.editor.getState(sessionId)?.faces.find(f => f.hex === face.hex && f.face === face.face)?.status === 'Linked') {
-      this.notifications.warning('Ця грань усередині тіла (зв’язана з іншим кубом): закріплювати й навантажувати можна лише зовнішні.');
+    if (entry.tool === 'view') return;
+    const divisions = this.divisions(sessionId);
+
+    if (entry.tool === 'material') {
+      const material = entry.activeMaterial;
+      if (entry.scope === 'cube') {
+        this.apply(sessionId, this.api.setHexMaterial(sessionId, [pick.hex], material));
+      } else {
+        const elements = elementTargets(pick, entry.scope, entry.depth, divisions);
+        if (elements.length === 0) {
+          this.notifications.warning('Там, куди сягає вибір, немає елементів: зменште глибину.');
+          return;
+        }
+        this.apply(sessionId, this.api.setElementMaterial(sessionId, elements, material));
+      }
       return;
     }
-    if (entry.mode === 'load') {
-      const loaded = this.pressureOn(sessionId, face.hex, face.face) !== null;
+
+    if (pick.inner) {
+      this.notifications.warning('Ця грань усередині тіла: закріплювати й навантажувати можна лише зовнішні.');
+      return;
+    }
+    const targets = faceTargets(pick, entry.scope, this.editor.getState(sessionId), divisions);
+    const small = targets.flatMap(t => smallFacesOf(t, divisions));
+    if (entry.tool === 'load') {
+      const marked = small.every(f => this.entry(sessionId).setup?.loads.some(l => sameFace(l, f) && l.pressure === entry.pressure));
       entry.loadSide = null;
-      this.apply(sessionId, this.api.setLoads(sessionId, [face], loaded ? null : entry.pressure));
+      this.apply(sessionId, this.api.setLoads(sessionId, targets, marked ? null : entry.pressure));
     } else {
-      const fixed = this.isFixed(sessionId, face.hex, face.face);
+      const marked = small.every(f => this.entry(sessionId).setup?.fixed.some(x => sameFace(x, f)));
       entry.fixedChosen = true;
       entry.fixedSide = null;
-      this.apply(sessionId, this.api.setFixedFaces(sessionId, [face], !fixed));
+      this.apply(sessionId, this.api.setFixedFaces(sessionId, targets, !marked));
     }
+  }
+
+  // Gives every cube one material (the whole body is made of it again).
+  fillAll(sessionId: number, material: string): void {
+    const hexes = this.editor.getState(sessionId)?.hexes.map(h => h.id) ?? [];
+    if (hexes.length > 0) this.apply(sessionId, this.api.setHexMaterial(sessionId, hexes, material));
   }
 
   // --- the division of the cubes into small elements ---

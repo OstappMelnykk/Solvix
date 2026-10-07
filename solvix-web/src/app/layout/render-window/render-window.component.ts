@@ -150,13 +150,20 @@ export class RenderWindowComponent {
     }
   }
 
+  // The pointer moved over the Solver World: what a click there would act on is highlighted, without rebuilding the view.
+  onMeshHover(pick: MeshPick | null): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    if (this.solver.setHover(sessionId, pick?.kind === 'face' ? pick : null)) this.solverRender.refreshHighlight(sessionId);
+  }
+
   // A click on the canvas - see MeshEditorSelectionService.applyPick for what
   // each kind of click picks.
   onMeshPick(pick: MeshPick | null, additive: boolean): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
-    // in the Solver World a click on a face marks it as pressed or clamped (see SolverService.pick)
-    if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick, additive);
+    // in the Solver World a click acts through the chosen tool (see SolverService.pick)
+    if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick?.kind === 'face' ? pick : null);
     else this.meshSelection.applyPick(sessionId, pick, additive);
   }
 }

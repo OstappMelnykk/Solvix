@@ -2,7 +2,7 @@
 <div class="stats">Куби: {{ hexCount() }} · елементів СЕ: {{ elementCount() }}</div>
 
 <div class="group">
-  <div class="group-label">Параметри сітки СЕ</div>
+  <div class="group-label"><span class="step">1</span> Сітка СЕ</div>
   <div class="hint">Кількість скінченних елементів у кожному кубі по його осях. Більше — точніший результат, але довший розрахунок.</div>
   <div class="triple">
     <label *ngFor="let name of axes; let i = index" [title]="'Кількість СЕ в кубі вздовж осі ' + name[1]">
@@ -13,30 +13,50 @@
 </div>
 
 <div class="group">
-  <div class="group-label">Матеріал і навантаження</div>
-
+  <div class="group-label"><span class="step">2</span> Матеріали</div>
+  <div class="hint">Оберіть матеріал у списку й фарбуйте ним елементи на сцені (інструмент «Матеріал»). Око ховає матеріал, щоб бачити, що за ним.</div>
+  <div class="materials">
+    <div
+      *ngFor="let material of materials()"
+      class="material"
+      [class.material--on]="activeMaterial() === material.name"
+      [class.material--hidden]="isHidden(material.name)"
+      [title]="'E = ' + (material.e / 1e9).toPrecision(3) + ' ГПа, ν = ' + material.nu"
+      (click)="selectMaterial(material.name)"
+      role="button"
+      tabindex="0"
+      (keydown.enter)="selectMaterial(material.name)"
+    >
+      <span class="material__swatch" [style.background]="colorOf(material.name)"></span>
+      <span class="material__name">{{ material.label }}</span>
+      <span class="material__count" title="Елементів із цим матеріалом">{{ countOf(material.name) }}</span>
+      <button class="material__eye" type="button" [title]="isHidden(material.name) ? 'Показати матеріал' : 'Сховати матеріал'" (click)="toggleHidden(material.name, $event)">
+        {{ isHidden(material.name) ? '◌' : '◉' }}
+      </button>
+    </div>
+  </div>
+  <div class="pair">
+    <button class="btn" type="button" (click)="fillAll()">Залити все вибраним</button>
+    <button class="btn" type="button" (click)="resetMaterials()">До основного</button>
+  </div>
   <label class="row">
-    <span>Матеріал за замовчуванням</span>
+    <span>Основний матеріал</span>
     <select [value]="defaultMaterial()" (change)="onDefaultMaterial($event)">
       <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
     </select>
   </label>
-  <label class="row">
-    <span>Вибраним кубам ({{ selectedCubes().length || 'усім' }})</span>
-    <select (change)="onMaterialOfSelection($event)">
-      <option value="">— вибрати —</option>
-      <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
-    </select>
-  </label>
-  <div class="hint">Shift + клік по кубу вибирає куб. Без вибору матеріал отримують усі куби.</div>
-  <div class="hint" *ngFor="let line of materialsInUse()">{{ line }}</div>
-  <button class="tool" type="button" (click)="isMaterialFormOpen = !isMaterialFormOpen">{{ isMaterialFormOpen ? '▾' : '▸' }} Свій матеріал</button>
+  <button class="btn btn--ghost" type="button" (click)="isMaterialFormOpen = !isMaterialFormOpen">{{ isMaterialFormOpen ? '▾' : '▸' }} Свій матеріал</button>
   <div *ngIf="isMaterialFormOpen">
     <label class="row"><span>Назва</span><input type="text" [value]="newLabel" (input)="newLabel = $any($event.target).value" /></label>
     <label class="row"><span>E, ГПа</span><input type="number" step="1" min="0" [value]="newYoungGPa" (change)="onYoung($event)" /></label>
     <label class="row"><span>ν (0…0.5)</span><input type="number" step="0.01" min="0" max="0.49" [value]="newPoisson" (change)="onPoisson($event)" /></label>
-    <button class="tool" type="button" [disabled]="!canAddMaterial()" (click)="addMaterial()">Додати матеріал</button>
+    <button class="btn" type="button" [disabled]="!canAddMaterial()" (click)="addMaterial()">Додати матеріал</button>
   </div>
+</div>
+
+<div class="group">
+  <div class="group-label"><span class="step">3</span> Навантаження і опори</div>
+  <div class="hint">Точково — інструментами «Тиск» і «Опора» на сцені (до окремої грані елемента). Цілу сторону — кнопками нижче.</div>
 
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
     Pn — тиск на грані (Па)
@@ -72,10 +92,10 @@
     <span class="hint">{{ fixedText() }}</span>
   </div>
 
-  <button class="tool" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
+  <button class="btn" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
 </div>
 
-<button class="tool" type="button" [disabled]="isRunning()" (click)="validate()">Перевірити</button>
+<button class="btn" type="button" [disabled]="isRunning()" (click)="validate()">Перевірити</button>
 <div class="issues" *ngIf="validation() as v">
   <div class="issue issue--ok" *ngIf="v.canSolve && v.issues.length === 0">Усе гаразд, можна рахувати.</div>
   <div class="issue" *ngFor="let issue of v.issues" [class.issue--error]="issue.severity === 'error'" [class.issue--warning]="issue.severity === 'warning'">
@@ -90,7 +110,7 @@
   <div class="progress__bar" [style.width.%]="progressPercent()"></div>
 </div>
 <div class="status" *ngIf="jobText()" [class.status--error]="job().state === 'failed'">{{ jobText() }}</div>
-<button class="tool" type="button" *ngIf="isRunning()" (click)="cancel()">Скасувати розрахунок</button>
+<button class="btn" type="button" *ngIf="isRunning()" (click)="cancel()">Скасувати розрахунок</button>
 
 <div class="group" *ngIf="result()">
   <div class="group-label">Результати</div>
@@ -108,5 +128,5 @@
       <option value="none">Матеріали</option>
     </select>
   </label>
-  <button class="tool" type="button" (click)="clearResult()">Прибрати результат</button>
+  <button class="btn" type="button" (click)="clearResult()">Прибрати результат</button>
 </div>

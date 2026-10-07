@@ -13,6 +13,8 @@
     [holeHighlight]="getHoleHighlight(i)"
     [meshView]="getMeshView(i)"
     (meshPick)="onMeshPick($event.pick, $event.additive)"
+    [hoverEnabled]="i === solverWorldIndex"
+    (meshHover)="onMeshHover($event)"
     [draggableNodeId]="getDraggableNodeId(i)"
     (nodeMoved)="onNodeMoved($event)"
     [active]="activeWorldIndex() === i"

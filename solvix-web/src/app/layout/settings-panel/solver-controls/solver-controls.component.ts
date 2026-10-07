@@ -3,7 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { HexFaceName } from '../../../api/mesh-editor-api.service';
 import { SolverMaterialDto } from '../../../api/solver-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
+import { materialColor } from '../../../geometry/solver-view';
 import { ResultField, SIDES, SolverService } from '../../../state/solver.service';
 
 const MPA = 1e6;
@@ -22,7 +22,6 @@ const GPA = 1e9;
 export class SolverControlsComponent {
   private readonly solver = inject(SolverService);
   private readonly editor = inject(MeshEditorService);
-  private readonly selection = inject(MeshEditorSelectionService);
 
   @Input({ required: true }) sessionId!: number;
 
@@ -56,7 +55,7 @@ export class SolverControlsComponent {
     this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
   }
 
-  // --- materials ---
+  // --- materials: a palette; the active one is what the Material tool paints with ---
 
   setup() {
     return this.solver.setup(this.sessionId);
@@ -70,34 +69,44 @@ export class SolverControlsComponent {
     return this.setup()?.defaultMaterial ?? '';
   }
 
-  materialsInUse(): string[] {
-    const setup = this.setup();
-    const state = this.editor.getState(this.sessionId);
-    if (!setup || !state) return [];
-    const counts = new Map<string, number>();
-    for (const hex of state.hexes) {
-      const name = setup.hexMaterials[hex.id] ?? setup.defaultMaterial;
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-    return [...counts].map(([name, count]) => `${this.labelOf(name)}: ${count}`);
+  activeMaterial(): string {
+    return this.solver.activeMaterial(this.sessionId);
   }
 
-  labelOf(name: string): string {
-    return this.materials().find(m => m.name === name)?.label ?? name;
+  // Choosing a material in the palette also switches to the tool that paints with it.
+  selectMaterial(name: string): void {
+    this.solver.setActiveMaterial(this.sessionId, name);
+    if (this.solver.tool(this.sessionId) !== 'material') this.solver.setTool(this.sessionId, 'material');
   }
 
-  selectedCubes(): readonly number[] {
-    return this.selection.hexes(this.sessionId);
+  colorOf(name: string): string {
+    return `#${materialColor(name).getHexString()}`;
+  }
+
+  countOf(name: string): number {
+    return this.solver.materialCounts(this.sessionId).get(name) ?? 0;
+  }
+
+  isHidden(name: string): boolean {
+    return this.solver.isHidden(this.sessionId, name);
+  }
+
+  toggleHidden(name: string, event: Event): void {
+    event.stopPropagation();
+    this.solver.toggleHidden(this.sessionId, name);
   }
 
   onDefaultMaterial(event: Event): void {
     this.solver.setDefaultMaterial(this.sessionId, (event.target as HTMLSelectElement).value);
   }
 
-  onMaterialOfSelection(event: Event): void {
-    const select = event.target as HTMLSelectElement;
-    if (select.value) this.solver.setMaterialOfSelection(this.sessionId, select.value);
-    select.value = '';
+  // The whole body of the active material, or back to the main one.
+  fillAll(): void {
+    this.solver.fillAll(this.sessionId, this.activeMaterial());
+  }
+
+  resetMaterials(): void {
+    this.solver.fillAll(this.sessionId, this.defaultMaterial());
   }
 
   canAddMaterial(): boolean {
@@ -109,6 +118,7 @@ export class SolverControlsComponent {
     const label = this.newLabel.trim();
     const name = `custom-${label.toLowerCase().replace(/[^a-z0-9а-яіїєґ]+/gi, '-')}`;
     this.solver.upsertMaterial(this.sessionId, { name, label, e: this.newYoungGPa * GPA, nu: this.newPoisson });
+    this.solver.setActiveMaterial(this.sessionId, name);
     this.newLabel = '';
     this.isMaterialFormOpen = false;
   }

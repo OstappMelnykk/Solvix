@@ -81,7 +81,7 @@ h4 {
   gap: 4px;
 }
 
-.tool {
+.btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -107,7 +107,7 @@ h4 {
   }
 }
 
-.tool--primary {
+.btn--primary {
   background: $accent-toggle;
   border-color: $accent-toggle;
   color: #fff;
@@ -288,4 +288,81 @@ h4 {
     text-align: right;
     color: #dfe1e5;
   }
+}
+
+.btn--ghost {
+  background: transparent;
+  border-style: dashed;
+  color: #9096a0;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: $accent-toggle;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.materials {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0;
+}
+
+.material {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.09);
+  }
+}
+
+.material--on {
+  border-color: #c77dff;
+  background: rgba(199, 125, 255, 0.14);
+}
+
+.material--hidden {
+  opacity: 0.5;
+}
+
+.material__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+}
+
+.material__name {
+  flex: 1;
+}
+
+.material__count {
+  color: #8a8f98;
+  font-size: 11px;
+}
+
+.material__eye {
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  color: #c3c7ce;
+  font-size: 15px;
+  cursor: pointer;
 }

@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
-import { SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
-import { LOCAL_COORDS, MeshView, PickedFace, faceAxis, faceSign, mapHex } from './mesh-editor-view';
+import { SolverFaceDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
+import { markForWeightedOit } from '../rendering/weighted-oit';
+import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
 // The Solver World's drawing of a body, the way the solver's own viewer shows its mesh: every cube cut into
-// nx*ny*nz small elements, only the outer faces drawn (each as the small faces of the outer small elements, with
-// their curved edges), coloured by the material while setting up or by a field of the solution after a solve;
-// clamped faces in blue, pressed faces in green, the body optionally drawn deformed and see-through.
+// nx*ny*nz small elements, the faces of the elements that are visible drawn as small faces with their curved edges,
+// coloured by the element's material or - after a solve - by a field of the solution; clamped faces in blue,
+// pressed faces in green; the body can be drawn deformed, see-through (order-independent transparency), with some
+// materials hidden so the elements behind them show, and with the faces between elements drawn.
 
 export type SolverField = 'none' | 'vonMises' | 'displacement';
 
@@ -19,16 +21,19 @@ export interface SolverViewInput {
   readonly deformationScale: number;
   // 0..1: how opaque the cubes are (1 = solid).
   readonly opacity: number;
-  readonly selectedHexes: readonly number[];
+  // Materials whose elements are not drawn.
+  readonly hiddenMaterials?: ReadonlySet<string>;
+  // Also draw the faces between visible elements (the grid inside the body).
+  readonly showInner?: boolean;
 }
 
 const EDGE_SEGMENTS = 8;
-const EDGE_COLOR = 0x20242b;
+const EDGE_COLOR = 0x1a1d23;
 const FIXED_COLOR = 0x3388ff;
 const LOAD_COLOR = 0x44ff44;
-const OVERLAY_OPACITY = 0.6;
-const SELECTED_HEX_MIX = 0.4;
-const SELECTED_HEX_COLOR = new THREE.Color(0x39c5f2);
+const HIGHLIGHT_COLOR = 0xffe14d;
+const OVERLAY_OPACITY = 0.62;
+const LIGHT = new THREE.Vector3(0.45, 0.8, 0.55).normalize();
 
 // Blue -> cyan -> green -> yellow -> red.
 const RAMP: readonly THREE.Color[] = [0x2b3cc4, 0x2bb5d6, 0x3fc46a, 0xf0d43a, 0xe4572e].map(hex => new THREE.Color(hex));
@@ -40,11 +45,24 @@ export function rampColor(t: number): THREE.Color {
   return RAMP[i].clone().lerp(RAMP[i + 1], x - i);
 }
 
+// The ready-made materials have colours that read as what they are, so layers are told apart at a glance.
+const KNOWN_COLORS: Record<string, number> = {
+  steel: 0x7da7d9,
+  aluminium: 0xcfd6dd,
+  concrete: 0xb8a98a,
+  rubber: 0xe0605a,
+  enamel: 0xf4efe0,
+  dentin: 0xe8c27a,
+  bone: 0xc8b98a
+};
+
 // A stable colour per material name, so the same material looks the same everywhere.
 export function materialColor(name: string): THREE.Color {
+  const known = KNOWN_COLORS[name];
+  if (known !== undefined) return new THREE.Color(known);
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return new THREE.Color().setHSL((hash % 360) / 360, 0.45, 0.58);
+  return new THREE.Color().setHSL((hash % 360) / 360, 0.55, 0.56);
 }
 
 export interface FieldRange {
@@ -83,6 +101,8 @@ export function gridPoints(nx: number, ny: number, nz: number): [number, number,
 const FACE_NODES: readonly (readonly [number, number])[] = [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [1, 0], [0, 1], [-1, 0]];
 // The edges as (corner, midpoint, corner) of FACE_NODES.
 const FACE_EDGES: readonly (readonly [number, number, number])[] = [[0, 4, 1], [1, 5, 2], [2, 6, 3], [3, 7, 0]];
+// The 12 edges of an element as (corner, corner) of the editor's 20 nodes; edge k has its midpoint at slot 8 + k.
+const ELEMENT_EDGES: readonly (readonly [number, number])[] = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
 
 function faceShape(i: number, u: number, v: number): number {
   const [ui, vi] = FACE_NODES[i];
@@ -91,92 +111,229 @@ function faceShape(i: number, u: number, v: number): number {
   return 0.5 * (1 + u * ui) * (1 - v * v);
 }
 
+const AXIS_NAME = ['X', 'Y', 'Z'] as const;
+
+export function faceName(axis: number, plus: boolean): HexFaceName {
+  return `${AXIS_NAME[axis]}${plus ? 'Plus' : 'Minus'}` as HexFaceName;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// the positions and values of the divided mesh
+
+interface SmallFace {
+  readonly positions: THREE.Vector3[];
+  readonly values: number[];
+}
+
+// Where the grid points of every cube are (undeformed, or deformed by the result) and what the field is there.
+export class SolverGeometry {
+  readonly counts: [number, number, number];
+  private readonly points: [number, number, number][];
+  private readonly pointIndex: Map<string, number>;
+  private readonly nodes: Map<number, { x: number; y: number; z: number }>;
+  private readonly hexIndexInResult: Map<number, number>;
+  private readonly slotPositions = new Map<number, THREE.Vector3[]>();
+  private readonly values: number[] | null;
+
+  constructor(
+    private readonly state: MeshStateDto,
+    divisions: readonly number[],
+    private readonly result: SolverResultDto | null,
+    private readonly scale: number,
+    field: SolverField
+  ) {
+    this.counts = [divisions[0], divisions[1], divisions[2]];
+    this.points = gridPoints(...this.counts);
+    this.pointIndex = new Map(this.points.map((p, i) => [p.join(','), i]));
+    this.nodes = new Map(state.nodes.map(n => [n.id, n]));
+    this.hexIndexInResult = new Map((result?.hexIds ?? []).map((id, i) => [id, i]));
+    this.values = result ? fieldValues(result, field) : null;
+  }
+
+  get hasField(): boolean {
+    return this.values !== null;
+  }
+
+  private slots(hex: MeshHexDto): THREE.Vector3[] {
+    let slots = this.slotPositions.get(hex.id);
+    if (!slots) {
+      slots = LOCAL_COORDS.map((_, s) => {
+        const node = this.nodes.get(hex.nodeIds[s])!;
+        return new THREE.Vector3(node.x, node.y, node.z);
+      });
+      this.slotPositions.set(hex.id, slots);
+    }
+    return slots;
+  }
+
+  private nodeAt(hex: MeshHexDto, ix: number, iy: number, iz: number): number | null {
+    const at = this.hexIndexInResult.get(hex.id);
+    return this.result && at !== undefined ? this.result.gridNodes[at * this.points.length + this.pointIndex.get(`${ix},${iy},${iz}`)!] : null;
+  }
+
+  position(hex: MeshHexDto, ix: number, iy: number, iz: number): THREE.Vector3 {
+    const node = this.nodeAt(hex, ix, iy, iz);
+    const result = this.result;
+    if (node === null || !result) return mapHex(this.slots(hex), ix / this.counts[0] - 1, iy / this.counts[1] - 1, iz / this.counts[2] - 1);
+    const point = new THREE.Vector3(result.positions[3 * node], result.positions[3 * node + 1], result.positions[3 * node + 2]);
+    return this.scale !== 0 ? point.add(new THREE.Vector3(result.ux[node], result.uy[node], result.uz[node]).multiplyScalar(this.scale)) : point;
+  }
+
+  value(hex: MeshHexDto, ix: number, iy: number, iz: number): number {
+    const node = this.nodeAt(hex, ix, iy, iz);
+    return node === null || !this.values ? 0 : this.values[node];
+  }
+
+  // The small face on plane t (0..n) of an axis, in cell (p, q) of that plane's grid.
+  smallFace(hex: MeshHexDto, axis: number, t: number, p: number, q: number): SmallFace {
+    const [t0, t1] = [0, 1, 2].filter(d => d !== axis);
+    const positions: THREE.Vector3[] = [];
+    const values: number[] = [];
+    for (const [u, v] of FACE_NODES) {
+      const index = [0, 0, 0];
+      index[axis] = 2 * t;
+      index[t0] = 2 * p + u + 1;
+      index[t1] = 2 * q + v + 1;
+      positions.push(this.position(hex, index[0], index[1], index[2]));
+      values.push(this.value(hex, index[0], index[1], index[2]));
+    }
+    return { positions, values };
+  }
+
+  // The 12 curved edges of a small element as line segments (flat x, y, z pairs).
+  elementEdges(hex: MeshHexDto, ex: number, ey: number, ez: number, segments = EDGE_SEGMENTS): number[] {
+    const node = (s: number) => this.position(hex, 2 * ex + LOCAL_COORDS[s][0] + 1, 2 * ey + LOCAL_COORDS[s][1] + 1, 2 * ez + LOCAL_COORDS[s][2] + 1);
+    const out: number[] = [];
+    ELEMENT_EDGES.forEach(([a, b], k) => pushEdge(out, node(a), node(8 + k), node(b), segments));
+    return out;
+  }
+}
+
+function pushEdge(out: number[], start: THREE.Vector3, mid: THREE.Vector3, end: THREE.Vector3, segments: number): void {
+  let previous = start;
+  for (let i = 1; i <= segments; i++) {
+    const t = (i / segments) * 2 - 1;
+    const next = start.clone().multiplyScalar((t * (t - 1)) / 2).addScaledVector(mid, 1 - t * t).addScaledVector(end, (t * (t + 1)) / 2);
+    out.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
+    previous = next;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// the faces that are drawn
+
+interface DrawnFace {
+  // the cube whose grid gives the geometry
+  readonly drawer: MeshHexDto;
+  readonly axis: number;
+  readonly t: number;
+  readonly p: number;
+  readonly q: number;
+  // the visible element behind the face, and its cube
+  readonly owner: MeshHexDto;
+  readonly element: [number, number, number];
+  // the face of that element the face is
+  readonly face: HexFaceName;
+  // lies on the outside of the body (so it can carry a load or a clamp)
+  readonly outer: boolean;
+}
+
+// Triangles of one small face - a (resolution x resolution) grid, two triangles per cell.
+const trianglesPerFace = (resolution: number) => 2 * resolution * resolution;
+
 export function buildSolverView(input: SolverViewInput): MeshView {
   const { state, setup, result, field } = input;
   const root = new THREE.Group();
   const pickables: THREE.Object3D[] = [];
-  const nodes = new Map(state.nodes.map(n => [n.id, n]));
   const divisions = (result ? result.divisions : (setup?.divisions ?? [1, 1, 1])) as [number, number, number];
-  const [nx, ny, nz] = divisions;
-  const points = gridPoints(nx, ny, nz);
-  const pointIndex = new Map(points.map((p, i) => [p.join(','), i]));
-  const hexIndexInResult = new Map((result?.hexIds ?? []).map((id, i) => [id, i]));
+  const geometry = new SolverGeometry(state, divisions, result, result ? input.deformationScale : 0, field);
+  const counts = geometry.counts;
+  const hidden = input.hiddenMaterials ?? new Set<string>();
+  const opacity = Math.min(1, Math.max(0.05, input.opacity));
+  const solid = opacity >= 1;
 
   const values = result ? fieldValues(result, field) : null;
   const range: FieldRange = values ? { min: 0, max: fieldRange(values).max } : { min: 0, max: 0 };
   const span = range.max - range.min;
-  const scale = result ? input.deformationScale : 0;
-  const opacity = Math.min(1, Math.max(0.05, input.opacity));
-  const solid = opacity >= 1;
 
-  // undeformed + displacement of every grid point of a cube, computed once per cube
-  interface CubeGrid {
-    readonly position: (ix: number, iy: number, iz: number) => THREE.Vector3;
-    readonly value: (ix: number, iy: number, iz: number) => number;
-  }
-  const gridOf = (hex: MeshHexDto): CubeGrid => {
-    const slotPositions = LOCAL_COORDS.map((_, slot) => {
-      const node = nodes.get(hex.nodeIds[slot])!;
-      return new THREE.Vector3(node.x, node.y, node.z);
-    });
-    const resultIndex = hexIndexInResult.get(hex.id);
-    const nodeAt = (ix: number, iy: number, iz: number): number | null =>
-      result && resultIndex !== undefined ? result.gridNodes[resultIndex * points.length + pointIndex.get(`${ix},${iy},${iz}`)!] : null;
-    return {
-      position: (ix, iy, iz) => {
-        const node = nodeAt(ix, iy, iz);
-        if (node === null || !result) return mapHex(slotPositions, ix / nx - 1, iy / ny - 1, iz / nz - 1);
-        const point = new THREE.Vector3(result.positions[3 * node], result.positions[3 * node + 1], result.positions[3 * node + 2]);
-        return scale !== 0 ? point.add(new THREE.Vector3(result.ux[node], result.uy[node], result.uz[node]).multiplyScalar(scale)) : point;
-      },
-      value: (ix, iy, iz) => {
-        const node = nodeAt(ix, iy, iz);
-        return node === null || !values ? 0 : values[node];
-      }
-    };
-  };
-
-  const isFixed = new Set((setup?.fixed ?? []).map(f => `${f.hex}:${f.face}`));
-  const isLoaded = new Set((setup?.loads ?? []).map(l => `${l.hex}:${l.face}`));
-  const selected = new Set(input.selectedHexes);
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
-  const grids = new Map<number, CubeGrid>();
-  const lines: number[] = [];
+  const links = new Map<string, { hex: number; face: HexFaceName }>();
+  for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
 
-  // The small faces of one cube face: for each, its 8 grid points (positions, values).
-  const smallFaces = (hex: MeshHexDto, face: HexFaceName) => {
-    const grid = grids.get(hex.id) ?? (grids.set(hex.id, gridOf(hex)), grids.get(hex.id)!);
-    const axis = faceAxis(face);
-    const [t0, t1] = [0, 1, 2].filter(d => d !== axis);
-    const counts = [nx, ny, nz];
-    const fixedIndex = faceSign(face) > 0 ? 2 * counts[axis] : 0;
-    const out: { positions: THREE.Vector3[]; values: number[] }[] = [];
-    for (let p = 0; p < counts[t0]; p++) {
-      for (let q = 0; q < counts[t1]; q++) {
-        const positions: THREE.Vector3[] = [];
-        const vals: number[] = [];
-        for (const [u, v] of FACE_NODES) {
-          const index = [0, 0, 0];
-          index[axis] = fixedIndex;
-          index[t0] = 2 * p + u + 1;
-          index[t1] = 2 * q + v + 1;
-          positions.push(grid.position(index[0], index[1], index[2]));
-          vals.push(grid.value(index[0], index[1], index[2]));
+  const overrides = new Map((setup?.elementMaterials ?? []).map(m => [`${m.hex}:${m.ex}:${m.ey}:${m.ez}`, m.material]));
+  const materialOf = (hex: number, ex: number, ey: number, ez: number): string =>
+    overrides.get(`${hex}:${ex}:${ey}:${ez}`) ?? setup?.hexMaterials[hex] ?? setup?.defaultMaterial ?? 'default';
+  const visible = (hex: number, ex: number, ey: number, ez: number) => !hidden.has(materialOf(hex, ex, ey, ez));
+
+  const isFixed = new Set((setup?.fixed ?? []).map(f => `${f.hex}:${f.face}:${f.p}:${f.q}`));
+  const isLoaded = new Set((setup?.loads ?? []).map(l => `${l.hex}:${l.face}:${l.p}:${l.q}`));
+
+  // ---- which faces to draw: those between a visible element and what is not (or, with showInner, all of them) ----
+  const drawn = new Map<number, DrawnFace[]>();
+  for (const hex of state.hexes) {
+    for (let axis = 0; axis < 3; axis++) {
+      const [t0, t1] = [0, 1, 2].filter(d => d !== axis);
+      for (let t = 0; t <= counts[axis]; t++) {
+        for (let p = 0; p < counts[t0]; p++) {
+          for (let q = 0; q < counts[t1]; q++) {
+            const index = (along: number): [number, number, number] => {
+              const e: [number, number, number] = [0, 0, 0];
+              e[axis] = along;
+              e[t0] = p;
+              e[t1] = q;
+              return e;
+            };
+            const lowIndex = t > 0 ? index(t - 1) : null;
+            const highIndex = t < counts[axis] ? index(t) : null;
+            let low: { hex: MeshHexDto; element: [number, number, number] } | null = lowIndex ? { hex, element: lowIndex } : null;
+            let high: { hex: MeshHexDto; element: [number, number, number] } | null = highIndex ? { hex, element: highIndex } : null;
+            let linked = false;
+            if (!low || !high) {
+              // on a side of the cube: across it is the next cube, or nothing
+              const name = faceName(axis, t > 0);
+              const link = links.get(`${hex.id}:${name}`);
+              if (link) {
+                linked = true;
+                const other = hexById.get(link.hex);
+                if (!other || other.id < hex.id) continue;               // a shared face is drawn once, from the lower cube
+                const across = index(t > 0 ? 0 : counts[axis] - 1);
+                if (t > 0) high = { hex: other, element: across };
+                else low = { hex: other, element: across };
+              }
+            }
+            const lowVisible = low !== null && visible(low.hex.id, ...low.element);
+            const highVisible = high !== null && visible(high.hex.id, ...high.element);
+            const keep = lowVisible !== highVisible || (lowVisible && highVisible && input.showInner === true);
+            if (!keep) continue;
+            const owner = highVisible ? high! : low!;                    // with both visible: the high side
+            const ownerIsHigh = highVisible;
+            const entry: DrawnFace = {
+              drawer: hex,
+              axis, t, p, q,
+              owner: owner.hex,
+              element: owner.element,
+              face: faceName(axis, !ownerIsHigh),                         // the high element meets the face on its minus side
+              outer: !linked && (t === 0 || t === counts[axis])
+            };
+            (drawn.get(hex.id) ?? (drawn.set(hex.id, []), drawn.get(hex.id)!)).push(entry);
+          }
         }
-        out.push({ positions, values: vals });
       }
     }
-    return out;
-  };
+  }
 
-  // One merged geometry for all small faces of a cube face, coloured by `colorAt(value)`.
-  const resolution = Math.max(2, Math.ceil(8 / Math.max(nx, ny, nz)));
-  const faceGeometry = (faces: { positions: THREE.Vector3[]; values: number[] }[], colorAt: (value: number) => THREE.Color): THREE.BufferGeometry => {
+  // ---- geometry: one mesh per cube, and one merged set of lines -----------------------------------------------------
+  const resolution = Math.max(2, Math.ceil(8 / Math.max(...counts)));
+  const triangles = trianglesPerFace(resolution);
+  const lines: number[] = [];
+
+  const faceGeometry = (faces: readonly DrawnFace[], colorOf: (face: DrawnFace, value: number) => THREE.Color, shade: boolean): THREE.BufferGeometry => {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
     const stride = resolution + 1;
     for (const face of faces) {
+      const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
       const base = positions.length / 3;
       for (let iv = 0; iv <= resolution; iv++) {
         for (let iu = 0; iu <= resolution; iu++) {
@@ -186,11 +343,11 @@ export function buildSolverView(input: SolverViewInput): MeshView {
           let value = 0;
           for (let k = 0; k < 8; k++) {
             const w = faceShape(k, u, v);
-            point.addScaledVector(face.positions[k], w);
-            value += w * face.values[k];
+            point.addScaledVector(small.positions[k], w);
+            value += w * small.values[k];
           }
           positions.push(point.x, point.y, point.z);
-          const color = colorAt(value);
+          const color = colorOf(face, value);
           colors.push(color.r, color.g, color.b);
         }
       }
@@ -201,59 +358,172 @@ export function buildSolverView(input: SolverViewInput): MeshView {
         }
       }
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.setIndex(indices);
-    return geometry;
-  };
-
-  for (const face of state.faces) {
-    if (face.status === 'Linked') continue;                 // inside the body
-    const hex = hexById.get(face.hex);
-    if (!hex) continue;
-    const faces = smallFaces(hex, face.face);
-
-    // the edges of the small faces: curved, through corner - midpoint - corner
-    for (const small of faces) {
-      for (const [a, m, b] of FACE_EDGES) {
-        let previous = small.positions[a];
-        for (let i = 1; i <= EDGE_SEGMENTS; i++) {
-          const t = (i / EDGE_SEGMENTS) * 2 - 1;
-          const next = small.positions[a].clone().multiplyScalar((t * (t - 1)) / 2).addScaledVector(small.positions[m], 1 - t * t).addScaledVector(small.positions[b], (t * (t + 1)) / 2);
-          lines.push(previous.x, previous.y, previous.z, next.x, next.y, next.z);
-          previous = next;
-        }
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    buffer.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    buffer.setIndex(indices);
+    if (shade) {
+      // a fixed light baked into the colours: a face turned away from it is darker, which is what lets the eye read the shape
+      buffer.computeVertexNormals();
+      const normal = buffer.getAttribute('normal');
+      const color = buffer.getAttribute('color');
+      for (let i = 0; i < normal.count; i++) {
+        const light = 0.58 + 0.42 * Math.abs(normal.getX(i) * LIGHT.x + normal.getY(i) * LIGHT.y + normal.getZ(i) * LIGHT.z);
+        color.setXYZ(i, color.getX(i) * light, color.getY(i) * light, color.getZ(i) * light);
       }
     }
+    return buffer;
+  };
 
-    const base = materialColor(setup?.hexMaterials[hex.id] ?? setup?.defaultMaterial ?? 'default');
-    const baseColor = selected.has(hex.id) ? base.clone().lerp(SELECTED_HEX_COLOR, SELECTED_HEX_MIX) : base;
-    const mesh = new THREE.Mesh(
-      faceGeometry(faces, value => (values ? rampColor(span > 0 ? (value - range.min) / span : 0) : baseColor)),
-      new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
-    );
-    mesh.userData['pick'] = { kind: 'face', hex: hex.id, face: face.face } satisfies PickedFace;
+  const pendingOverlays: { color: number; faces: DrawnFace[] }[] = [];
+  for (const [hexId, faces] of drawn) {
+    const hex = hexById.get(hexId)!;
+    for (const face of faces) {
+      const small = geometry.smallFace(hex, face.axis, face.t, face.p, face.q);
+      for (const [a, m, b] of FACE_EDGES) pushEdge(lines, small.positions[a], small.positions[m], small.positions[b], EDGE_SEGMENTS);
+    }
+    const colorOf = (face: DrawnFace, value: number) =>
+      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : materialColor(materialOf(face.owner.id, ...face.element));
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
+    // see-through: handed to the order-independent transparency pass, which blends without sorting
+    markForWeightedOit(material);
+    const mesh = new THREE.Mesh(faceGeometry(faces, colorOf, true), material);
+    // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
+    mesh.userData['resolvePick'] = (triangle: number): PickedFace | null => {
+      const face = faces[Math.floor(triangle / triangles)];
+      return face
+        ? { kind: 'face', hex: face.owner.id, face: face.face, p: face.p, q: face.q, element: face.element, inner: !face.outer }
+        : null;
+    };
+    mesh.userData['pick'] = mesh.userData['resolvePick'](0);
     root.add(mesh);
     pickables.push(mesh);
 
-    const key = `${hex.id}:${face.face}`;
-    const overlay = (color: number) => {
-      const quad = new THREE.Mesh(
-        faceGeometry(faces, () => new THREE.Color(color)),
-        new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: OVERLAY_OPACITY, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
-      );
-      root.add(quad);
-    };
-    if (isFixed.has(key)) overlay(FIXED_COLOR);
-    if (isLoaded.has(key)) overlay(LOAD_COLOR);
+    for (const face of faces) {
+      if (!face.outer) continue;
+      const key = `${face.owner.id}:${face.face}:${face.p}:${face.q}`;
+      if (isFixed.has(key)) pendingOverlays.push({ color: FIXED_COLOR, faces: [face] });
+      if (isLoaded.has(key)) pendingOverlays.push({ color: LOAD_COLOR, faces: [face] });
+    }
+  }
+
+  // clamped and pressed faces: one translucent set per colour
+  for (const color of [FIXED_COLOR, LOAD_COLOR]) {
+    const faces = pendingOverlays.filter(o => o.color === color).flatMap(o => o.faces);
+    if (faces.length === 0) continue;
+    const overlay = new THREE.Mesh(
+      faceGeometry(faces, () => new THREE.Color(color), false),
+      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: OVERLAY_OPACITY, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    );
+    root.add(overlay);
   }
 
   if (lines.length > 0) {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-    root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR, transparent: !solid, opacity: solid ? 1 : Math.min(1, opacity + 0.3) })));
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    root.add(new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR })));
   }
 
-  return { root, pickables, nodeMeshes: new Map() };
+  // what a click would act on is drawn into the view without rebuilding it
+  let highlight: THREE.Object3D | null = null;
+  const setHighlight = (group: THREE.Object3D | null) => {
+    if (highlight) {
+      root.remove(highlight);
+      disposeObject(highlight);
+    }
+    highlight = group;
+    if (group) root.add(group);
+  };
+
+  return { root, pickables, nodeMeshes: new Map(), setHighlight };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// the highlight
+
+export interface HighlightTargets {
+  // small faces that a load or a clamp would mark (a whole side of a cube when p and q are absent)
+  readonly faces: readonly SolverFaceDto[];
+  // small elements that a material would be given to
+  readonly elements: readonly { hex: number; ex: number; ey: number; ez: number }[];
+  // the small face that was pointed at
+  readonly pointed: PickedFace | null;
+}
+
+// A group that shows what a click would act on: the small faces to mark in yellow, or the outlines of the elements
+// that would get a material. Built from the same geometry as the view, so it follows a deformed body too.
+export function buildHighlight(input: SolverViewInput, targets: HighlightTargets, limit = 400): THREE.Group {
+  const { state, setup, result, field } = input;
+  const divisions = (result ? result.divisions : (setup?.divisions ?? [1, 1, 1])) as [number, number, number];
+  const geometry = new SolverGeometry(state, divisions, result, result ? input.deformationScale : 0, field);
+  const hexById = new Map(state.hexes.map(h => [h.id, h]));
+  const group = new THREE.Group();
+  const lines: number[] = [];
+
+  const quads: number[] = [];
+  const quadIndices: number[] = [];
+  const addQuad = (hex: MeshHexDto, axis: number, t: number, p: number, q: number) => {
+    const small = geometry.smallFace(hex, axis, t, p, q);
+    const base = quads.length / 3;
+    const corners = [0, 1, 2, 3].map(i => small.positions[i]);
+    // lifted a little towards the viewer's side of the face so it does not z-fight with the face itself
+    corners.forEach(c => quads.push(c.x, c.y, c.z));
+    quadIndices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    for (const [a, m, b] of FACE_EDGES) pushEdge(lines, small.positions[a], small.positions[m], small.positions[b], 4);
+  };
+
+  let used = 0;
+  for (const target of targets.faces) {
+    const hex = hexById.get(target.hex);
+    if (!hex) continue;
+    const axis = target.face.charCodeAt(0) - 'X'.charCodeAt(0);
+    const t = target.face.endsWith('Plus') ? geometry.counts[axis] : 0;
+    const [t0, t1] = [0, 1, 2].filter(d => d !== axis);
+    const cells = target.p !== undefined && target.q !== undefined
+      ? [[target.p, target.q]]
+      : Array.from({ length: geometry.counts[t0] * geometry.counts[t1] }, (_, i) => [Math.floor(i / geometry.counts[t1]), i % geometry.counts[t1]]);
+    for (const [p, q] of cells) {
+      if (used++ >= limit) break;
+      addQuad(hex, axis, t, p, q);
+    }
+  }
+  for (const element of targets.elements) {
+    if (used++ >= limit) break;
+    const hex = hexById.get(element.hex);
+    if (hex) lines.push(...geometry.elementEdges(hex, element.ex, element.ey, element.ez, 4));
+  }
+  if (targets.pointed && targets.pointed.p !== undefined && targets.pointed.q !== undefined) {
+    const hex = hexById.get(targets.pointed.hex);
+    if (hex) {
+      const axis = targets.pointed.face.charCodeAt(0) - 'X'.charCodeAt(0);
+      // the pointed small face on its own plane: the face of the element behind it
+      const element = targets.pointed.element ?? [0, 0, 0];
+      const t = targets.pointed.face.endsWith('Plus') ? element[axis] + 1 : element[axis];
+      addQuad(hex, axis, t, targets.pointed.p, targets.pointed.q);
+    }
+  }
+
+  if (quads.length > 0) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(quads, 3));
+    buffer.setIndex(quadIndices);
+    group.add(new THREE.Mesh(buffer, new THREE.MeshBasicMaterial({ color: HIGHLIGHT_COLOR, transparent: true, opacity: 0.45, depthWrite: false, depthTest: false, side: THREE.DoubleSide })));
+  }
+  if (lines.length > 0) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    group.add(new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: HIGHLIGHT_COLOR, depthTest: false })));
+  }
+  group.renderOrder = 10;
+  group.traverse(o => (o.renderOrder = 10));
+  return group;
+}
+
+function disposeObject(object: THREE.Object3D): void {
+  object.traverse(child => {
+    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+      child.geometry.dispose();
+      (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => m.dispose());
+    }
+  });
 }

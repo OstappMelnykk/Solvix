@@ -2,13 +2,11 @@ import { TestBed } from '@angular/core/testing';
 import { SolverControlsComponent } from './solver-controls.component';
 import { SolverService } from '../../../state/solver.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { SolverJobDto, SolverResultDto, SolverSetupDto, SolverValidationDto } from '../../../api/solver-api.service';
 import { linkedPairState } from '../../../geometry/mesh-state.fixture.spec';
 
 describe('SolverControlsComponent', () => {
   let solver: jasmine.SpyObj<SolverService>;
-  let selection: MeshEditorSelectionService;
   let component: SolverControlsComponent;
   let setup: SolverSetupDto | null;
   let job: SolverJobDto;
@@ -36,6 +34,7 @@ describe('SolverControlsComponent', () => {
       ],
       defaultMaterial: 'steel',
       hexMaterials: { '1': 'rubber' },
+      elementMaterials: [],
       fixed: [],
       loads: []
     };
@@ -44,7 +43,8 @@ describe('SolverControlsComponent', () => {
     validation = null;
     display = { field: 'vonMises', deformationScale: 1, opacity: 1 };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
-      'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'setMaterialOfSelection', 'upsertMaterial',
+      'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
+      'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
       'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
     ]);
@@ -62,10 +62,13 @@ describe('SolverControlsComponent', () => {
     solver.loadedFaceCount.and.returnValue(7);
     solver.fixedFaceCount.and.returnValue(5);
     solver.solve.and.resolveTo();
+    solver.activeMaterial.and.returnValue('rubber');
+    solver.tool.and.returnValue('view');
+    solver.materialCounts.and.returnValue(new Map([['steel', 7], ['rubber', 3]]));
+    solver.isHidden.and.callFake((_s, name) => name === 'rubber');
     const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState']);
     editor.getState.and.callFake(() => linkedPairState());
     TestBed.configureTestingModule({ providers: [{ provide: SolverService, useValue: solver }, { provide: MeshEditorService, useValue: editor }] });
-    selection = TestBed.inject(MeshEditorSelectionService);
     component = TestBed.runInInjectionContext(() => new SolverControlsComponent());
     component.sessionId = 1;
   });
@@ -90,38 +93,58 @@ describe('SolverControlsComponent', () => {
     });
   });
 
-  describe('materials', () => {
-    it('lists the library, the default one, how many cubes have which material', () => {
-      expect(component.materials().length).toBe(2);
+  describe('materials: a palette', () => {
+    it('lists the library with the colour, the number of elements and whether it is hidden', () => {
+      expect(component.materials().map(m => m.name)).toEqual(['steel', 'rubber']);
       expect(component.defaultMaterial()).toBe('steel');
-      expect(component.materialsInUse()).toEqual(['Сталь: 1', 'Гума: 1']);
-      expect(component.labelOf('rubber')).toBe('Гума');
-      expect(component.labelOf('unknown')).toBe('unknown');
-      expect(component.selectedCubes()).toEqual([]);
-      selection.toggleHex(1, 0);
-      expect(component.selectedCubes()).toEqual([0]);
+      expect(component.activeMaterial()).toBe('rubber');
+      expect(component.countOf('steel')).toBe(7);
+      expect(component.countOf('nothing')).toBe(0);
+      expect(component.isHidden('rubber')).toBeTrue();
+      expect(component.isHidden('steel')).toBeFalse();
+      expect(component.colorOf('rubber')).toBe('#e0605a');
     });
 
     it('copes with a set-up that has not arrived yet', () => {
       setup = null;
 
       expect(component.materials()).toEqual([]);
-      expect(component.materialsInUse()).toEqual([]);
       expect(component.defaultMaterial()).toBe('');
     });
 
-    it('gives the picked cubes (or all) a material, and resets the select', () => {
-      const select = { value: 'rubber' };
+    it('choosing a material makes it the active one and switches to the tool that paints with it', () => {
+      component.selectMaterial('steel');
 
-      component.onMaterialOfSelection({ target: select } as unknown as Event);
-
-      expect(solver.setMaterialOfSelection).toHaveBeenCalledWith(1, 'rubber');
-      expect(select.value).toBe('');
-      component.onMaterialOfSelection({ target: { value: '' } } as unknown as Event);
-      expect(solver.setMaterialOfSelection).toHaveBeenCalledTimes(1);
+      expect(solver.setActiveMaterial).toHaveBeenCalledWith(1, 'steel');
+      expect(solver.setTool).toHaveBeenCalledWith(1, 'material');
     });
 
-    it('changes the default material', () => {
+    it('does not switch the tool again when it already paints', () => {
+      solver.tool.and.returnValue('material');
+
+      component.selectMaterial('steel');
+
+      expect(solver.setTool).not.toHaveBeenCalled();
+    });
+
+    it('the eye hides or shows a material without choosing it', () => {
+      const event = jasmine.createSpyObj<Event>('Event', ['stopPropagation']);
+
+      component.toggleHidden('steel', event);
+
+      expect(event.stopPropagation).toHaveBeenCalled();
+      expect(solver.toggleHidden).toHaveBeenCalledWith(1, 'steel');
+      expect(solver.setActiveMaterial).not.toHaveBeenCalled();
+    });
+
+    it('fills the whole body with the active material, or sets it back to the main one', () => {
+      component.fillAll();
+      component.resetMaterials();
+
+      expect(solver.fillAll.calls.allArgs()).toEqual([[1, 'rubber'], [1, 'steel']]);
+    });
+
+    it('changes the main material', () => {
       component.onDefaultMaterial({ target: { value: 'rubber' } } as unknown as Event);
 
       expect(solver.setDefaultMaterial).toHaveBeenCalledWith(1, 'rubber');
@@ -140,7 +163,7 @@ describe('SolverControlsComponent', () => {
         expect(component.canAddMaterial()).toBeFalse();
       });
 
-      it('is added in Pa with a generated name, and the form closes', () => {
+      it('is added in Pa with a generated name, becomes the active one, and the form closes', () => {
         component.isMaterialFormOpen = true;
         component.newLabel = ' Скло ';
         component.newYoungGPa = 70;
@@ -153,6 +176,7 @@ describe('SolverControlsComponent', () => {
         expect(material.e).toBe(70e9);
         expect(material.nu).toBe(0.22);
         expect(material.name.startsWith('custom-')).toBeTrue();
+        expect(solver.setActiveMaterial).toHaveBeenCalledWith(1, material.name);
         expect(component.newLabel).toBe('');
         expect(component.isMaterialFormOpen).toBeFalse();
       });

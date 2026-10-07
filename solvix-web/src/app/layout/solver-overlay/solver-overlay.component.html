@@ -1,30 +1,81 @@
-<div class="bar">
-  <button type="button" [class.active]="mode() === 'load'" title="Клік по грані позначає її як навантажену (зелена). Увімкнено за замовчуванням." (click)="setMode('load')">Load</button>
-  <button type="button" [class.active]="mode() === 'fix'" title="Клік по грані позначає її як закріплену (синя). Якщо жодної не вибрано — береться протилежна до навантаженої." (click)="setMode('fix')">Fix</button>
+<div class="toolbox">
+  <div class="segmented" role="tablist" aria-label="Інструмент">
+    <button
+      *ngFor="let item of tools"
+      type="button"
+      role="tab"
+      class="segment"
+      [class.segment--on]="tool() === item.tool"
+      [class.segment--load]="item.tool === 'load'"
+      [class.segment--fix]="item.tool === 'fix'"
+      [class.segment--material]="item.tool === 'material'"
+      [title]="item.title"
+      (click)="setTool(item.tool)"
+    >
+      {{ item.label }}
+    </button>
+  </div>
 
-  <label class="slider" title="Прозорість кубів: зменшіть, щоб бачити ребра й грані позаду">
-    Прозорість
-    <div class="row">
-      <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" />
-      <span class="value">{{ opacityPercent() }}%</span>
+  <div class="row" *ngIf="scopes().length > 0">
+    <span class="caption">Охоплення</span>
+    <div class="segmented segmented--small">
+      <button *ngFor="let item of scopes(); trackBy: trackScope" type="button" class="segment" [class.segment--on]="scope() === item.scope" [title]="item.title" (click)="setScope(item.scope)">
+        {{ item.label }}
+      </button>
     </div>
-  </label>
+  </div>
 
-  <label class="slider" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення (мікрони) на ×1 непомітні.">
-    Деформація
-    <div class="row">
-      <span class="x">×</span>
-      <input type="number" class="num" min="0" max="500000" step="10" [value]="scale()" (change)="onScaleNumber($event)" />
-      <input type="range" min="0" max="100" step="1" [value]="scaleSlider()" (input)="onScaleSlider($event)" />
+  <div class="row" *ngIf="hasDepth()">
+    <span class="caption">Глибина</span>
+    <div class="stepper">
+      <button type="button" (click)="deeper(-1)" [disabled]="depth() === 0" aria-label="Менше">−</button>
+      <span class="stepper__value">{{ depth() }}</span>
+      <button type="button" (click)="deeper(1)" aria-label="Більше">+</button>
     </div>
-    <span class="hint">{{ shownText() }}</span>
+    <span class="hint">елементів углиб від грані</span>
+  </div>
+
+  <div class="palette" *ngIf="isMaterialTool()">
+    <button
+      *ngFor="let material of materials()"
+      type="button"
+      class="chip"
+      [class.chip--on]="activeMaterial() === material.name"
+      [title]="material.label + ': E = ' + (material.e / 1e9).toPrecision(3) + ' ГПа, ν = ' + material.nu"
+      (click)="setActiveMaterial(material.name)"
+    >
+      <span class="chip__swatch" [style.background]="colorOf(material.name)"></span>{{ material.label }}
+    </button>
+  </div>
+
+  <div class="hint hint--wide">{{ hint() }}</div>
+</div>
+
+<div class="viewbox">
+  <div class="viewbox__title">Вигляд</div>
+  <div class="control">
+    <span class="caption">Прозорість</span>
+    <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" aria-label="Прозорість" />
+    <span class="value">{{ opacityPercent() }}%</span>
+  </div>
+  <div class="presets">
+    <button *ngFor="let percent of opacityPresets" type="button" [class.on]="opacityPercent() === percent" (click)="setOpacityPercent(percent)">{{ percent }}%</button>
+  </div>
+  <label class="check" title="Малювати грані між елементами: видно сітку всередині тіла">
+    <input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />
+    Внутрішні грані
   </label>
+  <div class="control" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення на ×1 непомітні.">
+    <span class="caption">Деформація ×</span>
+    <input type="number" class="num" min="0" max="500000" step="10" [value]="scale()" (change)="onScaleNumber($event)" />
+  </div>
+  <input *ngIf="hasResult()" type="range" min="0" max="100" step="1" [value]="scaleSlider()" (input)="onScaleSlider($event)" aria-label="Деформація" />
+  <div class="hint" *ngIf="hasResult()">{{ shownText() }}</div>
 </div>
 
 <div class="face-legend">
   <span class="item"><span class="swatch swatch--load"></span>Навантаження: <b>{{ loadedText() }}</b></span>
   <span class="item"><span class="swatch swatch--fix"></span>Закріплено: <b>{{ fixedText() }}</b></span>
-  <span class="hint">Режим: <b>{{ mode() === 'load' ? 'load' : 'fix' }}</b> · клік по грані — вибрати / зняти · Shift + клік — вибрати куб (для матеріалу)</span>
 </div>
 
 <div class="legend" *ngIf="legend() as l">

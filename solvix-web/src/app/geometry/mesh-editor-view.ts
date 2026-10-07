@@ -12,6 +12,13 @@ export interface PickedFace {
   readonly kind: 'face';
   readonly hex: number;
   readonly face: HexFaceName;
+  // Solver World only, where a cube is cut into small elements: the cell of the side's grid that was hit ...
+  readonly p?: number;
+  readonly q?: number;
+  // ... the small element behind that small face (its index along each axis of the cube) ...
+  readonly element?: readonly [number, number, number];
+  // ... and whether the face lies inside the body (between small elements) rather than on its outside.
+  readonly inner?: boolean;
 }
 
 export interface PickedNode {
@@ -37,6 +44,8 @@ export interface MeshView {
   // What a click can hit: faces and the (larger, invisible) hit spheres around
   // the nodes; each carries its identity in userData.pick.
   readonly pickables: THREE.Object3D[];
+  // Highlights what a click would act on: the Solver World draws it into the view without rebuilding the view.
+  readonly setHighlight?: (group: THREE.Object3D | null) => void;
   // The visible sphere of each node, by node id - the canvas moves one while
   // its node is being dragged.
   readonly nodeMeshes: ReadonlyMap<number, THREE.Mesh>;

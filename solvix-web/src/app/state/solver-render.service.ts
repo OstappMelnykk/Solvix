@@ -1,25 +1,24 @@
 import { Injectable, inject } from '@angular/core';
 import { SOLVER_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
-import { buildSolverView } from '../geometry/solver-view';
+import { SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
 import { MeshEditorService } from './mesh-editor.service';
-import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { SolverService } from './solver.service';
 
 interface Cached {
   readonly key: string;
   readonly view: MeshView | null;
+  readonly input: SolverViewInput;
 }
 
-// The 3D view of a session's body in the Solver World: materials, supports and pressures while setting up,
-// a field of the solution after a solve. Cached per session and rebuilt only when the mesh, the set-up, the
-// result, the display settings or the selection changed (the canvas asks on every change-detection pass, so
-// identity has to stay stable between real changes). A superseded view is disposed by the canvas that drew it,
-// as with the mesh editor's views.
+// The 3D view of a session's body in the Solver World: materials, supports and pressures while setting up, a field
+// of the solution after a solve. Cached per session and rebuilt only when the mesh, the set-up, the result or the
+// display settings changed (the canvas asks on every change-detection pass, so identity has to stay stable between
+// real changes). What a click would act on is drawn into the cached view as a highlight, without rebuilding it. A
+// superseded view is disposed by the canvas that drew it, as with the mesh editor's views.
 @Injectable({ providedIn: 'root' })
 export class SolverRenderService {
   private readonly editor = inject(MeshEditorService);
-  private readonly selection = inject(MeshEditorSelectionService);
   private readonly solver = inject(SolverService);
   private readonly cache = new Map<number, Cached>();
 
@@ -30,21 +29,36 @@ export class SolverRenderService {
       this.cache.delete(sessionId);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.selection.revision(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
     const display = this.solver.display(sessionId);
-    const view = buildSolverView({
+    const input: SolverViewInput = {
       state,
       setup: this.solver.setup(sessionId),
       result: this.solver.result(sessionId),
       field: display.field,
       deformationScale: display.deformationScale,
       opacity: display.opacity,
-      selectedHexes: this.selection.hexes(sessionId)
-    });
-    this.cache.set(sessionId, { key, view });
+      hiddenMaterials: this.solver.hiddenMaterials(sessionId),
+      showInner: this.solver.showInner(sessionId)
+    };
+    const view = buildSolverView(input);
+    this.cache.set(sessionId, { key, view, input });
+    this.applyHighlight(sessionId);
     return view;
+  }
+
+  // Redraws what a click would act on (the pointer moved, or the tool changed) - the view itself stays.
+  refreshHighlight(sessionId: number): void {
+    this.applyHighlight(sessionId);
+  }
+
+  private applyHighlight(sessionId: number): void {
+    const cached = this.cache.get(sessionId);
+    if (!cached?.view?.setHighlight) return;
+    const targets = this.solver.highlightTargets(sessionId);
+    cached.view.setHighlight(targets ? buildHighlight(cached.input, targets) : null);
   }
 }

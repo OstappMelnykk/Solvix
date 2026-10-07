@@ -9,6 +9,7 @@ import { NotificationService } from './notification.service';
 import { SessionsService } from './sessions.service';
 import { SolverJobDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { linkedPairState, singleCubeState } from '../geometry/mesh-state.fixture.spec';
+import { PickedFace } from '../geometry/mesh-editor-view';
 
 describe('SolverService', () => {
   let solver: SolverService;
@@ -30,6 +31,7 @@ describe('SolverService', () => {
     ],
     defaultMaterial: 'steel',
     hexMaterials: {},
+    elementMaterials: [],
     fixed: [],
     loads: []
   };
@@ -91,8 +93,8 @@ describe('SolverService', () => {
   describe('choosing faces, as in the solver', () => {
     const faces = (request: { request: { body: { faces: unknown } } }) => request.request.body.faces;
 
-    it('starts in Load mode with the solver\'s default Pn of 1 MPa of compression', () => {
-      expect(solver.mode(sessionId)).toBe('load');
+    it('starts with nothing being edited and the solver\'s default Pn of 1 MPa of compression', () => {
+      expect(solver.tool(sessionId)).toBe('view');
       expect(solver.pressure(sessionId)).toBe(-1e6);
       expect(solver.loadSide(sessionId)).toBeNull();
       expect(solver.fixedSide(sessionId)).toBeNull();
@@ -153,57 +155,86 @@ describe('SolverService', () => {
       expect(solver.outerFaces(sessionId, 'YPlus').map(f => f.hex)).toEqual([0, 1]);
     });
 
-    it('a click on a face marks it as pressed in Load mode and unmarks it the next time', () => {
+    const facePick = (over: Partial<PickedFace> = {}): PickedFace => ({ kind: 'face', hex: 0, face: 'YPlus', p: 0, q: 0, element: [0, 0, 0], inner: false, ...over });
+
+    it('a click with the View tool changes nothing', () => {
       loadSetup();
 
-      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
-      const on = http.expectOne(`${api}/${sessionId}/faces/load`);
-      expect(on.request.body).toEqual({ faces: [{ hex: 0, face: 'YPlus' }], pressure: -1e6 });
-      on.flush({ ...emptySetup, loads: [{ hex: 0, face: 'YPlus', pressure: -1e6 }] });
-      expect(solver.pressureOn(sessionId, 0, 'YPlus')).toBe(-1e6);
+      solver.pick(sessionId, facePick());
 
-      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
+      http.expectNone(`${api}/${sessionId}/faces/load`);
+      http.expectNone(`${api}/${sessionId}/faces/fixed`);
+    });
+
+    it('a click with the Load tool marks the small face as pressed and unmarks it the next time', () => {
+      loadSetup();
+      solver.setTool(sessionId, 'load');
+
+      solver.pick(sessionId, facePick());
+      const on = http.expectOne(`${api}/${sessionId}/faces/load`);
+      expect(on.request.body).toEqual({ faces: [{ hex: 0, face: 'YPlus', p: 0, q: 0 }], pressure: -1e6 });
+      on.flush({ ...emptySetup, loads: [{ hex: 0, face: 'YPlus', p: 0, q: 0, pressure: -1e6 }] });
+      expect(solver.pressureOn(sessionId, 0, 'YPlus', 0, 0)).toBe(-1e6);
+
+      solver.pick(sessionId, facePick());
       expect(http.expectOne(`${api}/${sessionId}/faces/load`).request.body.pressure).toBeNull();
     });
 
-    it('in Fix mode the same click clamps and unclamps, and marks the clamping as chosen', () => {
+    it('with the Fix tool the same click clamps and unclamps, and marks the clamping as chosen', () => {
       loadSetup();
-      solver.setMode(sessionId, 'fix');
+      solver.setTool(sessionId, 'fix');
 
-      solver.pick(sessionId, { kind: 'face', hex: 1, face: 'ZMinus' }, false);
+      solver.pick(sessionId, facePick({ hex: 1, face: 'ZMinus' }));
       const on = http.expectOne(`${api}/${sessionId}/faces/fixed`);
-      expect(on.request.body).toEqual({ faces: [{ hex: 1, face: 'ZMinus' }], fixed: true });
-      on.flush({ ...emptySetup, fixed: [{ hex: 1, face: 'ZMinus' }] });
-      expect(solver.isFixed(sessionId, 1, 'ZMinus')).toBeTrue();
+      expect(on.request.body).toEqual({ faces: [{ hex: 1, face: 'ZMinus', p: 0, q: 0 }], fixed: true });
+      on.flush({ ...emptySetup, fixed: [{ hex: 1, face: 'ZMinus', p: 0, q: 0 }] });
+      expect(solver.isFixed(sessionId, 1, 'ZMinus', 0, 0)).toBeTrue();
       expect(solver.isFixedAuto(sessionId)).toBeFalse();
 
-      solver.pick(sessionId, { kind: 'face', hex: 1, face: 'ZMinus' }, false);
+      solver.pick(sessionId, facePick({ hex: 1, face: 'ZMinus' }));
       expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.fixed).toBeFalse();
     });
 
-    it('Shift + click picks a cube (for its material) instead of marking a face', () => {
-      loadSetup();
+    it('the scope decides how far a click reaches: one small face, the whole side of the cube, or every outer face with the name', () => {
+      loadSetup({ ...emptySetup, divisions: [2, 2, 2] });
+      solver.setTool(sessionId, 'fix');
 
-      solver.pick(sessionId, { kind: 'face', hex: 1, face: 'YPlus' }, true);
+      solver.setScope(sessionId, 'cube');
+      solver.pick(sessionId, facePick({ face: 'ZPlus' }));
+      expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.faces).toEqual([{ hex: 0, face: 'ZPlus' }]);
 
-      expect(selection.hexes(sessionId)).toEqual([1]);
-      http.expectNone(`${api}/${sessionId}/faces/load`);
+      solver.setScope(sessionId, 'side');
+      solver.pick(sessionId, facePick({ face: 'YPlus' }));
+      expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.faces).toEqual([{ hex: 0, face: 'YPlus' }, { hex: 1, face: 'YPlus' }]);
     });
 
-    it('a click on nothing does nothing', () => {
-      loadSetup();
+    it('a whole side that is already all marked is unmarked by the next click', () => {
+      loadSetup({ ...emptySetup, divisions: [2, 1, 1], fixed: [{ hex: 0, face: 'ZMinus', p: 0, q: 0 }, { hex: 0, face: 'ZMinus', p: 1, q: 0 }] });
+      solver.setTool(sessionId, 'fix');
+      solver.setScope(sessionId, 'cube');
 
-      solver.pick(sessionId, null, false);
+      solver.pick(sessionId, facePick({ face: 'ZMinus' }));
 
-      http.expectNone(`${api}/${sessionId}/faces/load`);
+      expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.fixed).toBeFalse();
     });
 
-    it('refuses a face inside the body (linked to another cube) with a hint', () => {
+    it('a face inside the body (between small elements) cannot be pressed or clamped', () => {
       loadSetup();
+      solver.setTool(sessionId, 'load');
 
-      solver.toggleFace(sessionId, { hex: 0, face: 'XPlus' });
+      solver.pick(sessionId, facePick({ inner: true }));
 
       expect(lastToast().message).toContain('усередині тіла');
+      http.expectNone(`${api}/${sessionId}/faces/load`);
+    });
+
+    it('a click on nothing, or on a node, does nothing', () => {
+      loadSetup();
+      solver.setTool(sessionId, 'load');
+
+      solver.pick(sessionId, null);
+      solver.pick(sessionId, { kind: 'node', nodeId: 3 } as never);
+
       http.expectNone(`${api}/${sessionId}/faces/load`);
     });
 
@@ -220,11 +251,11 @@ describe('SolverService', () => {
       expect(solver.pressure(sessionId)).toBe(-3e6);
     });
 
-    it('counts the faces of the divided mesh: a cube face is nx*ny*nz / n_axis small faces', () => {
-      loadSetup({ ...emptySetup, divisions: [2, 3, 4], loads: [{ hex: 0, face: 'XMinus', pressure: -1e6 }, { hex: 1, face: 'ZPlus', pressure: -1e6 }], fixed: [{ hex: 0, face: 'YPlus' }] });
+    it('counts the small faces that carry a load or a clamp', () => {
+      loadSetup({ ...emptySetup, divisions: [2, 3, 4], loads: [{ hex: 0, face: 'XMinus', pressure: -1e6, p: 0, q: 0 }, { hex: 1, face: 'ZPlus', pressure: -1e6, p: 1, q: 2 }], fixed: [{ hex: 0, face: 'YPlus', p: 0, q: 0 }] });
 
-      expect(solver.loadedFaceCount(sessionId)).toBe(3 * 4 + 2 * 3);      // X face: ny*nz, Z face: nx*ny
-      expect(solver.fixedFaceCount(sessionId)).toBe(2 * 4);               // Y face: nx*nz
+      expect(solver.loadedFaceCount(sessionId)).toBe(2);
+      expect(solver.fixedFaceCount(sessionId)).toBe(1);
       expect(solver.divisions(sessionId)).toEqual([2, 3, 4]);
     });
 
@@ -234,7 +265,8 @@ describe('SolverService', () => {
       http.expectOne(`${api}/${sessionId}/validate`).flush({ canSolve: true, issues: [] });
       expect(solver.validation(sessionId)).not.toBeNull();
 
-      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
+      solver.setTool(sessionId, 'load');
+      solver.pick(sessionId, facePick());
       http.expectOne(`${api}/${sessionId}/faces/load`).flush(emptySetup);
 
       expect(solver.validation(sessionId)).toBeNull();
@@ -243,10 +275,178 @@ describe('SolverService', () => {
     it('reports a failed save as an error toast', () => {
       loadSetup();
 
-      solver.pick(sessionId, { kind: 'face', hex: 0, face: 'YPlus' }, false);
+      solver.setTool(sessionId, 'load');
+      solver.pick(sessionId, facePick());
       http.expectOne(`${api}/${sessionId}/faces/load`).flush('x', { status: 500, statusText: 'Server Error' });
 
       expect(lastToast().kind).toBe('error');
+    });
+  });
+
+  describe('the tools', () => {
+    const facePick = (over: Partial<PickedFace> = {}): PickedFace => ({ kind: 'face', hex: 0, face: 'XMinus', p: 0, q: 1, element: [0, 1, 0], inner: false, ...over });
+
+    it('offer the scopes that mean something for them, and fall back to the small one when the tool changes', () => {
+      expect(solver.scopesOf('view')).toEqual([]);
+      expect(solver.scopesOf('load')).toEqual(['cell', 'cube', 'side']);
+      expect(solver.scopesOf('fix')).toEqual(['cell', 'cube', 'side']);
+      expect(solver.scopesOf('material')).toEqual(['cell', 'column', 'layer', 'cube']);
+
+      solver.setTool(sessionId, 'material');
+      solver.setScope(sessionId, 'layer');
+      solver.setTool(sessionId, 'fix');
+
+      expect(solver.scope(sessionId)).toBe('cell');
+    });
+
+    it('keep the depth between 0 and the deepest division', () => {
+      loadSetup({ ...emptySetup, divisions: [2, 4, 3] });
+
+      solver.setDepth(sessionId, 2.7);
+      expect(solver.depth(sessionId)).toBe(2);
+      solver.setDepth(sessionId, 99);
+      expect(solver.depth(sessionId)).toBe(3);
+      solver.setDepth(sessionId, -4);
+      expect(solver.depth(sessionId)).toBe(0);
+    });
+
+    describe('the Material tool', () => {
+      beforeEach(() => {
+        loadSetup({ ...emptySetup, divisions: [3, 2, 2] });
+        solver.setTool(sessionId, 'material');
+        solver.setActiveMaterial(sessionId, 'rubber');
+      });
+
+      it('paints the small element behind the clicked face, at the chosen depth', () => {
+        solver.setDepth(sessionId, 1);
+
+        solver.pick(sessionId, facePick());
+
+        const request = http.expectOne(`${api}/${sessionId}/elements/material`);
+        expect(request.request.body).toEqual({ elements: [{ hex: 0, ex: 1, ey: 1, ez: 0 }], material: 'rubber' });
+        request.flush({ ...emptySetup, elementMaterials: [{ hex: 0, ex: 1, ey: 1, ez: 0, material: 'rubber' }] });
+        expect(solver.elementMaterial(sessionId, 0, 1, 1, 0)).toBe('rubber');
+        expect(solver.elementMaterial(sessionId, 0, 0, 0, 0)).toBe('steel');
+      });
+
+      it('paints a whole column, a whole layer, or - with the Cube scope - the cube through the cube call', () => {
+        solver.setScope(sessionId, 'column');
+        solver.pick(sessionId, facePick());
+        expect(http.expectOne(`${api}/${sessionId}/elements/material`).request.body.elements.length).toBe(3);
+
+        solver.setScope(sessionId, 'layer');
+        solver.pick(sessionId, facePick());
+        expect(http.expectOne(`${api}/${sessionId}/elements/material`).request.body.elements.length).toBe(2 * 2);
+
+        solver.setScope(sessionId, 'cube');
+        solver.pick(sessionId, facePick());
+        const cube = http.expectOne(`${api}/${sessionId}/hexes/material`);
+        expect(cube.request.body).toEqual({ hexIds: [0], material: 'rubber' });
+      });
+
+      it('says so when the depth leads out of the cube, and sends nothing', () => {
+        solver.setDepth(sessionId, 2);
+        solver.pick(sessionId, facePick({ element: [2, 0, 0] }));          // 2 + 2 is beyond the 3 elements along x
+
+        expect(lastToast().message).toContain('немає елементів');
+        http.expectNone(`${api}/${sessionId}/elements/material`);
+      });
+
+      it('works on a face between elements too', () => {
+        solver.pick(sessionId, facePick({ inner: true }));
+
+        http.expectOne(`${api}/${sessionId}/elements/material`);
+      });
+
+      it('fills the whole body with one material, wiping the single elements', () => {
+        solver.fillAll(sessionId, 'concrete');
+
+        expect(http.expectOne(`${api}/${sessionId}/hexes/material`).request.body).toEqual({ hexIds: [0, 1], material: 'concrete' });
+      });
+    });
+
+    it('count the small elements of every material, counting the cubes\' own and the painted ones', () => {
+      loadSetup({ ...emptySetup, divisions: [2, 1, 1], hexMaterials: { '1': 'concrete' }, elementMaterials: [{ hex: 0, ex: 0, ey: 0, ez: 0, material: 'rubber' }] });
+
+      const counts = solver.materialCounts(sessionId);
+
+      expect(counts.get('steel')).toBe(1);          // cube 0 has 2 elements, one painted rubber
+      expect(counts.get('rubber')).toBe(1);
+      expect(counts.get('concrete')).toBe(2);
+    });
+
+    it('hide a material and show it again; the inner faces are a setting too', () => {
+      expect(solver.isHidden(sessionId, 'steel')).toBeFalse();
+      solver.toggleHidden(sessionId, 'steel');
+      expect(solver.isHidden(sessionId, 'steel')).toBeTrue();
+      expect([...solver.hiddenMaterials(sessionId)]).toEqual(['steel']);
+      solver.toggleHidden(sessionId, 'steel');
+      expect(solver.isHidden(sessionId, 'steel')).toBeFalse();
+
+      expect(solver.showInner(sessionId)).toBeFalse();
+      solver.setShowInner(sessionId, true);
+      expect(solver.showInner(sessionId)).toBeTrue();
+    });
+
+    describe('hovering', () => {
+      it('remembers the small face under the mouse and says whether it changed', () => {
+        expect(solver.setHover(sessionId, facePick())).toBeTrue();
+        expect(solver.setHover(sessionId, facePick())).toBeFalse();                // the same small face
+        expect(solver.setHover(sessionId, facePick({ q: 0 }))).toBeTrue();
+        expect(solver.setHover(sessionId, null)).toBeTrue();
+        expect(solver.setHover(sessionId, null)).toBeFalse();
+        expect(solver.hover(sessionId)).toBeNull();
+      });
+
+      it('does not make the view rebuild', () => {
+        const revision = solver.revision(sessionId);
+
+        solver.setHover(sessionId, facePick());
+
+        expect(solver.revision(sessionId)).toBe(revision);
+      });
+
+      it('has no highlight with the View tool or without a face under the mouse', () => {
+        solver.setHover(sessionId, facePick());
+        expect(solver.highlightTargets(sessionId)).toBeNull();
+        solver.setTool(sessionId, 'load');
+        solver.setHover(sessionId, null);
+        expect(solver.highlightTargets(sessionId)).toBeNull();
+      });
+
+      it('highlights what the Load and Fix tools would mark: the small face, the cube\'s side or every outer face of the name', () => {
+        loadSetup({ ...emptySetup, divisions: [2, 2, 2] });
+        solver.setTool(sessionId, 'load');
+        solver.setHover(sessionId, facePick({ face: 'YPlus' }));
+
+        expect(solver.highlightTargets(sessionId)!.faces).toEqual([{ hex: 0, face: 'YPlus', p: 0, q: 1 }]);
+        solver.setScope(sessionId, 'cube');
+        expect(solver.highlightTargets(sessionId)!.faces).toEqual([{ hex: 0, face: 'YPlus' }]);
+        solver.setScope(sessionId, 'side');
+        expect(solver.highlightTargets(sessionId)!.faces.length).toBe(2);
+      });
+
+      it('highlights the elements the Material tool would paint, and nothing but the pointed face on an inner face for faces', () => {
+        loadSetup({ ...emptySetup, divisions: [3, 2, 2] });
+        solver.setTool(sessionId, 'material');
+        solver.setHover(sessionId, facePick());
+
+        expect(solver.highlightTargets(sessionId)!.elements).toEqual([{ hex: 0, ex: 0, ey: 1, ez: 0 }]);
+        solver.setScope(sessionId, 'column');
+        expect(solver.highlightTargets(sessionId)!.elements.length).toBe(3);
+
+        solver.setTool(sessionId, 'load');
+        solver.setHover(sessionId, facePick({ inner: true }));
+        expect(solver.highlightTargets(sessionId)).toEqual({ faces: [], elements: [], pointed: jasmine.objectContaining({ inner: true }) });
+      });
+
+      it('is cleared when the tool changes', () => {
+        solver.setHover(sessionId, facePick());
+
+        solver.setTool(sessionId, 'load');
+
+        expect(solver.hover(sessionId)).toBeNull();
+      });
     });
   });
 
@@ -276,24 +476,16 @@ describe('SolverService', () => {
   });
 
   describe('materials', () => {
-    it('gives the picked cubes a material', () => {
+    it('gives cubes a material by id, and the cube answers with it', () => {
       loadSetup();
-      selection.toggleHex(sessionId, 1);
 
-      solver.setMaterialOfSelection(sessionId, 'rubber');
+      solver.setMaterial(sessionId, [1], 'rubber');
 
       const request = http.expectOne(`${api}/${sessionId}/hexes/material`);
       expect(request.request.body).toEqual({ hexIds: [1], material: 'rubber' });
       request.flush({ ...emptySetup, hexMaterials: { '1': 'rubber' } });
       expect(solver.materialOf(sessionId, 1)).toBe('rubber');
-    });
-
-    it('gives every cube the material when none is picked', () => {
-      loadSetup();
-
-      solver.setMaterialOfSelection(sessionId, 'rubber');
-
-      expect(http.expectOne(`${api}/${sessionId}/hexes/material`).request.body.hexIds).toEqual([0, 1]);
+      expect(solver.materialOf(sessionId, 0)).toBe('steel');
     });
 
     it('sends nothing for an empty list of cubes', () => {

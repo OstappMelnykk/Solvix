@@ -99,6 +99,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // A click on a node or face of meshView, or on empty space (pick: null).
   // `additive` is true for Shift+click (pick the cube instead of the face).
   @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null; additive: boolean }>();
+  // Where the pointer is hovering over meshView (the Solver World highlights what a click would act on); only
+  // while hoverEnabled. Null when it is over nothing.
+  @Input() hoverEnabled = false;
+  @Output() readonly meshHover = new EventEmitter<MeshPick | null>();
   // The node (of meshView) that may be dragged with the translate gizmo - set
   // only for the World where nodes move (the Real World), null elsewhere.
   @Input() draggableNodeId: number | null = null;
@@ -274,6 +278,21 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
   };
   private onPointerUp = (event: PointerEvent) => this.handleClick(event);
+  private hoverFrame = 0;
+  private onPointerMove = (event: PointerEvent) => {
+    if (!this.hoverEnabled || !this.active || event.buttons !== 0) return;
+    // one raycast per frame at most, however many events the pointer sends
+    if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
+    const x = event.clientX;
+    const y = event.clientY;
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = 0;
+      this.meshHover.emit(this.pickAt(x, y));
+    });
+  };
+  private onPointerLeave = () => {
+    if (this.hoverEnabled) this.meshHover.emit(null);
+  };
 
   ngAfterViewInit(): void {
     this.initScene();
@@ -304,6 +323,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
     canvas.addEventListener('pointerdown', this.onPointerDown);
     canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointermove', this.onPointerMove);
+    canvas.addEventListener('pointerleave', this.onPointerLeave);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -344,6 +365,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('pointermove', this.onPointerMove);
+    canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
     if (this.currentImportedReference) {
       disposeImportedReferenceClone(this.currentImportedReference);
     }
@@ -855,16 +879,29 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) {
       return;
     }
-    const view = this.currentMeshView;
-    if (!view) {
+    if (!this.currentMeshView) {
       return;
     }
+    this.meshPick.emit({ pick: this.pickAt(event.clientX, event.clientY), additive: event.shiftKey });
+  }
+
+  // What is under a point of the screen: a hit mesh names its pick, or - for a mesh holding many small faces, as
+  // the Solver World's - resolves the triangle that was hit to the small face it belongs to.
+  private pickAt(clientX: number, clientY: number): MeshPick | null {
+    const view = this.currentMeshView;
+    if (!view) {
+      return null;
+    }
     const rect = this.canvasRef.nativeElement.getBoundingClientRect();
-    this.pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
     const hit = this.raycaster.intersectObjects(view.pickables, false)[0];
-    this.meshPick.emit({ pick: (hit?.object.userData['pick'] as MeshPick | undefined) ?? null, additive: event.shiftKey });
+    if (!hit) {
+      return null;
+    }
+    const resolve = hit.object.userData['resolvePick'] as ((triangle: number) => MeshPick | null) | undefined;
+    return resolve && hit.faceIndex !== undefined && hit.faceIndex !== null ? resolve(hit.faceIndex) : ((hit.object.userData['pick'] as MeshPick | undefined) ?? null);
   }
 
   // Gates the STL-reference visibility toggle button below (world-canvas.
