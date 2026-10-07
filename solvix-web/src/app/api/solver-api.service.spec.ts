@@ -52,6 +52,16 @@ describe('SolverApiService', () => {
     expectCall('PUT', 'faces/load', { faces, pressure: null });
   });
 
+  it('sets the division of the cubes and replaces the clamped and pressed faces as a whole', () => {
+    const faces = [{ hex: 1, face: 'ZPlus' as const }];
+    api.setDivisions(5, 2, 3, 4).subscribe();
+    expectCall('PUT', 'divisions', { nx: 2, ny: 3, nz: 4 });
+    api.replaceFixed(5, faces).subscribe();
+    expectCall('PUT', 'faces/fixed', { faces, fixed: true, replace: true });
+    api.replaceLoads(5, faces, -2e6).subscribe();
+    expectCall('PUT', 'faces/load', { faces, pressure: -2e6, replace: true });
+  });
+
   it('validates, solves, polls, cancels and reads the result', () => {
     api.validate(5).subscribe();
     expectCall('POST', 'validate');
