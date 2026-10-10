@@ -975,11 +975,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!this.currentMeshView) {
       return;
     }
-    if (this.buildEnabled) {
-      this.meshBuild.emit({ action: 'remove', pick: this.pickAt(event.clientX, event.clientY), ground: null });
+    const pick = this.pickAt(event.clientX, event.clientY);
+    // While building a left click on a cube removes it; a click on a node still picks the node (to move it).
+    if (this.buildEnabled && pick?.kind === 'face') {
+      this.meshBuild.emit({ action: 'remove', pick, ground: null });
       return;
     }
-    this.meshPick.emit({ pick: this.pickAt(event.clientX, event.clientY), additive: event.shiftKey });
+    this.meshPick.emit({ pick, additive: event.shiftKey });
   }
 
   // A right click (not a pan) while building: add a cube where the pointer is.
@@ -1030,12 +1032,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return this.worldIndex === IDEAL_WORLD_INDEX;
   }
 
+  // Building with the mouse is in the Ideal World and the Real World.
+  showsBuildToggle(): boolean {
+    return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;
+  }
+
   isBuildOn(): boolean {
-    return this.sessionId !== null && this.meshSelection.buildMode(this.sessionId);
+    return this.showsBuildToggle() && this.sessionId !== null && this.meshSelection.buildMode(this.sessionId, this.worldIndex);
   }
 
   toggleBuild(): void {
-    if (this.sessionId !== null) this.meshSelection.setBuildMode(this.sessionId, !this.isBuildOn());
+    if (this.showsBuildToggle() && this.sessionId !== null) this.meshSelection.setBuildMode(this.sessionId, this.worldIndex, !this.isBuildOn());
   }
 
   // The reference is shown in the Ideal World to build around and in the Real World for nodes to stick to.

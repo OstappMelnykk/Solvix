@@ -195,17 +195,18 @@ export class RenderWindowComponent {
     }
   }
 
-  // Building with the mouse is for the Ideal World, where the cubes sit on the lattice, and when the user turned it on.
+  // Building with the mouse is for the Ideal and the Real World, when the user has it on.
   isBuildOn(worldIndex: number): boolean {
     const sessionId = this.sessions.activeSessionId();
-    return worldIndex === IDEAL_WORLD_INDEX && sessionId !== null && this.meshSelection.buildMode(sessionId);
+    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null && this.meshSelection.buildMode(sessionId, worldIndex);
   }
 
   // Right click: a cube on the face under the pointer, or - with no cubes yet - the first one in the ground cell under
   // it. Left click: the cube under the pointer goes (the server refuses a removal that would split the body).
   onMeshBuild(event: { action: 'add' | 'remove'; pick: MeshPick | null; ground: GroundCell | null }): void {
     const sessionId = this.sessions.activeSessionId();
-    if (sessionId === null || !this.meshSelection.buildMode(sessionId)) return;
+    const world = this.activeWorldIndex();
+    if (sessionId === null || world === null || !this.isBuildOn(world)) return;
     const command = buildCommandFor(event, this.meshEditor.getState(sessionId)?.hexes.length ?? 0);
     if (command?.kind === 'removeHex') this.meshEditor.removeHex(sessionId, command.hex);
     else if (command?.kind === 'addOnFace') this.meshEditor.addHexOnFace(sessionId, command.hex, command.face);

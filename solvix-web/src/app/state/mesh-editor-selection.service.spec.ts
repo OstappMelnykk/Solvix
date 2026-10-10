@@ -217,11 +217,14 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.face(1)).toBeNull();
   });
 
-  it('keeps whether building with the mouse is on per session (off to begin with), and the nodes seen through the cubes (on)', () => {
-    expect(selection.buildMode(1)).toBeFalse();
-    selection.setBuildMode(1, true);
-    expect(selection.buildMode(1)).toBeTrue();
-    expect(selection.buildMode(2)).toBeFalse();
+  it('keeps whether building with the mouse is on per session and World (on in the Ideal and the Real World to begin with), and the nodes seen through the cubes (on)', () => {
+    expect(selection.buildMode(1, 0)).toBeTrue();
+    expect(selection.buildMode(1, 1)).toBeTrue();
+    expect(selection.buildMode(1, 3)).toBeFalse();            // nowhere else
+    selection.setBuildMode(1, 1, false);
+    expect(selection.buildMode(1, 1)).toBeFalse();
+    expect(selection.buildMode(1, 0)).toBeTrue();             // the other World keeps its own
+    expect(selection.buildMode(2, 1)).toBeTrue();             // and so does another session
 
     expect(selection.xrayNodes(1)).toBeTrue();
     const revision = selection.revision(1);
