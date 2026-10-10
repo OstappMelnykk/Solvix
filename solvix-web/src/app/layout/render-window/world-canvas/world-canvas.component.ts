@@ -1362,7 +1362,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         // exactly what these 6 fixed-axis panels are about.
         hiddenDuringView: this.previewFixtures(),
         meshView: () => this.currentMeshView,
-        nodesEditable: this.worldIndex === REAL_WORLD_INDEX
+        nodesEditable: this.worldIndex === REAL_WORLD_INDEX,
+        surface:
+          this.worldIndex === REAL_WORLD_INDEX
+            ? {
+                snapper: () => this.snapper,
+                isAttached: nodeId => this.attachedNodeIds.has(nodeId),
+                setAttached: (nodeId, attached) => this.nodeAttach.emit({ nodeId, attached }),
+                share: () => this.snapShare,
+                enabled: () => this.snapEnabled
+              }
+            : undefined
       });
     }
   }

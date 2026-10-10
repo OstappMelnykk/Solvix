@@ -10,6 +10,7 @@ import { MeshEditorService } from '../../state/mesh-editor.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshPick } from '../../geometry/mesh-editor-view';
 import { NodeDrag, positionText, roundedPosition } from '../../geometry/mesh-editor-drag';
+import { stick } from '../../geometry/surface-snap';
 import { Gizmo, GizmoAxis, gizmoFor, hitGizmo, nearestNodeOnScreen } from '../../geometry/view-gizmo';
 
 interface ViewDirection {
@@ -446,6 +447,17 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     return nearestNodeOnScreen(nodes, camera, width, height, this.pixelOf(canvas, event))?.nodeId ?? null;
   }
 
+  // Sticking to the imported surface, as in the World's own view: a node dragged close to it sticks and from then on
+  // slides along it (Alt lets go). Returns where the node goes.
+  private stuck(nodeId: number, position: THREE.Vector3, released: boolean): THREE.Vector3 {
+    const surface = this.overlay.active()?.surface;
+    const snapper = surface?.snapper();
+    if (!surface || !snapper || !surface.enabled()) return position;
+    const result = stick(snapper, position, surface.isAttached(nodeId), released, surface.share());
+    if (result.change) surface.setAttached(nodeId, result.change === 'attach');
+    return result.point ?? position;
+  }
+
   // The gizmo of the selected node in panel i (null when no node is selected or nodes cannot be dragged).
   private gizmoOf(i: number): Gizmo | null {
     const source = this.overlay.active();
@@ -510,7 +522,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
       return;
     }
     // the pointer position in the panel that started the drag, whichever panel the event comes from
-    const position = this.drag.positionFor(this.ndcOf(canvas, event));
+    const position = this.stuck(this.drag.nodeId, this.drag.positionFor(this.ndcOf(canvas, event)), event.altKey);
     // Live feedback: the dot (and its click target) follow the pointer.
     view.nodeMeshes.get(this.drag.nodeId)?.position.copy(position);
     view.pickables.find(o => (o.userData['pick'] as MeshPick).kind === 'node' && (o.userData['pick'] as { nodeId: number }).nodeId === this.drag!.nodeId)?.position.copy(position);
@@ -535,7 +547,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (!source) {
       return;
     }
-    const position = drag.positionFor(this.ndcOf(canvas, event));
+    const position = this.stuck(drag.nodeId, drag.positionFor(this.ndcOf(canvas, event)), event.altKey);
     if (position.distanceTo(drag.start) < 1e-6) {
       return; // a click on the node, not a move
     }

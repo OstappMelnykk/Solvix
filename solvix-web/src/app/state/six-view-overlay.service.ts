@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import * as THREE from 'three';
 import { MeshView } from '../geometry/mesh-editor-view';
+import { SurfaceSnapper } from '../geometry/surface-snap';
 
 // What a "6 сторін" click hands the overlay: the source World's OWN Scene
 // (not a clone) - a THREE.Scene can be rendered by any number of
@@ -40,6 +41,15 @@ export interface SixViewSource {
   readonly meshView?: () => MeshView | null;
   // Whether nodes may be dragged in the views - true only for the Real World.
   readonly nodesEditable?: boolean;
+  // The imported surface a dragged node sticks to (Real World): the same sticking as when a node is dragged in the
+  // World's own view - the surface to stick to, which nodes are stuck already, and how to stick or free one.
+  readonly surface?: {
+    readonly snapper: () => SurfaceSnapper | null;
+    readonly isAttached: (nodeId: number) => boolean;
+    readonly setAttached: (nodeId: number, attached: boolean) => void;
+    readonly share: () => number;
+    readonly enabled: () => boolean;
+  };
 }
 
 // Single shared instance for the whole app - every WorldCanvasComponent's
