@@ -43,6 +43,8 @@ export interface SolverDisplay {
   colorMax: number | null;
   // The black edges of the small faces are drawn.
   edges: boolean;
+  // The displacement vectors are drawn as arrows at the nodes.
+  vectors: boolean;
 }
 
 // The six sides of a body by the solver's names: top = Z+, bottom = Z-, front = Y-, back = Y+, left = X-, right = X+.
@@ -139,7 +141,7 @@ export class SolverService {
       validation: null,
       job: IDLE_JOB,
       result: null,
-      display: { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true },
+      display: { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true },
       viewer: false,
       viewerMarks: true,
       tool: 'view',
@@ -440,6 +442,10 @@ export class SolverService {
     if (!Number.isFinite(scale) || scale < 0) return;
     // not a touch: the view moves its vertices in place instead of being rebuilt (see SolverRenderService)
     this.entry(sessionId).display.deformationScale = scale;
+  }
+
+  setVectors(sessionId: number, on: boolean): void {
+    this.entry(sessionId).display.vectors = on;
   }
 
   setEdges(sessionId: number, on: boolean): void {

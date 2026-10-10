@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
 import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { markForWeightedOit } from '../rendering/weighted-oit';
+import { buildDisplacementArrows } from './displacement-arrows';
 import { QualityMetric, measuredGrade } from './quality-grading';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
@@ -36,6 +37,8 @@ export interface SolverViewInput {
   // Opacity of the coats of the clamped and pressed faces (default 0.62; 0 leaves them out): a light coat keeps the
   // field underneath readable.
   readonly marksOpacity?: number;
+  // Draw the displacement vectors (default yes); the view can show and hide them later without a rebuild.
+  readonly vectors?: boolean;
 }
 
 const EDGE_SEGMENTS = 8;
@@ -494,6 +497,19 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
     edges.userData['edges'] = true;
     root.add(edges);
+  }
+
+  // the displacement vectors: arrows at the nodes, shown or hidden without a rebuild (userData.vectors)
+  const arrows = result ? buildDisplacementArrows(result, rampColor) : null;
+  if (arrows) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(arrows.base, 3));
+    buffer.setAttribute('color', new THREE.Float32BufferAttribute(arrows.colors, 3));
+    deformables.push(deformable(buffer, arrows.base, arrows.moved));
+    const vectors = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true }));
+    vectors.userData['vectors'] = true;
+    vectors.visible = input.vectors !== false;
+    root.add(vectors);
   }
 
   // what a click would act on is drawn into the view without rebuilding it

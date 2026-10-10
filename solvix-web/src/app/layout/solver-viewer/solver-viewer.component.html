@@ -33,6 +33,7 @@
     <h5>{{ field() === 'none' ? '2.' : '3.' }} Вигляд</h5>
     <label class="slider">Прозорість <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" /><span>{{ opacityPercent() }}%</span></label>
     <label class="check"><input type="checkbox" [checked]="showMarks()" (change)="toggleMarks()" />Де закріплено <i class="dot dot--fix"></i> і де тиск <i class="dot dot--load"></i></label>
+    <label class="check" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно"><input type="checkbox" [checked]="showVectors()" (change)="toggleVectors()" />Стрілки зсуву</label>
     <label class="check"><input type="checkbox" [checked]="showEdges()" (change)="toggleEdges()" />Чорні лінії сітки</label>
     <label class="check" title="Показати грані між елементами"><input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />Сітка всередині тіла</label>
     <div class="hint" *ngIf="materials().length > 1">Сховати матеріал, щоб бачити, що за ним:</div>

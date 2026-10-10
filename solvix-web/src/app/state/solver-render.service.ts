@@ -16,6 +16,7 @@ interface Cached {
   scale: number;
   colorMax: number | null;
   edges: boolean;
+  vectors: boolean;
 }
 
 // The 3D view of a session's body in the Solver World: materials, supports and pressures while setting up, a field
@@ -51,6 +52,7 @@ export class SolverRenderService {
       field: display.field,
       deformationScale: display.deformationScale,
       colorMax: display.colorMax,
+      vectors: display.vectors,
       marksOpacity: this.solver.viewer(sessionId) ? (this.solver.viewerMarks(sessionId) ? VIEWER_MARKS_OPACITY : 0) : undefined,
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
@@ -58,7 +60,7 @@ export class SolverRenderService {
       quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
     };
     const view = buildSolverView(input);
-    this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true });
+    this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true, vectors: display.vectors });
     this.applyHighlight(sessionId);
     return view;
   }
@@ -84,6 +86,12 @@ export class SolverRenderService {
       cached.edges = display.edges;
       cached.view.root.traverse(o => {
         if (o.userData['edges']) o.visible = display.edges;
+      });
+    }
+    if (display.vectors !== cached.vectors) {
+      cached.vectors = display.vectors;
+      cached.view.root.traverse(o => {
+        if (o.userData['vectors']) o.visible = display.vectors;
       });
     }
     // what is outlined was built at the old scale

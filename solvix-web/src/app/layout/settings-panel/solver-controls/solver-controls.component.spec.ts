@@ -12,7 +12,7 @@ describe('SolverControlsComponent', () => {
   let job: SolverJobDto;
   let result: SolverResultDto | null;
   let validation: SolverValidationDto | null;
-  let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number; colorMax: number | null; edges: boolean };
+  let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number; colorMax: number | null; edges: boolean; vectors: boolean };
   let divisions: number[];
   let pressure: number;
   let loadSide: string | null;
@@ -41,7 +41,7 @@ describe('SolverControlsComponent', () => {
     job = { state: 'idle', progress: 0, stage: '', error: null, ticket: 0 };
     result = null;
     validation = null;
-    display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true };
+    display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
       'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'refreshQuality', 'showQuality', 'setShowQuality',

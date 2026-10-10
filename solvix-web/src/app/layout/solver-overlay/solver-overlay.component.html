@@ -65,6 +65,10 @@
     <input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />
     Внутрішні грані
   </label>
+  <label class="check" *ngIf="hasResult()" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно">
+    <input type="checkbox" [checked]="showVectors()" (change)="toggleVectors()" />
+    Стрілки зсуву
+  </label>
   <div class="control" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення на ×1 непомітні.">
     <span class="caption">Деформація ×</span>
     <input type="number" class="num" min="0" max="500000" step="10" [value]="scale()" (change)="onScaleNumber($event)" />

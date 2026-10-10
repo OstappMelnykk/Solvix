@@ -695,7 +695,7 @@ describe('SolverService', () => {
       solver.setDeformationScale(sessionId, -1);
       solver.setDeformationScale(sessionId, NaN);
 
-      expect(solver.display(sessionId)).toEqual({ field: 'displacement', deformationScale: 50, opacity: 1, colorMax: null, edges: true });
+      expect(solver.display(sessionId)).toEqual({ field: 'displacement', deformationScale: 50, opacity: 1, colorMax: null, edges: true, vectors: true });
       // the deformation moves the vertices in place, so it is not a revision
       expect(solver.revision(sessionId)).toBe(before + 1);
     });
