@@ -54,7 +54,7 @@ export class MeshEditorRenderService {
     if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
     if (live) state = withNodeMoved(state, live.nodeId, live.position, live.carry);
-    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}`;
+    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 
@@ -67,7 +67,7 @@ export class MeshEditorRenderService {
         hoverFace: this.selection.hoverFace(sessionId),
         nodeId: this.selection.nodeId(sessionId)
       },
-      { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined }
+      { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined, xrayNodes: this.selection.xrayNodes(sessionId) }
     );
     this.cache.set(cacheKey, { key, view });
     return view;

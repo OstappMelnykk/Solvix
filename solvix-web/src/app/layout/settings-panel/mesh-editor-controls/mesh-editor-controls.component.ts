@@ -116,6 +116,16 @@ export class MeshEditorControlsComponent {
     return this.state?.nodes.length ?? 0;
   }
 
+  // --- reaching the nodes inside the body ---
+
+  xrayNodes(): boolean {
+    return this.sessionId !== null && this.selection.xrayNodes(this.sessionId);
+  }
+
+  onXrayNodes(event: Event): void {
+    if (this.sessionId !== null) this.selection.setXrayNodes(this.sessionId, (event.target as HTMLInputElement).checked);
+  }
+
   // --- nodes stuck to the imported surface ---
 
   isNodeAttached(): boolean {

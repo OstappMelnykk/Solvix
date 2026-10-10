@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MeshFaceDto } from '../api/mesh-editor-api.service';
-import { FACE_NAMES, LOCAL_COORDS, MeshPick, buildMeshView, disposeMeshView, faceAxis, faceSign, faceSlots, mapHex, nodePosition, shapeFunctions20 } from './mesh-editor-view';
+import { FACE_NAMES, LOCAL_COORDS, MeshPick, buildMeshView, disposeMeshView, faceAxis, faceSign, faceSlots, mapHex, nodePosition, preferredHit, shapeFunctions20 } from './mesh-editor-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const noSelection = { hexes: [], face: null, hoverFace: null, nodeId: null };
@@ -118,6 +118,52 @@ describe('mesh-editor-view', () => {
       expect(nodeColor(selected, 3)).not.toBe(nodeColor(plain, 3));
       expect(nodeColor(selected, 4)).toBe(nodeColor(plain, 4));
       expect(colorOf(selected, p => p.kind === 'face' && p.face === 'YPlus')).not.toBe(colorOf(plain, p => p.kind === 'face' && p.face === 'YPlus'));
+    });
+
+    describe('reaching the nodes through other cubes', () => {
+      const nodeHit = (view: ReturnType<typeof buildMeshView>, id: number) => view.pickables.find(o => (o.userData['pick'] as MeshPick).kind === 'node' && (o.userData['pick'] as { nodeId: number }).nodeId === id)!;
+      const overEverything = (view: ReturnType<typeof buildMeshView>, id: number) => (view.nodeMeshes.get(id)!.material as THREE.MeshBasicMaterial).depthTest === false;
+
+      it('draws the nodes of the picked cube over everything, and gives their hit spheres priority', () => {
+        const state = linkedPairState();
+        const none = buildMeshView(state, 'real', noSelection);
+        const picked = buildMeshView(state, 'real', { hexes: [0], face: null, hoverFace: null, nodeId: null });
+        const ownNode = state.hexes[0].nodeIds[0];
+        const farNode = state.hexes[1].nodeIds.find(id => !state.hexes[0].nodeIds.includes(id))!;
+
+        expect(overEverything(none, ownNode)).toBeFalse();
+        expect(overEverything(picked, ownNode)).toBeTrue();
+        expect(nodeHit(picked, ownNode).userData['priority']).toBeTrue();
+        expect(overEverything(picked, farNode)).toBeFalse();
+        expect(nodeHit(picked, farNode).userData['priority']).toBeUndefined();
+      });
+
+      it('does the same for the cube of the picked face', () => {
+        const state = linkedPairState();
+        const view = buildMeshView(state, 'real', { hexes: [], face: { hex: 1, face: 'XPlus' }, hoverFace: null, nodeId: null });
+
+        expect(overEverything(view, state.hexes[1].nodeIds[6])).toBeTrue();
+      });
+
+      it('with x-ray every node is drawn over the cubes and wins a click', () => {
+        const state = linkedPairState();
+        const view = buildMeshView(state, 'real', noSelection, { subdivisions: 1, xrayNodes: true });
+
+        for (const node of state.nodes) {
+          expect(overEverything(view, node.id)).toBeTrue();
+          expect(nodeHit(view, node.id).userData['priority']).toBeTrue();
+        }
+      });
+
+      it('lets a prioritised node win over the faces in front of it, and otherwise takes the nearest', () => {
+        const face = { object: { userData: {} }, distance: 1 };
+        const node = { object: { userData: { priority: true } }, distance: 3 };
+        const other = { object: { userData: {} }, distance: 2 };
+
+        expect(preferredHit([face, other, node])).toBe(node);
+        expect(preferredHit([face, other])).toBe(face);
+        expect(preferredHit([])).toBeUndefined();
+      });
     });
 
     it('colours free, linked and candidate faces differently', () => {

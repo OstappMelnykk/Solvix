@@ -127,6 +127,9 @@ export interface MeshViewOptions {
   readonly showNodes?: boolean;
   // Nodes stuck to the imported surface: drawn in a colour of their own, a little larger.
   readonly attachedNodeIds?: ReadonlySet<number>;
+  // Draw every node over the cubes and let a click on one win over the faces in front of it: the nodes inside the body
+  // can be reached. Without it only the nodes of the picked cubes are.
+  readonly xrayNodes?: boolean;
 }
 
 const GRID_LINE_SAMPLES = 12;
@@ -238,6 +241,12 @@ export function withNodeMoved(state: MeshStateDto, nodeId: number, position: THR
         : n
     )
   };
+}
+
+// Of the things a ray passes through, nearest first: a node that can be reached through other cubes wins over whatever
+// is in front of it; otherwise the nearest.
+export function preferredHit<T extends { object: { userData: Record<string, unknown> } }>(hits: readonly T[]): T | undefined {
+  return hits.find(h => h.object.userData['priority'] === true) ?? hits[0];
 }
 
 export function buildMeshView(
@@ -376,6 +385,12 @@ export function buildMeshView(
   const cornerHitGeometry = new THREE.SphereGeometry(CORNER_HIT_RADIUS, 8, 6);
   const midHitGeometry = new THREE.SphereGeometry(MIDPOINT_HIT_RADIUS, 8, 6);
   const hitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  // The 20 nodes of the picked cubes (and of the cube of the picked face) can be reached through other cubes: they are
+  // drawn over everything, and a click on one wins over the faces in front of it.
+  const reachable = new Set<number>();
+  const pickedHexes = new Set<number>(selection.hexes);
+  if (selection.face) pickedHexes.add(selection.face.hex);
+  for (const hex of state.hexes) if (pickedHexes.has(hex.id)) for (const id of hex.nodeIds) reachable.add(id);
   const cornerIds = new Set<number>();
   for (const hex of state.hexes) for (let slot = 0; slot < 8; slot++) cornerIds.add(hex.nodeIds[slot]);
   for (const node of options.showNodes === false ? [] : state.nodes) {
@@ -387,6 +402,11 @@ export function buildMeshView(
       new THREE.MeshBasicMaterial({ color: selected ? SELECTED_NODE_COLOR : attached ? ATTACHED_NODE_COLOR : isCorner ? CORNER_COLOR : MIDPOINT_COLOR })
     );
     mesh.position.copy(nodePosition(node, mode));
+    const through = options.xrayNodes === true || reachable.has(node.id);
+    if (through) {
+      (mesh.material as THREE.MeshBasicMaterial).depthTest = false;
+      mesh.renderOrder = 10;
+    }
     if (selected) mesh.scale.setScalar(1.6);
     else if (attached) mesh.scale.setScalar(1.35);
     root.add(mesh);
@@ -395,6 +415,7 @@ export function buildMeshView(
     const hit = new THREE.Mesh(isCorner ? cornerHitGeometry : midHitGeometry, hitMaterial);
     hit.position.copy(mesh.position);
     hit.userData['pick'] = { kind: 'node', nodeId: node.id } satisfies PickedNode;
+    if (through) hit.userData['priority'] = true;
     root.add(hit);
     pickables.push(hit);
   }

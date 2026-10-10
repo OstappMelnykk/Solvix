@@ -14,6 +14,8 @@ interface Selection {
   face: FaceRef | null;
   nodeId: number | null;
   hoverFace: FaceRef | null;
+  // The nodes are drawn over the cubes and picked through them, so the ones inside the body can be reached.
+  xray: boolean;
   revision: number;
 }
 
@@ -109,6 +111,17 @@ export class MeshEditorSelectionService {
     }
   }
 
+  xrayNodes(sessionId: number): boolean {
+    return this.selection(sessionId).xray;
+  }
+
+  setXrayNodes(sessionId: number, on: boolean): void {
+    const selection = this.selection(sessionId);
+    if (selection.xray === on) return;
+    selection.xray = on;
+    selection.revision++;
+  }
+
   selectNode(sessionId: number, nodeId: number | null): void {
     const selection = this.selection(sessionId);
     selection.nodeId = selection.nodeId === nodeId ? null : nodeId;
@@ -151,6 +164,6 @@ export class MeshEditorSelectionService {
   }
 
   private selection(sessionId: number): Selection {
-    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, revision: 0 }));
+    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, xray: true, revision: 0 }));
   }
 }

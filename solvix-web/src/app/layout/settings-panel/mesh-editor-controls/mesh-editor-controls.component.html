@@ -124,6 +124,10 @@
 
 <div class="group">
   <div class="group-label">Вузол</div>
+  <label class="row" title="Усі вузли малюються поверх кубів, і клік по вузлу має перевагу над гранню, що перекриває його: так можна дістатися до вузлів усередині тіла">
+    <span>Вузли видно крізь куби</span>
+    <input type="checkbox" [checked]="xrayNodes()" (change)="onXrayNodes($event)" />
+  </label>
   <ng-container *ngIf="selectedNodeId() !== null; else noNode">
     <div class="selected"><b>Вузол {{ selectedNodeId() }}</b> (глобальний id)</div>
     <div class="hint">{{ nodeOwnersText() }}</div>

@@ -21,7 +21,7 @@ import { buildFloorGrid, updateGridResolution } from '../../../geometry/scene-ob
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
-import { MeshPick, MeshView, disposeMeshView } from '../../../geometry/mesh-editor-view';
+import { MeshPick, MeshView, disposeMeshView, preferredHit } from '../../../geometry/mesh-editor-view';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
@@ -970,7 +970,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
-    const hit = this.raycaster.intersectObjects(view.pickables, false)[0];
+    const hits = this.raycaster.intersectObjects(view.pickables, false);
+    // a node that is reachable through other cubes (the nodes of the picked cube) wins over whatever is in front of it
+    const hit = preferredHit(hits);
     if (!hit) {
       return null;
     }
