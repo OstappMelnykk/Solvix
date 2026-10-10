@@ -168,12 +168,12 @@ export class RenderWindowComponent {
     }
   }
 
-  // The brush paints in the Solver World with the Pressure or Support tool.
+  // The brush paints in the Solver World with the Pressure, Support or Material tool.
   isBrushOn(worldIndex: number): boolean {
     const sessionId = this.sessions.activeSessionId();
     if (worldIndex !== SOLVER_WORLD_INDEX || sessionId === null) return false;
     const tool = this.solver.tool(sessionId);
-    return this.solver.brush(sessionId) && (tool === 'load' || tool === 'fix');
+    return this.solver.brush(sessionId) && tool !== 'view';
   }
 
   onPaint(event: { phase: 'start' | 'move' | 'end'; pick: MeshPick | null }): void {

@@ -10,6 +10,7 @@ import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, eleme
 import { QualityMetric, SOLVIX_ID } from '../geometry/quality-grading';
 import {
   SolverApiService,
+  SolverElementDto,
   SolverFaceDto,
   SolverJobDto,
   SolverMaterialDto,
@@ -110,7 +111,8 @@ interface SessionSolver {
   // The brush: drag over the surface to press or clamp the small faces the pointer passes (instead of clicking them).
   brush: boolean;
   // The stroke being drawn: whether it erases (it began on a face that was already marked) and the faces it reached.
-  stroke: { erase: boolean; faces: Map<string, SolverFaceDto> } | null;
+  // With the Material tool the stroke gathers elements (or whole cubes for the cube scope) instead of faces.
+  stroke: { erase: boolean; faces: Map<string, SolverFaceDto>; elements: Map<string, SolverElementDto>; hexes: Set<number> } | null;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -501,7 +503,13 @@ export class SolverService {
   // What a click on the small face under the mouse would act on, for the highlight.
   highlightTargets(sessionId: number): HighlightTargetsInput | null {
     const entry = this.entry(sessionId);
-    if (entry.stroke) return { faces: [...entry.stroke.faces.values()], elements: [], pointed: null };         // the part of the surface painted so far
+    if (entry.stroke) {
+      // the part of the surface (or the elements) painted so far
+      const stroke = entry.stroke;
+      const [nx, ny, nz] = this.divisions(sessionId);
+      const wholeCubes = [...stroke.hexes].flatMap(hex => Array.from({ length: nx * ny * nz }, (_, i) => ({ hex, ex: i % nx, ey: Math.floor(i / nx) % ny, ez: Math.floor(i / (nx * ny)) })));
+      return { faces: [...stroke.faces.values()], elements: [...stroke.elements.values(), ...wholeCubes], pointed: null };
+    }
     const pick = entry.hover;
     if (!pick || entry.tool === 'view') return null;
     const divisions = this.divisions(sessionId);
@@ -738,7 +746,7 @@ export class SolverService {
     return this.entry(sessionId).brush;
   }
 
-  // Only the Pressure and Support tools paint.
+  // The Pressure, Support and Material tools paint.
   setBrush(sessionId: number, on: boolean): void {
     this.entry(sessionId).brush = on;
     this.entry(sessionId).stroke = null;
@@ -753,8 +761,14 @@ export class SolverService {
   // otherwise it paints (the same rule as a click).
   paintStart(sessionId: number, pick: PickedFace | null): void {
     const entry = this.entry(sessionId);
-    if (!entry.brush || (entry.tool !== 'load' && entry.tool !== 'fix')) return;
+    if (!entry.brush || entry.tool === 'view') return;
     if (pick === null || pick.kind !== 'face') return;
+    if (entry.tool === 'material') {
+      // a material is painted over whatever is under the brush, inside or outside; there is nothing to erase
+      entry.stroke = { erase: false, faces: new Map(), elements: new Map(), hexes: new Set() };
+      this.paintTo(sessionId, pick);
+      return;
+    }
     if (pick.inner) {
       this.notifications.warning('Ця грань усередині тіла: закріплювати й навантажувати можна лише зовнішні.');
       return;
@@ -764,26 +778,38 @@ export class SolverService {
     const marked = entry.tool === 'load'
       ? small.every(f => entry.setup?.loads.some(l => sameFace(l, f) && l.pressure === entry.pressure))
       : small.every(f => entry.setup?.fixed.some(x => sameFace(x, f)));
-    entry.stroke = { erase: marked, faces: new Map() };
+    entry.stroke = { erase: marked, faces: new Map(), elements: new Map(), hexes: new Set() };
     this.paintTo(sessionId, pick);
   }
 
-  // The pointer moved over the surface with the button down: the faces it reaches join the stroke.
+  // The pointer moved over the surface with the button down: what it reaches joins the stroke.
   paintTo(sessionId: number, pick: PickedFace | null): void {
     const entry = this.entry(sessionId);
-    if (!entry.stroke || pick === null || pick.kind !== 'face' || pick.inner) return;
+    if (!entry.stroke || pick === null || pick.kind !== 'face') return;
+    if (entry.tool === 'material') {
+      if (entry.scope === 'cube') entry.stroke.hexes.add(pick.hex);
+      else for (const e of elementTargets(pick, entry.scope, entry.depth, this.divisions(sessionId))) entry.stroke.elements.set(`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, e);
+      return;
+    }
+    if (pick.inner) return;
     for (const target of faceTargets(pick, entry.scope, this.editor.getState(sessionId), this.divisions(sessionId))) {
       entry.stroke.faces.set(`${target.hex}:${target.face}:${target.p ?? '-'}:${target.q ?? '-'}`, target);
     }
   }
 
-  // The button went up: everything the stroke reached is pressed or clamped (or, for an erasing stroke, freed) in one go.
+  // The button went up: everything the stroke reached is pressed, clamped or given the material (or, for an erasing
+  // stroke, freed) in one go.
   paintEnd(sessionId: number): void {
     const entry = this.entry(sessionId);
     const stroke = entry.stroke;
     entry.stroke = null;
-    if (!stroke || stroke.faces.size === 0) {
+    if (!stroke || (stroke.faces.size === 0 && stroke.elements.size === 0 && stroke.hexes.size === 0)) {
       this.touch(sessionId);
+      return;
+    }
+    if (entry.tool === 'material') {
+      if (stroke.hexes.size > 0) this.apply(sessionId, this.api.setHexMaterial(sessionId, [...stroke.hexes], entry.activeMaterial));
+      if (stroke.elements.size > 0) this.apply(sessionId, this.api.setElementMaterial(sessionId, [...stroke.elements.values()], entry.activeMaterial));
       return;
     }
     const targets = [...stroke.faces.values()];

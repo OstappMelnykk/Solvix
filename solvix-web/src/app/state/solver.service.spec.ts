@@ -211,7 +211,39 @@ describe('SolverService', () => {
         expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.fixed).toBeFalse();
       });
 
-      it('does nothing without the brush, with the View or Material tool, or on a face inside the body', () => {
+      it('paints the chosen material over the elements the brush passes, in one request', () => {
+        loadSetup({ ...emptySetup, divisions: [3, 1, 1] });
+        solver.setTool(sessionId, 'material');
+        solver.setActiveMaterial(sessionId, 'steel');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, facePick({ face: 'ZPlus', element: [0, 0, 0] }));
+        solver.paintTo(sessionId, facePick({ face: 'ZPlus', p: 1, element: [1, 0, 0] }));
+        solver.paintTo(sessionId, facePick({ face: 'ZPlus', p: 2, element: [2, 0, 0] }));
+        http.expectNone(`${api}/${sessionId}/elements/material`);
+        expect(solver.highlightTargets(sessionId)!.elements.length).toBe(3);
+
+        solver.paintEnd(sessionId);
+
+        const request = http.expectOne(`${api}/${sessionId}/elements/material`);
+        expect(request.request.body).toEqual({ elements: [0, 1, 2].map(ex => ({ hex: 0, ex, ey: 0, ez: 0 })), material: 'steel' });
+      });
+
+      it('paints whole cubes in the cube scope, and also over a face inside the body', () => {
+        loadSetup();
+        solver.setTool(sessionId, 'material');
+        solver.setActiveMaterial(sessionId, 'rubber');
+        solver.setScope(sessionId, 'cube');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, facePick({ hex: 0, inner: true }));
+        solver.paintTo(sessionId, facePick({ hex: 1, face: 'XPlus' }));
+        solver.paintEnd(sessionId);
+
+        expect(http.expectOne(`${api}/${sessionId}/hexes/material`).request.body).toEqual({ hexIds: [0, 1], material: 'rubber' });
+      });
+
+      it('does nothing without the brush, with the View tool, or on a face inside the body when pressing or clamping', () => {
         loadSetup();
         solver.setTool(sessionId, 'fix');
         solver.paintStart(sessionId, facePick());                                       // the brush is off

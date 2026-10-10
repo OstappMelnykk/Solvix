@@ -139,11 +139,15 @@ describe('SolverOverlayComponent', () => {
     expect(hints[3]).toContain('пофарбувати');
   });
 
-  it('has a brush for the Pressure and Support tools only, and says how to use it', () => {
+  it('has a brush for the Pressure, Support and Material tools but not for View, and says how to use it', () => {
     tool = 'view';
     expect(component.isFaceTool()).toBeFalse();
     tool = 'material';
-    expect(component.isFaceTool()).toBeFalse();
+    expect(component.isFaceTool()).toBeTrue();
+    expect(component.hint()).toContain('Клік');
+    brush = true;
+    expect(component.hint()).toContain('матеріал');
+    brush = false;
     tool = 'fix';
     expect(component.isFaceTool()).toBeTrue();
     expect(component.hint()).toContain('Клік');

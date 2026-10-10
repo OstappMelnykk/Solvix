@@ -41,8 +41,9 @@ export class SolverOverlayComponent {
 
   // --- the brush ---
 
+  // The tools that can paint: Pressure, Support and Material.
   isFaceTool(): boolean {
-    return this.tool() === 'load' || this.tool() === 'fix';
+    return this.tool() !== 'view';
   }
 
   brush(): boolean {
@@ -124,7 +125,7 @@ export class SolverOverlayComponent {
       case 'fix':
         return this.brush() ? 'Тримайте кнопку миші й проводьте по зовнішніх гранях — вони закріпляться. Почніть із вже закріпленої — зніметься. Крутити: права кнопка.' : 'Клік по зовнішній грані — закріпити або зняти.';
       case 'material':
-        return 'Клік — пофарбувати вибраним матеріалом. Глибина вибирає елемент під гранню.';
+        return this.brush() ? 'Тримайте кнопку миші й проводьте по тілу — елементи під пензлем отримають вибраний матеріал. Крутити: права кнопка.' : 'Клік — пофарбувати вибраним матеріалом. Глибина вибирає елемент під гранню.';
       default:
         return 'Оберіть інструмент, щоб задавати тиск, опори й матеріали.';
     }
