@@ -31,7 +31,8 @@ $material: #c77dff;
 
 .toolbox {
   position: absolute;
-  top: 44px;
+  // under the camera buttons ("Вид"), which stand in the top left corner of every canvas
+  top: 190px;
   left: 10px;
   display: flex;
   flex-direction: column;
@@ -43,8 +44,8 @@ $material: #c77dff;
 
 .viewbox {
   position: absolute;
-  top: 44px;
-  right: 216px;
+  top: 10px;
+  right: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
