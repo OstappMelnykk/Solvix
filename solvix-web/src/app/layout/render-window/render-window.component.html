@@ -19,6 +19,7 @@
     (paint)="onPaint($event)"
     [draggableNodeId]="getDraggableNodeId(i)"
     [attachedNodeIds]="getAttachedNodes(i)"
+    [snapShare]="snapShare()"
     (nodeAttach)="onNodeAttach($event)"
     (nodeDragging)="onNodeDragging($event)"
     (nodeMoved)="onNodeMoved($event)"

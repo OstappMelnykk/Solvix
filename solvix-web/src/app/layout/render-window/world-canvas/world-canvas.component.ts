@@ -28,8 +28,6 @@ const SETTLE_DURATION_MS = 180;
 // Above this many CSS pixels of movement between pointerdown and pointerup the
 // gesture was an OrbitControls drag, not a click - the browser's own `click`
 // has no such threshold, so it is tracked by hand.
-// A node dragged to within this share of the surface's size sticks to it.
-const SNAP_RADIUS_SHARE = 0.03;
 const CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
@@ -119,6 +117,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // The nodes stuck to the imported surface (Real World): they slide along it when dragged, and turn up in a colour of
   // their own. A node sticks when it is dragged to within a few percent of the surface's size from it.
   @Input() attachedNodeIds: ReadonlySet<number> = new Set<number>();
+  // How close to the surface, as a share of its size, a dragged node sticks to it (set in the panel).
+  @Input() snapShare = 0.01;
   @Output() readonly nodeAttach = new EventEmitter<{ nodeId: number; attached: boolean }>();
   @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
 
@@ -716,7 +716,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private stickToSurface(nodeId: number): void {
     const snapper = this.snapper;
     if (!snapper) return;
-    const result = stick(snapper, this.nodeProxy.position, this.attachedNodeIds.has(nodeId), this.altHeld, SNAP_RADIUS_SHARE);
+    const result = stick(snapper, this.nodeProxy.position, this.attachedNodeIds.has(nodeId), this.altHeld, this.snapShare);
     if (result.point) this.nodeProxy.position.copy(result.point);
     if (result.change) this.nodeAttach.emit({ nodeId, attached: result.change === 'attach' });
   }

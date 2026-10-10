@@ -158,6 +158,10 @@ export class RenderWindowComponent {
     return worldIndex === REAL_WORLD_INDEX && sessionId !== null ? this.attachments.attached(sessionId) : NO_NODES;
   }
 
+  snapShare(): number {
+    return this.attachments.snapShare();
+  }
+
   onNodeAttach(event: { nodeId: number; attached: boolean }): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;

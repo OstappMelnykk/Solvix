@@ -45,4 +45,17 @@ describe('SurfaceAttachmentService', () => {
 
     expect([...attachments.attached(1)]).toEqual([1, 3]);
   });
+
+  it('sticks within 1% of the surface\'s size by default, and keeps the user\'s sensitivity within 0.1%..5%', () => {
+    expect(attachments.snapShare()).toBe(0.01);
+
+    attachments.setSnapShare(0.02);
+    expect(attachments.snapShare()).toBe(0.02);
+    attachments.setSnapShare(0.5);
+    expect(attachments.snapShare()).toBe(0.05);
+    attachments.setSnapShare(0);
+    expect(attachments.snapShare()).toBe(0.001);
+    attachments.setSnapShare(NaN);
+    expect(attachments.snapShare()).toBe(0.001);
+  });
 });

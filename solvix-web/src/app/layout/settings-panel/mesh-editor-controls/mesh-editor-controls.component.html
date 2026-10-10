@@ -158,6 +158,10 @@
 <div class="group" *ngIf="isRealWorld">
   <div class="group-label">Прикріплення до STL</div>
   <div class="hint">Перетягніть вершину до STL (на відстань кількох відсотків його розміру) — вона прилипне й надалі їздитиме лише по поверхні. Утримуйте <b>Alt</b> під час перетягування, щоб відірвати.</div>
+  <label class="row" title="На якій відстані від STL вершина прилипає, у відсотках від розміру STL. Менше — менш чутливо.">
+    <span>Чутливість, % розміру</span>
+    <input type="number" min="0.1" max="5" step="0.1" [value]="snapPercent()" (change)="onSnapPercent($event)" />
+  </label>
   <div class="selected">Прикріплено вершин: <b>{{ attachedCount() }}</b></div>
   <button class="tool" type="button" [disabled]="attachedCount() === 0" (click)="detachAllNodes()">Відкріпити всі</button>
 </div>

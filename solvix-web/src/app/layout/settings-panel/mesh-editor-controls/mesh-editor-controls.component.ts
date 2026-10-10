@@ -123,6 +123,15 @@ export class MeshEditorControlsComponent {
     return this.sessionId !== null && id !== null && this.attachments.isAttached(this.sessionId, id);
   }
 
+  // The sensitivity: how close to the STL (in % of its size) a dragged vertex sticks.
+  snapPercent(): number {
+    return Math.round(this.attachments.snapShare() * 1000) / 10;
+  }
+
+  onSnapPercent(event: Event): void {
+    this.attachments.setSnapShare(Number((event.target as HTMLInputElement).value) / 100);
+  }
+
   attachedCount(): number {
     return this.sessionId === null ? 0 : this.attachments.count(this.sessionId);
   }

@@ -1,4 +1,4 @@
-import { Injectable, effect, inject } from '@angular/core';
+import { Injectable, effect, inject, signal } from '@angular/core';
 import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 
@@ -14,6 +14,19 @@ interface Attachments {
 export class SurfaceAttachmentService {
   private readonly sessions = inject(SessionsService);
   private readonly stores = new KeyedStore<number, Attachments>();
+
+  // How close to the surface a dragged node has to come to stick to it, as a share of the surface's size. Small by
+  // default (a node that only passes by does not stick); the user can change it. The same for every session.
+  static readonly DEFAULT_SHARE = 0.01;
+  static readonly MIN_SHARE = 0.001;
+  static readonly MAX_SHARE = 0.05;
+  private readonly _share = signal(SurfaceAttachmentService.DEFAULT_SHARE);
+  readonly snapShare = this._share.asReadonly();
+
+  setSnapShare(share: number): void {
+    if (!Number.isFinite(share)) return;
+    this._share.set(Math.min(SurfaceAttachmentService.MAX_SHARE, Math.max(SurfaceAttachmentService.MIN_SHARE, share)));
+  }
 
   constructor() {
     effect(() => this.stores.pruneTo(this.sessions.sessions().map(session => session.id)));
