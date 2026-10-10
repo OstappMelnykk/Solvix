@@ -7,6 +7,7 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { QualityControlsComponent } from '../settings-panel/quality-controls/quality-controls.component';
 import { SolverViewerComponent } from '../solver-viewer/solver-viewer.component';
 import { SolverOverlayComponent } from '../solver-overlay/solver-overlay.component';
 import { SolverService } from '../../state/solver.service';
@@ -29,7 +30,7 @@ import * as THREE from 'three';
 @Component({
   selector: 'app-render-window',
   standalone: true,
-  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent],
+  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent, QualityControlsComponent],
   templateUrl: './render-window.component.html',
   styleUrl: './render-window.component.scss'
 })
@@ -55,6 +56,7 @@ export class RenderWindowComponent {
 
   readonly worlds = WORLDS_CONFIG;
   readonly solverWorldIndex = SOLVER_WORLD_INDEX;
+  readonly qualityWorldIndex = QUALITY_WORLD_INDEX;
 
   // null when there's no active session - never matches a real worldIndex,
   // so every WorldCanvasComponent ends up [hidden] and inactive, same as if
