@@ -72,7 +72,7 @@ public sealed record SolverResultDto(
     double ElapsedSeconds);
 
 /// <param name="Grade">"excellent", "good", "acceptable", "poor" or "invalid".</param>
-public sealed record SolverCubeQualityDto(int Hex, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees);
+public sealed record SolverCubeQualityDto(int Hex, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees, double MinAngleDegrees, double MaxAngleDegrees);
 
 /// <summary>
 /// How well the mesh the solver would work on (every cube cut into the current division) can be integrated: the
@@ -85,6 +85,8 @@ public sealed record SolverQualityDto(
     double WorstJacobianRatio,
     double WorstAspectRatio,
     double WorstSkewDegrees,
+    double SmallestAngleDegrees,
+    double LargestAngleDegrees,
     IReadOnlyList<SolverCubeQualityDto> Cubes,
     IReadOnlyList<SolverQualityLimitDto> Limits,
     IReadOnlyList<SolverElementQualityDto> Flagged);
@@ -93,7 +95,7 @@ public sealed record SolverQualityDto(
 /// One small element that is not excellent in some measure (the skew, which does not change the grade, counts by its
 /// reference limit): the cube it lies in, its place (Ex, Ey, Ez) in that cube, and its own values.
 /// </summary>
-public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees);
+public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees, double MinAngleDegrees, double MaxAngleDegrees);
 
 /// <summary>One measure of element quality and where its grades change.</summary>
 /// <param name="Key">"scaledJacobian", "jacobianRatio", "aspectRatio" or "skew".</param>

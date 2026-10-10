@@ -196,6 +196,11 @@ i {
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
   }
 
+  &__sub {
+    font-size: 11px;
+    color: $muted;
+  }
+
   &__verdict {
     margin-top: 2px;
     font-size: 12px;

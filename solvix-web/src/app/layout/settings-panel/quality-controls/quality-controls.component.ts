@@ -2,7 +2,7 @@ import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { QualityGradeName, QualityMetricKey, SolverElementQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
 import { GRADE_COLORS } from '../../../geometry/solver-view';
-import { GRADE_NAMES, GRADE_ORDER, METRIC_TEXT, QualityMetric, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue, passes } from '../../../geometry/quality-grading';
+import { GRADE_NAMES, GRADE_ORDER, METRIC_TEXT, QualityMetric, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue, passes, ruleText, worstAngle, anglesText } from '../../../geometry/quality-grading';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 
@@ -105,8 +105,18 @@ export class QualityControlsComponent implements DoCheck {
 
   // The line between allowed and not allowed, in words: what a value has to be to pass.
   rule(limit: SolverQualityLimitDto): string {
-    const edge = limit.bounds[2];
-    return limit.higherIsBetter ? `Допустимо: більше ${edge}` : `Допустимо: менше ${edge}`;
+    return ruleText(limit);
+  }
+
+  // What the big number of a gauge says: for the angles the worst angle itself, not its distance from 90.
+  shownValue(limit: SolverQualityLimitDto): number {
+    const q = this.quality()!;
+    return limit.key === 'skew' ? worstAngle(q.smallestAngleDegrees, q.largestAngleDegrees) : this.worstValue(limit);
+  }
+
+  sub(limit: SolverQualityLimitDto): string {
+    const q = this.quality()!;
+    return limit.key === 'skew' ? `найменший ${q.smallestAngleDegrees.toFixed(0)}° · найбільший ${q.largestAngleDegrees.toFixed(0)}°` : '';
   }
 
   markerLeft(limit: SolverQualityLimitDto): string {
@@ -141,8 +151,8 @@ export class QualityControlsComponent implements DoCheck {
       .sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade) || a.element.scaledJacobian - b.element.scaledJacobian);
   }
 
-  valueText(key: QualityMetricKey, value: number): string {
-    return key === 'skew' ? `${value.toFixed(0)}°` : key === 'aspectRatio' ? value.toFixed(1) : value.toFixed(2);
+  valueText(key: QualityMetricKey, value: number, element?: SolverElementQualityDto): string {
+    return key === 'skew' ? (element ? anglesText(element.minAngleDegrees, element.maxAngleDegrees) : `${value.toFixed(0)}°`) : key === 'aspectRatio' ? value.toFixed(1) : value.toFixed(2);
   }
 
   isPicked(element: SolverElementQualityDto): boolean {

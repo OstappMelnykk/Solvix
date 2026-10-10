@@ -32,7 +32,9 @@
     <div class="gauge" *ngFor="let l of q.limits" [class.gauge--note]="!l.graded">
       <div class="gauge__head">
         <span class="gauge__name" [title]="text[l.key].tip">{{ text[l.key].title }} <small>{{ text[l.key].tech }}</small></span>
-        <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ worstValue(l) | number: decimals(l) }}{{ unit(l) }}</span>
+        <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ shownValue(l) | number: decimals(l) }}{{ unit(l) }}</span>
+      </div>
+      <div class="gauge__sub" *ngIf="sub(l)">{{ sub(l) }}
       </div>
       <div class="gauge__verdict" *ngIf="l.graded" [class.gauge__verdict--bad]="!passed(l)">
         {{ passed(l) ? '✓ Проходить' : '✗ Не проходить' }} · {{ rule(l) }}
@@ -60,7 +62,7 @@
       </span>
       <span class="row__chips">
         <span *ngFor="let i of r.issues" class="chip" [class.chip--note]="!i.graded" [style.border-color]="gradeColor(i.grade)" [title]="text[i.key].tech">
-          {{ text[i.key].title }} <b>{{ valueText(i.key, i.value) }}</b>
+          {{ text[i.key].title }} <b>{{ valueText(i.key, i.value, r.element) }}</b>
         </span>
       </span>
     </button>

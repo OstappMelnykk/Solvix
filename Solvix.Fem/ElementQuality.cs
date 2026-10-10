@@ -6,13 +6,16 @@ public enum QualityGrade { Excellent, Good, Acceptable, Poor, Invalid }
 /// <param name="ScaledJacobian">Min over the corners and Gauss points of detJ / (|g1||g2||g3|) (Knupp): 1 for a box, 0 when degenerate, negative when folded.</param>
 /// <param name="JacobianRatio">Min detJ / max detJ over the same points: how unevenly the element stretches space (1 = uniformly).</param>
 /// <param name="AspectRatio">Longest / shortest edge (the edge length through its midpoint).</param>
-/// <param name="MaxSkewDegrees">Largest deviation of a corner angle between edges from 90 degrees.</param>
-public readonly record struct ElementQualityMetrics(double MinDeterminant, double ScaledJacobian, double JacobianRatio, double AspectRatio, double MaxSkewDegrees)
+/// <param name="MaxSkewDegrees">Largest deviation from 90 degrees of any angle (see <see cref="ElementQuality.Of"/>): the face corner angles and the dihedral angles between faces.</param>
+/// <param name="MinAngleDegrees">The smallest of those angles.</param>
+/// <param name="MaxAngleDegrees">The largest of those angles.</param>
+public readonly record struct ElementQualityMetrics(double MinDeterminant, double ScaledJacobian, double JacobianRatio, double AspectRatio, double MaxSkewDegrees, double MinAngleDegrees = 90, double MaxAngleDegrees = 90)
 {
     /// <summary>
     /// The grade: invalid when folded or degenerate; otherwise the worse of the grades of the scaled Jacobian,
-    /// the Jacobian ratio and the aspect ratio. Limits follow common practice (ANSYS/Abaqus/Altair guidance for
-    /// quadratic hexahedra): scaled J &gt; 0.7 / 0.4 / 0.15, J ratio &gt; 0.5 / 0.2 / 0.05, aspect &lt; 3 / 10 / 30.
+    /// the Jacobian ratio, the aspect ratio and the angles. Limits are rules of thumb for quadratic hexahedra:
+    /// scaled J &gt; 0.7 / 0.4 / 0.15, J ratio &gt; 0.5 / 0.2 / 0.05, aspect &lt; 3 / 10 / 30, and the angles within
+    /// 30 / 45 / 75 degrees of a right angle (60-120 excellent, 45-135 good, 15-165 acceptable, otherwise poor).
     /// </summary>
     public QualityGrade Grade
     {
@@ -22,7 +25,8 @@ public readonly record struct ElementQualityMetrics(double MinDeterminant, doubl
             var j = ElementQuality.GradeAbove(ScaledJacobian, ElementQuality.ScaledJacobianLimits);
             var r = ElementQuality.GradeAbove(JacobianRatio, ElementQuality.JacobianRatioLimits);
             var a = ElementQuality.GradeBelow(AspectRatio, ElementQuality.AspectRatioLimits);
-            return (QualityGrade)Math.Max((int)j, Math.Max((int)r, (int)a));
+            var k = ElementQuality.GradeBelow(MaxSkewDegrees, ElementQuality.SkewLimits);
+            return (QualityGrade)Math.Max(Math.Max((int)j, (int)r), Math.Max((int)a, (int)k));
         }
     }
 }
@@ -33,8 +37,9 @@ public static class ElementQuality
     public static readonly double[] ScaledJacobianLimits = { 0.7, 0.4, 0.15 };
     public static readonly double[] JacobianRatioLimits = { 0.5, 0.2, 0.05 };
     public static readonly double[] AspectRatioLimits = { 3, 10, 30 };
-    // Not part of the grade: the largest corner deviation from 90 degrees, with reference limits only.
-    public static readonly double[] SkewLimits = { 15, 30, 45 };
+    // The largest deviation of an angle from 90 degrees: within 30 (angles 60-120) excellent, within 45 (45-135) good,
+    // within 75 (15-165) acceptable, beyond that poor.
+    public static readonly double[] SkewLimits = { 30, 45, 75 };
 
     // Larger is better (scaled Jacobian, Jacobian ratio): above the first limit excellent, ... below the last poor.
     public static QualityGrade GradeAbove(double value, double[] limits) =>
@@ -79,28 +84,63 @@ public static class ElementQuality
             double len = Distance(xyz, a, m) + Distance(xyz, m, b);
             shortest = Math.Min(shortest, len); longest = Math.Max(longest, len);
         }
-        double skew = 0;
+        // Angles. At each corner the three edges leave along the tangents of the curved edges (the quadratic edge
+        // through its midpoint), so a bent edge counts as bent. From the three tangents come the three face corner
+        // angles (between two edges, which is the angle of the face there) and the three dihedral angles (between two
+        // faces along an edge: the angle between the other two edges seen across the first). Together 24 + 24 angles.
+        double minAngle = 180, maxAngle = 0;
+        var tangents = new double[3][];
         for (int corner = 0; corner < 8; corner++)
         {
-            var edges = Edges.Where(e => e.Item1 == corner || e.Item3 == corner).ToArray();
-            for (int i = 0; i < edges.Length; i++)
-                for (int k = i + 1; k < edges.Length; k++)
+            int count = 0;
+            foreach (var (a, m, b) in Edges)
+            {
+                if (a != corner && b != corner) continue;
+                tangents[count++] = a == corner ? Tangent(xyz, a, m, b, -1.5, 2, -0.5) : Tangent(xyz, a, m, b, -0.5, 2, -1.5);
+            }
+            for (int i = 0; i < 3; i++)
+            {
+                int j = (i + 1) % 3, k = (i + 2) % 3;
+                var face = Angle(tangents[i], tangents[j]);
+                // the dihedral along edge i: the angle between the parts of the other two tangents that are across edge i
+                var dihedral = Angle(Across(tangents[j], tangents[i]), Across(tangents[k], tangents[i]));
+                foreach (double angle in new[] { face, dihedral })
                 {
-                    int ai = edges[i].Item1 == corner ? edges[i].Item3 : edges[i].Item1;
-                    int bi = edges[k].Item1 == corner ? edges[k].Item3 : edges[k].Item1;
-                    double dot = 0, la = 0, lb = 0;
-                    for (int c = 0; c < 3; c++)
-                    {
-                        double u = xyz[ai, c] - xyz[corner, c], v = xyz[bi, c] - xyz[corner, c];
-                        dot += u * v; la += u * u; lb += v * v;
-                    }
-                    if (la == 0 || lb == 0) continue;
-                    double angle = Math.Acos(Math.Clamp(dot / Math.Sqrt(la * lb), -1, 1)) * 180 / Math.PI;
-                    skew = Math.Max(skew, Math.Abs(angle - 90));
+                    if (double.IsNaN(angle)) continue;
+                    minAngle = Math.Min(minAngle, angle); maxAngle = Math.Max(maxAngle, angle);
                 }
+            }
         }
+        double skew = maxAngle >= minAngle ? Math.Max(90 - minAngle, maxAngle - 90) : 0;
         double ratio = maxDet > 0 ? minDet / maxDet : 0;
-        return new ElementQualityMetrics(minDet, minScaled, ratio, shortest > 0 ? longest / shortest : double.PositiveInfinity, skew);
+        return new ElementQualityMetrics(minDet, minScaled, ratio, shortest > 0 ? longest / shortest : double.PositiveInfinity, skew, maxAngle >= minAngle ? minAngle : 90, maxAngle >= minAngle ? maxAngle : 90);
+    }
+
+    // Tangent of the quadratic edge (a, m, b) leaving the corner: the derivative of the edge at the end, with the
+    // weights of its three nodes.
+    private static double[] Tangent(double[,] xyz, int a, int m, int b, double wa, double wm, double wb)
+    {
+        var t = new double[3];
+        for (int c = 0; c < 3; c++) t[c] = wa * xyz[a, c] + wm * xyz[m, c] + wb * xyz[b, c];
+        return t;
+    }
+
+    // `v` without its part along `axis`.
+    private static double[] Across(double[] v, double[] axis)
+    {
+        double dot = 0, len = 0;
+        for (int c = 0; c < 3; c++) { dot += v[c] * axis[c]; len += axis[c] * axis[c]; }
+        var r = new double[3];
+        for (int c = 0; c < 3; c++) r[c] = len > 0 ? v[c] - dot / len * axis[c] : v[c];
+        return r;
+    }
+
+    // The angle between two vectors in degrees (NaN when one has no length).
+    private static double Angle(double[] u, double[] v)
+    {
+        double dot = 0, lu = 0, lv = 0;
+        for (int c = 0; c < 3; c++) { dot += u[c] * v[c]; lu += u[c] * u[c]; lv += v[c] * v[c]; }
+        return lu > 1e-300 && lv > 1e-300 ? Math.Acos(Math.Clamp(dot / Math.Sqrt(lu * lv), -1, 1)) * 180 / Math.PI : double.NaN;
     }
 
     private static double Distance(double[,] xyz, int a, int b)

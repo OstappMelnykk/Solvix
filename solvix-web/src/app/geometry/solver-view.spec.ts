@@ -606,14 +606,14 @@ describe('colouring by mesh quality', () => {
   const quality = (grade0: 'excellent' | 'poor' | 'invalid', grade1: 'excellent' | 'poor' | 'invalid'): SolverQualityDto => ({
     elements: 2,
     grades: { excellent: 0, good: 0, acceptable: 0, poor: 0, invalid: 0 },
-    worstScaledJacobian: 0.5, worstJacobianRatio: 0.5, worstAspectRatio: 2, worstSkewDegrees: 3,
+    worstScaledJacobian: 0.5, worstJacobianRatio: 0.5, worstAspectRatio: 2, worstSkewDegrees: 3, smallestAngleDegrees: 87, largestAngleDegrees: 93,
     cubes: [
-      { hex: 0, grade: grade0, scaledJacobian: 1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 },
-      { hex: 1, grade: grade1, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 }
+      { hex: 0, grade: grade0, scaledJacobian: 1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0, minAngleDegrees: 90, maxAngleDegrees: 90 },
+      { hex: 1, grade: grade1, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0, minAngleDegrees: 90, maxAngleDegrees: 90 }
     ],
     limits: [],
     // an excellent element is not flagged
-    flagged: [grade0, grade1].flatMap((grade, hex) => (grade === 'excellent' ? [] : [{ hex, ex: 0, ey: 0, ez: 0, grade, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 }]))
+    flagged: [grade0, grade1].flatMap((grade, hex) => (grade === 'excellent' ? [] : [{ hex, ex: 0, ey: 0, ez: 0, grade, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0, minAngleDegrees: 90, maxAngleDegrees: 90 }]))
   });
   const colourOf = (view: ReturnType<typeof buildSolverView>, hex: number) => {
     const mesh = (view.pickables as THREE.Mesh[]).find(m => (m.userData['pick'] as { hex: number }).hex === hex)!;
@@ -640,7 +640,7 @@ describe('colouring by mesh quality', () => {
 
   it('colours each small element by its own grade, not the whole cube by its worst', () => {
     const state = singleCubeState();
-    const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 }] };
+    const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0, minAngleDegrees: 90, maxAngleDegrees: 90 }] };
 
     const view = buildSolverView({ state, setup: setup({ divisions: [2, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q });
     const colours = new Set<string>();

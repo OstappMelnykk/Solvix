@@ -1,5 +1,5 @@
 import { SolverQualityLimitDto } from '../api/solver-api.service';
-import { gaugePosition, gaugeZones, metricGrade, passes } from './quality-grading';
+import { anglesText, gaugePosition, gaugeZones, metricGrade, passes, ruleText, worstAngle } from './quality-grading';
 
 const jacobian: SolverQualityLimitDto = { key: 'scaledJacobian', label: '', hint: '', higherIsBetter: true, graded: true, bounds: [0.7, 0.4, 0.15] };
 const aspect: SolverQualityLimitDto = { key: 'aspectRatio', label: '', hint: '', higherIsBetter: false, graded: true, bounds: [3, 10, 30] };
@@ -41,5 +41,34 @@ describe('quality limits as text', () => {
     expect(passes(jacobian, -1)).toBeFalse();
     expect(passes(aspect, 3.3)).toBeTrue();
     expect(passes(aspect, 40)).toBeFalse();
+  });
+});
+
+describe('angles', () => {
+  const skew: SolverQualityLimitDto = { key: 'skew', label: '', hint: '', higherIsBetter: false, graded: true, bounds: [30, 45, 75] };
+
+  it('allows angles from 15 to 165 degrees and calls 45 to 135 good', () => {
+    expect(metricGrade(skew, 20)).toBe('excellent');         // angles 70-110
+    expect(metricGrade(skew, 44)).toBe('good');              // 46-134
+    expect(metricGrade(skew, 60)).toBe('acceptable');        // 30-150
+    expect(metricGrade(skew, 80)).toBe('poor');              // 10-170
+    expect(passes(skew, 74)).toBeTrue();
+    expect(passes(skew, 76)).toBeFalse();
+  });
+
+  it('shows the limits as angles, not as distances from a right angle', () => {
+    expect(gaugeZones(skew).map(z => `${z.grade} ${z.range}`)).toEqual([
+      'poor <15° або >165°',
+      'acceptable 15–45°, 135–165°',
+      'good 45–60°, 120–135°',
+      'excellent 60–120°'
+    ]);
+    expect(ruleText(skew)).toBe('Допустимо: кути від 15° до 165°');
+  });
+
+  it('names the angle that is farthest from a right angle', () => {
+    expect(worstAngle(28, 110)).toBe(28);
+    expect(worstAngle(80, 150)).toBe(150);
+    expect(anglesText(27.6, 141.9)).toBe('28°…142°');
   });
 });

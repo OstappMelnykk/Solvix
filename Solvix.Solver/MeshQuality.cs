@@ -9,7 +9,7 @@ internal static class MeshQuality
     public static SolverQualityDto Evaluate(SolverSetup setup, FemMeshDto mesh)
     {
         var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
-        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, Array.Empty<SolverCubeQualityDto>(), Limits, Array.Empty<SolverElementQualityDto>());
+        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, 90, 90, Array.Empty<SolverCubeQualityDto>(), Limits, Array.Empty<SolverElementQualityDto>());
 
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
@@ -27,12 +27,12 @@ internal static class MeshQuality
         {
             var own = Enumerable.Range(cube * fine.ElementsPerCube, fine.ElementsPerCube).Select(e => metrics[e]).ToList();
             var worst = own.OrderByDescending(m => (int)m.Grade).ThenBy(m => m.ScaledJacobian).First();
-            cubes.Add(new SolverCubeQualityDto(mesh.ElementIds[cube], Name(worst.Grade), own.Min(m => m.ScaledJacobian), own.Min(m => m.JacobianRatio), own.Max(m => m.AspectRatio), own.Max(m => m.MaxSkewDegrees)));
+            cubes.Add(new SolverCubeQualityDto(mesh.ElementIds[cube], Name(worst.Grade), own.Min(m => m.ScaledJacobian), own.Min(m => m.JacobianRatio), own.Max(m => m.AspectRatio), own.Max(m => m.MaxSkewDegrees), own.Min(m => m.MinAngleDegrees), own.Max(m => m.MaxAngleDegrees)));
         }
         foreach (var m in metrics) grades[Name(m.Grade)]++;
         return new SolverQualityDto(
             fine.ElementCount, grades,
-            metrics.Min(m => m.ScaledJacobian), metrics.Min(m => m.JacobianRatio), metrics.Max(m => m.AspectRatio), metrics.Max(m => m.MaxSkewDegrees),
+            metrics.Min(m => m.ScaledJacobian), metrics.Min(m => m.JacobianRatio), metrics.Max(m => m.AspectRatio), metrics.Max(m => m.MaxSkewDegrees), metrics.Min(m => m.MinAngleDegrees), metrics.Max(m => m.MaxAngleDegrees),
             cubes, Limits, Flagged(mesh, fine, metrics));
     }
 
@@ -43,8 +43,8 @@ internal static class MeshQuality
         for (int e = 0; e < metrics.Length; e++)
         {
             var m = metrics[e];
-            if (m.Grade == QualityGrade.Excellent && m.MaxSkewDegrees < ElementQuality.SkewLimits[0]) continue;
-            flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(m.Grade), m.ScaledJacobian, m.JacobianRatio, m.AspectRatio, m.MaxSkewDegrees));
+            if (m.Grade == QualityGrade.Excellent) continue;
+            flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(m.Grade), m.ScaledJacobian, m.JacobianRatio, m.AspectRatio, m.MaxSkewDegrees, m.MinAngleDegrees, m.MaxAngleDegrees));
         }
         return flagged;
     }
@@ -54,7 +54,7 @@ internal static class MeshQuality
         new SolverQualityLimitDto("scaledJacobian", "Scaled Jacobian", "detJ / (довжини трьох напрямів): 1 — ідеальний куб, 0 — виродження, <0 — вивернутий елемент", true, true, ElementQuality.ScaledJacobianLimits),
         new SolverQualityLimitDto("jacobianRatio", "Відношення якобіанів", "min detJ / max detJ: наскільки рівномірно елемент розтягує простір", true, true, ElementQuality.JacobianRatioLimits),
         new SolverQualityLimitDto("aspectRatio", "Aspect ratio", "довше ребро / коротше ребро", false, true, ElementQuality.AspectRatioLimits),
-        new SolverQualityLimitDto("skew", "Перекіс кутів, °", "найбільше відхилення кута між ребрами від 90°; поки лише довідково, в оцінку не входить", false, false, ElementQuality.SkewLimits),
+        new SolverQualityLimitDto("skew", "Кути, °", "відхилення від прямого кута: кути граней у вершинах і двогранні кути між гранями; 60–120° відмінно, 45–135° добре, 15–165° прийнятно, поза цим погано", false, true, ElementQuality.SkewLimits),
     };
 
     public static string Name(QualityGrade grade) => grade.ToString().ToLowerInvariant();

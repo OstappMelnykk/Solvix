@@ -327,6 +327,67 @@ public class QualityTests
     }
 
     [Test]
+    public void The_angles_of_a_cube_are_all_right_angles()
+    {
+        var q = ElementQuality.Of(Box(1, 2, 3));
+
+        Assert.That(q.MinAngleDegrees, Is.EqualTo(90).Within(1e-9));
+        Assert.That(q.MaxAngleDegrees, Is.EqualTo(90).Within(1e-9));
+    }
+
+    [Test]
+    public void A_shear_gives_acute_and_obtuse_angles_that_are_graded_by_the_users_limits()
+    {
+        double[,] Sheared(double k) { var xyz = Box(1, 1, 1); for (int i = 0; i < 20; i++) xyz[i, 0] += k * xyz[i, 2]; return xyz; }
+
+        var mild = ElementQuality.Of(Sheared(0.5));         // 63 and 117 degrees
+        var edge = ElementQuality.Of(Sheared(1));           // 45 and 135
+        var steep = ElementQuality.Of(Sheared(3));          // 18 and 162
+        var collapsed = ElementQuality.Of(Sheared(5));      // 11 and 169
+
+        Assert.That(mild.MinAngleDegrees, Is.EqualTo(63.4349).Within(1e-3));
+        Assert.That(mild.MaxAngleDegrees, Is.EqualTo(116.5651).Within(1e-3));
+        Assert.That(edge.MinAngleDegrees, Is.EqualTo(45).Within(1e-6));
+        Assert.That(edge.MaxAngleDegrees, Is.EqualTo(135).Within(1e-6));
+        Assert.That(steep.MinAngleDegrees, Is.EqualTo(18.4349).Within(1e-3));
+        // angles of 15-165 are allowed, below 15 or above 165 are not
+        Assert.That(ElementQuality.GradeBelow(mild.MaxSkewDegrees, ElementQuality.SkewLimits), Is.EqualTo(QualityGrade.Excellent));
+        Assert.That(ElementQuality.GradeBelow(edge.MaxSkewDegrees + 1e-6, ElementQuality.SkewLimits), Is.EqualTo(QualityGrade.Acceptable));
+        Assert.That(ElementQuality.GradeBelow(steep.MaxSkewDegrees, ElementQuality.SkewLimits), Is.EqualTo(QualityGrade.Acceptable));
+        Assert.That(ElementQuality.GradeBelow(collapsed.MaxSkewDegrees, ElementQuality.SkewLimits), Is.EqualTo(QualityGrade.Poor));
+    }
+
+    [Test]
+    public void A_bent_edge_changes_the_angles_at_its_corners()
+    {
+        var xyz = Box(1, 1, 1);
+        xyz[8, 2] -= 0.15;            // the midpoint of the bottom edge (0,1) is pushed down: the edge bows out of the face
+
+        var q = ElementQuality.Of(xyz);
+
+        Assert.That(q.MaxSkewDegrees, Is.GreaterThan(5));
+        Assert.That(q.MaxAngleDegrees, Is.GreaterThan(95));       // the edge leaves its corners tilted into the neighbouring face angles
+    }
+
+    [Test]
+    public void A_tapered_element_has_dihedral_angles_that_are_not_right_angles()
+    {
+        var xyz = Box(1, 1, 1);
+        for (int i = 0; i < 20; i++)
+        {
+            double top = xyz[i, 2];                                   // 0 at the bottom, 1 at the top
+            double shrink = 1 - 0.5 * top;
+            xyz[i, 0] = 0.5 + (xyz[i, 0] - 0.5) * shrink;
+            xyz[i, 1] = 0.5 + (xyz[i, 1] - 0.5) * shrink;
+        }
+
+        var q = ElementQuality.Of(xyz);
+
+        Assert.That(q.MaxAngleDegrees, Is.GreaterThan(100));          // the sides lean in: their dihedral angle with the bottom is obtuse
+        Assert.That(q.MinAngleDegrees, Is.LessThan(80));
+    }
+
+    [Test]
     public void A_folded_element_is_invalid()
     {
         var xyz = Box(1, 1, 1);
@@ -351,12 +412,15 @@ public class QualityTests
     }
 
     [Test]
-    public void The_grade_is_the_worst_of_the_three_measures()
+    public void The_grade_is_the_worst_of_the_four_measures()
     {
         Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 2, 0).Grade, Is.EqualTo(QualityGrade.Excellent));
         Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 20, 0).Grade, Is.EqualTo(QualityGrade.Acceptable));
         Assert.That(new ElementQualityMetrics(1, 0.9, 0.1, 2, 0).Grade, Is.EqualTo(QualityGrade.Acceptable));
         Assert.That(new ElementQualityMetrics(1, 0.1, 0.9, 2, 0).Grade, Is.EqualTo(QualityGrade.Poor));
         Assert.That(new ElementQualityMetrics(-1, 0.9, 0.9, 2, 0).Grade, Is.EqualTo(QualityGrade.Invalid));
+        Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 2, 40).Grade, Is.EqualTo(QualityGrade.Good));          // angles 50-130
+        Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 2, 60).Grade, Is.EqualTo(QualityGrade.Acceptable));   // 30-150
+        Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 2, 80).Grade, Is.EqualTo(QualityGrade.Poor));         // beyond 15-165
     }
 }

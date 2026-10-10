@@ -349,7 +349,7 @@ describe('SolverControlsComponent', () => {
 
   describe('mesh quality', () => {
     const grades = { excellent: 3, good: 0, acceptable: 0, poor: 0, invalid: 0 };
-    const q = (over: Record<string, number> = {}) => ({ elements: 3, grades: { ...grades, ...over }, worstScaledJacobian: 1, worstJacobianRatio: 1, worstAspectRatio: 1, worstSkewDegrees: 0, cubes: [], limits: [], flagged: [] });
+    const q = (over: Record<string, number> = {}) => ({ elements: 3, grades: { ...grades, ...over }, worstScaledJacobian: 1, worstJacobianRatio: 1, worstAspectRatio: 1, worstSkewDegrees: 0, smallestAngleDegrees: 90, largestAngleDegrees: 90, cubes: [], limits: [], flagged: [] });
 
     it('evaluates and switches the colouring', () => {
       component.refreshQuality();

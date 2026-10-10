@@ -106,6 +106,9 @@ export interface SolverCubeQualityDto {
   readonly jacobianRatio: number;
   readonly aspectRatio: number;
   readonly skewDegrees: number;
+  // The smallest and the largest of the angles (face corner angles and dihedral angles).
+  readonly minAngleDegrees: number;
+  readonly maxAngleDegrees: number;
 }
 
 // How well the mesh, cut at the current division, can be integrated: the worst small element of each cube, counts
@@ -117,6 +120,8 @@ export interface SolverQualityDto {
   readonly worstJacobianRatio: number;
   readonly worstAspectRatio: number;
   readonly worstSkewDegrees: number;
+  readonly smallestAngleDegrees: number;
+  readonly largestAngleDegrees: number;
   readonly cubes: readonly SolverCubeQualityDto[];
   readonly limits: readonly SolverQualityLimitDto[];
   // The small elements that are not excellent in some measure; every other small element is excellent.
@@ -134,6 +139,9 @@ export interface SolverElementQualityDto {
   readonly jacobianRatio: number;
   readonly aspectRatio: number;
   readonly skewDegrees: number;
+  // The smallest and the largest of the angles (face corner angles and dihedral angles).
+  readonly minAngleDegrees: number;
+  readonly maxAngleDegrees: number;
 }
 
 export type QualityMetricKey = 'scaledJacobian' | 'jacobianRatio' | 'aspectRatio' | 'skew';

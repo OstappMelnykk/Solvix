@@ -7,6 +7,8 @@ export interface QualityMeasured {
   readonly jacobianRatio: number;
   readonly aspectRatio: number;
   readonly skewDegrees: number;
+  readonly minAngleDegrees: number;
+  readonly maxAngleDegrees: number;
 }
 
 // What the Quality World can colour the cubes by: the overall grade (the worst of the graded measures) or one measure.
@@ -74,7 +76,7 @@ export const METRIC_TEXT: Record<QualityMetricKey, { title: string; short: strin
   scaledJacobian: { title: 'Форма', short: 'Форма', tech: 'Scaled Jacobian', tip: '1 — ідеальний куб, 0 — елемент сплющений, менше 0 — вивернутий навиворіт.' },
   jacobianRatio: { title: 'Рівномірність', short: 'Рівномірн.', tech: 'Відношення якобіанів', tip: '1 — елемент розтягує простір скрізь однаково; близько 0 — в одному місці майже стиснутий, в іншому роздутий.' },
   aspectRatio: { title: 'Витягнутість', short: 'Витягнутість', tech: 'Aspect ratio', tip: 'Довше ребро поділене на коротше. Куб дає 1, чим більше — тим довша «паличка».' },
-  skew: { title: 'Кути', short: 'Кути', tech: 'Перекіс, °', tip: 'Наскільки найгірший кут відхиляється від прямого (90°). Показано для довідки, на оцінку не впливає.' }
+  skew: { title: 'Кути', short: 'Кути', tech: 'грані та двогранні', tip: 'Кути між ребрами в кутах граней і двогранні кути між гранями (у 3D важливі обидва), по кривих ребрах. Ідеал — 90°.' }
 };
 
 // Where a value sits on the gauge of its measure, 0..1: four equal zones, worst on the left (poor, acceptable, good,
@@ -113,6 +115,16 @@ const num = (v: number): string => String(v);
 // The four grades of a measure from the worst (left) to the best (right) with the values that belong to each.
 export function gaugeZones(limit: SolverQualityLimitDto): GaugeZone[] {
   const [b0, b1, b2] = limit.bounds;
+  if (limit.key === 'skew') {
+    // the bounds are deviations from a right angle; shown as the angles they allow
+    const around = (d: number) => `${90 - d}–${90 + d}°`;
+    return [
+      { grade: 'poor', range: `<${90 - b2}° або >${90 + b2}°` },
+      { grade: 'acceptable', range: `${90 - b2}–${90 - b1}°, ${90 + b1}–${90 + b2}°` },
+      { grade: 'good', range: `${90 - b1}–${90 - b0}°, ${90 + b0}–${90 + b1}°` },
+      { grade: 'excellent', range: around(b0) }
+    ];
+  }
   if (limit.higherIsBetter) {
     return [
       { grade: 'poor', range: `до ${num(b2)}` },
@@ -127,6 +139,22 @@ export function gaugeZones(limit: SolverQualityLimitDto): GaugeZone[] {
     { grade: 'good', range: `${num(b0)} – ${num(b1)}` },
     { grade: 'excellent', range: `до ${num(b0)}` }
   ];
+}
+
+// What a value has to be to pass, in words.
+export function ruleText(limit: SolverQualityLimitDto): string {
+  const edge = limit.bounds[2];
+  if (limit.key === 'skew') return `Допустимо: кути від ${90 - edge}° до ${90 + edge}°`;
+  return limit.higherIsBetter ? `Допустимо: більше ${edge}` : `Допустимо: менше ${edge}`;
+}
+
+// The angle that is farthest from a right angle (the one that decides the grade), and both ends as text.
+export function worstAngle(smallest: number, largest: number): number {
+  return 90 - smallest >= largest - 90 ? smallest : largest;
+}
+
+export function anglesText(smallest: number, largest: number): string {
+  return `${smallest.toFixed(0)}°…${largest.toFixed(0)}°`;
 }
 
 // Whether a value is allowed: excellent, good or acceptable pass; poor and invalid do not.
