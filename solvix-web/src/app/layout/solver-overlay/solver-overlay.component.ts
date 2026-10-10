@@ -1,11 +1,11 @@
 import { Component, Input, inject } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { Scope, Tool } from '../../geometry/solver-targets';
 import { ResultField, SolverService } from '../../state/solver.service';
 import { fieldRange, fieldValues, materialColor, rampColor } from '../../geometry/solver-view';
 import { SolverMaterialDto } from '../../api/solver-api.service';
 
-const MAX_SCALE = 500000;
+const SLIDER_STEPS = 1000;
 const MPA = 1e6;
 
 export const TOOLS: readonly { tool: Tool; label: string; title: string }[] = [
@@ -28,7 +28,7 @@ const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
 @Component({
   selector: 'app-solver-overlay',
   standalone: true,
-  imports: [NgIf, NgFor],
+  imports: [NgIf, NgFor, DecimalPipe],
   templateUrl: './solver-overlay.component.html',
   styleUrl: './solver-overlay.component.scss'
 })
@@ -181,18 +181,27 @@ export class SolverOverlayComponent {
     return this.solver.display(this.sessionId).deformationScale;
   }
 
+  // The top of the range: the factor at which the largest displacement is a quarter of the body's size - far enough to
+  // follow how the body bends, short of the absurd shapes a larger factor makes. Neither box nor slider goes past it.
+  top(): number {
+    const result = this.solver.result(this.sessionId);
+    return Math.max(1, result ? SolverService.maxScale(result) : 1);
+  }
+
+  readonly sliderSteps = SLIDER_STEPS;
+
   scaleSlider(): number {
-    return Math.round(100 * Math.cbrt(Math.min(this.scale(), MAX_SCALE) / MAX_SCALE));
+    return Math.round((SLIDER_STEPS * Math.min(this.scale(), this.top())) / this.top());
   }
 
   onScaleNumber(event: Event): void {
     const value = Number((event.target as HTMLInputElement).value);
-    if (Number.isFinite(value)) this.solver.setDeformationScale(this.sessionId, Math.min(value, MAX_SCALE));
+    if (Number.isFinite(value) && value >= 0) this.solver.setDeformationScale(this.sessionId, Math.min(value, this.top()));
   }
 
   onScaleSlider(event: Event): void {
     const position = Number((event.target as HTMLInputElement).value);
-    if (Number.isFinite(position)) this.solver.setDeformationScale(this.sessionId, Math.round(MAX_SCALE * Math.pow(position / 100, 3)));
+    if (Number.isFinite(position)) this.solver.setDeformationScale(this.sessionId, (Math.min(Math.max(position, 0), SLIDER_STEPS) / SLIDER_STEPS) * this.top());
   }
 
   shownText(): string {

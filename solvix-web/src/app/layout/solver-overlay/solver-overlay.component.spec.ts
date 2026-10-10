@@ -167,7 +167,8 @@ describe('SolverOverlayComponent', () => {
 
   describe('deformation', () => {
     beforeEach(() => {
-      result = { ticket: 1, divisions: [1, 1, 1], positions: [0, 0, 0], hexIds: [], gridNodes: [], ux: [0], uy: [0], uz: [0], vonMises: [4e6], maxDisplacement: 2e-5, maxVonMises: 4e6, elapsedSeconds: 0 };
+      // a unit cube's corners; the largest displacement 2e-5, so a quarter of the size (the diagonal, 1.73) is reached at ×21650
+      result = { ticket: 1, divisions: [1, 1, 1], positions: [0, 0, 0, 1, 1, 1], hexIds: [], gridNodes: [], ux: [0, 0], uy: [0, 0], uz: [0, 0], vonMises: [4e6, 4e6], maxDisplacement: 2e-5, maxVonMises: 4e6, elapsedSeconds: 0 };
     });
 
     it('is there only with a result', () => {
@@ -176,24 +177,35 @@ describe('SolverOverlayComponent', () => {
       expect(component.hasResult()).toBeFalse();
     });
 
-    it('the number box sets the factor up to the solver\'s 500000, ignoring junk', () => {
+    it('has a top of the range that is realistic: the largest displacement at a quarter of the body\'s size', () => {
+      expect(component.top()).toBe(21650);
+    });
+
+    it('the number box sets the factor up to that top, ignoring junk and negatives', () => {
       component.onScaleNumber({ target: { value: '2500' } } as unknown as Event);
       component.onScaleNumber({ target: { value: '9999999' } } as unknown as Event);
       component.onScaleNumber({ target: { value: 'x' } } as unknown as Event);
+      component.onScaleNumber({ target: { value: '-5' } } as unknown as Event);
 
-      expect(solver.setDeformationScale.calls.allArgs()).toEqual([[1, 2500], [1, 500000]]);
+      expect(solver.setDeformationScale.calls.allArgs()).toEqual([[1, 2500], [1, 21650]]);
     });
 
-    it('the slider is cubic, so the small factors stay reachable, and round-trips with the factor', () => {
-      component.onScaleSlider({ target: { value: '100' } } as unknown as Event);
-      component.onScaleSlider({ target: { value: '50' } } as unknown as Event);
+    it('the slider is linear over the whole range, and round-trips with the factor', () => {
+      component.onScaleSlider({ target: { value: '1000' } } as unknown as Event);
+      component.onScaleSlider({ target: { value: '500' } } as unknown as Event);
       component.onScaleSlider({ target: { value: '0' } } as unknown as Event);
-      expect(solver.setDeformationScale.calls.allArgs()).toEqual([[1, 500000], [1, 62500], [1, 0]]);
+      expect(solver.setDeformationScale.calls.allArgs()).toEqual([[1, 21650], [1, 10825], [1, 0]]);
 
-      display.deformationScale = 62500;
-      expect(component.scaleSlider()).toBe(50);
+      display.deformationScale = 10825;
+      expect(component.scaleSlider()).toBe(500);
       display.deformationScale = 999999;
-      expect(component.scaleSlider()).toBe(100);
+      expect(component.scaleSlider()).toBe(1000);
+    });
+
+    it('never has a top below 1, even for a result without size', () => {
+      result = { ...result!, positions: [0, 0, 0], ux: [0], uy: [0], uz: [0], vonMises: [0], maxDisplacement: 0 };
+
+      expect(component.top()).toBe(1);
     });
 
     it('says what is shown against what is real', () => {
