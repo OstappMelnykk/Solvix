@@ -23,6 +23,14 @@ export class SurfaceAttachmentService {
   private readonly _share = signal(SurfaceAttachmentService.DEFAULT_SHARE);
   readonly snapShare = this._share.asReadonly();
 
+  // Whether a dragged node sticks to the surface at all.
+  private readonly _enabled = signal(true);
+  readonly snapEnabled = this._enabled.asReadonly();
+
+  setSnapEnabled(on: boolean): void {
+    this._enabled.set(on);
+  }
+
   setSnapShare(share: number): void {
     if (!Number.isFinite(share)) return;
     this._share.set(Math.min(SurfaceAttachmentService.MAX_SHARE, Math.max(SurfaceAttachmentService.MIN_SHARE, share)));

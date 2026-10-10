@@ -58,4 +58,12 @@ describe('SurfaceAttachmentService', () => {
     attachments.setSnapShare(NaN);
     expect(attachments.snapShare()).toBe(0.001);
   });
+
+  it('can be switched off, and is on by default', () => {
+    expect(attachments.snapEnabled()).toBeTrue();
+
+    attachments.setSnapEnabled(false);
+
+    expect(attachments.snapEnabled()).toBeFalse();
+  });
 });

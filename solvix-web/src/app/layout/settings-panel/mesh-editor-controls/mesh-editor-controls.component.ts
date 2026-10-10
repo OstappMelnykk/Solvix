@@ -123,6 +123,14 @@ export class MeshEditorControlsComponent {
     return this.sessionId !== null && id !== null && this.attachments.isAttached(this.sessionId, id);
   }
 
+  snapEnabled(): boolean {
+    return this.attachments.snapEnabled();
+  }
+
+  onSnapEnabled(event: Event): void {
+    this.attachments.setSnapEnabled((event.target as HTMLInputElement).checked);
+  }
+
   // The sensitivity: how close to the STL (in % of its size) a dragged vertex sticks.
   snapPercent(): number {
     return Math.round(this.attachments.snapShare() * 1000) / 10;

@@ -119,6 +119,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() attachedNodeIds: ReadonlySet<number> = new Set<number>();
   // How close to the surface, as a share of its size, a dragged node sticks to it (set in the panel).
   @Input() snapShare = 0.01;
+  // Switch the sticking off altogether (a node then moves freely, as before).
+  @Input() snapEnabled = true;
   @Output() readonly nodeAttach = new EventEmitter<{ nodeId: number; attached: boolean }>();
   @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
 
@@ -715,7 +717,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // - the nearest point of it to where the gizmo is - so it slides instead of moving freely. Alt lets go.
   private stickToSurface(nodeId: number): void {
     const snapper = this.snapper;
-    if (!snapper) return;
+    if (!snapper || !this.snapEnabled) return;
     const result = stick(snapper, this.nodeProxy.position, this.attachedNodeIds.has(nodeId), this.altHeld, this.snapShare);
     if (result.point) this.nodeProxy.position.copy(result.point);
     if (result.change) this.nodeAttach.emit({ nodeId, attached: result.change === 'attach' });
@@ -1092,7 +1094,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
       // show/hide toggle for the rings, independent of whether a reference is
       // even attached (rotateGizmo.object stays undefined until one is).
-      const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined;
+      // In the Real World the turning rings would sit over the nodes: they step aside while a node is selected, so its
+      // gizmo and the clicks on the nodes are not taken by a ring.
+      const ringsInTheWay = this.worldIndex === REAL_WORLD_INDEX && this.draggableNodeId !== null;
+      const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined && !ringsInTheWay;
       this.rotateGizmo.getHelper().visible = this.active && gizmoWanted;
       this.rotateGizmo.enabled = this.active && gizmoWanted;
       // ImportedReferenceDisplayService.holeMarkersVisible - independent of
