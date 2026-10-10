@@ -510,3 +510,124 @@ public class LinearHexMetricsTests
         Assert.That(f.ConditionNumber, Is.EqualTo(double.PositiveInfinity));
     }
 }
+
+public class BrickShapeTests
+{
+    private static double[,] Box(double lx, double ly, double lz)
+    {
+        var xyz = new double[20, 3];
+        for (int i = 0; i < 20; i++)
+        {
+            xyz[i, 0] = (Hex20.Local[i, 0] + 1) / 2.0 * lx;
+            xyz[i, 1] = (Hex20.Local[i, 1] + 1) / 2.0 * ly;
+            xyz[i, 2] = (Hex20.Local[i, 2] + 1) / 2.0 * lz;
+        }
+        return xyz;
+    }
+
+    [Test]
+    public void A_cube_is_ideal_in_all_five_measures()
+    {
+        var s = BrickShape.Of(Box(1, 1, 1));
+
+        Assert.That(s.JacobianRatio, Is.EqualTo(1).Within(1e-12));
+        Assert.That(s.AspectRatio, Is.EqualTo(1).Within(1e-12));
+        Assert.That(s.ParallelDeviation, Is.EqualTo(0).Within(1e-9));
+        Assert.That(s.MaxCornerAngle, Is.EqualTo(90).Within(1e-9));
+        Assert.That(s.WarpingFactor, Is.EqualTo(0).Within(1e-12));
+    }
+
+    [Test]
+    public void A_box_has_the_aspect_ratio_of_its_sides_and_nothing_else_wrong()
+    {
+        var s = BrickShape.Of(Box(1, 1, 8));
+
+        Assert.That(s.AspectRatio, Is.EqualTo(8).Within(1e-9));
+        Assert.That(s.JacobianRatio, Is.EqualTo(1).Within(1e-9));
+        Assert.That(s.MaxCornerAngle, Is.EqualTo(90).Within(1e-9));
+    }
+
+    [Test]
+    public void Moving_a_midside_node_off_the_middle_of_its_edge_raises_the_jacobian_ratio_until_the_quarter_point_where_it_is_singular()
+    {
+        double Ratio(double shift) { var xyz = Box(1, 1, 1); xyz[8, 0] = shift; return BrickShape.Of(xyz).JacobianRatio; }   // node 8: the midpoint of the bottom front edge, at x = shift along an edge of length 1
+
+        Assert.That(Ratio(0.5), Is.EqualTo(1).Within(1e-12));
+        Assert.That(Ratio(0.45), Is.EqualTo(1.5).Within(1e-9));
+        Assert.That(Ratio(0.4), Is.EqualTo(7.0 / 3).Within(1e-9));
+        Assert.That(Ratio(0.35), Is.EqualTo(4).Within(1e-9));
+        Assert.That(Ratio(0.3), Is.EqualTo(9).Within(1e-9));
+        Assert.That(Ratio(0.25), Is.EqualTo(-100));        // the quarter point: the Jacobian vanishes at the corner
+        Assert.That(Ratio(0.1), Is.EqualTo(-100));
+        Assert.That(Ratio(0.75), Is.EqualTo(-100));        // and the same from the other end
+    }
+
+    [Test]
+    public void An_inverted_element_has_the_placeholder_ratio()
+    {
+        var xyz = Box(1, 1, 1);
+        xyz[6, 0] = -3; xyz[6, 1] = -3; xyz[6, 2] = -3;
+
+        Assert.That(BrickShape.Of(xyz).JacobianRatio, Is.EqualTo(-100));
+    }
+
+    [Test]
+    public void A_sheared_brick_has_the_angles_of_its_parallelogram_faces()
+    {
+        var xyz = Box(1, 1, 1);
+        for (int i = 0; i < 20; i++) xyz[i, 0] += 1.0 * xyz[i, 2];        // 45 degrees
+
+        var s = BrickShape.Of(xyz);
+
+        Assert.That(s.MaxCornerAngle, Is.EqualTo(135).Within(1e-6));
+        Assert.That(s.ParallelDeviation, Is.EqualTo(0).Within(1e-3));   // opposite edges stay parallel
+    }
+
+    [Test]
+    public void A_tapered_brick_has_opposite_edges_that_are_not_parallel()
+    {
+        var xyz = Box(1, 1, 1);
+        for (int i = 0; i < 20; i++)
+        {
+            double shrink = 1 - 0.5 * xyz[i, 2];
+            xyz[i, 0] = 0.5 + (xyz[i, 0] - 0.5) * shrink;
+            xyz[i, 1] = 0.5 + (xyz[i, 1] - 0.5) * shrink;
+        }
+
+        Assert.That(BrickShape.Of(xyz).ParallelDeviation, Is.GreaterThan(20));
+    }
+
+    [Test]
+    public void Twisting_the_top_face_warps_the_side_faces_as_the_documentation_says()
+    {
+        // ANSYS: turning the top face of a unit cube by 22.5 degrees gives a warping factor of about 0.2, by 45 degrees about 0.4
+        double Warping(double degrees)
+        {
+            var xyz = Box(1, 1, 1);
+            double a = degrees * Math.PI / 180, c = Math.Cos(a), s = Math.Sin(a);
+            for (int i = 0; i < 20; i++)
+            {
+                if (xyz[i, 2] < 1 - 1e-12) { if (Hex20.Local[i, 2] == 0) { } else continue; }
+            }
+            // corners and midside nodes of the top face (z = 1) are turned about its centre; the midside nodes of the
+            // vertical edges move to the average of their corners
+            for (int i = 0; i < 20; i++)
+            {
+                if (Hex20.Local[i, 2] != 1) continue;
+                double x = xyz[i, 0] - 0.5, y = xyz[i, 1] - 0.5;
+                xyz[i, 0] = 0.5 + c * x - s * y;
+                xyz[i, 1] = 0.5 + s * x + c * y;
+            }
+            for (int k = 16; k < 20; k++)
+            {
+                int bottom = k - 16, top = bottom + 4;
+                for (int d = 0; d < 3; d++) xyz[k, d] = (xyz[bottom, d] + xyz[top, d]) / 2;
+            }
+            return BrickShape.Of(xyz).WarpingFactor;
+        }
+
+        Assert.That(Warping(0), Is.EqualTo(0).Within(1e-12));
+        Assert.That(Warping(22.5), Is.EqualTo(0.2).Within(0.01));         // 0.197
+        Assert.That(Warping(45), Is.EqualTo(0.4).Within(0.01));           // 0.398
+    }
+}
