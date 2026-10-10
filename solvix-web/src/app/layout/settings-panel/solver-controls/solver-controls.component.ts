@@ -8,7 +8,7 @@ import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { GRADE_COLORS, materialColor } from '../../../geometry/solver-view';
 import { QualityGradeName } from '../../../api/solver-api.service';
-import { ResultField, SIDES, SolverService } from '../../../state/solver.service';
+import { ResultField, SolverService } from '../../../state/solver.service';
 
 const MPA = 1e6;
 const GPA = 1e9;
@@ -30,7 +30,6 @@ export class SolverControlsComponent implements DoCheck {
 
   @Input({ required: true }) sessionId!: number;
 
-  readonly sides = SIDES;
   readonly axes = ['Nx', 'Ny', 'Nz'] as const;
   // Form fields of the custom material (not sent until the button is pressed).
   newLabel = '';
@@ -225,36 +224,12 @@ export class SolverControlsComponent implements DoCheck {
     this.numberField(event, value => this.solver.setPressure(this.sessionId, value));
   }
 
-  isLoadSide(side: HexFaceName): boolean {
-    return this.solver.loadSide(this.sessionId) === side;
-  }
 
-  isFixedSide(side: HexFaceName): boolean {
-    return this.solver.fixedSide(this.sessionId) === side && !this.solver.isFixedAuto(this.sessionId);
-  }
 
-  isFixedAutoSide(side: HexFaceName): boolean {
-    return this.solver.fixedSide(this.sessionId) === side && this.solver.isFixedAuto(this.sessionId);
-  }
 
-  selectLoadSide(side: HexFaceName): void {
-    this.solver.selectLoadSide(this.sessionId, side);
-  }
 
-  selectFixedSide(side: HexFaceName): void {
-    this.solver.selectFixedSide(this.sessionId, side);
-  }
 
-  loadedText(): string {
-    return `Навантажено: ${this.solver.loadedFaceCount(this.sessionId)} граней СЕ`;
-  }
 
-  fixedText(): string {
-    const count = this.solver.fixedFaceCount(this.sessionId);
-    const side = this.solver.fixedSide(this.sessionId);
-    if (this.solver.isFixedAuto(this.sessionId)) return `Закріплено: ${count} граней (авто)`;
-    return count > 0 || side ? `Закріплено: ${count} граней` : 'Закріплено: нічого';
-  }
 
   clearSetup(): void {
     this.solver.clearSetup(this.sessionId);

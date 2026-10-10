@@ -203,11 +203,6 @@ describe('SolverControlsComponent', () => {
   });
 
   describe('the load and the clamping', () => {
-    it('lists the six sides by the solver\'s names', () => {
-      expect(component.sides.map(s => s.label)).toEqual(['Верх', 'Низ', 'Перед', 'Зад', 'Ліво', 'Право']);
-      expect(component.sides.map(s => s.face)).toEqual(['ZPlus', 'ZMinus', 'YMinus', 'YPlus', 'XMinus', 'XPlus']);
-    });
-
     it('sends Pn as typed, in Pa, and ignores junk', () => {
       component.onPressure({ target: { value: '-2500000' } } as unknown as Event);
       component.onPressure({ target: { value: 'x' } } as unknown as Event);
@@ -222,38 +217,6 @@ describe('SolverControlsComponent', () => {
       expect(component.pressureHint()).toContain('розтяг');
       pressure = 0;
       expect(component.pressureHint()).toBe('немає навантаження');
-    });
-
-    it('chooses the load side and the clamped side through the service', () => {
-      component.selectLoadSide('ZPlus');
-      component.selectFixedSide('ZMinus');
-
-      expect(solver.selectLoadSide).toHaveBeenCalledWith(1, 'ZPlus');
-      expect(solver.selectFixedSide).toHaveBeenCalledWith(1, 'ZMinus');
-    });
-
-    it('marks the active load side, the chosen clamped side, and - dashed - the automatic one', () => {
-      loadSide = 'ZPlus';
-      fixedSide = 'ZMinus';
-      auto = true;
-      expect(component.isLoadSide('ZPlus')).toBeTrue();
-      expect(component.isLoadSide('ZMinus')).toBeFalse();
-      expect(component.isFixedSide('ZMinus')).toBeFalse();
-      expect(component.isFixedAutoSide('ZMinus')).toBeTrue();
-
-      auto = false;
-      expect(component.isFixedSide('ZMinus')).toBeTrue();
-      expect(component.isFixedAutoSide('ZMinus')).toBeFalse();
-    });
-
-    it('says how many small faces are loaded and clamped, and when the clamping is automatic', () => {
-      expect(component.loadedText()).toBe('Навантажено: 7 граней СЕ');
-      expect(component.fixedText()).toBe('Закріплено: 5 граней');
-      auto = true;
-      expect(component.fixedText()).toBe('Закріплено: 5 граней (авто)');
-      auto = false;
-      solver.fixedFaceCount.and.returnValue(0);
-      expect(component.fixedText()).toBe('Закріплено: нічого');
     });
 
     it('resets the set-up', () => {

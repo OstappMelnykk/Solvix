@@ -210,47 +210,6 @@ h4 {
   }
 }
 
-.face-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-}
-
-.face-btn {
-  padding: 5px 0;
-  background: $field-bg;
-  border: 1px solid $field-border;
-  border-radius: 6px;
-  color: #dfe1e5;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-
-  &:hover {
-    border-color: $accent-toggle;
-  }
-}
-
-.load-btn.active {
-  background: #2f8f2f;
-  border-color: #44ff44;
-  color: #fff;
-  font-weight: 700;
-}
-
-.fix-btn.active {
-  background: #1f5fbf;
-  border-color: #3388ff;
-  color: #fff;
-  font-weight: 700;
-}
-
-.fix-btn.auto {
-  border-color: #3388ff;
-  border-style: dashed;
-  color: #8fb8ff;
-}
-
 .btn-solve {
   width: 100%;
   box-sizing: border-box;

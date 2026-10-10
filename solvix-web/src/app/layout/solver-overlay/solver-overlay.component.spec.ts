@@ -7,6 +7,7 @@ import { SolverMaterialDto, SolverResultDto, SolverSetupDto } from '../../api/so
 describe('SolverOverlayComponent', () => {
   let solver: jasmine.SpyObj<SolverService>;
   let component: SolverOverlayComponent;
+  let brush = false;
   let tool: Tool;
   let scope: Scope;
   let divisions: number[];
@@ -20,6 +21,7 @@ describe('SolverOverlayComponent', () => {
 
   beforeEach(() => {
     tool = 'view';
+    brush = false;
     scope = 'cell';
     divisions = [2, 1, 1];
     auto = false;
@@ -27,9 +29,10 @@ describe('SolverOverlayComponent', () => {
     result = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'tool', 'setTool', 'scopesOf', 'scope', 'setScope', 'depth', 'setDepth', 'divisions', 'setup', 'activeMaterial', 'setActiveMaterial',
-      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner'
+      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush'
     ]);
     solver.tool.and.callFake(() => tool);
+    solver.brush.and.callFake(() => brush);
     solver.scope.and.callFake(() => scope);
     solver.scopesOf.and.callFake(t => (t === 'material' ? ['cell', 'column', 'layer', 'cube'] : t === 'view' ? [] : ['cell', 'cube', 'side']));
     solver.depth.and.returnValue(0);
@@ -134,6 +137,22 @@ describe('SolverOverlayComponent', () => {
     expect(new Set(hints).size).toBe(4);
     expect(hints[1]).toContain('навантажити');
     expect(hints[3]).toContain('пофарбувати');
+  });
+
+  it('has a brush for the Pressure and Support tools only, and says how to use it', () => {
+    tool = 'view';
+    expect(component.isFaceTool()).toBeFalse();
+    tool = 'material';
+    expect(component.isFaceTool()).toBeFalse();
+    tool = 'fix';
+    expect(component.isFaceTool()).toBeTrue();
+    expect(component.hint()).toContain('Клік');
+
+    brush = true;
+    expect(component.hint()).toContain('проводьте');
+    component.toggleBrush();
+
+    expect(solver.setBrush).toHaveBeenCalledWith(1, false);
   });
 
   it('legend of the marked faces: how many small faces are pressed and clamped, and "(авто)" for the automatic clamping', () => {

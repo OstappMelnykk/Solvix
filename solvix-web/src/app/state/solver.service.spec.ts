@@ -167,6 +167,80 @@ describe('SolverService', () => {
       http.expectNone(`${api}/${sessionId}/faces/fixed`);
     });
 
+    describe('the brush', () => {
+      it('presses or clamps everything a stroke passes over with one request when the button goes up', () => {
+        loadSetup({ ...emptySetup, divisions: [3, 1, 1] });
+        solver.setTool(sessionId, 'fix');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, facePick({ face: 'ZPlus', p: 0, q: 0 }));
+        expect(solver.isPainting(sessionId)).toBeTrue();
+        solver.paintTo(sessionId, facePick({ face: 'ZPlus', p: 1, q: 0 }));
+        solver.paintTo(sessionId, facePick({ face: 'ZPlus', p: 2, q: 0 }));
+        solver.paintTo(sessionId, facePick({ face: 'ZPlus', p: 1, q: 0 }));          // the same face again is only once
+        http.expectNone(`${api}/${sessionId}/faces/fixed`);                          // nothing is sent while the stroke goes on
+        expect(solver.highlightTargets(sessionId)!.faces.length).toBe(3);               // but it is seen on the scene
+
+        solver.paintEnd(sessionId);
+
+        const request = http.expectOne(`${api}/${sessionId}/faces/fixed`);
+        expect(request.request.body).toEqual({ faces: [0, 1, 2].map(p => ({ hex: 0, face: 'ZPlus', p, q: 0 })), fixed: true });
+        expect(solver.isPainting(sessionId)).toBeFalse();
+      });
+
+      it('presses with the current Pn in the Load tool', () => {
+        loadSetup();
+        solver.setTool(sessionId, 'load');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, facePick());
+        solver.paintEnd(sessionId);
+
+        expect(http.expectOne(`${api}/${sessionId}/faces/load`).request.body).toEqual({ faces: [{ hex: 0, face: 'YPlus', p: 0, q: 0 }], pressure: -1e6 });
+      });
+
+      it('erases when the stroke begins on a face that is already marked', () => {
+        loadSetup({ ...emptySetup, divisions: [2, 1, 1], fixed: [{ hex: 0, face: 'ZPlus', p: 0, q: 0 }] });
+        solver.setTool(sessionId, 'fix');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, facePick({ face: 'ZPlus', p: 0, q: 0 }));
+        solver.paintTo(sessionId, facePick({ face: 'ZPlus', p: 1, q: 0 }));
+        solver.paintEnd(sessionId);
+
+        expect(http.expectOne(`${api}/${sessionId}/faces/fixed`).request.body.fixed).toBeFalse();
+      });
+
+      it('does nothing without the brush, with the View or Material tool, or on a face inside the body', () => {
+        loadSetup();
+        solver.setTool(sessionId, 'fix');
+        solver.paintStart(sessionId, facePick());                                       // the brush is off
+        expect(solver.isPainting(sessionId)).toBeFalse();
+
+        solver.setBrush(sessionId, true);
+        solver.setTool(sessionId, 'view');
+        solver.paintStart(sessionId, facePick());
+        expect(solver.isPainting(sessionId)).toBeFalse();
+
+        solver.setTool(sessionId, 'fix');
+        solver.paintStart(sessionId, facePick({ inner: true }));
+        expect(solver.isPainting(sessionId)).toBeFalse();
+        expect(lastToast().kind).toBe('warning');
+        http.expectNone(`${api}/${sessionId}/faces/fixed`);
+      });
+
+      it('an empty stroke sends nothing', () => {
+        loadSetup();
+        solver.setTool(sessionId, 'fix');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, null);
+        solver.paintEnd(sessionId);
+
+        http.expectNone(`${api}/${sessionId}/faces/fixed`);
+      });
+    });
+
     it('a click with the Load tool marks the small face as pressed and unmarks it the next time', () => {
       loadSetup();
       solver.setTool(sessionId, 'load');

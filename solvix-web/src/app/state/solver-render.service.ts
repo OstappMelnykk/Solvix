@@ -116,6 +116,7 @@ export class SolverRenderService {
     const cached = this.cache.get(sessionId);
     if (!cached?.view?.setHighlight) return;
     const targets = this.solver.highlightTargets(sessionId);
-    cached.view.setHighlight(targets ? buildHighlight(cached.input, targets) : null);
+    // a stroke can reach far more small faces than a click does
+    cached.view.setHighlight(targets ? buildHighlight(cached.input, targets, this.solver.isPainting(sessionId) ? 6000 : 400) : null);
   }
 }

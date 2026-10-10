@@ -315,3 +315,24 @@ $material: #c77dff;
   font-size: 12px;
   cursor: pointer;
 }
+
+.brush {
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $border;
+  border-radius: 6px;
+  color: $text;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  &--on {
+    background: $accent;
+    border-color: $accent;
+    color: #fff;
+  }
+}

@@ -168,6 +168,24 @@ export class RenderWindowComponent {
     }
   }
 
+  // The brush paints in the Solver World with the Pressure or Support tool.
+  isBrushOn(worldIndex: number): boolean {
+    const sessionId = this.sessions.activeSessionId();
+    if (worldIndex !== SOLVER_WORLD_INDEX || sessionId === null) return false;
+    const tool = this.solver.tool(sessionId);
+    return this.solver.brush(sessionId) && (tool === 'load' || tool === 'fix');
+  }
+
+  onPaint(event: { phase: 'start' | 'move' | 'end'; pick: MeshPick | null }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    const pick = event.pick?.kind === 'face' ? event.pick : null;
+    if (event.phase === 'start') this.solver.paintStart(sessionId, pick);
+    else if (event.phase === 'move') this.solver.paintTo(sessionId, pick);
+    else this.solver.paintEnd(sessionId);
+    this.solverRender.refreshHighlight(sessionId);
+  }
+
   // The pointer moved over the Solver World: what a click there would act on is highlighted, without rebuilding the view.
   onMeshHover(pick: MeshPick | null): void {
     const sessionId = this.sessions.activeSessionId();

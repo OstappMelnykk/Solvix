@@ -81,41 +81,13 @@
 
 <div class="group">
   <div class="group-label"><span class="step">3</span> Навантаження і опори</div>
-  <div class="hint">Точково — інструментами «Тиск» і «Опора» на сцені (до окремої грані елемента). Цілу сторону — кнопками нижче.</div>
+  <div class="hint">Малюйте на сцені інструментами «Тиск» і «Опора»: клік по грані, або «Пензель» — проведіть по поверхні. Тут задається лише величина тиску.</div>
 
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
     Pn — тиск на грані (Па)
     <input type="number" step="100000" [value]="pressure()" (change)="onPressure($event)" />
     <span class="hint">{{ pressureHint() }} · від'ємне = стиск</span>
   </label>
-
-  <div class="field" title="Оберіть сторону навантаження — виберуться всі зовнішні грані на цій стороні. Або клікайте окремі грані в 3D (режим Load).">
-    Навантажена грань
-    <div class="face-grid">
-      <button *ngFor="let side of sides" class="face-btn load-btn" type="button" [class.active]="isLoadSide(side.face)" [title]="side.title" (click)="selectLoadSide(side.face)">
-        {{ side.label }}
-      </button>
-    </div>
-    <span class="hint">{{ loadedText() }}</span>
-  </div>
-
-  <div class="field" title="Оберіть сторону закріплення. За замовчуванням — протилежна до навантаженої. Повторний клік — скидання на авто.">
-    Закріплена грань
-    <div class="face-grid">
-      <button
-        *ngFor="let side of sides"
-        class="face-btn fix-btn"
-        type="button"
-        [class.active]="isFixedSide(side.face)"
-        [class.auto]="isFixedAutoSide(side.face)"
-        [title]="side.title"
-        (click)="selectFixedSide(side.face)"
-      >
-        {{ side.label }}
-      </button>
-    </div>
-    <span class="hint">{{ fixedText() }}</span>
-  </div>
 
   <button class="btn" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
 </div>

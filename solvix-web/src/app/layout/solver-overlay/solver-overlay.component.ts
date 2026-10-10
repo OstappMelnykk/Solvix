@@ -39,6 +39,20 @@ export class SolverOverlayComponent {
 
   readonly tools = TOOLS;
 
+  // --- the brush ---
+
+  isFaceTool(): boolean {
+    return this.tool() === 'load' || this.tool() === 'fix';
+  }
+
+  brush(): boolean {
+    return this.solver.brush(this.sessionId);
+  }
+
+  toggleBrush(): void {
+    this.solver.setBrush(this.sessionId, !this.brush());
+  }
+
   // The list of scopes is built afresh on every change detection; tracking by scope keeps the buttons themselves.
   trackScope(_: number, item: { scope: Scope }): Scope {
     return item.scope;
@@ -106,9 +120,9 @@ export class SolverOverlayComponent {
   hint(): string {
     switch (this.tool()) {
       case 'load':
-        return 'Клік по зовнішній грані — навантажити (Pn з панелі) або зняти.';
+        return this.brush() ? 'Тримайте кнопку миші й проводьте по зовнішніх гранях — вони навантажаться (Pn з панелі). Почніть із вже навантаженої — зніметься. Крутити: права кнопка.' : 'Клік по зовнішній грані — навантажити (Pn з панелі) або зняти.';
       case 'fix':
-        return 'Клік по зовнішній грані — закріпити або зняти.';
+        return this.brush() ? 'Тримайте кнопку миші й проводьте по зовнішніх гранях — вони закріпляться. Почніть із вже закріпленої — зніметься. Крутити: права кнопка.' : 'Клік по зовнішній грані — закріпити або зняти.';
       case 'material':
         return 'Клік — пофарбувати вибраним матеріалом. Глибина вибирає елемент під гранню.';
       default:

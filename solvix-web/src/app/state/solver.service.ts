@@ -107,6 +107,10 @@ interface SessionSolver {
   viewerMarks: boolean;
   // Whether the clamped and the pressed faces are drawn on the scene, in the Solver World and in the Quality World.
   marks: Record<MarksPage, Marks>;
+  // The brush: drag over the surface to press or clamp the small faces the pointer passes (instead of clicking them).
+  brush: boolean;
+  // The stroke being drawn: whether it erases (it began on a face that was already marked) and the faces it reached.
+  stroke: { erase: boolean; faces: Map<string, SolverFaceDto> } | null;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -173,6 +177,8 @@ export class SolverService {
       qualityMetric: 'grade',
       qualityPick: null,
       qualityKey: null,
+      brush: false,
+      stroke: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
       loadSide: null,
@@ -495,6 +501,7 @@ export class SolverService {
   // What a click on the small face under the mouse would act on, for the highlight.
   highlightTargets(sessionId: number): HighlightTargetsInput | null {
     const entry = this.entry(sessionId);
+    if (entry.stroke) return { faces: [...entry.stroke.faces.values()], elements: [], pointed: null };         // the part of the surface painted so far
     const pick = entry.hover;
     if (!pick || entry.tool === 'view') return null;
     const divisions = this.divisions(sessionId);
@@ -722,6 +729,71 @@ export class SolverService {
       entry.fixedChosen = true;
       entry.fixedSide = null;
       this.apply(sessionId, this.api.setFixedFaces(sessionId, targets, !marked));
+    }
+  }
+
+  // --- the brush: pressing or clamping by drawing over the surface ---
+
+  brush(sessionId: number): boolean {
+    return this.entry(sessionId).brush;
+  }
+
+  // Only the Pressure and Support tools paint.
+  setBrush(sessionId: number, on: boolean): void {
+    this.entry(sessionId).brush = on;
+    this.entry(sessionId).stroke = null;
+    this.touch(sessionId);
+  }
+
+  isPainting(sessionId: number): boolean {
+    return this.entry(sessionId).stroke !== null;
+  }
+
+  // The pointer went down on the surface: a stroke begins. If the first face was already marked the stroke erases,
+  // otherwise it paints (the same rule as a click).
+  paintStart(sessionId: number, pick: PickedFace | null): void {
+    const entry = this.entry(sessionId);
+    if (!entry.brush || (entry.tool !== 'load' && entry.tool !== 'fix')) return;
+    if (pick === null || pick.kind !== 'face') return;
+    if (pick.inner) {
+      this.notifications.warning('Ця грань усередині тіла: закріплювати й навантажувати можна лише зовнішні.');
+      return;
+    }
+    const targets = faceTargets(pick, entry.scope, this.editor.getState(sessionId), this.divisions(sessionId));
+    const small = targets.flatMap(t => smallFacesOf(t, this.divisions(sessionId)));
+    const marked = entry.tool === 'load'
+      ? small.every(f => entry.setup?.loads.some(l => sameFace(l, f) && l.pressure === entry.pressure))
+      : small.every(f => entry.setup?.fixed.some(x => sameFace(x, f)));
+    entry.stroke = { erase: marked, faces: new Map() };
+    this.paintTo(sessionId, pick);
+  }
+
+  // The pointer moved over the surface with the button down: the faces it reaches join the stroke.
+  paintTo(sessionId: number, pick: PickedFace | null): void {
+    const entry = this.entry(sessionId);
+    if (!entry.stroke || pick === null || pick.kind !== 'face' || pick.inner) return;
+    for (const target of faceTargets(pick, entry.scope, this.editor.getState(sessionId), this.divisions(sessionId))) {
+      entry.stroke.faces.set(`${target.hex}:${target.face}:${target.p ?? '-'}:${target.q ?? '-'}`, target);
+    }
+  }
+
+  // The button went up: everything the stroke reached is pressed or clamped (or, for an erasing stroke, freed) in one go.
+  paintEnd(sessionId: number): void {
+    const entry = this.entry(sessionId);
+    const stroke = entry.stroke;
+    entry.stroke = null;
+    if (!stroke || stroke.faces.size === 0) {
+      this.touch(sessionId);
+      return;
+    }
+    const targets = [...stroke.faces.values()];
+    if (entry.tool === 'load') {
+      entry.loadSide = null;
+      this.apply(sessionId, this.api.setLoads(sessionId, targets, stroke.erase ? null : entry.pressure));
+    } else {
+      entry.fixedChosen = true;
+      entry.fixedSide = null;
+      this.apply(sessionId, this.api.setFixedFaces(sessionId, targets, !stroke.erase));
     }
   }
 

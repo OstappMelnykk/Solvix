@@ -17,6 +17,13 @@
     </button>
   </div>
 
+  <div class="row" *ngIf="isFaceTool()">
+    <span class="caption">Пензель</span>
+    <button type="button" class="brush" [class.brush--on]="brush()" (click)="toggleBrush()" title="Малювати по поверхні: тримайте кнопку миші й проводьте — грані, яких торкнеться пензель, стануть навантаженими або закріпленими">
+      {{ brush() ? '🖌 Малюю: вимкнути' : '🖌 Малювати по поверхні' }}
+    </button>
+  </div>
+
   <div class="row" *ngIf="scopes().length > 0">
     <span class="caption">Охоплення</span>
     <div class="segmented segmented--small">

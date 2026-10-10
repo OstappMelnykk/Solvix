@@ -103,6 +103,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // while hoverEnabled. Null when it is over nothing.
   @Input() hoverEnabled = false;
   @Output() readonly meshHover = new EventEmitter<MeshPick | null>();
+  // The brush: with the left button down the pointer paints over the surface (a stroke: start, the faces it passes,
+  // end) instead of rotating the view or picking one face; the right button rotates then.
+  @Input() paintEnabled = false;
+  @Output() readonly paint = new EventEmitter<{ phase: 'start' | 'move' | 'end'; pick: MeshPick | null }>();
   // The node (of meshView) that may be dragged with the translate gizmo - set
   // only for the World where nodes move (the Real World), null elsewhere.
   @Input() draggableNodeId: number | null = null;
@@ -276,12 +280,50 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.oitRenderer.render(this.scene, this.camera);
   };
 
+  private painting = false;
+  private lastPaintKey = '';
+  private paintFrame = 0;
+
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
+    if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging) {
+      this.painting = true;
+      this.lastPaintKey = '';
+      this.canvasRef.nativeElement.setPointerCapture?.(event.pointerId);
+      this.paint.emit({ phase: 'start', pick: this.pickAt(event.clientX, event.clientY) });
+    }
   };
-  private onPointerUp = (event: PointerEvent) => this.handleClick(event);
+  private onPointerUp = (event: PointerEvent) => {
+    if (this.painting) {
+      // a stroke is not a click
+      this.painting = false;
+      this.pointerDownClient = null;
+      if (this.paintFrame !== 0) cancelAnimationFrame(this.paintFrame);
+      this.paintFrame = 0;
+      this.canvasRef.nativeElement.releasePointerCapture?.(event.pointerId);
+      this.paint.emit({ phase: 'end', pick: null });
+      return;
+    }
+    this.handleClick(event);
+  };
   private hoverFrame = 0;
   private onPointerMove = (event: PointerEvent) => {
+    if (this.painting) {
+      // the faces under the pointer while the button is down: one raycast per frame, and a face only once in a row
+      const x = event.clientX;
+      const y = event.clientY;
+      if (this.paintFrame !== 0) cancelAnimationFrame(this.paintFrame);
+      this.paintFrame = requestAnimationFrame(() => {
+        this.paintFrame = 0;
+        const pick = this.pickAt(x, y);
+        const key = pick && pick.kind === 'face' ? `${pick.hex}:${pick.face}:${pick.p}:${pick.q}:${pick.element?.join(',')}` : '';
+        if (key !== '' && key !== this.lastPaintKey) {
+          this.lastPaintKey = key;
+          this.paint.emit({ phase: 'move', pick });
+        }
+      });
+      return;
+    }
     if (!this.hoverEnabled || !this.active || event.buttons !== 0) return;
     // one raycast per frame at most, however many events the pointer sends
     if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
@@ -1035,7 +1077,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       const nodeGizmoWanted = this.active && this.nodeGizmo.object !== undefined;
       this.nodeGizmo.getHelper().visible = nodeGizmoWanted;
       this.nodeGizmo.enabled = nodeGizmoWanted;
-      this.controls.enabled = this.active && !this.rotateGizmo.dragging && !this.nodeGizmo.dragging;
+      this.controls.enabled = this.active && !this.rotateGizmo.dragging && !this.nodeGizmo.dragging && !this.painting;
+      // with the brush the left button paints and the right one rotates
+      this.controls.mouseButtons.LEFT = this.paintEnabled ? null as never : THREE.MOUSE.ROTATE;
+      this.controls.mouseButtons.RIGHT = this.paintEnabled ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
       this.controls.update();
     } catch (error) {
       console.error(`[WorldCanvasComponent] world ${this.worldIndex}: per-frame update failed, skipping this tick`, error);
