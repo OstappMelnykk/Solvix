@@ -1,15 +1,17 @@
-import { Component, inject } from '@angular/core';
+import { Component, HostBinding, inject } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
+import { IDEAL_WORLD_INDEX, QUALITY_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX, WORLDS_CONFIG } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { WorldRepresentation, WorldRepresentationService } from '../../state/world-representation.service';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { SolverViewerComponent } from '../solver-viewer/solver-viewer.component';
 import { SolverOverlayComponent } from '../solver-overlay/solver-overlay.component';
 import { SolverService } from '../../state/solver.service';
 import { SolverRenderService } from '../../state/solver-render.service';
+import { QualityRenderService } from '../../state/quality-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshEditorService } from '../../state/mesh-editor.service';
@@ -27,7 +29,7 @@ import * as THREE from 'three';
 @Component({
   selector: 'app-render-window',
   standalone: true,
-  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent],
+  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent],
   templateUrl: './render-window.component.html',
   styleUrl: './render-window.component.scss'
 })
@@ -39,10 +41,18 @@ export class RenderWindowComponent {
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
   private readonly meshEditorRender = inject(MeshEditorRenderService);
+  private readonly qualityRender = inject(QualityRenderService);
   private readonly solverRender = inject(SolverRenderService);
   private readonly solver = inject(SolverService);
   private readonly meshSelection = inject(MeshEditorSelectionService);
   private readonly meshEditor = inject(MeshEditorService);
+  // The full-window result viewer covers the whole app: only the body and the tools for looking at it remain.
+  @HostBinding('class.render-window--viewer')
+  get isViewer(): boolean {
+    const sessionId = this.sessions.activeSessionId();
+    return sessionId !== null && this.activeWorld.currentWorldIndex() === SOLVER_WORLD_INDEX && this.solver.viewer(sessionId) && this.solver.result(sessionId) !== null;
+  }
+
   readonly worlds = WORLDS_CONFIG;
   readonly solverWorldIndex = SOLVER_WORLD_INDEX;
 
@@ -133,13 +143,21 @@ export class RenderWindowComponent {
   // real positions, Solver: nothing yet) - null until the session has a hex.
   getMeshView(worldIndex: number): MeshView | null {
     const sessionId = this.sessions.activeSessionId();
-    return worldIndex === SOLVER_WORLD_INDEX ? this.solverRender.getView(sessionId, worldIndex) : this.meshEditorRender.getView(sessionId, worldIndex);
+    if (worldIndex === SOLVER_WORLD_INDEX) return this.solverRender.getView(sessionId, worldIndex);
+    if (worldIndex === QUALITY_WORLD_INDEX) return this.qualityRender.getView(sessionId, worldIndex);
+    return this.meshEditorRender.getView(sessionId, worldIndex);
   }
 
   // Nodes are dragged only in the Real World; the Ideal World's lattice is fixed.
   getDraggableNodeId(worldIndex: number): number | null {
     const sessionId = this.sessions.activeSessionId();
     return worldIndex === REAL_WORLD_INDEX && sessionId !== null ? this.meshSelection.nodeId(sessionId) : null;
+  }
+
+  // The gizmo is being dragged: the Real World redraws live from the isoparametric map, before the server is asked.
+  onNodeDragging(event: { nodeId: number; position: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId !== null) this.meshEditorRender.setDragPreview(sessionId, event.nodeId, event.position, this.meshEditor.carryEdgeMidpoints);
   }
 
   // The gizmo was dropped: send the node's new position to the server.
@@ -164,6 +182,10 @@ export class RenderWindowComponent {
     if (sessionId === null) return;
     // in the Solver World a click acts through the chosen tool (see SolverService.pick)
     if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick?.kind === 'face' ? pick : null);
-    else this.meshSelection.applyPick(sessionId, pick, additive);
+    else if (this.activeWorldIndex() === QUALITY_WORLD_INDEX) {
+      // a click on a cube picks it in the quality list; a click on nothing clears the pick
+      if (pick?.kind === 'face') this.solver.setQualityHex(sessionId, pick.hex);
+      else if (this.solver.qualityHex(sessionId) !== null) this.solver.setQualityHex(sessionId, null);
+    } else this.meshSelection.applyPick(sessionId, pick, additive);
   }
 }

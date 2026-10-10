@@ -1,14 +1,18 @@
 import { Injectable, inject } from '@angular/core';
 import { SOLVER_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
-import { SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
+import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValues } from '../geometry/solver-view';
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
 
 interface Cached {
   readonly key: string;
   readonly view: MeshView | null;
-  readonly input: SolverViewInput;
+  input: SolverViewInput;
+  // what the view was last moved / coloured to (these change often and never rebuild the view)
+  scale: number;
+  colorMax: number | null;
+  edges: boolean;
 }
 
 // The 3D view of a session's body in the Solver World: materials, supports and pressures while setting up, a field
@@ -29,9 +33,12 @@ export class SolverRenderService {
       this.cache.delete(sessionId);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}`;
     const cached = this.cache.get(sessionId);
-    if (cached && cached.key === key) return cached.view;
+    if (cached && cached.key === key) {
+      this.follow(sessionId, cached);
+      return cached.view;
+    }
 
     const display = this.solver.display(sessionId);
     const input: SolverViewInput = {
@@ -40,15 +47,50 @@ export class SolverRenderService {
       result: this.solver.result(sessionId),
       field: display.field,
       deformationScale: display.deformationScale,
+      colorMax: display.colorMax,
+      hideMarks: this.solver.viewer(sessionId),
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
       showInner: this.solver.showInner(sessionId),
       quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
     };
     const view = buildSolverView(input);
-    this.cache.set(sessionId, { key, view, input });
+    this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true });
     this.applyHighlight(sessionId);
     return view;
+  }
+
+  // The deformation and the colour range are applied in place: no rebuild, however often they change.
+  private follow(sessionId: number, cached: Cached): void {
+    const display = this.solver.display(sessionId);
+    if (!cached.view) return;
+    let changed = false;
+    if (display.deformationScale !== cached.scale) {
+      cached.scale = display.deformationScale;
+      cached.input = { ...cached.input, deformationScale: display.deformationScale };
+      cached.view.setDeformation?.(display.deformationScale);
+      changed = true;
+    }
+    if (display.colorMax !== cached.colorMax) {
+      cached.colorMax = display.colorMax;
+      const result = this.solver.result(sessionId);
+      const top = display.colorMax ?? (result ? this.fieldMax(sessionId) : 0);
+      if (top > 0) cached.view.setColorRange?.(top);
+    }
+    if (display.edges !== cached.edges) {
+      cached.edges = display.edges;
+      cached.view.root.traverse(o => {
+        if (o.userData['edges']) o.visible = display.edges;
+      });
+    }
+    // what is outlined was built at the old scale
+    if (changed) this.applyHighlight(sessionId);
+  }
+
+  private fieldMax(sessionId: number): number {
+    const result = this.solver.result(sessionId);
+    const values = result ? fieldValues(result, this.solver.display(sessionId).field) : null;
+    return values ? fieldRange(values).max : 0;
   }
 
   // Redraws what a click would act on (the pointer moved, or the tool changed) - the view itself stays.

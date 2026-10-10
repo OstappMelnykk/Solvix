@@ -85,4 +85,12 @@ public sealed record SolverQualityDto(
     double WorstJacobianRatio,
     double WorstAspectRatio,
     double WorstSkewDegrees,
-    IReadOnlyList<SolverCubeQualityDto> Cubes);
+    IReadOnlyList<SolverCubeQualityDto> Cubes,
+    IReadOnlyList<SolverQualityLimitDto> Limits);
+
+/// <summary>One measure of element quality and where its grades change.</summary>
+/// <param name="Key">"scaledJacobian", "jacobianRatio", "aspectRatio" or "skew".</param>
+/// <param name="HigherIsBetter">True when a larger value is better (the grade falls below the limits).</param>
+/// <param name="Graded">False when the measure is only shown and does not change the grade.</param>
+/// <param name="Bounds">The three limits excellent | good | acceptable | poor, in the order of the measure's goodness.</param>
+public sealed record SolverQualityLimitDto(string Key, string Label, string Hint, bool HigherIsBetter, bool Graded, IReadOnlyList<double> Bounds);

@@ -687,7 +687,7 @@ describe('SolverService', () => {
   });
 
   describe('view settings and bookkeeping', () => {
-    it('changes the shown field and the deformation, ignoring bad scales, and bumps the revision', () => {
+    it('changes the shown field and the deformation, ignoring bad scales; only the field rebuilds the view', () => {
       const before = solver.revision(sessionId);
 
       solver.setField(sessionId, 'displacement');
@@ -695,8 +695,9 @@ describe('SolverService', () => {
       solver.setDeformationScale(sessionId, -1);
       solver.setDeformationScale(sessionId, NaN);
 
-      expect(solver.display(sessionId)).toEqual({ field: 'displacement', deformationScale: 50, opacity: 1 });
-      expect(solver.revision(sessionId)).toBe(before + 2);
+      expect(solver.display(sessionId)).toEqual({ field: 'displacement', deformationScale: 50, opacity: 1, colorMax: null, edges: true });
+      // the deformation moves the vertices in place, so it is not a revision
+      expect(solver.revision(sessionId)).toBe(before + 1);
     });
 
     it('keeps the opacity between 5% and 100% and ignores junk', () => {

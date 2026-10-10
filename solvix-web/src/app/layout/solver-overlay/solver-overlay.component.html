@@ -71,6 +71,7 @@
   </div>
   <input *ngIf="hasResult()" type="range" min="0" max="100" step="1" [value]="scaleSlider()" (input)="onScaleSlider($event)" aria-label="Деформація" />
   <div class="hint" *ngIf="hasResult()">{{ shownText() }}</div>
+  <button *ngIf="hasResult()" type="button" class="viewer-btn" (click)="openViewer()" title="Усе зайве зникає, лишається тіло й інструменти перегляду: плеєр деформації, шкала кольорів">▶ Режим перегляду</button>
 </div>
 
 <div class="face-legend">

@@ -10,6 +10,7 @@ export interface WorldConfig {
 export const WORLDS_CONFIG: WorldConfig[] = [
   { name: 'Ideal World' },
   { name: 'Real World' },
+  { name: 'Quality World' },
   { name: 'Solver World' }
 ];
 
@@ -25,5 +26,8 @@ export const IDEAL_WORLD_INDEX = 0;
 // World shows the same mesh on its fixed integer lattice).
 export const REAL_WORLD_INDEX = 1;
 
+// Quality World's index - the mesh coloured by how well its elements can be integrated, with the problem places listed.
+export const QUALITY_WORLD_INDEX = 2;
+
 // Solver World's index - where materials, supports and pressures are set and the solution is shown.
-export const SOLVER_WORLD_INDEX = 2;
+export const SOLVER_WORLD_INDEX = 3;

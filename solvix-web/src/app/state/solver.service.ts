@@ -7,6 +7,7 @@ import { MeshEditorService } from './mesh-editor.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
 import { PickedFace } from '../geometry/mesh-editor-view';
 import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, elementTargets, faceTargets, sameFace, smallFacesOf } from '../geometry/solver-targets';
+import { QualityMetric } from '../geometry/quality-grading';
 import {
   SolverApiService,
   SolverFaceDto,
@@ -28,6 +29,10 @@ export interface SolverDisplay {
   deformationScale: number;
   // How opaque the cubes are drawn, 0..1 (1 = solid): lower it to see the edges and faces behind.
   opacity: number;
+  // The value that gets the last colour of the ramp (null = the largest value of the field).
+  colorMax: number | null;
+  // The black edges of the small faces are drawn.
+  edges: boolean;
 }
 
 // The six sides of a body by the solver's names: top = Z+, bottom = Z-, front = Y-, back = Y+, left = X-, right = X+.
@@ -66,6 +71,13 @@ interface SessionSolver {
   // Colour the cubes by the quality of their worst element instead of by material.
   showQuality: boolean;
   quality: SolverQualityDto | null;
+  // The Quality World: what the cubes are coloured by, the cube picked in its list, and the mesh the quality
+  // above was asked for (so it is asked again when the mesh or the division changes).
+  qualityMetric: QualityMetric;
+  qualityHex: number | null;
+  qualityKey: string | null;
+  // The full-window result viewer (everything but the body and the viewing tools is gone).
+  viewer: boolean;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -115,7 +127,8 @@ export class SolverService {
       validation: null,
       job: IDLE_JOB,
       result: null,
-      display: { field: 'vonMises', deformationScale: 1, opacity: 1 },
+      display: { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true },
+      viewer: false,
       tool: 'view',
       scope: 'cell',
       depth: 0,
@@ -124,6 +137,9 @@ export class SolverService {
       showInner: false,
       showQuality: false,
       quality: null,
+      qualityMetric: 'grade',
+      qualityHex: null,
+      qualityKey: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
       loadSide: null,
@@ -212,6 +228,7 @@ export class SolverService {
 
   setField(sessionId: number, field: ResultField): void {
     this.entry(sessionId).display.field = field;
+    this.entry(sessionId).display.colorMax = null; // another field, another unit
     this.touch(sessionId);
   }
 
@@ -328,6 +345,37 @@ export class SolverService {
     });
   }
 
+  qualityMetric(sessionId: number): QualityMetric {
+    return this.entry(sessionId).qualityMetric;
+  }
+
+  setQualityMetric(sessionId: number, metric: QualityMetric): void {
+    this.entry(sessionId).qualityMetric = metric;
+    this.touch(sessionId);
+  }
+
+  // The cube the user picked in the quality list or on the scene (null = none).
+  qualityHex(sessionId: number): number | null {
+    return this.entry(sessionId).qualityHex;
+  }
+
+  setQualityHex(sessionId: number, hex: number | null): void {
+    const entry = this.entry(sessionId);
+    entry.qualityHex = entry.qualityHex === hex ? null : hex;
+    this.touch(sessionId);
+  }
+
+  // Asks for the quality again when the mesh or the division is not the one it was last asked for.
+  ensureQuality(sessionId: number): void {
+    const entry = this.entry(sessionId);
+    const state = this.editor.getState(sessionId);
+    if (!state || state.hexes.length === 0) return;
+    const key = `${state.version}:${state.hexes.length}:${this.divisions(sessionId).join('x')}`;
+    if (entry.qualityKey === key) return;
+    entry.qualityKey = key;
+    this.refreshQuality(sessionId);
+  }
+
   showQuality(sessionId: number): boolean {
     return this.entry(sessionId).showQuality;
   }
@@ -376,8 +424,31 @@ export class SolverService {
 
   setDeformationScale(sessionId: number, scale: number): void {
     if (!Number.isFinite(scale) || scale < 0) return;
+    // not a touch: the view moves its vertices in place instead of being rebuilt (see SolverRenderService)
     this.entry(sessionId).display.deformationScale = scale;
-    this.touch(sessionId);
+  }
+
+  setEdges(sessionId: number, on: boolean): void {
+    this.entry(sessionId).display.edges = on;
+  }
+
+  setColorMax(sessionId: number, max: number | null): void {
+    if (max !== null && !(max > 0)) return;
+    this.entry(sessionId).display.colorMax = max;
+  }
+
+  viewer(sessionId: number): boolean {
+    return this.entry(sessionId).viewer;
+  }
+
+  setViewer(sessionId: number, on: boolean): void {
+    this.entry(sessionId).viewer = on;
+  }
+
+  // The top of the deformation player: the largest displacement drawn at a quarter of the body's size - far enough
+  // to follow how the body bends, short of the absurd shapes a larger factor makes.
+  static maxScale(result: SolverResultDto): number {
+    return SolverService.scaleFor(result, 0.25);
   }
 
   // --- set-up commands (each answers with the whole new set-up) ---
@@ -649,6 +720,7 @@ export class SolverService {
         if (result.ticket < ticket) return;
         entry.result = result;
         entry.display.deformationScale = SolverService.visibleScale(result);
+        entry.display.colorMax = null;
         this.touch(sessionId);
       },
       error: () => this.notifications.error('Не вдалось отримати результат розрахунку.')
@@ -658,6 +730,11 @@ export class SolverService {
   // A displacement that is visible: the largest one drawn at a tenth of the body's size (the real ones are
   // microscopic next to the model); never beyond the viewer's ×500000.
   static visibleScale(result: SolverResultDto): number {
+    return Math.min(500000, SolverService.scaleFor(result, 0.1));
+  }
+
+  // The factor that draws the largest displacement at `fraction` of the body's size.
+  static scaleFor(result: SolverResultDto, fraction: number): number {
     if (result.maxDisplacement <= 0 || result.positions.length < 3) return 1;
     const low = [Infinity, Infinity, Infinity];
     const high = [-Infinity, -Infinity, -Infinity];
@@ -666,8 +743,8 @@ export class SolverService {
       high[i % 3] = Math.max(high[i % 3], result.positions[i]);
     }
     const size = Math.hypot(high[0] - low[0], high[1] - low[1], high[2] - low[2]);
-    const scale = (0.1 * size) / result.maxDisplacement;
-    return Math.min(500000, scale >= 10 ? Math.round(scale / 10) * 10 : Math.round(scale * 10) / 10);
+    const scale = (fraction * size) / result.maxDisplacement;
+    return scale >= 10 ? Math.round(scale / 10) * 10 : Math.round(scale * 10) / 10;
   }
 
   private startPolling(sessionId: number): void {

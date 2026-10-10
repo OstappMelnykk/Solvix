@@ -12,7 +12,7 @@ describe('SolverControlsComponent', () => {
   let job: SolverJobDto;
   let result: SolverResultDto | null;
   let validation: SolverValidationDto | null;
-  let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number };
+  let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number; colorMax: number | null; edges: boolean };
   let divisions: number[];
   let pressure: number;
   let loadSide: string | null;
@@ -41,7 +41,7 @@ describe('SolverControlsComponent', () => {
     job = { state: 'idle', progress: 0, stage: '', error: null, ticket: 0 };
     result = null;
     validation = null;
-    display = { field: 'vonMises', deformationScale: 1, opacity: 1 };
+    display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
       'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'refreshQuality', 'showQuality', 'setShowQuality',
@@ -349,7 +349,7 @@ describe('SolverControlsComponent', () => {
 
   describe('mesh quality', () => {
     const grades = { excellent: 3, good: 0, acceptable: 0, poor: 0, invalid: 0 };
-    const q = (over: Record<string, number> = {}) => ({ elements: 3, grades: { ...grades, ...over }, worstScaledJacobian: 1, worstJacobianRatio: 1, worstAspectRatio: 1, worstSkewDegrees: 0, cubes: [] });
+    const q = (over: Record<string, number> = {}) => ({ elements: 3, grades: { ...grades, ...over }, worstScaledJacobian: 1, worstJacobianRatio: 1, worstAspectRatio: 1, worstSkewDegrees: 0, cubes: [], limits: [] });
 
     it('evaluates and switches the colouring', () => {
       component.refreshQuality();

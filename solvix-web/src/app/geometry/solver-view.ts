@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
 import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { markForWeightedOit } from '../rendering/weighted-oit';
+import { QualityMetric, cubeGrade } from './quality-grading';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
 // The Solver World's drawing of a body, the way the solver's own viewer shows its mesh: every cube cut into
@@ -27,6 +28,13 @@ export interface SolverViewInput {
   readonly showInner?: boolean;
   // When given, cubes are coloured by the quality grade of their worst element instead of by material.
   readonly quality?: SolverQualityDto | null;
+  // What the quality colours show: the overall grade (default) or the grade of one measure.
+  readonly qualityMetric?: QualityMetric;
+  // The value that gets the last colour of the ramp (default: the largest value of the field); larger values are
+  // painted the same, so one hot spot does not wash out the rest.
+  readonly colorMax?: number | null;
+  // Leave out the coats of the clamped and pressed faces (they hide the field underneath).
+  readonly hideMarks?: boolean;
 }
 
 const EDGE_SEGMENTS = 8;
@@ -45,6 +53,24 @@ export function rampColor(t: number): THREE.Color {
   const x = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0)) * (RAMP.length - 1);
   const i = Math.min(RAMP.length - 2, Math.floor(x));
   return RAMP[i].clone().lerp(RAMP[i + 1], x - i);
+}
+
+const RAMP_STEPS = 256;
+const RAMP_TABLE: readonly (readonly [number, number, number])[] = Array.from({ length: RAMP_STEPS + 1 }, (_, i) => {
+  const c = rampColor(i / RAMP_STEPS);
+  return [c.r, c.g, c.b] as const;
+});
+
+// A geometry that moves with the deformation: its vertices are base + scale * displacement (the surface is linear in
+// the nodes, so the displacement of a vertex is fixed once and any scale is a single pass over a buffer), and its
+// colours can follow a new range of the field without rebuilding anything.
+interface Deformable {
+  readonly geometry: THREE.BufferGeometry;
+  readonly base: Float32Array;
+  readonly displacement: Float32Array;
+  // per vertex, only for a surface coloured by a field
+  readonly values?: Float32Array;
+  readonly light?: Float32Array;
 }
 
 // The ready-made materials have colours that read as what they are, so layers are told apart at a glance.
@@ -290,17 +316,20 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const root = new THREE.Group();
   const pickables: THREE.Object3D[] = [];
   const divisions = (result ? result.divisions : (setup?.divisions ?? [1, 1, 1])) as [number, number, number];
-  const geometry = new SolverGeometry(state, divisions, result, result ? input.deformationScale : 0, field);
+  const geometry = new SolverGeometry(state, divisions, result, 0, field);
+  // the same mesh displaced by one unit of the result: its difference from `geometry` is the displacement
+  const displaced = result ? new SolverGeometry(state, divisions, result, 1, field) : null;
+  const deformables: Deformable[] = [];
   const counts = geometry.counts;
   const hidden = input.hiddenMaterials ?? new Set<string>();
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
 
   const values = result && !input.quality ? fieldValues(result, field) : null;
-  const range: FieldRange = values ? { min: 0, max: fieldRange(values).max } : { min: 0, max: 0 };
+  const range: FieldRange = values ? { min: 0, max: input.colorMax && input.colorMax > 0 ? input.colorMax : fieldRange(values).max } : { min: 0, max: 0 };
   const span = range.max - range.min;
 
-  const qualityColors = input.quality ? new Map(input.quality.cubes.map(c => [c.hex, c.grade])) : null;
+  const qualityColors = input.quality ? new Map(input.quality.cubes.map(c => [c.hex, cubeGrade(c, input.qualityMetric ?? 'grade', input.quality!.limits)])) : null;
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -371,32 +400,39 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const resolution = faceResolution(counts);
   const triangles = trianglesPerFace(resolution);
   const lines: number[] = [];
+  const movedLines: number[] = [];
 
-  const faceGeometry = (faces: readonly DrawnFace[], colorOf: (face: DrawnFace, value: number) => THREE.Color, shade: boolean): THREE.BufferGeometry => {
+  const faceGeometry = (faces: readonly DrawnFace[], colorOf: (face: DrawnFace, value: number) => THREE.Color, shade: boolean, byField = false): THREE.BufferGeometry => {
     const positions: number[] = [];
+    const moved: number[] = [];
     const colors: number[] = [];
+    const vertexValues: number[] = [];
     const indices: number[] = [];
     for (const face of faces) {
       const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
       appendSurface(positions, indices, small, resolution, (_u, _v, value) => {
         const color = colorOf(face, value);
         colors.push(color.r, color.g, color.b);
+        vertexValues.push(value);
       });
+      if (displaced) appendSurface(moved, [], displaced.smallFace(face.drawer, face.axis, face.t, face.p, face.q), resolution);
     }
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     buffer.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     buffer.setIndex(indices);
+    const light = new Float32Array(positions.length / 3).fill(1);
     if (shade) {
       // a fixed light baked into the colours: a face turned away from it is darker, which is what lets the eye read the shape
       buffer.computeVertexNormals();
       const normal = buffer.getAttribute('normal');
       const color = buffer.getAttribute('color');
       for (let i = 0; i < normal.count; i++) {
-        const light = 0.58 + 0.42 * Math.abs(normal.getX(i) * LIGHT.x + normal.getY(i) * LIGHT.y + normal.getZ(i) * LIGHT.z);
-        color.setXYZ(i, color.getX(i) * light, color.getY(i) * light, color.getZ(i) * light);
+        light[i] = 0.58 + 0.42 * Math.abs(normal.getX(i) * LIGHT.x + normal.getY(i) * LIGHT.y + normal.getZ(i) * LIGHT.z);
+        color.setXYZ(i, color.getX(i) * light[i], color.getY(i) * light[i], color.getZ(i) * light[i]);
       }
     }
+    if (displaced) deformables.push(deformable(buffer, positions, moved, byField ? vertexValues : undefined, light));
     return buffer;
   };
 
@@ -406,13 +442,17 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     for (const face of faces) {
       const small = geometry.smallFace(hex, face.axis, face.t, face.p, face.q);
       for (const [a, m, b] of FACE_EDGES) pushEdge(lines, small.positions[a], small.positions[m], small.positions[b], EDGE_SEGMENTS);
+      if (displaced) {
+        const far = displaced.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
+        for (const [a, m, b] of FACE_EDGES) pushEdge(movedLines, far.positions[a], far.positions[m], far.positions[b], EDGE_SEGMENTS);
+      }
     }
     const colorOf = (face: DrawnFace, value: number) =>
       values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(GRADE_COLORS[qualityColors.get(face.owner.id) ?? 'excellent']) : materialColor(materialOf(face.owner.id, ...face.element));
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);
-    const mesh = new THREE.Mesh(faceGeometry(faces, colorOf, true), material);
+    const mesh = new THREE.Mesh(faceGeometry(faces, colorOf, true, values !== null), material);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
     mesh.userData['resolvePick'] = (triangle: number): PickedFace | null => {
       const face = faces[Math.floor(triangle / triangles)];
@@ -425,7 +465,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     pickables.push(mesh);
 
     for (const face of faces) {
-      if (!face.outer) continue;
+      if (!face.outer || input.hideMarks) continue;
       const key = `${face.owner.id}:${face.face}:${face.p}:${face.q}`;
       if (isFixed.has(key)) pendingOverlays.push({ color: FIXED_COLOR, faces: [face] });
       if (isLoaded.has(key)) pendingOverlays.push({ color: LOAD_COLOR, faces: [face] });
@@ -437,7 +477,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const faces = pendingOverlays.filter(o => o.color === color).flatMap(o => o.faces);
     if (faces.length === 0) continue;
     const overlay = new THREE.Mesh(
-      faceGeometry(faces, () => new THREE.Color(color), false),
+      faceGeometry(faces, () => new THREE.Color(color), false, false),
       new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: OVERLAY_OPACITY, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     );
     root.add(overlay);
@@ -446,7 +486,10 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   if (lines.length > 0) {
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-    root.add(new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR })));
+    if (displaced) deformables.push(deformable(buffer, lines, movedLines));
+    const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
+    edges.userData['edges'] = true;
+    root.add(edges);
   }
 
   // what a click would act on is drawn into the view without rebuilding it
@@ -460,7 +503,51 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     if (group) root.add(group);
   };
 
-  return { root, pickables, nodeMeshes: new Map(), setHighlight };
+  // a moved vertex invalidates the bounds; nothing here is culled by them
+  root.traverse(o => (o.frustumCulled = false));
+
+  const view: MeshView = {
+    root, pickables, nodeMeshes: new Map(), setHighlight,
+    setDeformation: scale => applyDeformation(deformables, scale),
+    setColorRange: max => applyColorRange(deformables, max)
+  };
+  view.setDeformation?.(input.deformationScale);
+  return view;
+}
+
+function deformable(geometry: THREE.BufferGeometry, base: number[], moved: number[], values?: number[], light?: Float32Array): Deformable {
+  const displacement = new Float32Array(base.length);
+  for (let i = 0; i < base.length; i++) displacement[i] = moved[i] - base[i];
+  return { geometry, base: Float32Array.from(base), displacement, values: values ? Float32Array.from(values) : undefined, light };
+}
+
+// Every vertex to base + scale * displacement - one pass over each buffer, no allocation.
+function applyDeformation(deformables: readonly Deformable[], scale: number): void {
+  for (const d of deformables) {
+    const position = d.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const out = position.array as Float32Array;
+    for (let i = 0; i < out.length; i++) out[i] = d.base[i] + scale * d.displacement[i];
+    position.needsUpdate = true;
+    d.geometry.boundingSphere = null;
+    d.geometry.boundingBox = null;
+  }
+}
+
+// The colours of the field surfaces for a new top of the ramp (values above it get the last colour).
+function applyColorRange(deformables: readonly Deformable[], max: number): void {
+  for (const d of deformables) {
+    if (!d.values || !d.light) continue;
+    const color = d.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const out = color.array as Float32Array;
+    for (let i = 0; i < d.values.length; i++) {
+      const t = max > 0 ? Math.min(1, Math.max(0, d.values[i] / max)) : 0;
+      const [r, g, b] = RAMP_TABLE[Math.round(t * RAMP_STEPS)];
+      out[3 * i] = r * d.light[i];
+      out[3 * i + 1] = g * d.light[i];
+      out[3 * i + 2] = b * d.light[i];
+    }
+    color.needsUpdate = true;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -153,6 +153,10 @@ export class SolverOverlayComponent {
 
   // --- deformation: the solver's number box plus a slider; the slider is cubic so that small factors stay reachable ---
 
+  openViewer(): void {
+    this.solver.setViewer(this.sessionId, true);
+  }
+
   hasResult(): boolean {
     return this.solver.result(this.sessionId) !== null;
   }

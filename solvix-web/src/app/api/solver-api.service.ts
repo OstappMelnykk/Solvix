@@ -118,6 +118,20 @@ export interface SolverQualityDto {
   readonly worstAspectRatio: number;
   readonly worstSkewDegrees: number;
   readonly cubes: readonly SolverCubeQualityDto[];
+  readonly limits: readonly SolverQualityLimitDto[];
+}
+
+export type QualityMetricKey = 'scaledJacobian' | 'jacobianRatio' | 'aspectRatio' | 'skew';
+
+// One measure of quality and where its grades change: `bounds` are the limits excellent | good | acceptable | poor.
+export interface SolverQualityLimitDto {
+  readonly key: QualityMetricKey;
+  readonly label: string;
+  readonly hint: string;
+  readonly higherIsBetter: boolean;
+  // false: only shown, the grade does not depend on it
+  readonly graded: boolean;
+  readonly bounds: readonly number[];
 }
 
 @Injectable({ providedIn: 'root' })

@@ -1,0 +1,52 @@
+<h4>Якість сітки</h4>
+<div class="stats">Куби: {{ hexCount() }} · поділ {{ divisionsText() }} (змінюється в Solver World)</div>
+
+<ng-container *ngIf="quality() as q; else loading">
+  <div class="group">
+    <div class="verdict" [style.border-left-color]="gradeColor(verdictGrade())">{{ verdict() }}</div>
+    <div class="grades">
+      <div class="grade" *ngFor="let g of gradeLabels"><span class="grade__swatch" [style.background]="gradeColor(g.key)"></span>{{ g.label }}: <b>{{ q.grades[g.key] }}</b></div>
+    </div>
+    <div class="hint">Оцінка — найгірша з Scaled Jacobian, відношення якобіанів і aspect ratio, по кожному елементу сітки поділу. Куб показує свій найгірший елемент.</div>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Чим фарбувати сцену</div>
+    <div class="chips">
+      <button type="button" class="chip" [class.chip--on]="metric() === 'grade'" (click)="setMetric('grade')">Загальна оцінка</button>
+      <button type="button" class="chip" *ngFor="let l of q.limits" [class.chip--on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.label }}</button>
+    </div>
+    <div class="legend">
+      <span *ngFor="let g of gradeOrder"><span class="grade__swatch" [style.background]="gradeColor(g)"></span>{{ gradeNames[g] }}</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Межі прийняття</div>
+    <div class="limit" *ngFor="let l of q.limits">
+      <div class="limit__head">
+        <span class="limit__name" [title]="l.hint">{{ l.label }}</span>
+        <span class="limit__value" [style.color]="gradeColor(worstGrade(l))">{{ worstValue(l) | number: decimals(l) }}</span>
+      </div>
+      <div class="limit__bounds">{{ boundsText(l) }} · гірше — {{ gradeNames['poor'] }}{{ l.higherIsBetter ? ', ≤ 0 — невалідний' : '' }}</div>
+      <div class="limit__note" [class.limit__note--off]="!l.graded">{{ l.graded ? 'входить в оцінку' : 'довідково, в оцінку не входить' }}</div>
+    </div>
+    <div class="hint">Значення справа — найгірше по всій сітці. Межі відповідають практиці ANSYS / Abaqus / Altair для квадратичних гексаедрів.</div>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Проблемні куби ({{ rows().length }})</div>
+    <div class="hint" *ngIf="rows().length === 0">Немає кубів гірших за «відмінний» за цим критерієм.</div>
+    <div class="hint" *ngIf="rows().length > 0">Клік по кубу — він підсвічується на сцені. Клік по кубу на сцені — він виділяється тут.</div>
+    <button type="button" class="row" *ngFor="let r of rows().slice(0, 60)" [class.row--picked]="isPicked(r.cube.hex)" (click)="pick(r.cube.hex)">
+      <span class="row__title"><span class="grade__swatch" [style.background]="gradeColor(r.grade)"></span>Куб #{{ r.cube.hex }} — {{ gradeNames[r.grade] }}</span>
+      <span class="row__issue" *ngFor="let i of r.issues" [class.row__issue--off]="!i.graded">
+        <span class="grade__swatch" [style.background]="gradeColor(i.grade)"></span>{{ i.label }}: {{ valueText(i.label, i.value) }}{{ i.graded ? '' : ' (довідково)' }}
+      </span>
+    </button>
+    <div class="hint" *ngIf="rows().length > 60">Показано 60 найгірших із {{ rows().length }}.</div>
+  </div>
+
+  <button class="btn" type="button" (click)="refresh()">Оцінити заново</button>
+</ng-container>
+<ng-template #loading><div class="hint">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>

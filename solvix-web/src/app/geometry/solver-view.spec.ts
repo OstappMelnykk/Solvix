@@ -377,6 +377,37 @@ describe('solver-view', () => {
       [shifted, still, none].forEach(disposeMeshView);
     });
 
+    it('moves the vertices in place to any scale, the same as a rebuilt view would have them', () => {
+      const state = singleCubeState();
+      const result = resultFor(state, [1, 1, 1], () => ({ u: [0, 0, 0.1] }));
+      const topZ = (v: ReturnType<typeof buildSolverView>) => faceVertex(v, 0, 'ZPlus').position.z;
+
+      const view = buildSolverView(input({ state, result, deformationScale: 0 }));
+      expect(topZ(view)).toBeCloseTo(1, 5);
+      view.setDeformation!(5);
+      expect(topZ(view)).toBeCloseTo(1.5, 5);
+      view.setDeformation!(0.5);
+      expect(topZ(view)).toBeCloseTo(1.05, 5);
+      view.setDeformation!(0);
+      expect(topZ(view)).toBeCloseTo(1, 5);
+      disposeMeshView(view);
+    });
+
+    it('re-colours the field for a new top of the range without a rebuild', () => {
+      const state = singleCubeState();
+      const result = resultFor(state, [1, 1, 1], () => ({ vm: 5e6 }));
+      const view = buildSolverView(input({ state, result }));
+      const colour = () => Array.from((view.pickables[0] as THREE.Mesh).geometry.getAttribute('color').array.slice(0, 3));
+
+      const full = colour();
+      view.setColorRange!(1e7);        // a higher top: the same value sits lower on the ramp
+      const capped = colour();
+      expect(capped).not.toEqual(full);
+      view.setColorRange!(5e6);
+      expect(colour()[0]).toBeCloseTo(full[0], 2);
+      disposeMeshView(view);
+    });
+
     it('a field that is zero everywhere is one colour, not NaN', () => {
       const state = singleCubeState();
       const result = resultFor(state, [1, 1, 1], () => ({ vm: 0 }));
@@ -579,7 +610,8 @@ describe('colouring by mesh quality', () => {
     cubes: [
       { hex: 0, grade: grade0, scaledJacobian: 1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 },
       { hex: 1, grade: grade1, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 }
-    ]
+    ],
+    limits: []
   });
   const colourOf = (view: ReturnType<typeof buildSolverView>, hex: number) => {
     const mesh = (view.pickables as THREE.Mesh[]).find(m => (m.userData['pick'] as { hex: number }).hex === hex)!;

@@ -9,7 +9,7 @@ internal static class MeshQuality
     public static SolverQualityDto Evaluate(SolverSetup setup, FemMeshDto mesh)
     {
         var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
-        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, Array.Empty<SolverCubeQualityDto>());
+        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, Array.Empty<SolverCubeQualityDto>(), Limits);
 
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
@@ -33,8 +33,16 @@ internal static class MeshQuality
         return new SolverQualityDto(
             fine.ElementCount, grades,
             metrics.Min(m => m.ScaledJacobian), metrics.Min(m => m.JacobianRatio), metrics.Max(m => m.AspectRatio), metrics.Max(m => m.MaxSkewDegrees),
-            cubes);
+            cubes, Limits);
     }
+
+    private static readonly IReadOnlyList<SolverQualityLimitDto> Limits = new[]
+    {
+        new SolverQualityLimitDto("scaledJacobian", "Scaled Jacobian", "detJ / (довжини трьох напрямів): 1 — ідеальний куб, 0 — виродження, <0 — вивернутий елемент", true, true, ElementQuality.ScaledJacobianLimits),
+        new SolverQualityLimitDto("jacobianRatio", "Відношення якобіанів", "min detJ / max detJ: наскільки рівномірно елемент розтягує простір", true, true, ElementQuality.JacobianRatioLimits),
+        new SolverQualityLimitDto("aspectRatio", "Aspect ratio", "довше ребро / коротше ребро", false, true, ElementQuality.AspectRatioLimits),
+        new SolverQualityLimitDto("skew", "Перекіс кутів, °", "найбільше відхилення кута між ребрами від 90°; поки лише довідково, в оцінку не входить", false, false, ElementQuality.SkewLimits),
+    };
 
     public static string Name(QualityGrade grade) => grade.ToString().ToLowerInvariant();
 }

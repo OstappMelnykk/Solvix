@@ -11,7 +11,7 @@ describe('SolverOverlayComponent', () => {
   let scope: Scope;
   let divisions: number[];
   let result: SolverResultDto | null;
-  let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number };
+  let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number; colorMax: number | null; edges: boolean };
   let auto: boolean;
   const materials: SolverMaterialDto[] = [
     { name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3 },
@@ -23,7 +23,7 @@ describe('SolverOverlayComponent', () => {
     scope = 'cell';
     divisions = [2, 1, 1];
     auto = false;
-    display = { field: 'vonMises', deformationScale: 1000, opacity: 1 };
+    display = { field: 'vonMises', deformationScale: 1000, opacity: 1, colorMax: null, edges: true };
     result = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'tool', 'setTool', 'scopesOf', 'scope', 'setScope', 'depth', 'setDepth', 'divisions', 'setup', 'activeMaterial', 'setActiveMaterial',

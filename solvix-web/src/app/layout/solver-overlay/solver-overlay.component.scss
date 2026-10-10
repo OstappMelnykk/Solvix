@@ -325,3 +325,14 @@ $material: #c77dff;
   margin-top: 2px;
   color: $muted;
 }
+
+.viewer-btn {
+  padding: 5px 10px;
+  background: $accent;
+  border: 1px solid $accent;
+  border-radius: 6px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}

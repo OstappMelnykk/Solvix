@@ -8,6 +8,16 @@
   border: 1px solid #393b40;
 }
 
+:host(.render-window--viewer) {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  height: auto;
+  border-radius: 0;
+  border: none;
+  background: #1e1f22;
+}
+
 :host([hidden]) {
   display: none;
 }

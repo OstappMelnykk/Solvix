@@ -46,6 +46,10 @@ export interface MeshView {
   readonly pickables: THREE.Object3D[];
   // Highlights what a click would act on: the Solver World draws it into the view without rebuilding the view.
   readonly setHighlight?: (group: THREE.Object3D | null) => void;
+  // The Solver World's result views: move every vertex to the undeformed place plus `scale` times its displacement
+  // (in place, no rebuild), and re-colour the field for a new top of the colour range.
+  readonly setDeformation?: (scale: number) => void;
+  readonly setColorRange?: (max: number) => void;
   // The visible sphere of each node, by node id - the canvas moves one while
   // its node is being dragged.
   readonly nodeMeshes: ReadonlyMap<number, THREE.Mesh>;
@@ -206,6 +210,31 @@ function shouldDrawFace(face: MeshFaceDto): boolean {
   if (face.otherHex === null) return true;
   if (face.status === 'Linked' || face.coincident === true) return face.hex < face.otherHex;
   return true;
+}
+
+// The state as it would be with a node dragged to `position` (a preview while the pointer is still down): a
+// dragged corner may carry its edges' midpoints by half, like the server does. Everything else is derived from the
+// node positions by the 20-node isoparametric map, so the rebuilt view follows the drag.
+export function withNodeMoved(state: MeshStateDto, nodeId: number, position: THREE.Vector3Like, carryEdgeMidpoints: boolean): MeshStateDto {
+  const start = state.nodes.find(n => n.id === nodeId);
+  if (!start) return state;
+  const delta = { x: position.x - start.x, y: position.y - start.y, z: position.z - start.z };
+  const carried = new Set<number>();
+  if (carryEdgeMidpoints) {
+    for (const hex of state.hexes) {
+      EDGE_CORNERS.forEach(([a, b], k) => {
+        if (hex.nodeIds[a] === nodeId || hex.nodeIds[b] === nodeId) carried.add(hex.nodeIds[8 + k]);
+      });
+    }
+  }
+  return {
+    ...state,
+    nodes: state.nodes.map(n =>
+      n.id === nodeId ? { ...n, x: position.x, y: position.y, z: position.z }
+        : carried.has(n.id) ? { ...n, x: n.x + delta.x / 2, y: n.y + delta.y / 2, z: n.z + delta.z / 2 }
+        : n
+    )
+  };
 }
 
 export function buildMeshView(

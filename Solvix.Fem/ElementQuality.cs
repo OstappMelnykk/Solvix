@@ -19,9 +19,9 @@ public readonly record struct ElementQualityMetrics(double MinDeterminant, doubl
         get
         {
             if (!(MinDeterminant > 0) || !(ScaledJacobian > 0)) return QualityGrade.Invalid;
-            var j = ScaledJacobian > 0.7 ? QualityGrade.Excellent : ScaledJacobian > 0.4 ? QualityGrade.Good : ScaledJacobian > 0.15 ? QualityGrade.Acceptable : QualityGrade.Poor;
-            var r = JacobianRatio > 0.5 ? QualityGrade.Excellent : JacobianRatio > 0.2 ? QualityGrade.Good : JacobianRatio > 0.05 ? QualityGrade.Acceptable : QualityGrade.Poor;
-            var a = AspectRatio < 3 ? QualityGrade.Excellent : AspectRatio < 10 ? QualityGrade.Good : AspectRatio < 30 ? QualityGrade.Acceptable : QualityGrade.Poor;
+            var j = ElementQuality.GradeAbove(ScaledJacobian, ElementQuality.ScaledJacobianLimits);
+            var r = ElementQuality.GradeAbove(JacobianRatio, ElementQuality.JacobianRatioLimits);
+            var a = ElementQuality.GradeBelow(AspectRatio, ElementQuality.AspectRatioLimits);
             return (QualityGrade)Math.Max((int)j, Math.Max((int)r, (int)a));
         }
     }
@@ -29,6 +29,21 @@ public readonly record struct ElementQualityMetrics(double MinDeterminant, doubl
 
 public static class ElementQuality
 {
+    // The limits between excellent | good | acceptable | poor, for the grade and for showing them to the user.
+    public static readonly double[] ScaledJacobianLimits = { 0.7, 0.4, 0.15 };
+    public static readonly double[] JacobianRatioLimits = { 0.5, 0.2, 0.05 };
+    public static readonly double[] AspectRatioLimits = { 3, 10, 30 };
+    // Not part of the grade: the largest corner deviation from 90 degrees, with reference limits only.
+    public static readonly double[] SkewLimits = { 15, 30, 45 };
+
+    // Larger is better (scaled Jacobian, Jacobian ratio): above the first limit excellent, ... below the last poor.
+    public static QualityGrade GradeAbove(double value, double[] limits) =>
+        value > limits[0] ? QualityGrade.Excellent : value > limits[1] ? QualityGrade.Good : value > limits[2] ? QualityGrade.Acceptable : QualityGrade.Poor;
+
+    // Smaller is better (aspect ratio, skew).
+    public static QualityGrade GradeBelow(double value, double[] limits) =>
+        value < limits[0] ? QualityGrade.Excellent : value < limits[1] ? QualityGrade.Good : value < limits[2] ? QualityGrade.Acceptable : QualityGrade.Poor;
+
     // the 12 edges as (corner, midpoint, corner)
     private static readonly (int, int, int)[] Edges =
     {

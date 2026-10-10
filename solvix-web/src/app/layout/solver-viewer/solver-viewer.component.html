@@ -1,0 +1,57 @@
+<div class="topbar">
+  <button type="button" class="exit" (click)="exit()" title="Вийти з режиму перегляду (Esc)">✕ Вийти</button>
+  <span class="title">Перегляд результату</span>
+  <label class="field">
+    Поле
+    <select [value]="field()" (change)="onField($event)">
+      <option value="vonMises">Von Mises</option>
+      <option value="displacement">Переміщення</option>
+      <option value="none">Матеріали</option>
+    </select>
+  </label>
+  <label class="field" title="Прозорість тіла">
+    Прозорість
+    <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" />
+    <span>{{ opacityPercent() }}%</span>
+  </label>
+  <label class="check"><input type="checkbox" [checked]="showEdges()" (change)="toggleEdges()" />Ребра</label>
+  <label class="check" title="Грані між елементами: видно сітку всередині"><input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />Внутрішні грані</label>
+  <span class="chips">
+    <button *ngFor="let m of materials()" type="button" class="chip" [class.chip--off]="isHidden(m.name)" [title]="'Сховати / показати: ' + m.label" (click)="toggleMaterial(m.name)">
+      <span class="swatch" [style.background]="colorOf(m.name)"></span>{{ m.label }}
+    </button>
+  </span>
+</div>
+
+<div class="scale" *ngIf="field() !== 'none'">
+  <div class="scale__max">
+    <input type="number" class="num" step="any" [value]="maxInput()" (change)="onMaxInput($event)" title="Верх шкали кольорів: значення вище фарбуються однаково" />
+    <span>{{ unitText() }}</span>
+  </div>
+  <div class="scale__body">
+    <div class="scale__bar" [style.background]="gradient()"></div>
+    <div class="scale__ticks"><span *ngFor="let t of tick25()">{{ t }}</span></div>
+  </div>
+  <div class="scale__caps">
+    <button type="button" [class.on]="!isCapped()" (click)="capAt(100)" title="Весь діапазон">100%</button>
+    <button type="button" (click)="capAt(99.9)" title="Без найвищих 0,1% вузлів">99,9</button>
+    <button type="button" (click)="capAt(99)" title="Без найвищого 1% вузлів (піки в кутах і біля опор)">99</button>
+    <button type="button" (click)="capAt(95)" title="Без найвищих 5% вузлів">95</button>
+  </div>
+</div>
+
+<div class="player">
+  <button type="button" class="play" (click)="togglePlay()" [title]="playing ? 'Пауза (пробіл)' : 'Відтворити деформацію (пробіл)'">{{ playing ? '❚❚' : '▶' }}</button>
+  <span class="modes">
+    <button *ngFor="let m of modes" type="button" [class.on]="mode === m.mode" [title]="m.title" (click)="mode = m.mode">{{ m.label }}</button>
+  </span>
+  <select class="speed" [value]="speed" (change)="speed = +$any($event.target).value" title="Швидкість програвання">
+    <option *ngFor="let s of speeds" [value]="s" [selected]="s === speed">{{ s }}×</option>
+  </select>
+  <input class="track" type="range" min="0" [max]="steps" step="1" [value]="position()" (input)="onSlider($event)" aria-label="Деформація" />
+  <label class="factor" title="Множник переміщень (понад кінець слайдера теж можна)">
+    ×<input type="number" class="num" min="0" max="500000" step="any" [value]="scale()" (change)="onScaleNumber($event)" />
+  </label>
+  <button type="button" class="real" [class.on]="isReal()" (click)="real()" title="Справжній результат: множник 1, навіть якщо зміни не видно">Реальне ×1</button>
+  <span class="readout">Макс. переміщення: <b>{{ shownText() }}</b> · кінець шкали: {{ topText() }}</span>
+</div>

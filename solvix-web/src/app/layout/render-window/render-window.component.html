@@ -1,4 +1,4 @@
-<app-world-tabs class="render-window__world-tabs" />
+<app-world-tabs class="render-window__world-tabs" *ngIf="!isViewer" />
 
 <div class="render-window__canvases">
   <app-world-canvas
@@ -16,9 +16,11 @@
     [hoverEnabled]="i === solverWorldIndex"
     (meshHover)="onMeshHover($event)"
     [draggableNodeId]="getDraggableNodeId(i)"
+    (nodeDragging)="onNodeDragging($event)"
     (nodeMoved)="onNodeMoved($event)"
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />
-  <app-solver-overlay *ngIf="activeWorldIndex() === solverWorldIndex && sessions.activeSessionId() !== null" [sessionId]="sessions.activeSessionId()!" />
+  <app-solver-overlay *ngIf="activeWorldIndex() === solverWorldIndex && sessions.activeSessionId() !== null && !isViewer" [sessionId]="sessions.activeSessionId()!" />
+  <app-solver-viewer *ngIf="isViewer" [sessionId]="sessions.activeSessionId()!" />
 </div>
