@@ -79,8 +79,6 @@ export class SolverViewerComponent implements OnDestroy {
     return Math.round((SLIDER_STEPS * Math.min(this.scale(), this.top())) / this.top());
   }
 
-  steps = SLIDER_STEPS;
-
   onSlider(event: Event): void {
     this.pause();
     const position = Number((event.target as HTMLInputElement).value);
@@ -197,10 +195,6 @@ export class SolverViewerComponent implements OnDestroy {
     return this.format(this.colorMax());
   }
 
-  maxInput(): string {
-    return (this.colorMax() / this.unit()).toPrecision(4);
-  }
-
   unitText(): string {
     return this.field() === 'vonMises' ? 'МПа' : 'м';
   }
@@ -209,19 +203,47 @@ export class SolverViewerComponent implements OnDestroy {
     return this.field() === 'vonMises' ? `${(value / MPA).toPrecision(4)} МПа` : value.toExponential(2);
   }
 
-  onMaxInput(event: Event): void {
-    const value = Number((event.target as HTMLInputElement).value) * this.unit();
-    if (Number.isFinite(value) && value > 0) this.solver.setColorMax(this.sessionId, Math.min(value, this.fullMax()));
+  // The top of the scale from the slider (0..the real maximum).
+  onMaxSlider(event: Event): void {
+    const t = Number((event.target as HTMLInputElement).value) / SLIDER_STEPS;
+    const full = this.fullMax();
+    if (Number.isFinite(t) && full > 0) this.solver.setColorMax(this.sessionId, t >= 1 ? null : Math.max(t * full, full / SLIDER_STEPS));
   }
 
-  // Caps the scale at a percentile of the nodal values: the top few points (often a singularity at a corner or a
-  // support) stop deciding the colours.
-  capAt(percentile: number): void {
+  maxSliderPosition(): number {
+    const full = this.fullMax();
+    return full > 0 ? Math.round((SLIDER_STEPS * this.colorMax()) / full) : SLIDER_STEPS;
+  }
+
+  steps = SLIDER_STEPS;
+
+  // "Remove the peaks": the top of the scale where 99 of 100 points lie below, so a few hot spots (corners, supports)
+  // stop deciding the colours.
+  cutPeaks(): void {
     const values = this.values();
     if (!values || values.length === 0) return;
-    if (percentile >= 100) return this.solver.setColorMax(this.sessionId, null);
     const sorted = Float64Array.from(values).sort();
-    this.solver.setColorMax(this.sessionId, sorted[Math.min(sorted.length - 1, Math.floor((percentile / 100) * sorted.length))] || null);
+    this.solver.setColorMax(this.sessionId, sorted[Math.min(sorted.length - 1, Math.floor(0.99 * sorted.length))] || null);
+  }
+
+  fullRange(): void {
+    this.solver.setColorMax(this.sessionId, null);
+  }
+
+  // How many points lie above the top of the scale (they are all drawn in the last colour).
+  private above = { key: '', count: 0, total: 0 };
+
+  aboveText(): string {
+    const values = this.values();
+    if (!values) return '';
+    const top = this.colorMax();
+    const key = `${this.field()}:${top}:${values.length}`;
+    if (this.above.key !== key) {
+      let count = 0;
+      for (const v of values) if (v > top) count++;
+      this.above = { key, count, total: values.length };
+    }
+    return this.above.count === 0 ? 'Нічого не відкинуто: червоне — справжній максимум.' : `Вище цього рівня ${this.above.count} точок із ${this.above.total} — вони теж червоні.`;
   }
 
   gradient(): string {

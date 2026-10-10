@@ -18,16 +18,14 @@
       <div class="scale__bar" [style.background]="gradient()"></div>
       <div class="scale__ticks"><span *ngFor="let t of tick25()">{{ t }}</span></div>
     </div>
-    <label class="max" title="Це значення стає червоним. Усе, що більше, теж червоне.">
-      Червоне починається з
-      <span class="max__input"><input type="number" class="num" step="any" [value]="maxInput()" (change)="onMaxInput($event)" /> {{ unitText() }}</span>
-    </label>
-    <div class="hint">Піки в кутах псують картину? Відкиньте найвищі точки:</div>
-    <div class="seg seg--small">
-      <button type="button" [class.on]="!isCapped()" (click)="capAt(100)" title="Нічого не відкидати">нічого</button>
-      <button type="button" (click)="capAt(99.9)" title="Відкинути найвищі 0,1% точок">0,1%</button>
-      <button type="button" (click)="capAt(99)" title="Відкинути найвищий 1% точок">1%</button>
-      <button type="button" (click)="capAt(95)" title="Відкинути найвищі 5% точок">5%</button>
+    <div class="max">
+      <div class="max__label">Червоне — від <b>{{ maxText() }}</b></div>
+      <input class="track" type="range" min="1" [max]="steps" step="1" [value]="maxSliderPosition()" (input)="onMaxSlider($event)" aria-label="Верх шкали кольорів" />
+      <div class="hint">{{ aboveText() }}</div>
+      <div class="pair">
+        <button type="button" (click)="cutPeaks()" title="Один-два гарячі вузли (кути, опори) не забиватимуть решту картини">Прибрати піки</button>
+        <button type="button" [class.on]="!isCapped()" (click)="fullRange()" title="Червоне — справжній максимум">Весь діапазон</button>
+      </div>
     </div>
   </div>
 
