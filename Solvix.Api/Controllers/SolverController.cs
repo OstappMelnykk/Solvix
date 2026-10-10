@@ -68,7 +68,7 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
 
     /// <summary>How well the mesh, cut at the current division, can be integrated: grades per cube and overall.</summary>
     [HttpGet("quality")]
-    public ActionResult<SolverQualityDto> Quality(int sessionId) => bridge.Quality(sessionId);
+    public ActionResult<SolverQualityReportDto> Quality(int sessionId) => bridge.Quality(sessionId);
 
     [HttpPost("solve")]
     public ActionResult<SolverJobDto> Solve(int sessionId) => bridge.StartSolve(sessionId);

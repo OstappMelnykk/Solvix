@@ -272,59 +272,76 @@ public class QualityApiTests
 {
     private const int Session = 1;
 
-    [Test]
-    public void A_regular_bar_is_all_excellent()
+    private static HexMeshEditor OneHex(HexShape shape)
     {
-        var q = NewFacade().Quality(Session, Export(Bar(3)));
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex(shape);
+        return editor;
+    }
 
-        Assert.That(q.Elements, Is.EqualTo(3));
-        Assert.That(q.Grades["excellent"], Is.EqualTo(3));
-        Assert.That(q.WorstScaledJacobian, Is.EqualTo(1).Within(1e-9));
-        Assert.That(q.Cubes.Select(c => c.Grade), Is.All.EqualTo("excellent"));
+    private static SolverQualityDto Profile(SolverQualityReportDto report, string id) => report.Profiles.Single(p => p.Id == id);
+
+    [Test]
+    public void The_report_judges_the_mesh_by_every_standard()
+    {
+        var report = NewFacade().Quality(Session, Export(Bar(3)));
+
+        Assert.That(report.Profiles.Select(p => p.Id), Is.EqualTo(new[] { "solvix", "abaqus", "cubit", "altair", "ansys" }));
+        foreach (var profile in report.Profiles)
+        {
+            Assert.That(profile.Elements, Is.EqualTo(3), profile.Id);
+            Assert.That(profile.Grades["excellent"], Is.EqualTo(3), $"a regular bar is fine by {profile.Id}");
+            Assert.That(profile.Flagged, Is.Empty, profile.Id);
+            Assert.That(profile.Limits.Select(l => l.Key), Is.EquivalentTo(profile.Worst.Keys.Where(k => k is not ("minAngle" or "maxAngle"))));
+        }
+        Assert.That(Profile(report, "solvix").Worst["scaledJacobian"], Is.EqualTo(1).Within(1e-9));
+        Assert.That(Profile(report, "cubit").Worst["condition"], Is.EqualTo(1).Within(1e-9));
     }
 
     [Test]
-    public void The_quality_counts_the_small_elements_and_names_the_cube_with_the_worst_one()
+    public void The_standards_disagree_on_a_long_element_and_a_sheared_one()
+    {
+        // aspect ratio 6: Abaqus (limit 10) and Solvix (good) accept it, HyperMesh (limit 5) and Cubit (limit 4) do not
+        var report = NewFacade().Quality(Session, Export(OneHex(HexShapes.Parametric(6, 1, 1))));
+
+        Assert.That(Profile(report, "abaqus").Grades["excellent"], Is.EqualTo(1));
+        Assert.That(Profile(report, "solvix").Grades["poor"], Is.EqualTo(0));
+        Assert.That(Profile(report, "altair").Grades["poor"], Is.EqualTo(1));
+        Assert.That(Profile(report, "cubit").Grades["poor"], Is.EqualTo(1));
+        Assert.That(Profile(report, "cubit").Flagged.Single().Values["aspectRatio"], Is.EqualTo(6).Within(1e-9));
+    }
+
+    [Test]
+    public void The_quality_counts_the_small_elements_and_the_flagged_ones_have_their_place_in_the_cube()
     {
         var editor = Bar(2);
-        editor.MoveNode(editor.Mesh.Hex(1).NodeIds[6], new Vec3(2.0, 1.0, 1.0), false);          // flattens the far top corner of cube 1
+        editor.MoveNode(editor.Mesh.Hex(1).NodeIds[6], new Vec3(2.9, 1.8, 0.7), false);          // sheares the far top corner of cube 1
         var facade = NewFacade();
         facade.SetDivisions(Session, 2, 2, 2);
 
-        var q = facade.Quality(Session, Export(editor));
+        var q = Profile(facade.Quality(Session, Export(editor)), "solvix");
 
         Assert.That(q.Elements, Is.EqualTo(16));
         Assert.That(q.Grades.Values.Sum(), Is.EqualTo(16));
-        Assert.That(q.Cubes.Single(c => c.Hex == 0).Grade, Is.EqualTo("excellent"));
-        Assert.That(q.Cubes.Single(c => c.Hex == 1).ScaledJacobian, Is.LessThan(1));
-        Assert.That(q.WorstScaledJacobian, Is.EqualTo(q.Cubes.Min(c => c.ScaledJacobian)).Within(1e-12));
-    }
-
-    [Test]
-    public void Flagged_lists_the_small_elements_that_are_not_excellent_with_their_place_in_the_cube()
-    {
-        var editor = Bar(2);
-        editor.MoveNode(editor.Mesh.Hex(1).NodeIds[6], new Vec3(2.9, 1.8, 0.7), false);
-        var facade = NewFacade();
-        facade.SetDivisions(Session, 2, 2, 2);
-
-        var q = facade.Quality(Session, Export(editor));
-
         Assert.That(q.Flagged, Is.Not.Empty);
         Assert.That(q.Flagged.All(f => f.Hex == 1), "the regular cube has nothing to flag");
         Assert.That(q.Flagged.All(f => f.Ex is >= 0 and < 2 && f.Ey is >= 0 and < 2 && f.Ez is >= 0 and < 2));
-        Assert.That(q.Flagged.Count(f => f.Grade != "excellent"), Is.EqualTo(q.Grades.Where(g => g.Key != "excellent").Sum(g => g.Value)));
-        Assert.That(NewFacade().Quality(Session, Export(Bar(3))).Flagged, Is.Empty);
+        Assert.That(q.Flagged.Count(f => f.Grade != "excellent"), Is.EqualTo(q.Flagged.Count));
+        Assert.That(q.Worst["scaledJacobian"], Is.EqualTo(q.Flagged.Min(f => f.Values["scaledJacobian"])).Within(1e-12));
+        Assert.That(q.Worst["minAngle"], Is.LessThan(90));
     }
 
     [Test]
-    public void A_folded_cube_is_invalid_and_an_empty_mesh_is_fine()
+    public void A_folded_cube_is_invalid_by_every_standard_and_an_empty_mesh_is_fine()
     {
         var editor = Bar(1);
         editor.MoveNode(editor.Mesh.Hex(0).NodeIds[6], new Vec3(-3, -3, -3), false);
 
-        Assert.That(NewFacade().Quality(Session, Export(editor)).Cubes[0].Grade, Is.EqualTo("invalid"));
-        Assert.That(NewFacade().Quality(Session, Export(new HexMeshEditor())).Elements, Is.EqualTo(0));
+        var report = NewFacade().Quality(Session, Export(editor));
+
+        Assert.That(report.Profiles.Select(p => p.Grades["invalid"]), Is.All.EqualTo(1));
+        var empty = NewFacade().Quality(Session, Export(new HexMeshEditor()));
+        Assert.That(empty.Profiles.Select(p => p.Elements), Is.All.EqualTo(0));
     }
 
     [Test]

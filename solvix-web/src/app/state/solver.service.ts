@@ -7,13 +7,14 @@ import { MeshEditorService } from './mesh-editor.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
 import { PickedFace } from '../geometry/mesh-editor-view';
 import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, elementTargets, faceTargets, sameFace, smallFacesOf } from '../geometry/solver-targets';
-import { QualityMetric } from '../geometry/quality-grading';
+import { CONSENSUS_ID, QualityMetric, buildConsensus } from '../geometry/quality-grading';
 import {
   SolverApiService,
   SolverFaceDto,
   SolverJobDto,
   SolverMaterialDto,
   SolverQualityDto,
+  SolverQualityReportDto,
   SolverResultDto,
   SolverSetupDto,
   SolverValidationDto
@@ -82,7 +83,10 @@ interface SessionSolver {
   showInner: boolean;
   // Colour the cubes by the quality of their worst element instead of by material.
   showQuality: boolean;
-  quality: SolverQualityDto | null;
+  // The mesh judged by every standard, the standard shown now (or the consensus of them), and that consensus built.
+  qualityReport: SolverQualityReportDto | null;
+  qualityProfile: string;
+  consensus: SolverQualityDto | null;
   // The Quality World: what the cubes are coloured by, the cube picked in its list, and the mesh the quality
   // above was asked for (so it is asked again when the mesh or the division changes).
   qualityMetric: QualityMetric;
@@ -151,7 +155,9 @@ export class SolverService {
       hidden: new Set<string>(),
       showInner: false,
       showQuality: false,
-      quality: null,
+      qualityReport: null,
+      qualityProfile: CONSENSUS_ID,
+      consensus: null,
       qualityMetric: 'grade',
       qualityPick: null,
       qualityKey: null,
@@ -346,14 +352,38 @@ export class SolverService {
 
   // --- mesh quality ---
 
+  // The standard that is shown now - or, for the consensus, the standards voting.
   quality(sessionId: number): SolverQualityDto | null {
-    return this.entry(sessionId).quality;
+    const entry = this.entry(sessionId);
+    const report = entry.qualityReport;
+    if (!report) return null;
+    if (entry.qualityProfile === CONSENSUS_ID) return (entry.consensus ??= buildConsensus(report));
+    return report.profiles.find(p => p.id === entry.qualityProfile) ?? report.profiles[0] ?? null;
+  }
+
+  // Every standard's judgement of the mesh, for comparing them.
+  qualityReport(sessionId: number): SolverQualityReportDto | null {
+    return this.entry(sessionId).qualityReport;
+  }
+
+  qualityProfile(sessionId: number): string {
+    return this.entry(sessionId).qualityProfile;
+  }
+
+  setQualityProfile(sessionId: number, id: string): void {
+    const entry = this.entry(sessionId);
+    entry.qualityProfile = id;
+    entry.qualityMetric = 'grade';       // the measures differ between standards
+    entry.qualityPick = null;
+    this.touch(sessionId);
   }
 
   refreshQuality(sessionId: number): void {
     this.api.quality(sessionId).subscribe({
-      next: quality => {
-        this.entry(sessionId).quality = quality;
+      next: report => {
+        const entry = this.entry(sessionId);
+        entry.qualityReport = report;
+        entry.consensus = null;
         this.touch(sessionId);
       },
       error: () => this.notifications.error('Не вдалось оцінити якість сітки: сервер недоступний.')

@@ -1,8 +1,11 @@
 import { SolverQualityLimitDto } from '../api/solver-api.service';
-import { anglesText, gaugePosition, gaugeZones, metricGrade, passes, ruleText, worstAngle } from './quality-grading';
+import { SolverQualityReportDto } from '../api/solver-api.service';
+import { anglesText, buildConsensus, gaugePosition, gaugeZones, metricGrade, passes, rejectedBy, ruleText, worstAngle } from './quality-grading';
 
-const jacobian: SolverQualityLimitDto = { key: 'scaledJacobian', label: '', hint: '', higherIsBetter: true, graded: true, bounds: [0.7, 0.4, 0.15] };
-const aspect: SolverQualityLimitDto = { key: 'aspectRatio', label: '', hint: '', higherIsBetter: false, graded: true, bounds: [3, 10, 30] };
+const limit = (over: Partial<SolverQualityLimitDto>): SolverQualityLimitDto =>
+  ({ key: 'k', label: '', short: '', tech: '', hint: '', higherIsBetter: true, levels: 4, bounds: [], unit: '', decimals: 2, kind: 'plain', ...over });
+const jacobian = limit({ key: 'scaledJacobian', higherIsBetter: true, bounds: [0.7, 0.4, 0.15] });
+const aspect = limit({ key: 'aspectRatio', higherIsBetter: false, bounds: [3, 10, 30] });
 
 describe('quality gauge', () => {
   it('puts the worst on the left and the best on the right, a quarter for each grade', () => {
@@ -45,7 +48,7 @@ describe('quality limits as text', () => {
 });
 
 describe('angles', () => {
-  const skew: SolverQualityLimitDto = { key: 'skew', label: '', hint: '', higherIsBetter: false, graded: true, bounds: [30, 45, 75] };
+  const skew = limit({ key: 'skew', higherIsBetter: false, bounds: [30, 45, 75], kind: 'angleDeviation', unit: '°' });
 
   it('allows angles from 15 to 165 degrees and calls 45 to 135 good', () => {
     expect(metricGrade(skew, 20)).toBe('excellent');         // angles 70-110
@@ -70,5 +73,63 @@ describe('angles', () => {
     expect(worstAngle(28, 110)).toBe(28);
     expect(worstAngle(80, 150)).toBe(150);
     expect(anglesText(27.6, 141.9)).toBe('28°…142°');
+  });
+});
+
+describe('standards that only pass or fail', () => {
+  const abaqusMin = limit({ key: 'faceMinAngle', higherIsBetter: true, levels: 2, bounds: [10], unit: '°' });
+  const abaqusAspect = limit({ key: 'aspectRatio', higherIsBetter: false, levels: 2, bounds: [10], decimals: 1 });
+
+  it('lets a value equal to the limit pass and nothing beyond it', () => {
+    expect(metricGrade(abaqusMin, 10)).toBe('excellent');
+    expect(metricGrade(abaqusMin, 9.9)).toBe('poor');
+    expect(metricGrade(abaqusAspect, 10)).toBe('excellent');
+    expect(metricGrade(abaqusAspect, 10.1)).toBe('poor');
+    expect(passes(abaqusAspect, NaN)).toBeFalse();
+  });
+
+  it('has two zones and puts a failing value in the left half and a passing one in the right', () => {
+    expect(gaugeZones(abaqusAspect).map(z => `${z.label}: ${z.range}`)).toEqual(['Не проходить: більше 10', 'Проходить: до 10']);
+    expect(gaugeZones(abaqusMin).map(z => `${z.label}: ${z.range}`)).toEqual(['Не проходить: менше 10°', 'Проходить: від 10°']);
+    expect(gaugePosition(abaqusAspect, 30)).toBeLessThan(0.5);
+    expect(gaugePosition(abaqusAspect, 2)).toBeGreaterThan(0.5);
+    expect(gaugePosition(abaqusMin, 5)).toBeLessThan(0.5);
+    expect(gaugePosition(abaqusMin, 60)).toBeGreaterThan(0.5);
+    expect(ruleText(abaqusAspect)).toBe('Допустимо: не більше 10');
+    expect(ruleText(abaqusMin)).toBe('Допустимо: не менше 10°');
+  });
+});
+
+describe('the consensus of the standards', () => {
+  const profile = (id: string, flagged: { hex: number; grade: 'good' | 'poor' }[], elements = 4) => ({
+    id, name: id, source: '', note: '', elements,
+    grades: { excellent: elements - flagged.length, good: 0, acceptable: 0, poor: flagged.filter(f => f.grade === 'poor').length, invalid: 0 },
+    worst: {}, limits: [],
+    flagged: flagged.map(f => ({ hex: f.hex, ex: 0, ey: 0, ez: 0, grade: f.grade, values: {} }))
+  });
+  const report: SolverQualityReportDto = {
+    profiles: [
+      profile('a', [{ hex: 0, grade: 'poor' }, { hex: 1, grade: 'poor' }, { hex: 2, grade: 'good' }]),
+      profile('b', [{ hex: 0, grade: 'poor' }, { hex: 1, grade: 'poor' }]),
+      profile('c', [{ hex: 0, grade: 'poor' }])
+    ]
+  };
+
+  it('counts in how many standards each element is rejected, and ignores the ones that only grade it down', () => {
+    const consensus = buildConsensus(report);
+    const rejected = (hex: number) => consensus.flagged.find(f => f.hex === hex)?.values['rejected'];
+
+    expect(rejected(0)).toBe(3);
+    expect(rejected(1)).toBe(2);
+    expect(rejected(2)).toBeUndefined();               // only graded 'good' in one: nobody rejects it
+    expect(consensus.grades.poor).toBe(1);             // three votes
+    expect(consensus.grades.acceptable).toBe(1);       // two votes
+    expect(consensus.grades.excellent).toBe(2);
+    expect(consensus.worst['rejected']).toBe(3);
+  });
+
+  it('names the standards that reject an element', () => {
+    expect(rejectedBy(report, { hex: 1, ex: 0, ey: 0, ez: 0 })).toEqual(['a', 'b']);
+    expect(rejectedBy(report, { hex: 2, ex: 0, ey: 0, ez: 0 })).toEqual([]);
   });
 });

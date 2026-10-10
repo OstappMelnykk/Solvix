@@ -71,35 +71,48 @@ public sealed record SolverResultDto(
     double MaxVonMises,
     double ElapsedSeconds);
 
-/// <param name="Grade">"excellent", "good", "acceptable", "poor" or "invalid".</param>
-public sealed record SolverCubeQualityDto(int Hex, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees, double MinAngleDegrees, double MaxAngleDegrees);
+/// <summary>
+/// The quality of the mesh the solver would work on (every cube cut into the current division), judged by several
+/// standards (profiles) so they can be compared: each profile has its own measures and limits.
+/// </summary>
+public sealed record SolverQualityReportDto(IReadOnlyList<SolverQualityDto> Profiles);
 
 /// <summary>
-/// How well the mesh the solver would work on (every cube cut into the current division) can be integrated: the
-/// worst small element of each cube, counts per grade over all small elements, and the worst values overall.
+/// How one profile judges the mesh: counts per grade over all small elements, the worst value of each of its
+/// measures, and the small elements that are not excellent.
 /// </summary>
+/// <param name="Id">"solvix", "abaqus", "cubit", "altair" or "ansys".</param>
+/// <param name="Source">Where the measures and limits come from.</param>
+/// <param name="Note">What is different from the original or not evaluated.</param>
+/// <param name="Grades">Small elements per grade: "excellent", "good", "acceptable", "poor", "invalid". A profile with
+/// only a pass limit per measure uses "excellent" for passing and "poor" for failing.</param>
+/// <param name="Worst">The worst value of each measure (by its key) over all elements; for the angle measures also
+/// "minAngle" and "maxAngle".</param>
 public sealed record SolverQualityDto(
+    string Id,
+    string Name,
+    string Source,
+    string Note,
     int Elements,
     IReadOnlyDictionary<string, int> Grades,
-    double WorstScaledJacobian,
-    double WorstJacobianRatio,
-    double WorstAspectRatio,
-    double WorstSkewDegrees,
-    double SmallestAngleDegrees,
-    double LargestAngleDegrees,
-    IReadOnlyList<SolverCubeQualityDto> Cubes,
+    IReadOnlyDictionary<string, double> Worst,
     IReadOnlyList<SolverQualityLimitDto> Limits,
     IReadOnlyList<SolverElementQualityDto> Flagged);
 
 /// <summary>
-/// One small element that is not excellent in some measure (the skew, which does not change the grade, counts by its
-/// reference limit): the cube it lies in, its place (Ex, Ey, Ez) in that cube, and its own values.
+/// One small element that is not excellent by a profile: the cube it lies in, its place (Ex, Ey, Ez) in that cube,
+/// its grade and its value of every measure of the profile (by key).
 /// </summary>
-public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees, double MinAngleDegrees, double MaxAngleDegrees);
+public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, IReadOnlyDictionary<string, double> Values);
 
 /// <summary>One measure of element quality and where its grades change.</summary>
-/// <param name="Key">"scaledJacobian", "jacobianRatio", "aspectRatio" or "skew".</param>
-/// <param name="HigherIsBetter">True when a larger value is better (the grade falls below the limits).</param>
-/// <param name="Graded">False when the measure is only shown and does not change the grade.</param>
-/// <param name="Bounds">The three limits excellent | good | acceptable | poor, in the order of the measure's goodness.</param>
-public sealed record SolverQualityLimitDto(string Key, string Label, string Hint, bool HigherIsBetter, bool Graded, IReadOnlyList<double> Bounds);
+/// <param name="Key">Identifies the measure within the profile.</param>
+/// <param name="Label">Plain name; <paramref name="Short"/> for a narrow button; <paramref name="Tech"/> the technical name.</param>
+/// <param name="HigherIsBetter">True when a larger value is better.</param>
+/// <param name="Levels">4: the bounds split excellent | good | acceptable | poor. 2: one bound, pass or fail.</param>
+/// <param name="Bounds">With 4 levels the three limits in the order of the measure's goodness; with 2 the one limit
+/// (a value equal to it passes).</param>
+/// <param name="Kind">"plain", or "angleDeviation": the value is the distance of the worst angle from 90 degrees.</param>
+public sealed record SolverQualityLimitDto(
+    string Key, string Label, string Short, string Tech, string Hint,
+    bool HigherIsBetter, int Levels, IReadOnlyList<double> Bounds, string Unit, int Decimals, string Kind);

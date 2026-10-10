@@ -9,7 +9,8 @@ public enum QualityGrade { Excellent, Good, Acceptable, Poor, Invalid }
 /// <param name="MaxSkewDegrees">Largest deviation from 90 degrees of any angle (see <see cref="ElementQuality.Of"/>): the face corner angles and the dihedral angles between faces.</param>
 /// <param name="MinAngleDegrees">The smallest of those angles.</param>
 /// <param name="MaxAngleDegrees">The largest of those angles.</param>
-public readonly record struct ElementQualityMetrics(double MinDeterminant, double ScaledJacobian, double JacobianRatio, double AspectRatio, double MaxSkewDegrees, double MinAngleDegrees = 90, double MaxAngleDegrees = 90)
+/// <param name="GaussJacobianRatio">Min detJ / max detJ over the Gauss points only (the corners left out), as HyperMesh reports its Jacobian.</param>
+public readonly record struct ElementQualityMetrics(double MinDeterminant, double ScaledJacobian, double JacobianRatio, double AspectRatio, double MaxSkewDegrees, double MinAngleDegrees = 90, double MaxAngleDegrees = 90, double GaussJacobianRatio = 1)
 {
     /// <summary>
     /// The grade: invalid when folded or degenerate; otherwise the worse of the grades of the scaled Jacobian,
@@ -59,9 +60,9 @@ public static class ElementQuality
     {
         var gradient = new double[Hex20.Nodes, 3];
         var local = new double[Hex20.Nodes, 3];
-        double minDet = double.MaxValue, maxDet = double.MinValue, minScaled = double.MaxValue;
+        double minDet = double.MaxValue, maxDet = double.MinValue, minScaled = double.MaxValue, gaussMin = double.MaxValue, gaussMax = double.MinValue;
 
-        void Sample(double a, double b, double g)
+        void Sample(double a, double b, double g, bool gauss)
         {
             Hex20.Derivatives(a, b, g, local);
             var j = new double[3, 3];
@@ -74,9 +75,10 @@ public static class ElementQuality
             double l2 = Math.Sqrt(j[0, 2] * j[0, 2] + j[1, 2] * j[1, 2] + j[2, 2] * j[2, 2]);
             double scaled = l0 * l1 * l2 > 0 ? det / (l0 * l1 * l2) : 0;
             minDet = Math.Min(minDet, det); maxDet = Math.Max(maxDet, det); minScaled = Math.Min(minScaled, scaled);
+            if (gauss) { gaussMin = Math.Min(gaussMin, det); gaussMax = Math.Max(gaussMax, det); }
         }
-        foreach (double a in Hex20.GaussPoints) foreach (double b in Hex20.GaussPoints) foreach (double g in Hex20.GaussPoints) Sample(a, b, g);
-        for (int n = 0; n < 8; n++) Sample(Hex20.Local[n, 0], Hex20.Local[n, 1], Hex20.Local[n, 2]);
+        foreach (double a in Hex20.GaussPoints) foreach (double b in Hex20.GaussPoints) foreach (double g in Hex20.GaussPoints) Sample(a, b, g, true);
+        for (int n = 0; n < 8; n++) Sample(Hex20.Local[n, 0], Hex20.Local[n, 1], Hex20.Local[n, 2], false);
 
         double shortest = double.MaxValue, longest = 0;
         foreach (var (a, m, b) in Edges)
@@ -113,7 +115,7 @@ public static class ElementQuality
         }
         double skew = maxAngle >= minAngle ? Math.Max(90 - minAngle, maxAngle - 90) : 0;
         double ratio = maxDet > 0 ? minDet / maxDet : 0;
-        return new ElementQualityMetrics(minDet, minScaled, ratio, shortest > 0 ? longest / shortest : double.PositiveInfinity, skew, maxAngle >= minAngle ? minAngle : 90, maxAngle >= minAngle ? maxAngle : 90);
+        return new ElementQualityMetrics(minDet, minScaled, ratio, shortest > 0 ? longest / shortest : double.PositiveInfinity, skew, maxAngle >= minAngle ? minAngle : 90, maxAngle >= minAngle ? maxAngle : 90, gaussMax > 0 ? gaussMin / gaussMax : 0);
     }
 
     // Tangent of the quadratic edge (a, m, b) leaving the corner: the derivative of the edge at the end, with the

@@ -1,16 +1,32 @@
 <h4>Якість сітки</h4>
 
 <ng-container *ngIf="quality() as q; else loading">
+  <!-- 0. За яким стандартом судимо -->
+  <section>
+    <h5>За яким стандартом</h5>
+    <div class="standards">
+      <button type="button" class="standard" *ngFor="let s of standards()" [class.standard--on]="profile() === s.id" [class.standard--consensus]="s.id === consensusId" (click)="setProfile(s.id)" [title]="s.dto.source">
+        <span class="standard__head">
+          <b>{{ s.name }}</b>
+          <span class="standard__count">{{ s.rejected }} <small>не проходять · {{ percent(s.share) }}</small></span>
+        </span>
+        <span class="standard__bar"><span class="standard__fill" [style.width]="barWidth(s.share)"></span></span>
+      </button>
+    </div>
+    <div class="source">{{ q.source }}</div>
+    <div class="source source--note" *ngIf="q.note">{{ q.note }}</div>
+  </section>
+
   <!-- 1. Чи все гаразд -->
   <section class="verdict" [style.border-color]="gradeColor(verdictGrade())">
     <div class="verdict__title">{{ verdict().title }}</div>
     <div class="verdict__sub">{{ verdict().sub }}</div>
-    <div class="rule">Допустимі: відмінні, добрі й прийнятні. Погані та невалідні — ні.</div>
+    <div class="rule">{{ rule() }}</div>
     <div class="bar" title="Усі елементи сітки за оцінкою">
       <span *ngFor="let s of segments()" class="bar__seg" [style.flex-grow]="s.count" [style.background]="gradeColor(s.grade)"></span>
     </div>
     <div class="counts">
-      <span *ngFor="let s of segments()" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeNames[s.grade] }}</span>
+      <span *ngFor="let s of segments()" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeWord(s.grade) }}</span>
     </div>
   </section>
 
@@ -19,7 +35,7 @@
     <h5>Фарбувати сцену за</h5>
     <div class="seg">
       <button type="button" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
-      <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="text[l.key].tip" (click)="setMetric(l.key)">{{ text[l.key].short }}</button>
+      <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.short }}</button>
     </div>
     <div class="legend">
       <span *ngFor="let g of gradeOrder"><i [style.background]="gradeColor(g)"></i>{{ gradeNames[g] }}</span>
@@ -29,23 +45,21 @@
   <!-- 3. Яка міра слабка -->
   <section>
     <h5>Найгірше по сітці</h5>
-    <div class="gauge" *ngFor="let l of q.limits" [class.gauge--note]="!l.graded">
+    <div class="gauge" *ngFor="let l of q.limits">
       <div class="gauge__head">
-        <span class="gauge__name" [title]="text[l.key].tip">{{ text[l.key].title }} <small>{{ text[l.key].tech }}</small></span>
-        <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ shownValue(l) | number: decimals(l) }}{{ unit(l) }}</span>
+        <span class="gauge__name" [title]="l.hint">{{ l.label }} <small>{{ l.tech }}</small></span>
+        <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ shownValue(l) | number: decimals(l) }}{{ l.kind === 'angleDeviation' ? '°' : l.unit }}</span>
       </div>
-      <div class="gauge__sub" *ngIf="sub(l)">{{ sub(l) }}
+      <div class="gauge__sub" *ngIf="sub(l)">{{ sub(l) }}</div>
+      <div class="gauge__verdict" [class.gauge__verdict--bad]="!passed(l)">
+        {{ passed(l) ? '✓ Проходить' : '✗ Не проходить' }} · {{ ruleOf(l) }}
       </div>
-      <div class="gauge__verdict" *ngIf="l.graded" [class.gauge__verdict--bad]="!passed(l)">
-        {{ passed(l) ? '✓ Проходить' : '✗ Не проходить' }} · {{ rule(l) }}
-      </div>
-      <div class="gauge__verdict gauge__verdict--note" *ngIf="!l.graded">Довідково, на оцінку не впливає · орієнтир: {{ rule(l).toLowerCase() }}</div>
       <div class="gauge__track">
         <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
         <span *ngFor="let z of gaugeZones(l)" class="gauge__zone" [style.background]="gradeColor(z.grade)"></span>
       </div>
       <div class="gauge__labels">
-        <span *ngFor="let z of gaugeZones(l)" class="gauge__label"><b>{{ gradeNames[z.grade] }}</b>{{ z.range }}</span>
+        <span *ngFor="let z of gaugeZones(l)" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
       </div>
     </div>
   </section>
@@ -61,10 +75,11 @@
         <span class="row__grade">{{ gradeNames[r.grade] }}</span>
       </span>
       <span class="row__chips">
-        <span *ngFor="let i of r.issues" class="chip" [class.chip--note]="!i.graded" [style.border-color]="gradeColor(i.grade)" [title]="text[i.key].tech">
-          {{ text[i.key].title }} <b>{{ valueText(i.key, i.value, r.element) }}</b>
+        <span *ngFor="let i of r.issues" class="chip" [style.border-color]="gradeColor(i.grade)" [title]="i.limit.tech">
+          {{ i.limit.short }} <b>{{ valueText(i.limit, i.value, r.element) }}</b>
         </span>
       </span>
+      <span class="row__by" *ngIf="rejectedByText(r.element) as by">відхиляють: {{ by }}</span>
     </button>
     <div class="more" *ngIf="rows().length > 60">Показано 60 найгірших із {{ rows().length }}</div>
   </section>

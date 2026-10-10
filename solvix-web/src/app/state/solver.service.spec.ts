@@ -501,8 +501,13 @@ describe('SolverService', () => {
       solver.setShowQuality(sessionId, true);
 
       const request = http.expectOne(`${api}/${sessionId}/quality`);
-      request.flush({ elements: 2, grades, worstScaledJacobian: 0.9, worstJacobianRatio: 1, worstAspectRatio: 1.5, worstSkewDegrees: 2, cubes: [] });
+      const profile = (id: string, rejected: number) => ({ id, name: id, source: '', note: '', elements: 2, grades: { ...grades, poor: rejected }, worst: {}, limits: [], flagged: [] });
+      request.flush({ profiles: [profile('solvix', 0), profile('abaqus', 1)] });
+      expect(solver.quality(sessionId)!.id).toBe('consensus');                     // the standards voting is what is shown first
       expect(solver.quality(sessionId)!.elements).toBe(2);
+      solver.setQualityProfile(sessionId, 'abaqus');
+      expect(solver.quality(sessionId)!.id).toBe('abaqus');
+      expect(solver.qualityReport(sessionId)!.profiles.length).toBe(2);
       expect(solver.showQuality(sessionId)).toBeTrue();
       solver.setShowQuality(sessionId, false);
       http.expectNone(`${api}/${sessionId}/quality`);

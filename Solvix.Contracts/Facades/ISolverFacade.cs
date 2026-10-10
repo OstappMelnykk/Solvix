@@ -41,7 +41,7 @@ public interface ISolverFacade
     SolverSetupDto Prune(int sessionId, IReadOnlyCollection<int> existingHexes);
 
     /// <summary>The element quality of the mesh as it would be solved (per cube and overall).</summary>
-    SolverQualityDto Quality(int sessionId, FemMeshDto mesh);
+    SolverQualityReportDto Quality(int sessionId, FemMeshDto mesh);
 
     SolverValidationDto Validate(int sessionId, FemMeshDto mesh);
 

@@ -3,59 +3,70 @@ using Solvix.Fem;
 
 namespace Solvix.Solver;
 
-/// <summary>Quality of the mesh the solver would work on, aggregated per cube (the worst of its small elements).</summary>
+/// <summary>
+/// Quality of the mesh the solver would work on (every cube cut into the current division), judged element by
+/// element - the small elements are what the solver integrates - by each of several standards (see QualityProfiles).
+/// </summary>
 internal static class MeshQuality
 {
-    public static SolverQualityDto Evaluate(SolverSetup setup, FemMeshDto mesh)
+    public static SolverQualityReportDto Evaluate(SolverSetup setup, FemMeshDto mesh)
     {
-        var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
-        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, 90, 90, Array.Empty<SolverCubeQualityDto>(), Limits, Array.Empty<SolverElementQualityDto>());
+        if (mesh.ElementCount == 0) return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, null, Array.Empty<ElementMeasures>())).ToList());
 
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
-        var metrics = new ElementQualityMetrics[fine.ElementCount];
+        var measures = new ElementMeasures[fine.ElementCount];
         Parallel.For(0, fine.ElementCount, e =>
         {
             var xyz = new double[Hex20.Nodes, 3];
             for (int i = 0; i < Hex20.Nodes; i++)
                 for (int c = 0; c < 3; c++) xyz[i, c] = fine.Positions[fine.Connectivity[e, i], c];
-            metrics[e] = ElementQuality.Of(xyz);
+            measures[e] = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz));
         });
-
-        var cubes = new List<SolverCubeQualityDto>();
-        for (int cube = 0; cube < mesh.ElementCount; cube++)
-        {
-            var own = Enumerable.Range(cube * fine.ElementsPerCube, fine.ElementsPerCube).Select(e => metrics[e]).ToList();
-            var worst = own.OrderByDescending(m => (int)m.Grade).ThenBy(m => m.ScaledJacobian).First();
-            cubes.Add(new SolverCubeQualityDto(mesh.ElementIds[cube], Name(worst.Grade), own.Min(m => m.ScaledJacobian), own.Min(m => m.JacobianRatio), own.Max(m => m.AspectRatio), own.Max(m => m.MaxSkewDegrees), own.Min(m => m.MinAngleDegrees), own.Max(m => m.MaxAngleDegrees)));
-        }
-        foreach (var m in metrics) grades[Name(m.Grade)]++;
-        return new SolverQualityDto(
-            fine.ElementCount, grades,
-            metrics.Min(m => m.ScaledJacobian), metrics.Min(m => m.JacobianRatio), metrics.Max(m => m.AspectRatio), metrics.Max(m => m.MaxSkewDegrees), metrics.Min(m => m.MinAngleDegrees), metrics.Max(m => m.MaxAngleDegrees),
-            cubes, Limits, Flagged(mesh, fine, metrics));
+        return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, (mesh, fine), measures)).ToList());
     }
 
-    // the small elements that are not excellent in every measure - the rest are drawn and counted as excellent
-    private static List<SolverElementQualityDto> Flagged(FemMeshDto mesh, FineMesh fine, ElementQualityMetrics[] metrics)
+    private static SolverQualityDto Report(QualityProfile profile, (FemMeshDto Mesh, FineMesh Fine)? where, ElementMeasures[] measures)
     {
+        var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
+        var worst = new Dictionary<string, double>();
+        foreach (var c in profile.Criteria) worst[c.Key] = c.HigherIsBetter ? double.MaxValue : double.MinValue;
+        var withAngles = profile.Id == "solvix";
+        double minAngle = 180, maxAngle = 0;
         var flagged = new List<SolverElementQualityDto>();
-        for (int e = 0; e < metrics.Length; e++)
-        {
-            var m = metrics[e];
-            if (m.Grade == QualityGrade.Excellent) continue;
-            flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(m.Grade), m.ScaledJacobian, m.JacobianRatio, m.AspectRatio, m.MaxSkewDegrees, m.MinAngleDegrees, m.MaxAngleDegrees));
-        }
-        return flagged;
-    }
 
-    private static readonly IReadOnlyList<SolverQualityLimitDto> Limits = new[]
-    {
-        new SolverQualityLimitDto("scaledJacobian", "Scaled Jacobian", "detJ / (довжини трьох напрямів): 1 — ідеальний куб, 0 — виродження, <0 — вивернутий елемент", true, true, ElementQuality.ScaledJacobianLimits),
-        new SolverQualityLimitDto("jacobianRatio", "Відношення якобіанів", "min detJ / max detJ: наскільки рівномірно елемент розтягує простір", true, true, ElementQuality.JacobianRatioLimits),
-        new SolverQualityLimitDto("aspectRatio", "Aspect ratio", "довше ребро / коротше ребро", false, true, ElementQuality.AspectRatioLimits),
-        new SolverQualityLimitDto("skew", "Кути, °", "відхилення від прямого кута: кути граней у вершинах і двогранні кути між гранями; 60–120° відмінно, 45–135° добре, 15–165° прийнятно, поза цим погано", false, true, ElementQuality.SkewLimits),
-    };
+        for (int e = 0; e < measures.Length; e++)
+        {
+            var m = measures[e];
+            var grade = profile.Grade(m);
+            grades[Name(grade)]++;
+            var values = new Dictionary<string, double>();
+            foreach (var c in profile.Criteria)
+            {
+                double v = c.Value(m);
+                values[c.Key] = v;
+                worst[c.Key] = c.HigherIsBetter ? Math.Min(worst[c.Key], v) : Math.Max(worst[c.Key], v);
+            }
+            if (withAngles)
+            {
+                values["minAngle"] = m.Own.MinAngleDegrees; values["maxAngle"] = m.Own.MaxAngleDegrees;
+                minAngle = Math.Min(minAngle, m.Own.MinAngleDegrees); maxAngle = Math.Max(maxAngle, m.Own.MaxAngleDegrees);
+            }
+            if (grade == QualityGrade.Excellent || where is null) continue;
+            var (mesh, fine) = where.Value;
+            flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(grade), values));
+        }
+
+        if (measures.Length == 0)
+        {
+            worst.Clear();
+            foreach (var c in profile.Criteria) worst[c.Key] = c.Levels == 2 ? c.Bounds[0] : c.HigherIsBetter ? 1 : 0;
+        }
+        if (withAngles) { worst["minAngle"] = measures.Length == 0 ? 90 : minAngle; worst["maxAngle"] = measures.Length == 0 ? 90 : maxAngle; }
+
+        var limits = profile.Criteria.Select(c => new SolverQualityLimitDto(c.Key, c.Label, c.Short, c.Tech, c.Hint, c.HigherIsBetter, c.Levels, c.Bounds, c.Unit, c.Decimals, c.Kind)).ToList();
+        return new SolverQualityDto(profile.Id, profile.Name, profile.Source, profile.Note, measures.Length, grades, worst, limits, flagged);
+    }
 
     public static string Name(QualityGrade grade) => grade.ToString().ToLowerInvariant();
 }

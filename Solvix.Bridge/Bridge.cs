@@ -21,7 +21,7 @@ public class Bridge
     public SolverValidationDto Validate(int sessionId) => _solver.Validate(sessionId, _meshBuilder.ExportFemMesh(sessionId));
 
     /// <summary>The element quality of the session's current mesh at the current division.</summary>
-    public SolverQualityDto Quality(int sessionId) => _solver.Quality(sessionId, _meshBuilder.ExportFemMesh(sessionId));
+    public SolverQualityReportDto Quality(int sessionId) => _solver.Quality(sessionId, _meshBuilder.ExportFemMesh(sessionId));
 
     /// <summary>Solves the session's current mesh in the background.</summary>
     public SolverJobDto StartSolve(int sessionId) => _solver.StartSolve(sessionId, _meshBuilder.ExportFemMesh(sessionId));

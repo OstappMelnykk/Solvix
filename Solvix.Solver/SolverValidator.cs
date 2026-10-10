@@ -35,9 +35,9 @@ internal static class SolverValidator
         }
 
         // elements that can be integrated but badly, and materials so different that the iterative solve struggles
-        var quality = elements > MaxElements ? null : MeshQuality.Evaluate(setup, mesh);
-        int poor = quality?.Grades["poor"] ?? 0;
-        if (quality is not null && poor > 0) Warning($"{poor} елементів мають низьку якість (найгірший scaled Jacobian {quality.WorstScaledJacobian:0.00}): напруження біля них будуть неточними.");
+        var quality = elements > MaxElements ? null : MeshQuality.Evaluate(setup, mesh).Profiles.First(p => p.Id == "solvix");
+        int poor = quality is null ? 0 : quality.Grades["poor"] + quality.Grades["invalid"];
+        if (quality is not null && poor > 0) Warning($"{poor} елементів мають низьку якість (найгірша форма {quality.Worst["scaledJacobian"]:0.00}, кути {quality.Worst["minAngle"]:0}–{quality.Worst["maxAngle"]:0}°): напруження біля них будуть неточними.");
         var moduli = used.Where(setup.MaterialsByName.ContainsKey).Select(n => setup.MaterialsByName[n].E).ToList();
         if (moduli.Count > 1 && moduli.Max() / moduli.Min() > 1e4)
             Warning($"Жорсткості матеріалів відрізняються у {moduli.Max() / moduli.Min():0e0} разів: ітераційний розв'язок може збігатися повільно або не збігтися.");

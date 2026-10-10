@@ -99,62 +99,52 @@ export interface SolverResultDto {
 
 export type QualityGradeName = 'excellent' | 'good' | 'acceptable' | 'poor' | 'invalid';
 
-export interface SolverCubeQualityDto {
-  readonly hex: number;
-  readonly grade: QualityGradeName;
-  readonly scaledJacobian: number;
-  readonly jacobianRatio: number;
-  readonly aspectRatio: number;
-  readonly skewDegrees: number;
-  // The smallest and the largest of the angles (face corner angles and dihedral angles).
-  readonly minAngleDegrees: number;
-  readonly maxAngleDegrees: number;
+export type QualityMetricKey = string;
+
+// One measure of quality and where its grades change. With 4 levels `bounds` are the limits excellent | good |
+// acceptable | poor; with 2 there is one limit and a value equal to it passes. Kind 'angleDeviation': the value is the
+// distance of the worst angle from 90 degrees.
+export interface SolverQualityLimitDto {
+  readonly key: QualityMetricKey;
+  readonly label: string;
+  readonly short: string;
+  readonly tech: string;
+  readonly hint: string;
+  readonly higherIsBetter: boolean;
+  readonly levels: 2 | 4;
+  readonly bounds: readonly number[];
+  readonly unit: string;
+  readonly decimals: number;
+  readonly kind: 'plain' | 'angleDeviation';
 }
 
-// How well the mesh, cut at the current division, can be integrated: the worst small element of each cube, counts
-// per grade over all small elements, and the worst values overall.
-export interface SolverQualityDto {
-  readonly elements: number;
-  readonly grades: Readonly<Record<QualityGradeName, number>>;
-  readonly worstScaledJacobian: number;
-  readonly worstJacobianRatio: number;
-  readonly worstAspectRatio: number;
-  readonly worstSkewDegrees: number;
-  readonly smallestAngleDegrees: number;
-  readonly largestAngleDegrees: number;
-  readonly cubes: readonly SolverCubeQualityDto[];
-  readonly limits: readonly SolverQualityLimitDto[];
-  // The small elements that are not excellent in some measure; every other small element is excellent.
-  readonly flagged: readonly SolverElementQualityDto[];
-}
-
-// A small element (place Ex, Ey, Ez in its cube) with its own quality values.
+// A small element (place ex, ey, ez in its cube) that is not excellent by a profile, with its value of every measure.
 export interface SolverElementQualityDto {
   readonly hex: number;
   readonly ex: number;
   readonly ey: number;
   readonly ez: number;
   readonly grade: QualityGradeName;
-  readonly scaledJacobian: number;
-  readonly jacobianRatio: number;
-  readonly aspectRatio: number;
-  readonly skewDegrees: number;
-  // The smallest and the largest of the angles (face corner angles and dihedral angles).
-  readonly minAngleDegrees: number;
-  readonly maxAngleDegrees: number;
+  readonly values: Readonly<Record<string, number>>;
 }
 
-export type QualityMetricKey = 'scaledJacobian' | 'jacobianRatio' | 'aspectRatio' | 'skew';
+// How one standard (profile) judges the mesh, cut at the current division, element by element: counts per grade,
+// the worst value of each measure, and the elements that are not excellent (every other one is excellent).
+export interface SolverQualityDto {
+  readonly id: string;
+  readonly name: string;
+  readonly source: string;
+  readonly note: string;
+  readonly elements: number;
+  readonly grades: Readonly<Record<QualityGradeName, number>>;
+  readonly worst: Readonly<Record<string, number>>;
+  readonly limits: readonly SolverQualityLimitDto[];
+  readonly flagged: readonly SolverElementQualityDto[];
+}
 
-// One measure of quality and where its grades change: `bounds` are the limits excellent | good | acceptable | poor.
-export interface SolverQualityLimitDto {
-  readonly key: QualityMetricKey;
-  readonly label: string;
-  readonly hint: string;
-  readonly higherIsBetter: boolean;
-  // false: only shown, the grade does not depend on it
-  readonly graded: boolean;
-  readonly bounds: readonly number[];
+// The same mesh judged by every standard, so they can be compared.
+export interface SolverQualityReportDto {
+  readonly profiles: readonly SolverQualityDto[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -215,8 +205,8 @@ export class SolverApiService {
     return this.http.delete<SolverSetupDto>(this.url(sessionId, 'setup'));
   }
 
-  quality(sessionId: number): Observable<SolverQualityDto> {
-    return this.http.get<SolverQualityDto>(this.url(sessionId, 'quality'));
+  quality(sessionId: number): Observable<SolverQualityReportDto> {
+    return this.http.get<SolverQualityReportDto>(this.url(sessionId, 'quality'));
   }
 
   validate(sessionId: number): Observable<SolverValidationDto> {

@@ -424,3 +424,89 @@ public class QualityTests
         Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 2, 80).Grade, Is.EqualTo(QualityGrade.Poor));         // beyond 15-165
     }
 }
+
+public class LinearHexMetricsTests
+{
+    private static double[,] Box(double lx, double ly, double lz)
+    {
+        var xyz = new double[20, 3];
+        for (int i = 0; i < 20; i++)
+        {
+            xyz[i, 0] = (Hex20.Local[i, 0] + 1) / 2.0 * lx;
+            xyz[i, 1] = (Hex20.Local[i, 1] + 1) / 2.0 * ly;
+            xyz[i, 2] = (Hex20.Local[i, 2] + 1) / 2.0 * lz;
+        }
+        return xyz;
+    }
+
+    [Test]
+    public void A_cube_is_ideal_in_every_measure()
+    {
+        var m = LinearHexMetrics.Of(Box(1, 1, 1));
+
+        Assert.That(m.EdgeRatio, Is.EqualTo(1).Within(1e-12));
+        Assert.That(m.FaceMinAngle, Is.EqualTo(90).Within(1e-9));
+        Assert.That(m.FaceMaxAngle, Is.EqualTo(90).Within(1e-9));
+        Assert.That(m.EquiangleSkew, Is.EqualTo(0).Within(1e-12));
+        Assert.That(m.AxesAspect, Is.EqualTo(1).Within(1e-12));
+        Assert.That(m.Skew, Is.EqualTo(0).Within(1e-12));
+        Assert.That(m.Taper, Is.EqualTo(0).Within(1e-12));
+        Assert.That(m.Stretch, Is.EqualTo(1).Within(1e-12));
+        Assert.That(m.DiagonalRatio, Is.EqualTo(1).Within(1e-12));
+        Assert.That(m.ConditionNumber, Is.EqualTo(1).Within(1e-9));
+        Assert.That(m.ScaledJacobian, Is.EqualTo(1).Within(1e-12));
+        Assert.That(m.Shear, Is.EqualTo(1).Within(1e-12));
+        Assert.That(m.Shape, Is.EqualTo(1).Within(1e-12));
+    }
+
+    [Test]
+    public void A_long_box_has_perfect_angles_but_a_poor_aspect_ratio_and_shape()
+    {
+        var m = LinearHexMetrics.Of(Box(1, 1, 8));
+
+        Assert.That(m.EdgeRatio, Is.EqualTo(8).Within(1e-9));
+        Assert.That(m.AxesAspect, Is.EqualTo(8).Within(1e-9));
+        Assert.That(m.FaceMinAngle, Is.EqualTo(90).Within(1e-9));
+        Assert.That(m.Skew, Is.EqualTo(0).Within(1e-12));
+        Assert.That(m.ScaledJacobian, Is.EqualTo(1).Within(1e-12));        // the lengths do not change it ...
+        Assert.That(m.Shear, Is.EqualTo(1).Within(1e-12));                 // ... nor the shear ...
+        Assert.That(m.Shape, Is.LessThan(0.5));                            // ... but the shape does
+        Assert.That(m.ConditionNumber, Is.GreaterThan(3));
+    }
+
+    [Test]
+    public void A_shear_tilts_the_angles_and_the_axes()
+    {
+        var xyz = Box(1, 1, 1);
+        for (int i = 0; i < 20; i++) xyz[i, 0] += 1.0 * xyz[i, 2];           // 45 degrees
+
+        var m = LinearHexMetrics.Of(xyz);
+
+        Assert.That(m.FaceMinAngle, Is.EqualTo(45).Within(1e-6));
+        Assert.That(m.FaceMaxAngle, Is.EqualTo(135).Within(1e-6));
+        Assert.That(m.EquiangleSkew, Is.EqualTo(0.5).Within(1e-6));
+        Assert.That(m.Skew, Is.GreaterThan(0.5));                            // the axes x and z lean towards each other: |cos| = 1/sqrt(3)... above Cubit's 0.5 limit once it is sheared further
+        Assert.That(m.Shear, Is.LessThan(1));
+        Assert.That(m.ScaledJacobian, Is.LessThan(1));
+    }
+
+    [Test]
+    public void A_tapered_box_has_taper_and_a_folded_one_is_zero_or_negative()
+    {
+        var xyz = Box(1, 1, 1);
+        for (int i = 0; i < 20; i++)
+        {
+            double shrink = 1 - 0.5 * xyz[i, 2];
+            xyz[i, 0] = 0.5 + (xyz[i, 0] - 0.5) * shrink;
+            xyz[i, 1] = 0.5 + (xyz[i, 1] - 0.5) * shrink;
+        }
+        Assert.That(LinearHexMetrics.Of(xyz).Taper, Is.GreaterThan(0.1));
+
+        var folded = Box(1, 1, 1);
+        folded[6, 0] = -3; folded[6, 1] = -3; folded[6, 2] = -3;
+        var f = LinearHexMetrics.Of(folded);
+        Assert.That(f.ScaledJacobian, Is.LessThanOrEqualTo(0));
+        Assert.That(f.Shape, Is.EqualTo(0));
+        Assert.That(f.ConditionNumber, Is.EqualTo(double.PositiveInfinity));
+    }
+}
