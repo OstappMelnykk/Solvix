@@ -332,6 +332,36 @@ public class QualityApiTests
     }
 
     [Test]
+    public void The_details_of_one_element_match_what_the_report_says_of_it()
+    {
+        var editor = Bar(2);
+        editor.MoveNode(editor.Mesh.Hex(1).NodeIds[6], new Vec3(2.9, 1.8, 0.7), false);
+        var facade = NewFacade();
+        facade.SetDivisions(Session, 2, 2, 2);
+        var mesh = Export(editor);
+        var report = facade.Quality(Session, mesh);
+        var flagged = Profile(report, "solvix").Flagged.First();
+
+        var one = facade.QualityOfElement(Session, mesh, flagged.Hex, flagged.Ex, flagged.Ey, flagged.Ez)!;
+
+        Assert.That(one.Profiles.Select(p => p.Id), Is.EqualTo(report.Profiles.Select(p => p.Id)));
+        foreach (var (key, value) in flagged.Values) Assert.That(one.Profiles.Single(p => p.Id == "solvix").Values[key], Is.EqualTo(value).Within(1e-9), key);
+        Assert.That(one.Profiles.Single(p => p.Id == "solvix").Grade, Is.EqualTo(flagged.Grade));
+        // an element the report did not flag is excellent
+        Assert.That(facade.QualityOfElement(Session, mesh, 0, 0, 0, 0)!.Profiles.Single(p => p.Id == "solvix").Grade, Is.EqualTo("excellent"));
+    }
+
+    [Test]
+    public void There_are_no_details_for_an_element_that_does_not_exist()
+    {
+        var facade = NewFacade();
+        var mesh = Export(Bar(1));
+
+        Assert.That(facade.QualityOfElement(Session, mesh, 7, 0, 0, 0), Is.Null);
+        Assert.That(facade.QualityOfElement(Session, mesh, 0, 1, 0, 0), Is.Null);        // the division is 1x1x1
+    }
+
+    [Test]
     public void A_folded_cube_is_invalid_by_every_standard_and_an_empty_mesh_is_fine()
     {
         var editor = Bar(1);

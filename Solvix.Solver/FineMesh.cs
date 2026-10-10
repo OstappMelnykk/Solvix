@@ -179,6 +179,25 @@ internal sealed class FineMesh
         }
     }
 
+    /// <summary>The 20 node positions of one small element of a cube, without building the whole fine mesh.</summary>
+    public static double[,] ElementCoordinates(FemMeshDto mesh, int nx, int ny, int nz, int cube, int ex, int ey, int ez)
+    {
+        var corners = new double[20][];
+        for (int s = 0; s < 20; s++)
+        {
+            int node = mesh.Connectivity[cube * 20 + s];
+            corners[s] = new[] { mesh.Positions[node * 3], mesh.Positions[node * 3 + 1], mesh.Positions[node * 3 + 2] };
+        }
+        var xyz = new double[20, 3];
+        for (int k = 0; k < 20; k++)
+        {
+            var phi = ShapeFunctions((double)(2 * ex + Local[k, 0] + 1) / nx - 1, (double)(2 * ey + Local[k, 1] + 1) / ny - 1, (double)(2 * ez + Local[k, 2] + 1) / nz - 1);
+            for (int c = 0; c < 3; c++)
+                for (int s = 0; s < 20; s++) xyz[k, c] += phi[s] * corners[s][c];
+        }
+        return xyz;
+    }
+
     // 20-node serendipity shape functions (the solver's N20).
     internal static double[] ShapeFunctions(double a, double b, double g)
     {

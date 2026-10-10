@@ -83,6 +83,9 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         return s.Setup.ToDto();
     });
 
+    public SolverElementReportDto? QualityOfElement(int sessionId, FemMeshDto mesh, int hex, int ex, int ey, int ez) =>
+        sessions.With(sessionId, s => MeshQuality.OfElement(s.Setup, mesh, hex, ex, ey, ez));
+
     public SolverQualityReportDto Quality(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => MeshQuality.Evaluate(s.Setup, mesh));
 
     public SolverValidationDto Validate(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => SolverValidator.Validate(s.Setup, mesh));

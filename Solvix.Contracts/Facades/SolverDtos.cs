@@ -105,6 +105,12 @@ public sealed record SolverQualityDto(
 /// </summary>
 public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, IReadOnlyDictionary<string, double> Values);
 
+/// <summary>One standard's judgement of a single small element: its grade and its value of every measure of the standard.</summary>
+public sealed record SolverElementProfileDto(string Id, string Grade, IReadOnlyDictionary<string, double> Values);
+
+/// <summary>Every standard's judgement of a single small element (for showing its details).</summary>
+public sealed record SolverElementReportDto(int Hex, int Ex, int Ey, int Ez, IReadOnlyList<SolverElementProfileDto> Profiles);
+
 /// <summary>One measure of element quality and where its grades change.</summary>
 /// <param name="Key">Identifies the measure within the profile.</param>
 /// <param name="Label">Plain name; <paramref name="Short"/> for a narrow button; <paramref name="Tech"/> the technical name.</param>

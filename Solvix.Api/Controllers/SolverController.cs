@@ -70,6 +70,11 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     [HttpGet("quality")]
     public ActionResult<SolverQualityReportDto> Quality(int sessionId) => bridge.Quality(sessionId);
 
+    /// <summary>The details of one small element: how every standard judges it, with its value of every measure.</summary>
+    [HttpGet("quality/element")]
+    public ActionResult<SolverElementReportDto> QualityOfElement(int sessionId, [FromQuery] int hex, [FromQuery] int ex, [FromQuery] int ey, [FromQuery] int ez) =>
+        bridge.QualityOfElement(sessionId, hex, ex, ey, ez) is { } report ? report : NotFound();
+
     [HttpPost("solve")]
     public ActionResult<SolverJobDto> Solve(int sessionId) => bridge.StartSolve(sessionId);
 

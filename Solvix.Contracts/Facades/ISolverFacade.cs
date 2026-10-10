@@ -43,6 +43,9 @@ public interface ISolverFacade
     /// <summary>The element quality of the mesh as it would be solved (per cube and overall).</summary>
     SolverQualityReportDto Quality(int sessionId, FemMeshDto mesh);
 
+    /// <summary>Every standard's judgement of one small element of the mesh (null when there is no such element).</summary>
+    SolverElementReportDto? QualityOfElement(int sessionId, FemMeshDto mesh, int hex, int ex, int ey, int ez);
+
     SolverValidationDto Validate(int sessionId, FemMeshDto mesh);
 
     /// <summary>Starts a solve in the background; if one is running, that one is reported instead.</summary>

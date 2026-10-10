@@ -26,6 +26,23 @@ internal static class MeshQuality
         return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, (mesh, fine), measures)).ToList());
     }
 
+    /// <summary>Every standard's judgement of one small element, with its value of every measure of that standard.</summary>
+    public static SolverElementReportDto? OfElement(SolverSetup setup, FemMeshDto mesh, int hex, int ex, int ey, int ez)
+    {
+        int cube = Array.IndexOf(mesh.ElementIds.ToArray(), hex);
+        var (nx, ny, nz) = setup.Divisions;
+        if (cube < 0 || ex < 0 || ex >= nx || ey < 0 || ey >= ny || ez < 0 || ez >= nz) return null;
+        var xyz = FineMesh.ElementCoordinates(mesh, nx, ny, nz, cube, ex, ey, ez);
+        var m = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz));
+        var profiles = QualityProfiles.All.Select(p =>
+        {
+            var values = p.Criteria.ToDictionary(c => c.Key, c => c.Value(m));
+            if (p.Id == "solvix") { values["minAngle"] = m.Own.MinAngleDegrees; values["maxAngle"] = m.Own.MaxAngleDegrees; }
+            return new SolverElementProfileDto(p.Id, Name(p.Grade(m)), values);
+        }).ToList();
+        return new SolverElementReportDto(hex, ex, ey, ez, profiles);
+    }
+
     private static SolverQualityDto Report(QualityProfile profile, (FemMeshDto Mesh, FineMesh Fine)? where, ElementMeasures[] measures)
     {
         var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };

@@ -23,6 +23,9 @@ public class Bridge
     /// <summary>The element quality of the session's current mesh at the current division.</summary>
     public SolverQualityReportDto Quality(int sessionId) => _solver.Quality(sessionId, _meshBuilder.ExportFemMesh(sessionId));
 
+    /// <summary>Every standard's judgement of one small element of the session's current mesh.</summary>
+    public SolverElementReportDto? QualityOfElement(int sessionId, int hex, int ex, int ey, int ez) => _solver.QualityOfElement(sessionId, _meshBuilder.ExportFemMesh(sessionId), hex, ex, ey, ez);
+
     /// <summary>Solves the session's current mesh in the background.</summary>
     public SolverJobDto StartSolve(int sessionId) => _solver.StartSolve(sessionId, _meshBuilder.ExportFemMesh(sessionId));
 }
