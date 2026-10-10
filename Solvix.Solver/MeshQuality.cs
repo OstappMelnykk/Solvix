@@ -21,7 +21,7 @@ internal static class MeshQuality
             var xyz = new double[Hex20.Nodes, 3];
             for (int i = 0; i < Hex20.Nodes; i++)
                 for (int c = 0; c < 3; c++) xyz[i, c] = fine.Positions[fine.Connectivity[e, i], c];
-            measures[e] = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz));
+            measures[e] = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz), BrickShape.Of(xyz));
         });
         return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, (mesh, fine), measures)).ToList());
     }
@@ -33,11 +33,10 @@ internal static class MeshQuality
         var (nx, ny, nz) = setup.Divisions;
         if (cube < 0 || ex < 0 || ex >= nx || ey < 0 || ey >= ny || ez < 0 || ez >= nz) return null;
         var xyz = FineMesh.ElementCoordinates(mesh, nx, ny, nz, cube, ex, ey, ez);
-        var m = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz));
+        var m = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz), BrickShape.Of(xyz));
         var profiles = QualityProfiles.All.Select(p =>
         {
             var values = p.Criteria.ToDictionary(c => c.Key, c => c.Value(m));
-            if (p.Id == "solvix") { values["minAngle"] = m.Own.MinAngleDegrees; values["maxAngle"] = m.Own.MaxAngleDegrees; }
             return new SolverElementProfileDto(p.Id, Name(p.Grade(m)), values);
         }).ToList();
         return new SolverElementReportDto(hex, ex, ey, ez, profiles);
@@ -48,8 +47,6 @@ internal static class MeshQuality
         var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
         var worst = new Dictionary<string, double>();
         foreach (var c in profile.Criteria) worst[c.Key] = c.HigherIsBetter ? double.MaxValue : double.MinValue;
-        var withAngles = profile.Id == "solvix";
-        double minAngle = 180, maxAngle = 0;
         var flagged = new List<SolverElementQualityDto>();
 
         for (int e = 0; e < measures.Length; e++)
@@ -64,11 +61,6 @@ internal static class MeshQuality
                 values[c.Key] = v;
                 worst[c.Key] = c.HigherIsBetter ? Math.Min(worst[c.Key], v) : Math.Max(worst[c.Key], v);
             }
-            if (withAngles)
-            {
-                values["minAngle"] = m.Own.MinAngleDegrees; values["maxAngle"] = m.Own.MaxAngleDegrees;
-                minAngle = Math.Min(minAngle, m.Own.MinAngleDegrees); maxAngle = Math.Max(maxAngle, m.Own.MaxAngleDegrees);
-            }
             if (grade == QualityGrade.Excellent || where is null) continue;
             var (mesh, fine) = where.Value;
             flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(grade), values));
@@ -79,9 +71,8 @@ internal static class MeshQuality
             worst.Clear();
             foreach (var c in profile.Criteria) worst[c.Key] = c.Levels == 2 ? c.Bounds[0] : c.HigherIsBetter ? 1 : 0;
         }
-        if (withAngles) { worst["minAngle"] = measures.Length == 0 ? 90 : minAngle; worst["maxAngle"] = measures.Length == 0 ? 90 : maxAngle; }
 
-        var limits = profile.Criteria.Select(c => new SolverQualityLimitDto(c.Key, c.Label, c.Short, c.Tech, c.Hint, c.HigherIsBetter, c.Levels, c.Bounds, c.Unit, c.Decimals, c.Kind)).ToList();
+        var limits = profile.Criteria.Select(c => new SolverQualityLimitDto(c.Key, c.Label, c.Short, c.Tech, c.Hint, c.HigherIsBetter, c.Levels, c.Bounds, c.Unit, c.Decimals, c.Kind, c.ErrorLimit)).ToList();
         return new SolverQualityDto(profile.Id, profile.Name, profile.Source, profile.Note, measures.Length, grades, worst, limits, flagged);
     }
 

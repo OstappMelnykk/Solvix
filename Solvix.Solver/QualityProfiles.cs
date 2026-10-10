@@ -3,7 +3,7 @@ using Solvix.Fem;
 namespace Solvix.Solver;
 
 /// <summary>All the measures of one small element that any profile may use.</summary>
-internal readonly record struct ElementMeasures(ElementQualityMetrics Own, LinearHexMetrics Linear);
+internal readonly record struct ElementMeasures(ElementQualityMetrics Own, LinearHexMetrics Linear, BrickShape Shape);
 
 /// <summary>
 /// One measure of a profile: how to read it from the element and where it passes. With Levels = 4 the bounds are
@@ -11,8 +11,11 @@ internal readonly record struct ElementMeasures(ElementQualityMetrics Own, Linea
 /// </summary>
 internal sealed record QualityCriterion(
     string Key, string Label, string Short, string Tech, string Hint,
-    bool HigherIsBetter, int Levels, double[] Bounds, string Unit, int Decimals, Func<ElementMeasures, double> Value, string Kind = "plain")
+    bool HigherIsBetter, int Levels, double[] Bounds, string Unit, int Decimals, Func<ElementMeasures, double> Value, string Kind = "plain", double? ErrorLimit = null)
 {
+    /// <summary>True when the value is beyond the limit at which the element is unusable.</summary>
+    public bool IsBeyondError(double value) => ErrorLimit is double limit && (double.IsNaN(value) || (HigherIsBetter ? value < limit : value > limit));
+
     public QualityGrade Grade(double value)
     {
         if (double.IsNaN(value)) return QualityGrade.Poor;
@@ -24,10 +27,14 @@ internal sealed record QualityCriterion(
 /// <summary>A standard to judge the mesh by: the measures of one tool or of our own, each with its limits.</summary>
 internal sealed record QualityProfile(string Id, string Name, string Source, string Note, IReadOnlyList<QualityCriterion> Criteria)
 {
-    /// <summary>The grade of an element: invalid when it is folded, otherwise the worst of its measures.</summary>
+    /// <summary>
+    /// The grade of an element: invalid when it is folded (the Jacobian changes sign), otherwise the worst of its
+    /// measures. Going beyond a measure's error limit does not make it invalid: curved templates (the pipe) have
+    /// elements far beyond ANSYS's Jacobian ratio error limit that the solver integrates correctly - see the research notes.
+    /// </summary>
     public QualityGrade Grade(ElementMeasures m)
     {
-        if (!(m.Own.MinDeterminant > 0)) return QualityGrade.Invalid;
+        if (!(m.Own.MinDeterminant > 0) || m.Shape.JacobianRatio < 0) return QualityGrade.Invalid;
         var worst = QualityGrade.Excellent;
         foreach (var c in Criteria)
         {
@@ -42,17 +49,26 @@ internal static class QualityProfiles
 {
     public static readonly IReadOnlyList<QualityProfile> All = new[] { Solvix(), Abaqus(), Cubit(), Altair(), Ansys() };
 
-    private static QualityCriterion C(string key, string label, string @short, string tech, string hint, bool higherIsBetter, int levels, double[] bounds, string unit, int decimals, Func<ElementMeasures, double> value, string kind = "plain") =>
-        new(key, label, @short, tech, hint, higherIsBetter, levels, bounds, unit, decimals, value, kind);
+    private static QualityCriterion C(string key, string label, string @short, string tech, string hint, bool higherIsBetter, int levels, double[] bounds, string unit, int decimals, Func<ElementMeasures, double> value, string kind = "plain", double? errorLimit = null) =>
+        new(key, label, @short, tech, hint, higherIsBetter, levels, bounds, unit, decimals, value, kind, errorLimit);
 
-    // our own: four levels, curved edges (the quadratic element as it is)
-    private static QualityProfile Solvix() => new("solvix", "Solvix", "Наш набір: чотири рівні оцінки, міри рахуються по справжньому квадратичному елементу з кривими ребрами.",
-        "Межі — загальні правила для квадратичних гексаедрів, кути — задані вами (15–165° допустимо, 45–135° добре).", new[]
+    // Solvix's own criterion: the shape checks that ANSYS Mechanical APDL documents for the 20-node brick (Theory Reference,
+    // 12.1 Element Shape Testing; see docs/research/mesh-quality). The warning limit is where an element stops being
+    // accepted, the error limit is where the solver refuses it.
+    private static QualityProfile Solvix() => new("solvix", "Solvix",
+        "Критерії Solvix — перевірки форми, які ANSYS Mechanical APDL описує для 20-вузлової цеглини з вузлами на серединах ребер (Theory Reference, §12.1). Межа «попередження» — елемент не приймається. Межа «помилка» ANSYS показується, але розрахунок блокують лише вивернуті елементи.",
+        "Міри рахуються по справжньому елементу: якобіан — у всіх 20 вузлах і центроїді, решта — по гранях і середніх перерізах (кутові вузли).", new[]
         {
-            C("scaledJacobian", "Форма", "Форма", "Scaled Jacobian", "1 — ідеальний куб, 0 — елемент сплющений, менше 0 — вивернутий навиворіт.", true, 4, ElementQuality.ScaledJacobianLimits, "", 2, m => m.Own.ScaledJacobian),
-            C("jacobianRatio", "Рівномірність", "Рівномірн.", "Відношення якобіанів", "1 — елемент розтягує простір скрізь однаково; близько 0 — в одному місці майже стиснутий.", true, 4, ElementQuality.JacobianRatioLimits, "", 2, m => m.Own.JacobianRatio),
-            C("aspectRatio", "Витягнутість", "Витягнутість", "Aspect ratio", "Довше ребро поділене на коротше (по кривих ребрах). Куб — 1.", false, 4, ElementQuality.AspectRatioLimits, "", 1, m => m.Own.AspectRatio),
-            C("skew", "Кути", "Кути", "грані та двогранні", "Кути між ребрами в кутах граней і двогранні кути між гранями, по кривих ребрах. Ідеал — 90°.", false, 4, ElementQuality.SkewLimits, "°", 0, m => m.Own.MaxSkewDegrees, "angleDeviation"),
+            C("jacobianRatio", "Рівномірність якобіана", "Якобіан", "Jacobian ratio", "Найбільший визначник якобіана поділений на найменший (у 20 вузлах і центроїді). 1 — ідеал: протилежні грані паралельні, а вузли на серединах ребер стоять посередині. Сильний зсув вузла від середини ребра збільшує ratio, а за чвертю ребра елемент ламається.",
+                false, 2, new[] { 30.0 }, "", 1, m => Finite(m.Shape.JacobianRatio < 0 ? 1e9 : m.Shape.JacobianRatio), "plain", 1000),
+            C("aspectRatio", "Витягнутість", "Витягнутість", "Aspect ratio", "Наскільки витягнуті грані й середні перерізи: відношення сторін найбільш витягнутого прямокутника. Квадрат — 1. Сам по собі слабо впливає на точність, поки не вийде за ~1000.",
+                false, 2, new[] { 20.0 }, "", 1, m => Finite(m.Shape.AspectRatio), "plain", 1_000_000),
+            C("parallelDeviation", "Непаралельність протилежних ребер", "Паралельність", "Parallel deviation", "Кут між протилежними ребрами граней і перерізів (серединні вузли не враховуються). 0° — прямокутник; конічність і сильний перекіс це збільшують.",
+                false, 2, new[] { 100.0 }, "°", 0, m => m.Shape.ParallelDeviation, "plain", 170),
+            C("maxCornerAngle", "Найбільший кут", "Макс. кут", "Maximum corner angle", "Найбільший кут у кутку грані чи перерізу (кутові вузли). 90° — прямокутник. Тупий кут псує збіжність.",
+                false, 2, new[] { 165.0 }, "°", 0, m => m.Shape.MaxCornerAngle, "plain", 179.9),
+            C("warpingFactor", "Викривлення граней", "Викривлення", "Warping factor", "Наскільки грань не лежить в одній площині: різниця висот кутів вздовж ребра, поділена на корінь із площі. 0 — плоска грань.",
+                false, 2, new[] { 0.2 }, "", 2, m => Finite(m.Shape.WarpingFactor), "plain", 0.4),
         });
 
     // Abaqus/CAE "Verify mesh" defaults for hexahedra
@@ -88,7 +104,7 @@ internal static class QualityProfiles
         });
 
     // ANSYS: the skewness scale (0 equiangular ... 1 degenerate)
-    private static QualityProfile Ansys() => new("ansys", "ANSYS (skewness)", "Шкала skewness від ANSYS: 0–0.25 відмінно, 0.25–0.5 добре, 0.5–0.75 задовільно, вище — погано (0.9–1 — «голка»).",
+    private static QualityProfile Ansys() => new("ansys", "ANSYS CFD (skewness)", "Шкала skewness від ANSYS: 0–0.25 відмінно, 0.25–0.5 добре, 0.5–0.75 задовільно, вище — погано (0.9–1 — «голка»).",
         "Skewness тут — еквіутова: найбільше відхилення кута грані від 90°, поділене на 90°. ANSYS для гексаедрів може рахувати інакше (за нормалями граней), тож числа можуть відрізнятися.", new[]
         {
             C("equiangleSkew", "Нерівнокутність", "Skewness", "Equiangle skewness", "0 — усі кути прямі, 1 — виродження.", false, 4, new[] { 0.25, 0.5, 0.75 }, "", 2, m => m.Linear.EquiangleSkew),

@@ -119,6 +119,7 @@ public sealed record SolverElementReportDto(int Hex, int Ex, int Ey, int Ez, IRe
 /// <param name="Bounds">With 4 levels the three limits in the order of the measure's goodness; with 2 the one limit
 /// (a value equal to it passes).</param>
 /// <param name="Kind">"plain", or "angleDeviation": the value is the distance of the worst angle from 90 degrees.</param>
+/// <param name="ErrorBound">Beyond this the element is unusable and the solver refuses it (null: no such limit).</param>
 public sealed record SolverQualityLimitDto(
     string Key, string Label, string Short, string Tech, string Hint,
-    bool HigherIsBetter, int Levels, IReadOnlyList<double> Bounds, string Unit, int Decimals, string Kind);
+    bool HigherIsBetter, int Levels, IReadOnlyList<double> Bounds, string Unit, int Decimals, string Kind, double? ErrorBound = null);

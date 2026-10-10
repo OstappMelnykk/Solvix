@@ -294,7 +294,8 @@ public class QualityApiTests
             Assert.That(profile.Flagged, Is.Empty, profile.Id);
             Assert.That(profile.Limits.Select(l => l.Key), Is.EquivalentTo(profile.Worst.Keys.Where(k => k is not ("minAngle" or "maxAngle"))));
         }
-        Assert.That(Profile(report, "solvix").Worst["scaledJacobian"], Is.EqualTo(1).Within(1e-9));
+        Assert.That(Profile(report, "solvix").Worst["jacobianRatio"], Is.EqualTo(1).Within(1e-9));
+        Assert.That(Profile(report, "solvix").Worst["maxCornerAngle"], Is.EqualTo(90).Within(1e-9));
         Assert.That(Profile(report, "cubit").Worst["condition"], Is.EqualTo(1).Within(1e-9));
     }
 
@@ -327,8 +328,8 @@ public class QualityApiTests
         Assert.That(q.Flagged.All(f => f.Hex == 1), "the regular cube has nothing to flag");
         Assert.That(q.Flagged.All(f => f.Ex is >= 0 and < 2 && f.Ey is >= 0 and < 2 && f.Ez is >= 0 and < 2));
         Assert.That(q.Flagged.Count(f => f.Grade != "excellent"), Is.EqualTo(q.Flagged.Count));
-        Assert.That(q.Worst["scaledJacobian"], Is.EqualTo(q.Flagged.Min(f => f.Values["scaledJacobian"])).Within(1e-12));
-        Assert.That(q.Worst["minAngle"], Is.LessThan(90));
+        Assert.That(q.Worst["maxCornerAngle"], Is.GreaterThanOrEqualTo(q.Flagged.Max(f => f.Values["maxCornerAngle"])));      // the worst is over all elements, the flagged are the ones that fail
+        Assert.That(q.Worst["maxCornerAngle"], Is.GreaterThan(90));
     }
 
     [Test]
@@ -389,7 +390,7 @@ public class QualityApiTests
 
         var messages = facade.Validate(Session, Export(editor)).Issues.Where(i => i.Severity == "warning").Select(i => i.Message).ToList();
 
-        Assert.That(messages, Has.Some.Contain("низьку якість"));
+        Assert.That(messages, Has.Some.Contain("не проходять критерії якості"));
         Assert.That(messages, Has.Some.Contain("відрізняються"));
     }
 }

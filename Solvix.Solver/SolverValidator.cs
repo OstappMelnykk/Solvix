@@ -37,9 +37,10 @@ internal static class SolverValidator
         // elements that can be integrated but badly, and materials so different that the iterative solve struggles
         var quality = elements > MaxElements ? null : MeshQuality.Evaluate(setup, mesh).Profiles.First(p => p.Id == "solvix");
         int invalid = quality?.Grades["invalid"] ?? 0;
-        if (invalid > 0 && mesh.FoldedHexes.Count == 0) Error($"{invalid} малих елементів вивернуті або вироджені після поділу кубів: розрахунок неможливий. Перегляньте їх у Quality World і виправте сітку або поділ.");
-        int poor = quality is null ? 0 : quality.Grades["poor"] + invalid;
-        if (quality is not null && poor > 0) Warning($"{poor} елементів мають низьку якість (найгірша форма {quality.Worst["scaledJacobian"]:0.00}, кути {quality.Worst["minAngle"]:0}–{quality.Worst["maxAngle"]:0}°): напруження біля них будуть неточними.");
+        if (invalid > 0 && mesh.FoldedHexes.Count == 0)
+            Error($"{invalid} малих елементів вивернуті або вироджені після поділу кубів: розрахунок неможливий. Перегляньте їх у Quality World і виправте сітку або поділ.");
+        int poor = quality?.Grades["poor"] ?? 0;
+        if (quality is not null && poor > 0) Warning($"{poor} елементів не проходять критерії якості Solvix (найгірше: {Worst(quality)}): напруження біля них будуть неточними.");
         var moduli = used.Where(setup.MaterialsByName.ContainsKey).Select(n => setup.MaterialsByName[n].E).ToList();
         if (moduli.Count > 1 && moduli.Max() / moduli.Min() > 1e4)
             Warning($"Жорсткості матеріалів відрізняються у {moduli.Max() / moduli.Min():0e0} разів: ітераційний розв'язок може збігатися повільно або не збігтися.");
@@ -83,4 +84,10 @@ internal static class SolverValidator
             }
         return Enumerable.Range(0, mesh.ElementCount).GroupBy(Find).Select(g => g.Select(e => mesh.ElementIds[e]).OrderBy(h => h).ToList()).OrderBy(p => p[0]).ToList();
     }
+
+    // the measures that are beyond their warning limit, with the worst value found: "Jacobian ratio 45, Aspect ratio 23"
+    private static string Worst(SolverQualityDto quality) =>
+        string.Join(", ", quality.Limits
+            .Where(l => l.HigherIsBetter ? quality.Worst[l.Key] < l.Bounds[0] : quality.Worst[l.Key] > l.Bounds[0])
+            .Select(l => $"{l.Tech} {(quality.Worst[l.Key] >= 1e6 ? "∞" : quality.Worst[l.Key].ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))}{l.Unit}"));
 }
