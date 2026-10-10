@@ -1,90 +1,427 @@
-$bg: #25272b;
-$card: #2e3035;
 $field-bg: #1e1f22;
-$border: rgba(255, 255, 255, 0.16);
-$accent: #da680b;
-$muted: #9aa0a8;
-$text: #e8eaed;
-$ok: #2fbf4f;
-$some: #f0b429;
-$bad: #e8584a;
+$field-border: rgba(255, 255, 255, 0.16);
+$accent-toggle: #da680b;
+$muted: #8a8f98;
+$text: #e4e6ea;
 
 :host {
   display: block;
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: 13px;
   color: $text;
 }
 
-.title {
-  margin: 0 0 14px;
-  font-size: 22px;
+h4 {
+  margin: 0 0 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid $field-border;
+  font-size: 13px;
   font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9096a0;
 }
 
-// every section is a card of its own with a big numbered header
-.section {
-  margin-bottom: 16px;
-  padding: 14px 16px 16px;
-  background: $card;
-  border: 1px solid $border;
-  border-radius: 10px;
+h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: $muted;
+}
+
+section {
+  margin-bottom: 14px;
+}
+
+i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+// the verdict
+.verdict {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid;
+  border-left-width: 6px;
+  border-radius: 8px;
 
   &__title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0 0 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid $border;
     font-size: 17px;
     font-weight: 700;
   }
+
+  &__sub {
+    margin: 2px 0 10px;
+    color: $muted;
+  }
 }
 
-.num {
-  display: inline-flex;
+.bar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  gap: 2px;
+
+  &__seg {
+    flex-basis: 0;
+    min-width: 4px;
+  }
+}
+
+.rule {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: $muted;
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+
+.count {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: $accent;
-  color: #fff;
-  font-size: 14px;
+  gap: 5px;
 }
 
-.lead {
-  margin: 0 0 10px;
+// what to colour by
+.seg {
+  display: flex;
+  border: 1px solid $field-border;
+  border-radius: 8px;
+  overflow: hidden;
+
+  button {
+    flex: 1;
+    padding: 7px 2px;
+    background: $field-bg;
+    border: none;
+    border-left: 1px solid $field-border;
+    color: $text;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+
+    &:first-child {
+      border-left: none;
+    }
+
+    &.on {
+      background: $accent-toggle;
+      color: #fff;
+      font-weight: 600;
+    }
+  }
 }
 
-.bad {
-  color: $bad;
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: $muted;
+
+  span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 }
 
-.swatch {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  margin-right: 7px;
-  border-radius: 3px;
-  vertical-align: -2px;
+// the gauges
+.gauge {
+  margin-bottom: 12px;
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  &__name {
+    font-weight: 600;
+
+    small {
+      margin-left: 4px;
+      font-weight: 400;
+      color: $muted;
+      font-size: 11px;
+    }
+  }
+
+  &__value {
+    font-size: 20px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__track {
+    position: relative;
+    display: flex;
+    height: 10px;
+    margin-top: 4px;
+    border-radius: 5px;
+    gap: 2px;
+  }
+
+  &__zone {
+    flex: 1;
+    opacity: 0.85;
+
+    &:first-child {
+      border-radius: 5px 0 0 5px;
+    }
+
+    &:nth-child(4) {
+      border-radius: 0 5px 5px 0;
+    }
+  }
+
+  &__marker {
+    position: absolute;
+    top: -4px;
+    width: 4px;
+    height: 18px;
+    margin-left: -2px;
+    background: #fff;
+    border-radius: 2px;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+  }
+
+  &__sub {
+    font-size: 11px;
+    color: $muted;
+  }
+
+  &__verdict {
+    margin-top: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #5fd17a;
+
+    &--bad {
+      color: #ff7a6b;
+    }
+
+    &--note {
+      font-weight: 400;
+      color: #c9a24a;
+    }
+  }
+
+  &__labels {
+    display: flex;
+    gap: 2px;
+    margin-top: 3px;
+  }
+
+  &__label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    line-height: 1.25;
+    color: $muted;
+    font-variant-numeric: tabular-nums;
+
+    b {
+      color: $text;
+      font-weight: 600;
+    }
+  }
+
+  &__note {
+    font-size: 11px;
+    color: #c9a24a;
+  }
+
+  &--note {
+    opacity: 0.8;
+  }
 }
 
-// 1. the conclusion
-.decision {
-  padding: 12px 14px;
+// the bad elements
+.badge {
+  margin-left: 4px;
+  padding: 1px 7px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  color: $text;
+}
+
+.empty,
+.more {
+  padding: 8px 0;
+  color: $muted;
+}
+
+.row {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 5px;
+  padding: 7px 9px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 8px;
+  color: $text;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &--picked {
+    border-color: #ffe14d;
+    box-shadow: 0 0 0 1px #ffe14d;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  &__grade {
+    margin-left: auto;
+    color: $muted;
+    font-size: 12px;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+  }
+}
+
+.chip {
+  padding: 1px 7px;
   border: 1px solid;
-  border-left-width: 7px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: $muted;
+
+  b {
+    color: $text;
+  }
+
+  &--note {
+    border-style: dashed;
+    opacity: 0.7;
+  }
+}
+
+// the standards, side by side
+.standards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.standard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 8px;
+  color: $text;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &--on {
+    border-color: $accent-toggle;
+    box-shadow: 0 0 0 1px $accent-toggle;
+  }
+
+  &--consensus {
+    border-style: dashed;
+  }
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  &__count {
+    font-weight: 700;
+
+    small {
+      font-weight: 400;
+      color: $muted;
+    }
+  }
+
+  &__bar {
+    display: block;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  &__fill {
+    display: block;
+    height: 100%;
+    background: #e0654a;
+    border-radius: 3px;
+  }
+}
+
+.source {
+  margin-top: 6px;
+  font-size: 12px;
+  color: $muted;
+
+  &--note {
+    color: #c9a24a;
+  }
+}
+
+.row__by {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: $muted;
+}
+
+// the conclusion: can the solver be used
+.decision {
+  padding: 12px;
+  border: 1px solid;
+  border-left-width: 6px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
 
   &[data-level='ok'] {
-    border-color: $ok;
+    border-color: #2fbf4f;
   }
 
   &[data-level='caution'] {
-    border-color: $some;
+    border-color: #f0d43a;
   }
 
   &[data-level='bad'] {
@@ -92,268 +429,69 @@ $bad: #e8584a;
   }
 
   &[data-level='blocked'] {
-    border-color: $bad;
+    border-color: #e02b2b;
   }
 
   &__head {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
 
   &__icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.1);
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
   }
 
   &__title {
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
   }
 
   &__reasons {
-    margin: 10px 0 0;
-    padding-left: 20px;
+    margin: 8px 0;
+    padding-left: 18px;
     color: $muted;
+    font-size: 12px;
+
+    li {
+      margin-bottom: 2px;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 }
 
 .go {
-  display: block;
-  width: 100%;
-  margin-top: 10px;
-  padding: 10px 12px;
+  flex: 1 1 auto;
+  padding: 8px 10px;
   background: $field-bg;
-  border: 1px solid $border;
+  border: 1px solid $field-border;
   border-radius: 8px;
   color: $text;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 13px;
   cursor: pointer;
 
   &:hover {
-    border-color: $accent;
+    border-color: $accent-toggle;
   }
 
   &--primary {
-    background: $accent;
-    border-color: $accent;
+    background: $accent-toggle;
+    border-color: $accent-toggle;
     color: #fff;
     font-weight: 600;
   }
-}
-
-// 2. the standards
-.pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  background: $field-bg;
-  border: 1px solid $border;
-  border-radius: 20px;
-  color: $text;
-  font-family: inherit;
-  font-size: 14px;
-  cursor: pointer;
-
-  &:hover {
-    border-color: $accent;
-  }
-
-  &--on {
-    background: $accent;
-    border-color: $accent;
-    color: #fff;
-    font-weight: 600;
-  }
-
-  &__percent {
-    opacity: 0.85;
-    font-variant-numeric: tabular-nums;
-  }
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: $muted;
-
-  &--ok {
-    background: $ok;
-  }
-
-  &--some {
-    background: $some;
-  }
-}
-
-.about {
-  margin: 12px 0 0;
-  color: $muted;
-
-  &--note {
-    margin-top: 6px;
-    color: #c9a24a;
-  }
-}
-
-// 3. what the scene shows
-.select {
-  width: 100%;
-  padding: 9px 10px;
-  background: $field-bg;
-  border: 1px solid $border;
-  border-radius: 8px;
-  color: $text;
-  font-family: inherit;
-  font-size: 14px;
-}
-
-.legend {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
-
-  &__item {
-    display: flex;
-    align-items: center;
-  }
-}
-
-// 4 and 5. the measures
-.measure {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px 14px;
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  background: $field-bg;
-  border: 1px solid $border;
-  border-left-width: 5px;
-  border-left-color: $ok;
-  border-radius: 8px;
-
-  &--bad {
-    border-left-color: $bad;
-  }
-
-  &__main {
-    flex: 1 1 220px;
-    min-width: 0;
-  }
-
-  &__name {
-    font-size: 15px;
-    font-weight: 600;
-
-    small {
-      margin-left: 6px;
-      color: $muted;
-      font-size: 12px;
-      font-weight: 400;
-    }
-  }
-
-  &__hint {
-    margin-top: 3px;
-    color: $muted;
-    font-size: 13px;
-  }
-
-  &__rule {
-    margin-top: 5px;
-    font-size: 13px;
-  }
-
-  &__value {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 20px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  &__caption {
-    display: block;
-    color: $muted;
-    font-size: 11px;
-    font-weight: 400;
-  }
-
-  &__mark {
-    font-size: 22px;
-    font-weight: 700;
-    color: $bad;
-
-    &--ok {
-      color: $ok;
-    }
-  }
-}
-
-.link {
-  flex: 1 0 100%;
-  padding: 0;
-  background: none;
-  border: none;
-  color: #6fb3ff;
-  font-family: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
-.picked__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 17px;
-
-  .link {
-    flex: none;
-  }
-}
-
-.verdicts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 4px 0 14px;
-}
-
-.verdict {
-  padding: 4px 10px;
-  border: 1px solid;
-  border-radius: 14px;
-  font-size: 13px;
-}
-
-.hint-box {
-  padding: 16px;
-  border: 1px dashed $border;
-  border-radius: 8px;
-  color: $muted;
-  text-align: center;
 }

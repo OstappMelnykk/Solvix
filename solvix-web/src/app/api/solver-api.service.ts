@@ -142,22 +142,6 @@ export interface SolverQualityDto {
   readonly flagged: readonly SolverElementQualityDto[];
 }
 
-// One standard's judgement of a single small element: its grade and its value of every measure of the standard.
-export interface SolverElementProfileDto {
-  readonly id: string;
-  readonly grade: QualityGradeName;
-  readonly values: Readonly<Record<string, number>>;
-}
-
-// Every standard's judgement of a single small element (for its details).
-export interface SolverElementReportDto {
-  readonly hex: number;
-  readonly ex: number;
-  readonly ey: number;
-  readonly ez: number;
-  readonly profiles: readonly SolverElementProfileDto[];
-}
-
 // The same mesh judged by every standard, so they can be compared.
 export interface SolverQualityReportDto {
   readonly profiles: readonly SolverQualityDto[];
@@ -219,10 +203,6 @@ export class SolverApiService {
 
   clearSetup(sessionId: number): Observable<SolverSetupDto> {
     return this.http.delete<SolverSetupDto>(this.url(sessionId, 'setup'));
-  }
-
-  qualityOfElement(sessionId: number, element: { hex: number; ex: number; ey: number; ez: number }): Observable<SolverElementReportDto> {
-    return this.http.get<SolverElementReportDto>(this.url(sessionId, 'quality/element'), { params: { hex: element.hex, ex: element.ex, ey: element.ey, ez: element.ez } });
   }
 
   quality(sessionId: number): Observable<SolverQualityReportDto> {

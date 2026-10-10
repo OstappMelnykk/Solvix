@@ -2,7 +2,7 @@ import { Component, DestroyRef, computed, effect, inject, signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgIf } from '@angular/common';
 import * as THREE from 'three';
-import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX } from '../../config/app-settings';
+import { IDEAL_WORLD_INDEX, QUALITY_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX } from '../../config/app-settings';
 import { ActiveWorldService } from '../../state/active-world.service';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
@@ -14,6 +14,7 @@ import { disposeObject3D } from '../../geometry/dispose-object3d';
 import { ImportedReferenceControlsComponent } from './imported-reference-controls/imported-reference-controls.component';
 import { ModelLibraryPickerComponent } from './model-library-picker/model-library-picker.component';
 import { MeshEditorControlsComponent } from './mesh-editor-controls/mesh-editor-controls.component';
+import { QualityControlsComponent } from './quality-controls/quality-controls.component';
 import { SolverControlsComponent } from './solver-controls/solver-controls.component';
 
 type ImportDisplayStatus =
@@ -33,7 +34,7 @@ type UploadDisplayStatus = { kind: 'idle' } | { kind: 'uploading' } | { kind: 'e
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [NgIf, ImportedReferenceControlsComponent, ModelLibraryPickerComponent, MeshEditorControlsComponent, SolverControlsComponent],
+  imports: [NgIf, ImportedReferenceControlsComponent, ModelLibraryPickerComponent, MeshEditorControlsComponent, SolverControlsComponent, QualityControlsComponent],
   templateUrl: './settings-panel.component.html',
   styleUrl: './settings-panel.component.scss'
 })
@@ -52,6 +53,7 @@ export class SettingsPanelComponent {
   readonly isIdealWorld = computed(() => this.worldIndex() === IDEAL_WORLD_INDEX);
   // The mesh editor works in the Ideal and Real Worlds; the Solver World has
   // its own controls (materials, supports, pressures, the solve).
+  readonly showsQuality = computed(() => this.worldIndex() === QUALITY_WORLD_INDEX);
   readonly showsSolver = computed(() => this.worldIndex() === SOLVER_WORLD_INDEX);
   readonly showsMeshEditor = computed(() => this.worldIndex() === IDEAL_WORLD_INDEX || this.worldIndex() === REAL_WORLD_INDEX);
 

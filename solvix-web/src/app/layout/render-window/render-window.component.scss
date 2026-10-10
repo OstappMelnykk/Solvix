@@ -22,24 +22,6 @@
   display: none;
 }
 
-.render-window__body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-// The Quality World trades the settings panel for this wide window next to the canvas, with room to explain.
-.render-window__quality {
-  flex: 0 0 38%;
-  min-width: 440px;
-  max-width: 760px;
-  overflow-y: auto;
-  box-sizing: border-box;
-  padding: 14px 16px 24px;
-  background: #25272b;
-  border-left: 1px solid #393b40;
-}
-
 .render-window__canvases {
   position: relative;
   flex: 1;

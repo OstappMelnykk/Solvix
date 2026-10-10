@@ -3,7 +3,7 @@ import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.se
 import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { markForWeightedOit } from '../rendering/weighted-oit';
 import { buildDisplacementArrows } from './displacement-arrows';
-import { QualityMetric, Result, measuredGrade, resultOf } from './quality-grading';
+import { QualityMetric, measuredGrade } from './quality-grading';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
 // The Solver World's drawing of a body, the way the solver's own viewer shows its mesh: every cube cut into
@@ -96,9 +96,6 @@ export const GRADE_COLORS: Record<QualityGradeName, number> = {
   poor: 0xf08a2e,
   invalid: 0xe02b2b
 };
-
-// The colours of a quality result: accepted, disputed by some of the standards (the overall result only), rejected.
-export const RESULT_COLORS: Record<Result, number> = { accepted: 0x2fbf4f, disputed: 0xf0b429, rejected: 0xe02b2b };
 
 // A stable colour per material name, so the same material looks the same everywhere.
 export function materialColor(name: string): THREE.Color {
@@ -458,7 +455,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       }
     }
     const colorOf = (face: DrawnFace, value: number) =>
-      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent', input.quality!.id === 'consensus')]) : materialColor(materialOf(face.owner.id, ...face.element));
+      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(GRADE_COLORS[qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent']) : materialColor(materialOf(face.owner.id, ...face.element));
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);

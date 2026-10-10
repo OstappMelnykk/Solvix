@@ -146,17 +146,6 @@ export const isRejected = (grade: QualityGradeName): boolean => grade === 'poor'
 
 export const CONSENSUS_ID = 'consensus';
 
-// What the user sees of a grade: accepted or not. Only the overall result has a middle state, when some of the
-// standards reject an element and the others accept it.
-export type Result = 'accepted' | 'disputed' | 'rejected';
-
-export const RESULT_NAMES: Record<Result, string> = { accepted: 'Приймається', disputed: 'Спірно', rejected: 'Не приймається' };
-
-export function resultOf(grade: QualityGradeName, overall: boolean): Result {
-  if (isRejected(grade)) return 'rejected';
-  return overall && grade !== 'excellent' ? 'disputed' : 'accepted';
-}
-
 // The "average" of the standards: for each element, in how many standards it is rejected. 0 excellent, 1 good, 2
 // acceptable, 3 or more poor - so the standards vote, and an element only the strictest one dislikes stays mild.
 export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto {
@@ -174,8 +163,8 @@ export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto
   const total = profiles[0]?.elements ?? 0;
   const limit: SolverQualityLimitDto = {
     key: 'rejected',
-    label: 'Скільки стандартів не приймають',
-    short: 'Не приймають',
+    label: 'Скільки стандартів відхиляє',
+    short: 'Відхиляють',
     tech: 'голосування',
     hint: `У скількох із ${profiles.length} стандартів елемент не проходить.`,
     higherIsBetter: false,
@@ -197,9 +186,9 @@ export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto
   grades.excellent = Math.max(0, total - flagged.length);
   return {
     id: CONSENSUS_ID,
-    name: 'Загальний результат',
-    source: `Підсумок усіх ${profiles.length} стандартів. Елемент приймається, якщо його не відхиляє жоден; спірний, якщо відхиляють один-два; не приймається, якщо відхиляють три й більше.`,
-    note: '',
+    name: 'Консенсус',
+    source: `Усереднення: у скількох із ${profiles.length} стандартів елемент не проходить. 0 — усі згодні, що добрий; 3 і більше — більшість відхиляє.`,
+    note: 'Це не окремий стандарт, а голосування решти. Щоб побачити, хто саме відхиляє, оберіть стандарт у списку.',
     elements: total,
     grades,
     worst: { rejected: most },

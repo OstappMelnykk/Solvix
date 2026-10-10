@@ -13,7 +13,6 @@ import {
   SolverFaceDto,
   SolverJobDto,
   SolverMaterialDto,
-  SolverElementReportDto,
   SolverQualityDto,
   SolverQualityReportDto,
   SolverResultDto,
@@ -88,8 +87,6 @@ interface SessionSolver {
   qualityReport: SolverQualityReportDto | null;
   qualityProfile: string;
   consensus: SolverQualityDto | null;
-  // The details of the picked element: every standard's judgement of it (null until the server answers).
-  qualityDetail: SolverElementReportDto | null;
   // The Quality World: what the cubes are coloured by, the cube picked in its list, and the mesh the quality
   // above was asked for (so it is asked again when the mesh or the division changes).
   qualityMetric: QualityMetric;
@@ -161,7 +158,6 @@ export class SolverService {
       qualityReport: null,
       qualityProfile: CONSENSUS_ID,
       consensus: null,
-      qualityDetail: null,
       qualityMetric: 'grade',
       qualityPick: null,
       qualityKey: null,
@@ -370,11 +366,6 @@ export class SolverService {
     return this.entry(sessionId).qualityReport;
   }
 
-  // The picked element's judgement by every standard, once the server has answered.
-  qualityDetail(sessionId: number): SolverElementReportDto | null {
-    return this.entry(sessionId).qualityDetail;
-  }
-
   qualityProfile(sessionId: number): string {
     return this.entry(sessionId).qualityProfile;
   }
@@ -383,6 +374,7 @@ export class SolverService {
     const entry = this.entry(sessionId);
     entry.qualityProfile = id;
     entry.qualityMetric = 'grade';       // the measures differ between standards
+    entry.qualityPick = null;
     this.touch(sessionId);
   }
 
@@ -416,21 +408,7 @@ export class SolverService {
     const entry = this.entry(sessionId);
     const same = pick !== null && entry.qualityPick !== null && sameElement(entry.qualityPick, pick);
     entry.qualityPick = same ? null : pick;
-    entry.qualityDetail = null;
     this.touch(sessionId);
-    const now = entry.qualityPick;
-    if (now) {
-      this.api.qualityOfElement(sessionId, now).subscribe({
-        next: detail => {
-          // the user may have picked another element while this one was on its way
-          if (entry.qualityPick && sameElement(entry.qualityPick, now)) {
-            entry.qualityDetail = detail;
-            this.touch(sessionId);
-          }
-        },
-        error: () => this.notifications.error('Не вдалось отримати подробиці елемента: сервер недоступний.')
-      });
-    }
   }
 
   // Asks for the quality again when the mesh or the division is not the one it was last asked for.
@@ -441,8 +419,6 @@ export class SolverService {
     const key = `${state.version}:${state.hexes.length}:${this.divisions(sessionId).join('x')}`;
     if (entry.qualityKey === key) return;
     entry.qualityKey = key;
-    entry.qualityPick = null;            // the mesh changed under it
-    entry.qualityDetail = null;
     this.refreshQuality(sessionId);
   }
 
