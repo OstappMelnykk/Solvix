@@ -5,7 +5,7 @@
   <section>
     <h5>За яким стандартом</h5>
     <div class="standards">
-      <button type="button" class="standard" *ngFor="let s of standards()" [class.standard--on]="profile() === s.id" [class.standard--consensus]="s.id === consensusId" (click)="setProfile(s.id)" [title]="s.dto.source">
+      <button type="button" class="standard" *ngFor="let s of standards(); trackBy: trackById" [class.standard--on]="profile() === s.id" [class.standard--consensus]="s.id === consensusId" (click)="setProfile(s.id)" [title]="s.dto.source">
         <span class="standard__head">
           <b>{{ s.name }}</b>
           <span class="standard__count">{{ s.rejected }} <small>не проходять · {{ percent(s.share) }}</small></span>
@@ -23,10 +23,10 @@
     <div class="verdict__sub">{{ verdict().sub }}</div>
     <div class="rule">{{ rule() }}</div>
     <div class="bar" title="Усі елементи сітки за оцінкою">
-      <span *ngFor="let s of segments()" class="bar__seg" [style.flex-grow]="s.count" [style.background]="gradeColor(s.grade)"></span>
+      <span *ngFor="let s of segments(); trackBy: trackSegment" class="bar__seg" [style.flex-grow]="s.count" [style.background]="gradeColor(s.grade)"></span>
     </div>
     <div class="counts">
-      <span *ngFor="let s of segments()" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeWord(s.grade) }}</span>
+      <span *ngFor="let s of segments(); trackBy: trackSegment" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeWord(s.grade) }}</span>
     </div>
   </section>
 
@@ -56,10 +56,10 @@
       </div>
       <div class="gauge__track">
         <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
-        <span *ngFor="let z of gaugeZones(l)" class="gauge__zone" [style.background]="gradeColor(z.grade)"></span>
+        <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__zone" [style.background]="gradeColor(z.grade)"></span>
       </div>
       <div class="gauge__labels">
-        <span *ngFor="let z of gaugeZones(l)" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
+        <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
       </div>
     </div>
   </section>
@@ -68,14 +68,14 @@
   <section>
     <h5>Проблемні елементи <span class="badge">{{ rows().length }}</span></h5>
     <div class="empty" *ngIf="rows().length === 0">Таких немає 👍</div>
-    <button type="button" class="row" *ngFor="let r of rows().slice(0, 60)" [class.row--picked]="isPicked(r.element)" (click)="pick(r.element)">
+    <button type="button" class="row" *ngFor="let r of rows().slice(0, 60); trackBy: trackRow" [class.row--picked]="isPicked(r.element)" (click)="pick(r.element)">
       <span class="row__head">
         <i [style.background]="gradeColor(r.grade)"></i>
         <b>Куб {{ r.element.hex }}{{ placeText(r.element) }}</b>
         <span class="row__grade">{{ gradeNames[r.grade] }}</span>
       </span>
       <span class="row__chips">
-        <span *ngFor="let i of r.issues" class="chip" [style.border-color]="gradeColor(i.grade)" [title]="i.limit.tech">
+        <span *ngFor="let i of r.issues; trackBy: trackIndex" class="chip" [style.border-color]="gradeColor(i.grade)" [title]="i.limit.tech">
           {{ i.limit.short }} <b>{{ valueText(i.limit, i.value, r.element) }}</b>
         </span>
       </span>

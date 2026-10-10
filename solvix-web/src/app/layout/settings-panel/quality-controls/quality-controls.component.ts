@@ -1,6 +1,6 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
-import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
+import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../../../api/solver-api.service';
 import { GRADE_COLORS } from '../../../geometry/solver-view';
 import {
   CONSENSUS_ID, GRADE_NAMES, GRADE_ORDER, QualityMetric, anglesText, buildConsensus, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue,
@@ -75,11 +75,41 @@ export class QualityControlsComponent implements DoCheck {
     this.solver.setQualityProfile(this.sessionId, id);
   }
 
+  // The lists below are rebuilt on every change-detection pass (the 3D canvas triggers one every frame); without a
+  // track function the buttons would be torn down and recreated between mouse-down and mouse-up, and a click would
+  // never arrive.
+  trackById(_: number, item: { id: string }): string {
+    return item.id;
+  }
+
+  trackIndex(index: number): number {
+    return index;
+  }
+
+  trackRow(_: number, row: Row): string {
+    return `${row.element.hex}:${row.element.ex}:${row.element.ey}:${row.element.ez}`;
+  }
+
+  trackSegment(_: number, segment: { grade: QualityGradeName }): string {
+    return segment.grade;
+  }
+
+  trackZone(_: number, zone: { grade: QualityGradeName }): string {
+    return zone.grade;
+  }
+
+  private consensusOf: { report: SolverQualityReportDto; dto: SolverQualityDto } | null = null;
+
+  private consensus(report: SolverQualityReportDto): SolverQualityDto {
+    if (this.consensusOf?.report !== report) this.consensusOf = { report, dto: buildConsensus(report) };
+    return this.consensusOf.dto;
+  }
+
   // One row per standard (and the consensus) with the share of elements it rejects.
   standards(): { id: string; name: string; rejected: number; share: number; dto: SolverQualityDto }[] {
     const report = this.report();
     if (!report) return [];
-    const consensus = buildConsensus(report);
+    const consensus = this.consensus(report);
     return [...report.profiles, consensus].map(dto => {
       const rejected = dto.id === CONSENSUS_ID ? dto.grades.poor + dto.grades.invalid : rejectedCount(dto);
       return { id: dto.id, name: dto.name, rejected, share: dto.elements > 0 ? rejected / dto.elements : 0, dto };
