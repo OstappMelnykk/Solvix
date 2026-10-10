@@ -23,6 +23,15 @@ export class SurfaceAttachmentService {
   private readonly _share = signal(SurfaceAttachmentService.DEFAULT_SHARE);
   readonly snapShare = this._share.asReadonly();
 
+  // "Place on the surface" mode: with a node selected, a click on a point of the imported surface puts the node there (and
+  // sticks it). Off to begin with, since it makes the cubes unclickable - a click goes through them to the surface.
+  private readonly _place = signal(false);
+  readonly placeMode = this._place.asReadonly();
+
+  setPlaceMode(on: boolean): void {
+    this._place.set(on);
+  }
+
   // Whether a dragged node sticks to the surface at all.
   private readonly _enabled = signal(true);
   readonly snapEnabled = this._enabled.asReadonly();

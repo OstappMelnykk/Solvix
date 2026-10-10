@@ -49,6 +49,11 @@ export interface SixViewSource {
     readonly setAttached: (nodeId: number, attached: boolean) => void;
     readonly share: () => number;
     readonly enabled: () => boolean;
+    // The imported surface itself, for putting a node on the point of it that is clicked
+    readonly object: () => THREE.Object3D | null;
+    // "Place on the surface" mode is on: a click on the surface (with a node selected) puts the node there
+    readonly placeMode: () => boolean;
+    readonly place: (nodeId: number, position: THREE.Vector3) => void;
   };
 }
 

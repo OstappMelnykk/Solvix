@@ -160,6 +160,19 @@ export class RenderWindowComponent {
     return worldIndex === REAL_WORLD_INDEX && sessionId !== null ? this.attachments.attached(sessionId) : NO_NODES;
   }
 
+  placeOnSurface(): boolean {
+    return this.attachments.placeMode();
+  }
+
+  // A click on the imported surface with a node selected: the node goes to that point and sticks to the surface.
+  onSurfacePlace(event: { nodeId: number; position: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    const round = (v: number) => Math.round(v * 1e6) / 1e6;
+    this.meshEditor.moveNode(sessionId, event.nodeId, { x: round(event.position.x), y: round(event.position.y), z: round(event.position.z) }, this.meshEditor.carryEdgeMidpoints);
+    this.attachments.attach(sessionId, event.nodeId);
+  }
+
   snapEnabled(): boolean {
     return this.attachments.snapEnabled();
   }

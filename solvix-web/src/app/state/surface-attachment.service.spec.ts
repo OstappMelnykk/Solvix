@@ -66,4 +66,12 @@ describe('SurfaceAttachmentService', () => {
 
     expect(attachments.snapEnabled()).toBeFalse();
   });
+
+  it('has a "place on the surface" mode, off to begin with', () => {
+    expect(attachments.placeMode()).toBeFalse();
+
+    attachments.setPlaceMode(true);
+
+    expect(attachments.placeMode()).toBeTrue();
+  });
 });

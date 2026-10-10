@@ -23,6 +23,8 @@
     [attachedNodeIds]="getAttachedNodes(i)"
     [snapShare]="snapShare()"
     [snapEnabled]="snapEnabled()"
+    [placeOnSurface]="placeOnSurface()"
+    (surfacePlace)="onSurfacePlace($event)"
     (nodeAttach)="onNodeAttach($event)"
     (nodeDragging)="onNodeDragging($event)"
     (nodeMoved)="onNodeMoved($event)"

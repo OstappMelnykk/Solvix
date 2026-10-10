@@ -13,6 +13,7 @@ import { SharedModelService } from '../../../state/shared-model.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
+import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
@@ -126,6 +127,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() attachedNodeIds: ReadonlySet<number> = new Set<number>();
   // How close to the surface, as a share of its size, a dragged node sticks to it (set in the panel).
   @Input() snapShare = 0.01;
+  // Place-on-surface mode (Real World): with a node selected, a click on the imported surface asks for the node to be put
+  // at that point; a click on a node still picks it, and the cubes do not take clicks.
+  @Input() placeOnSurface = false;
+  @Output() readonly surfacePlace = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
   // Switch the sticking off altogether (a node then moves freely, as before).
   @Input() snapEnabled = true;
   @Output() readonly nodeAttach = new EventEmitter<{ nodeId: number; attached: boolean }>();
@@ -217,6 +222,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
   private readonly meshSelection = inject(MeshEditorSelectionService);
+  private readonly attachmentSettings = inject(SurfaceAttachmentService);
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -976,12 +982,31 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       return;
     }
     const pick = this.pickAt(event.clientX, event.clientY);
+    if (this.placeOnSurface && this.worldIndex === REAL_WORLD_INDEX) {
+      this.placeOrPick(event, pick);
+      return;
+    }
     // While building a left click on a cube removes it; a click on a node still picks the node (to move it).
     if (this.buildEnabled && pick?.kind === 'face') {
       this.meshBuild.emit({ action: 'remove', pick, ground: null });
       return;
     }
     this.meshPick.emit({ pick, additive: event.shiftKey });
+  }
+
+  // In place-on-surface mode: a node is picked; otherwise the point of the imported surface under the pointer is where the
+  // selected node goes.
+  private placeOrPick(event: PointerEvent, pick: MeshPick | null): void {
+    if (pick?.kind === 'node') {
+      this.meshPick.emit({ pick, additive: false });
+      return;
+    }
+    const nodeId = this.draggableNodeId;
+    const reference = this.currentImportedReference;
+    if (nodeId === null || !reference) return;
+    this.aimRay(event.clientX, event.clientY);
+    const hit = this.raycaster.intersectObject(reference, true)[0];
+    if (hit) this.surfacePlace.emit({ nodeId, position: { x: hit.point.x, y: hit.point.y, z: hit.point.z } });
   }
 
   // A right click (not a pan) while building: add a cube where the pointer is.
@@ -1040,6 +1065,18 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   detachSelected(): void {
     if (this.canDetachSelected()) this.nodeAttach.emit({ nodeId: this.draggableNodeId!, attached: false });
+  }
+
+  isPlaceOn(): boolean {
+    return this.placeOnSurface && this.worldIndex === REAL_WORLD_INDEX;
+  }
+
+  togglePlace(): void {
+    this.attachmentSettings.setPlaceMode(!this.attachmentSettings.placeMode());
+  }
+
+  hasSurface(): boolean {
+    return this.worldIndex === REAL_WORLD_INDEX && this.currentImportedReference !== null;
   }
 
   // Building with the mouse is in the Ideal World and the Real World.
@@ -1380,7 +1417,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
                 isAttached: nodeId => this.attachedNodeIds.has(nodeId),
                 setAttached: (nodeId, attached) => this.nodeAttach.emit({ nodeId, attached }),
                 share: () => this.snapShare,
-                enabled: () => this.snapEnabled
+                enabled: () => this.snapEnabled,
+                object: () => this.currentImportedReference,
+                placeMode: () => this.placeOnSurface,
+                place: (nodeId, position) => this.surfacePlace.emit({ nodeId, position: { x: position.x, y: position.y, z: position.z } })
               }
             : undefined
       });

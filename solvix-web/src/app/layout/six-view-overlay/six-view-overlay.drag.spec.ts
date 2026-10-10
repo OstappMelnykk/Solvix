@@ -148,16 +148,21 @@ describe('SixViewOverlayComponent: dragging a node in a view', () => {
   describe('sticking to the imported surface', () => {
     let attached: Set<number>;
     let setAttached: jasmine.Spy;
+    let placeMode = false;
+    let place: jasmine.Spy;
 
     // a wall in the plane z = 0.2 in front of the node, 1.5 wide
     const openWithSurface = (share = 0.05, enabled = true) => {
       const wall = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial());
       wall.position.set(0.5, 0.5, 0.2);
+      wall.updateMatrixWorld(true);
       attached = new Set<number>();
+      placeMode = false;
+      place = jasmine.createSpy('place');
       setAttached = jasmine.createSpy('setAttached').and.callFake((id: number, on: boolean) => (on ? attached.add(id) : attached.delete(id)));
       const source: SixViewSource = {
         scene: new THREE.Scene(), sessionId: 1, isIdealWorld: false, framingObjects: [view.root], hiddenDuringView: [], meshView: () => view, nodesEditable: true,
-        surface: { snapper: () => new SurfaceSnapper(wall), isAttached: id => attached.has(id), setAttached: setAttached as never, share: () => share, enabled: () => enabled }
+        surface: { snapper: () => new SurfaceSnapper(wall), isAttached: id => attached.has(id), setAttached: setAttached as never, share: () => share, enabled: () => enabled, object: () => wall, placeMode: () => placeMode, place: place as never }
       };
       source.scene.add(view.root);
       TestBed.inject(SixViewOverlayService).open(source);
@@ -221,6 +226,47 @@ describe('SixViewOverlayComponent: dragging a node in a view', () => {
       fire(4, 'pointermove', { x: again.x + 20, y: again.y });
       fire(4, 'pointerup', { x: again.x + 20, y: again.y });
       expect(setAttached).not.toHaveBeenCalled();
+    });
+  
+    it('in place-on-surface mode a click on the surface with a node selected puts the node on that point', async () => {
+      openWithSurface();
+      placeMode = true;
+      selection.selectNode(1, 7);
+      fixture.detectChanges();
+      await frames(3);
+      const target = pixelOf(4, new THREE.Vector3(0.8, 0.3, 0.2));                    // a point of the wall, seen along Z
+
+      fire(4, 'pointerdown', target);
+      fire(4, 'pointerup', target);
+
+      expect(place).toHaveBeenCalledTimes(1);
+      const [id, point] = place.calls.mostRecent().args;
+      expect(id).toBe(7);
+      expect(point.x).toBeCloseTo(0.8, 2);
+      expect(point.y).toBeCloseTo(0.3, 2);
+      expect(point.z).toBeCloseTo(0.2, 4);                                             // on the wall
+    });
+
+    it('does not place on a pan, without the mode, or with no node selected', async () => {
+      openWithSurface();
+      selection.selectNode(1, 7);
+      fixture.detectChanges();
+      await frames(3);
+      const target = pixelOf(4, new THREE.Vector3(0.8, 0.3, 0.2));
+
+      fire(4, 'pointerdown', target);                                                  // the mode is off
+      fire(4, 'pointerup', target);
+      expect(place).not.toHaveBeenCalled();
+
+      placeMode = true;
+      fire(4, 'pointerdown', target);                                                  // a pan, not a click
+      fire(4, 'pointerup', { x: target.x + 30, y: target.y });
+      expect(place).not.toHaveBeenCalled();
+
+      selection.selectNode(1, 7);                                                      // unselect
+      fire(4, 'pointerdown', target);
+      fire(4, 'pointerup', target);
+      expect(place).not.toHaveBeenCalled();
     });
   });
 });

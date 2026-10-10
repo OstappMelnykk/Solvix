@@ -80,6 +80,8 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   dragText: string | null = null;
   dragPanel: number | null = null;
   private drag: NodeDrag | null = null;
+  // Where a press on empty space began in each panel: if it ends without moving it was a click (see surfaceClick).
+  private readonly emptyPress: (THREE.Vector2 | null)[] = VIEW_DIRECTIONS.map(() => null);
   // The node under the pointer in each panel (a ring is drawn round it, so the user sees what a press would grab).
   private readonly hoverNode: (number | null)[] = VIEW_DIRECTIONS.map(() => null);
   private reframeNextFrame = false;
@@ -512,7 +514,8 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     let nodeId = grabbed ? this.meshSelection.nodeId(source.sessionId) : this.nodeUnderPointer(i, canvas, event);
     const mesh = nodeId === null ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
     if (nodeId === null || !mesh) {
-      return; // empty space: let OrbitControls pan the view
+      this.emptyPress[i] = this.pixelOf(canvas, event);       // empty space: OrbitControls pans the view - unless it turns out to be a click
+      return;
     }
     event.stopImmediatePropagation();
     event.preventDefault();
@@ -553,6 +556,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   private onPanelPointerUp(i: number, event: PointerEvent): void {
     const drag = this.drag;
     if (!drag) {
+      this.surfaceClick(i, event);
       return;
     }
     this.drag = null;
@@ -572,6 +576,27 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
       return; // a click on the node, not a move
     }
     this.meshEditor.moveNode(source.sessionId, drag.nodeId, roundedPosition(position), this.meshEditor.carryEdgeMidpoints);
+  }
+
+  // In "place on the surface" mode: a click (not a pan) on empty space of a view, with a node selected, puts the node on
+  // the point of the imported surface that the click lands on - found along the line of sight of that view.
+  private surfaceClick(i: number, event: PointerEvent): void {
+    const down = this.emptyPress[i];
+    this.emptyPress[i] = null;
+    const source = this.overlay.active();
+    const surface = source?.surface;
+    const camera = this.cameras[i];
+    const canvas = event.currentTarget as HTMLCanvasElement;
+    if (!down || !source || !surface || !camera || !this.canDragNodes() || !surface.placeMode()) return;
+    if (down.distanceTo(this.pixelOf(canvas, event)) > 4) return;
+    const nodeId = this.meshSelection.nodeId(source.sessionId);
+    const object = surface.object();
+    if (nodeId === null || !object) return;
+    const raycaster = new THREE.Raycaster();
+    camera.updateMatrixWorld(true);
+    raycaster.setFromCamera(this.ndcOf(canvas, event), camera);
+    const hit = raycaster.intersectObject(object, true)[0];
+    if (hit) surface.place(nodeId, hit.point);
   }
 
   // --- the gizmo, drawn over each panel ---

@@ -49,6 +49,20 @@
     <div class="canvas-toolbar__hint" [hidden]="!isBuildOn()">ПКМ — додати · ЛКМ — видалити</div>
   </div>
 
+  <div class="canvas-toolbar__group" [hidden]="!hasSurface()">
+    <div class="canvas-toolbar__label">Вершина на STL</div>
+    <button
+      class="tool-button"
+      [class.tool-button--on]="isPlaceOn()"
+      type="button"
+      title="1) клікніть вершину; 2) клікніть точку на поверхні STL — вершина стане туди й прилипне. Поки режим увімкнено, куби не приймають кліків."
+      (click)="togglePlace()"
+    >
+      {{ isPlaceOn() ? 'Ставити кліком: увімкнено' : 'Ставити кліком: вимкнено' }}
+    </button>
+    <div class="canvas-toolbar__hint" [hidden]="!isPlaceOn()">клік по вершині → клік по поверхні STL</div>
+  </div>
+
   <div class="canvas-toolbar__group" [hidden]="!canDetachSelected()">
     <div class="canvas-toolbar__label">Вершина прилипла до STL</div>
     <button class="tool-button" type="button" title="Відлипити вибрану вершину від STL: далі вона рухається вільно. Те саме — утримувати Alt під час тягнення." (click)="detachSelected()">

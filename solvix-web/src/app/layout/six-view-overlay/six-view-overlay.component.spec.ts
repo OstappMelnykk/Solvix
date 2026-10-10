@@ -109,7 +109,10 @@ describe('SixViewOverlayComponent (main panel)', () => {
         isAttached: id => attached.has(id),
         setAttached: (id, on) => (on ? attached.add(id) : attached.delete(id)),
         share: () => 0.01,
-        enabled: () => true
+        enabled: () => true,
+        object: () => null,
+        placeMode: () => false,
+        place: () => undefined
       }
     });
 
