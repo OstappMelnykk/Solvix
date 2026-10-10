@@ -3,7 +3,7 @@ import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { SolverService } from './solver.service';
-import { MeshView, buildMeshView } from '../geometry/mesh-editor-view';
+import { MeshView, buildMeshView, withNodeMoved } from '../geometry/mesh-editor-view';
 
 interface Cached {
   readonly key: string;
@@ -25,15 +25,30 @@ export class MeshEditorRenderService {
   private readonly solver = inject(SolverService);
   private readonly cache = new Map<string, Cached>();
 
+  // A node being dragged right now: the Real World shows it (and what follows from it) before the server has
+  // answered. It drops away once the state moves on to a newer version.
+  private preview: { sessionId: number; nodeId: number; position: { x: number; y: number; z: number }; carry: boolean; version: number; token: number } | null = null;
+  private previewToken = 0;
+
+  setDragPreview(sessionId: number, nodeId: number, position: { x: number; y: number; z: number }, carry: boolean): void {
+    const version = this.editor.getState(sessionId)?.version;
+    if (version === undefined) return;
+    this.preview = { sessionId, nodeId, position, carry, version, token: ++this.previewToken };
+  }
+
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
     if (sessionId === null || (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX)) return null;
-    const state = this.editor.getState(sessionId);
+    let state = this.editor.getState(sessionId);
     const cacheKey = `${sessionId}:${worldIndex}`;
     if (state === null || state.hexes.length === 0) {
       this.cache.delete(cacheKey);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}`;
+    const preview = this.preview;
+    if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
+    const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
+    if (live) state = withNodeMoved(state, live.nodeId, live.position, live.carry);
+    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 

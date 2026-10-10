@@ -29,7 +29,7 @@
     >
       <span class="material__swatch" [style.background]="colorOf(material.name)"></span>
       <span class="material__name">{{ material.label }}</span>
-      <span class="material__count" title="Елементів із цим матеріалом">{{ countOf(material.name) }}</span>
+      <span class="material__count" title="Елементів із цим матеріалом">{{ countOf(material.name) }}/{{ elementCount() }}</span>
       <button class="material__eye" type="button" [title]="isHidden(material.name) ? 'Показати матеріал' : 'Сховати матеріал'" (click)="toggleHidden(material.name, $event)">
         {{ isHidden(material.name) ? '◌' : '◉' }}
       </button>

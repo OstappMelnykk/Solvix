@@ -107,6 +107,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // only for the World where nodes move (the Real World), null elsewhere.
   @Input() draggableNodeId: number | null = null;
   // Fired when a drag of the gizmo ends: where the user dropped the node.
+  // Fired continuously while the gizmo is dragged: where the node is right now.
+  @Output() readonly nodeDragging = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
   @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
@@ -422,6 +424,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.nodeGizmo.addEventListener('objectChange', () => {
       const mesh = this.gizmoNodeId === null ? undefined : this.currentMeshView?.nodeMeshes.get(this.gizmoNodeId);
       mesh?.position.copy(this.nodeProxy.position);
+      if (this.gizmoNodeId !== null) {
+        const { x, y, z } = this.nodeProxy.position;
+        this.nodeDragging.emit({ nodeId: this.gizmoNodeId, position: { x, y, z } });
+      }
     });
     this.nodeGizmo.addEventListener('dragging-changed', event => {
       if (event.value || this.gizmoNodeId === null) {
