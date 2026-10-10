@@ -38,7 +38,6 @@ export class SolverOverlayComponent {
   @Input({ required: true }) sessionId!: number;
 
   readonly tools = TOOLS;
-  readonly opacityPresets = [100, 70, 40, 15];
 
   // The list of scopes is built afresh on every change detection; tracking by scope keeps the buttons themselves.
   trackScope(_: number, item: { scope: Scope }): Scope {
@@ -137,10 +136,6 @@ export class SolverOverlayComponent {
   onOpacity(event: Event): void {
     const percent = Number((event.target as HTMLInputElement).value);
     if (Number.isFinite(percent)) this.solver.setOpacity(this.sessionId, percent / 100);
-  }
-
-  setOpacityPercent(percent: number): void {
-    this.solver.setOpacity(this.sessionId, percent / 100);
   }
 
   showInner(): boolean {

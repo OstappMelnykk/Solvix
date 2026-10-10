@@ -144,16 +144,14 @@ describe('SolverOverlayComponent', () => {
   });
 
   describe('see-through', () => {
-    it('shows the opacity in percent and sets it from the slider and from the presets', () => {
+    it('shows the opacity in percent and sets it from the slider', () => {
       display.opacity = 0.37;
       expect(component.opacityPercent()).toBe(37);
 
       component.onOpacity({ target: { value: '60' } } as unknown as Event);
       component.onOpacity({ target: { value: 'x' } } as unknown as Event);
-      component.setOpacityPercent(15);
 
-      expect(solver.setOpacity.calls.allArgs()).toEqual([[1, 0.6], [1, 0.15]]);
-      expect(component.opacityPresets).toEqual([100, 70, 40, 15]);
+      expect(solver.setOpacity.calls.allArgs()).toEqual([[1, 0.6]]);
     });
 
     it('switches the inner faces', () => {
