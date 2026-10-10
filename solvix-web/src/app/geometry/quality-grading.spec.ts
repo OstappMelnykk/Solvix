@@ -1,5 +1,5 @@
 import { SolverQualityLimitDto } from '../api/solver-api.service';
-import { gaugePosition, metricGrade } from './quality-grading';
+import { gaugePosition, gaugeZones, metricGrade, passes } from './quality-grading';
 
 const jacobian: SolverQualityLimitDto = { key: 'scaledJacobian', label: '', hint: '', higherIsBetter: true, graded: true, bounds: [0.7, 0.4, 0.15] };
 const aspect: SolverQualityLimitDto = { key: 'aspectRatio', label: '', hint: '', higherIsBetter: false, graded: true, bounds: [3, 10, 30] };
@@ -26,5 +26,20 @@ describe('quality gauge', () => {
     }
     expect(metricGrade(jacobian, 0.121)).toBe('poor');
     expect(metricGrade(aspect, 3.3)).toBe('good');
+  });
+});
+
+describe('quality limits as text', () => {
+  it('lists the grades from worst to best with the values that belong to each', () => {
+    expect(gaugeZones(jacobian).map(z => `${z.grade} ${z.range}`)).toEqual(['poor до 0.15', 'acceptable 0.15 – 0.4', 'good 0.4 – 0.7', 'excellent від 0.7']);
+    expect(gaugeZones(aspect).map(z => `${z.grade} ${z.range}`)).toEqual(['poor від 30', 'acceptable 10 – 30', 'good 3 – 10', 'excellent до 3']);
+  });
+
+  it('lets excellent, good and acceptable pass and nothing else', () => {
+    expect(passes(jacobian, 0.121)).toBeFalse();
+    expect(passes(jacobian, 0.2)).toBeTrue();
+    expect(passes(jacobian, -1)).toBeFalse();
+    expect(passes(aspect, 3.3)).toBeTrue();
+    expect(passes(aspect, 40)).toBeFalse();
   });
 });

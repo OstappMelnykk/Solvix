@@ -101,3 +101,36 @@ export function gaugePosition(limit: SolverQualityLimitDto, value: number): numb
 export function gaugeTicks(limit: SolverQualityLimitDto): number[] {
   return [limit.bounds[2], limit.bounds[1], limit.bounds[0]];
 }
+
+export interface GaugeZone {
+  readonly grade: QualityGradeName;
+  // the range of values that fall in this grade, as text
+  readonly range: string;
+}
+
+const num = (v: number): string => String(v);
+
+// The four grades of a measure from the worst (left) to the best (right) with the values that belong to each.
+export function gaugeZones(limit: SolverQualityLimitDto): GaugeZone[] {
+  const [b0, b1, b2] = limit.bounds;
+  if (limit.higherIsBetter) {
+    return [
+      { grade: 'poor', range: `до ${num(b2)}` },
+      { grade: 'acceptable', range: `${num(b2)} – ${num(b1)}` },
+      { grade: 'good', range: `${num(b1)} – ${num(b0)}` },
+      { grade: 'excellent', range: `від ${num(b0)}` }
+    ];
+  }
+  return [
+    { grade: 'poor', range: `від ${num(b2)}` },
+    { grade: 'acceptable', range: `${num(b1)} – ${num(b2)}` },
+    { grade: 'good', range: `${num(b0)} – ${num(b1)}` },
+    { grade: 'excellent', range: `до ${num(b0)}` }
+  ];
+}
+
+// Whether a value is allowed: excellent, good or acceptable pass; poor and invalid do not.
+export function passes(limit: SolverQualityLimitDto, value: number): boolean {
+  const grade = metricGrade(limit, value);
+  return grade !== 'poor' && grade !== 'invalid';
+}

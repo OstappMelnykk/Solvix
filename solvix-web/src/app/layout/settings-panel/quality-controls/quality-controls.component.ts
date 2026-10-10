@@ -2,7 +2,7 @@ import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { QualityGradeName, QualityMetricKey, SolverElementQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
 import { GRADE_COLORS } from '../../../geometry/solver-view';
-import { GRADE_NAMES, GRADE_ORDER, METRIC_TEXT, QualityMetric, gaugePosition, gaugeTicks, measuredGrade, metricGrade, metricValue } from '../../../geometry/quality-grading';
+import { GRADE_NAMES, GRADE_ORDER, METRIC_TEXT, QualityMetric, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue, passes } from '../../../geometry/quality-grading';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 
@@ -30,8 +30,7 @@ export class QualityControlsComponent implements DoCheck {
   readonly gradeOrder = GRADE_ORDER;
   readonly gradeNames = GRADE_NAMES;
   readonly text = METRIC_TEXT;
-  readonly gaugeTicks = gaugeTicks;
-  readonly zones: readonly QualityGradeName[] = ['poor', 'acceptable', 'good', 'excellent'];
+  readonly gaugeZones = gaugeZones;
 
   // The quality follows the mesh: it is asked again whenever the mesh or the division changed.
   ngDoCheck(): void {
@@ -98,6 +97,16 @@ export class QualityControlsComponent implements DoCheck {
 
   worstGrade(limit: SolverQualityLimitDto): QualityGradeName {
     return metricGrade(limit, this.worstValue(limit));
+  }
+
+  passed(limit: SolverQualityLimitDto): boolean {
+    return passes(limit, this.worstValue(limit));
+  }
+
+  // The line between allowed and not allowed, in words: what a value has to be to pass.
+  rule(limit: SolverQualityLimitDto): string {
+    const edge = limit.bounds[2];
+    return limit.higherIsBetter ? `Допустимо: більше ${edge}` : `Допустимо: менше ${edge}`;
   }
 
   markerLeft(limit: SolverQualityLimitDto): string {

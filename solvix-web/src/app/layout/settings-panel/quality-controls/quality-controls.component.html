@@ -5,6 +5,7 @@
   <section class="verdict" [style.border-color]="gradeColor(verdictGrade())">
     <div class="verdict__title">{{ verdict().title }}</div>
     <div class="verdict__sub">{{ verdict().sub }}</div>
+    <div class="rule">Допустимі: відмінні, добрі й прийнятні. Погані та невалідні — ні.</div>
     <div class="bar" title="Усі елементи сітки за оцінкою">
       <span *ngFor="let s of segments()" class="bar__seg" [style.flex-grow]="s.count" [style.background]="gradeColor(s.grade)"></span>
     </div>
@@ -33,12 +34,17 @@
         <span class="gauge__name" [title]="text[l.key].tip">{{ text[l.key].title }} <small>{{ text[l.key].tech }}</small></span>
         <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ worstValue(l) | number: decimals(l) }}{{ unit(l) }}</span>
       </div>
-      <div class="gauge__track">
-        <span *ngFor="let z of zones" class="gauge__zone" [style.background]="gradeColor(z)"></span>
-        <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
+      <div class="gauge__verdict" *ngIf="l.graded" [class.gauge__verdict--bad]="!passed(l)">
+        {{ passed(l) ? '✓ Проходить' : '✗ Не проходить' }} · {{ rule(l) }}
       </div>
-      <div class="gauge__ticks"><span *ngFor="let t of gaugeTicks(l)">{{ t }}</span></div>
-      <div class="gauge__note" *ngIf="!l.graded">довідково, на оцінку не впливає</div>
+      <div class="gauge__verdict gauge__verdict--note" *ngIf="!l.graded">Довідково, на оцінку не впливає · орієнтир: {{ rule(l).toLowerCase() }}</div>
+      <div class="gauge__track">
+        <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
+        <span *ngFor="let z of gaugeZones(l)" class="gauge__zone" [style.background]="gradeColor(z.grade)"></span>
+      </div>
+      <div class="gauge__labels">
+        <span *ngFor="let z of gaugeZones(l)" class="gauge__label"><b>{{ gradeNames[z.grade] }}</b>{{ z.range }}</span>
+      </div>
     </div>
   </section>
 
