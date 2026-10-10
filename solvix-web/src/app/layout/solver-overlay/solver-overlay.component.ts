@@ -2,7 +2,7 @@ import { Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { Scope, Tool } from '../../geometry/solver-targets';
 import { ResultField, SolverService } from '../../state/solver.service';
-import { fieldRange, fieldValues, materialColor, rampColor } from '../../geometry/solver-view';
+import { fieldRange, fieldValues, materialColor, pressureColor, rampColor } from '../../geometry/solver-view';
 import { SolverMaterialDto } from '../../api/solver-api.service';
 
 const SLIDER_STEPS = 1000;
@@ -154,6 +154,13 @@ export class SolverOverlayComponent {
   }
 
   // --- legend of the marked faces ---
+
+  // One line per different pressure with its colour in the scene.
+  pressureKey(): { color: string; text: string }[] {
+    const groups = this.solver.loadedPressures(this.sessionId);
+    const all = groups.map(g => g.pressure);
+    return groups.map(g => ({ color: `#${pressureColor(all, g.pressure).toString(16).padStart(6, '0')}`, text: `${(g.pressure / MPA).toPrecision(3)} МПа · ${g.count}` }));
+  }
 
   loadedText(): string {
     const count = this.solver.loadedFaceCount(this.sessionId);

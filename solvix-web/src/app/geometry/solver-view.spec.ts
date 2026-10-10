@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -672,5 +672,14 @@ describe('colouring by mesh quality', () => {
 
     expect(colourOf(view, 0).r).toBeGreaterThan(colourOf(view, 0).b * 2);        // the grade's orange, not the ramp's blue/red
     disposeMeshView(view);
+  });
+});
+
+describe('pressureColor', () => {
+  it('stays green for one pressure and gives different pressures different colours, weakest green', () => {
+    expect(pressureColor([-1e6, -1e6], -1e6)).toBe(0x44ff44);
+    const colors = [-1e6, -5e6, -20e6].map(p => pressureColor([-1e6, -5e6, -20e6], p));
+    expect(new Set(colors).size).toBe(3);
+    expect(colors[0]).toBe(0x44ff44);
   });
 });

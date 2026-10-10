@@ -104,6 +104,7 @@
 
 <div class="face-legend">
   <span class="item"><span class="swatch swatch--load"></span>Навантаження: <b>{{ loadedText() }}</b></span>
+  <span class="item" *ngFor="let k of pressureKey()"><span class="swatch" [style.background]="k.color"></span>{{ k.text }}</span>
   <span class="item"><span class="swatch swatch--fix"></span>Закріплено: <b>{{ fixedText() }}</b></span>
 </div>
 

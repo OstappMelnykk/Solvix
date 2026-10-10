@@ -71,6 +71,9 @@ describe('SolverOverlayComponent', () => {
       expect(solver.setPressure).toHaveBeenCalledWith(1, -2.5e6);
       solver.loadedPressures.and.returnValue([{ pressure: -5e6, count: 2 }, { pressure: -1e6, count: 3 }]);
       expect(component.loadedText()).toBe('2 × -5.00 МПа, 3 × -1.00 МПа');
+      const key = component.pressureKey();
+      expect(key.length).toBe(2);
+      expect(key[0].color).not.toBe(key[1].color);
     });
   });
 

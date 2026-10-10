@@ -48,6 +48,16 @@ const EDGE_SEGMENTS = 8;
 const EDGE_COLOR = 0x1a1d23;
 const FIXED_COLOR = 0x3388ff;
 const LOAD_COLOR = 0x44ff44;
+// with several different pressures each gets a colour of its own, from the weakest (green) to the strongest (pink)
+const PRESSURE_COLORS = [0x44ff44, 0xd8ff2a, 0xffe14a, 0xff9a2e, 0xff4a4a, 0xff5ad8];
+
+// The colour of a pressure among the pressures that are set: one pressure stays green.
+export function pressureColor(all: readonly number[], pressure: number): number {
+  const distinct = Array.from(new Set(all.map(Math.abs))).sort((a, b) => a - b);
+  if (distinct.length <= 1) return LOAD_COLOR;
+  const rank = Math.max(0, distinct.indexOf(Math.abs(pressure)));
+  return PRESSURE_COLORS[Math.min(PRESSURE_COLORS.length - 1, Math.round((rank * (PRESSURE_COLORS.length - 1)) / (distinct.length - 1)))];
+}
 const HIGHLIGHT_COLOR = 0xffe14d;
 const OVERLAY_OPACITY = 0.62;
 const LIGHT = new THREE.Vector3(0.45, 0.8, 0.55).normalize();
@@ -355,8 +365,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const isFixed = new Set((setup?.fixed ?? []).map(f => `${f.hex}:${f.face}:${f.p}:${f.q}`));
   const pressureOf = new Map((setup?.loads ?? []).map(l => [`${l.hex}:${l.face}:${l.p}:${l.q}`, l.pressure]));
   const isLoaded = new Set(pressureOf.keys());
-  // the larger the pressure on a face, the brighter its green
-  const strongest = Math.max(0, ...Array.from(pressureOf.values(), Math.abs));
+  const allPressures = Array.from(pressureOf.values());
 
   // ---- which faces to draw: those between a visible element and what is not (or, with showInner, all of them) ----
   const drawn = new Map<number, DrawnFace[]>();
@@ -490,7 +499,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
 
   const loadColor = (face: DrawnFace): THREE.Color => {
     const pressure = pressureOf.get(`${face.owner.id}:${face.face}:${face.p}:${face.q}`) ?? 0;
-    return new THREE.Color(LOAD_COLOR).multiplyScalar(strongest > 0 ? 0.45 + 0.55 * (Math.abs(pressure) / strongest) : 1);
+    return new THREE.Color(pressureColor(allPressures, pressure));
   };
 
   // clamped and pressed faces: one translucent set per colour
