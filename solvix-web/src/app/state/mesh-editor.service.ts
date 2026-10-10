@@ -119,8 +119,8 @@ export class MeshEditorService {
     this.run(sessionId, this.api.unlinkFace(sessionId, hexId, face));
   }
 
-  moveNode(sessionId: number, nodeId: number, position: MeshPointDto, carryEdgeMidpoints: boolean): void {
-    this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints));
+  moveNode(sessionId: number, nodeId: number, position: MeshPointDto, carryEdgeMidpoints: boolean, then?: () => void): void {
+    this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints), then);
   }
 
   undo(sessionId: number): void {

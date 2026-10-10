@@ -60,7 +60,7 @@
     >
       {{ isPlaceOn() ? 'Ставити кліком: увімкнено' : 'Ставити кліком: вимкнено' }}
     </button>
-    <div class="canvas-toolbar__hint" [hidden]="!isPlaceOn()">клік по вершині → клік по поверхні STL</div>
+    <div class="canvas-toolbar__hint" [hidden]="!isPlaceOn()">{{ draggableNodeId === null ? '1) клікніть вершину' : '2) вершина ' + draggableNodeId + ' вибрана: клікніть точку на STL' }}</div>
   </div>
 
   <div class="canvas-toolbar__group" [hidden]="!canDetachSelected()">

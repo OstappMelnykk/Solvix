@@ -169,8 +169,7 @@ export class RenderWindowComponent {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
     const round = (v: number) => Math.round(v * 1e6) / 1e6;
-    this.meshEditor.moveNode(sessionId, event.nodeId, { x: round(event.position.x), y: round(event.position.y), z: round(event.position.z) }, this.meshEditor.carryEdgeMidpoints);
-    this.attachments.attach(sessionId, event.nodeId);
+    this.meshEditor.moveNode(sessionId, event.nodeId, { x: round(event.position.x), y: round(event.position.y), z: round(event.position.z) }, this.meshEditor.carryEdgeMidpoints, () => this.attachments.attach(sessionId, event.nodeId));
   }
 
   snapEnabled(): boolean {
