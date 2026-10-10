@@ -97,7 +97,7 @@ describe('QualityControlsComponent', () => {
     // both standards reject the same element, but that is less than most of the five: go on with care
     expect(card.getAttribute('data-level')).toBe('caution');
     expect(card.textContent).toContain('Можна рахувати, з обережністю');
-    (card.querySelector('.go') as HTMLButtonElement).click();
+    (card.parentElement!.querySelector('.go') as HTMLButtonElement).click();
 
     expect(world.selectCurrentWorld).toHaveBeenCalledWith(SOLVER_WORLD_INDEX);
   });
