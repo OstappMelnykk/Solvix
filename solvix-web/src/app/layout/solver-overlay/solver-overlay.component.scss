@@ -29,27 +29,31 @@ $material: #c77dff;
   backdrop-filter: blur(6px);
 }
 
-.toolbox {
-  position: absolute;
-  // under the camera buttons ("Вид"), which stand in the top left corner of every canvas
-  top: 190px;
-  left: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-  max-width: 440px;
-  pointer-events: auto;
-}
-
-.viewbox {
+// The top right corner of the canvas (the camera buttons are in the top left): the tools in a row, and under them the
+// view settings.
+.side {
   position: absolute;
   top: 10px;
   right: 10px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  width: 380px;
+  pointer-events: none;
+}
+
+.toolbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  pointer-events: auto;
+}
+
+.viewbox {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  width: 190px;
   padding: 8px 10px;
   pointer-events: auto;
 }
