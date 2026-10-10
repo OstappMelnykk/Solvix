@@ -68,3 +68,36 @@ export function boundsText(limit: SolverQualityLimitDto): string {
   const [b0, b1, b2] = limit.bounds;
   return `відмінно ${sign} ${b0} · добре ${sign} ${b1} · прийнятно ${sign} ${b2}`;
 }
+
+// How a measure is named in the panel: a plain word first, the technical name second, and a tip for the tooltip.
+export const METRIC_TEXT: Record<QualityMetricKey, { title: string; short: string; tech: string; tip: string }> = {
+  scaledJacobian: { title: 'Форма', short: 'Форма', tech: 'Scaled Jacobian', tip: '1 — ідеальний куб, 0 — елемент сплющений, менше 0 — вивернутий навиворіт.' },
+  jacobianRatio: { title: 'Рівномірність', short: 'Рівномірн.', tech: 'Відношення якобіанів', tip: '1 — елемент розтягує простір скрізь однаково; близько 0 — в одному місці майже стиснутий, в іншому роздутий.' },
+  aspectRatio: { title: 'Витягнутість', short: 'Витягнутість', tech: 'Aspect ratio', tip: 'Довше ребро поділене на коротше. Куб дає 1, чим більше — тим довша «паличка».' },
+  skew: { title: 'Кути', short: 'Кути', tech: 'Перекіс, °', tip: 'Наскільки найгірший кут відхиляється від прямого (90°). Показано для довідки, на оцінку не впливає.' }
+};
+
+// Where a value sits on the gauge of its measure, 0..1: four equal zones, worst on the left (poor, acceptable, good,
+// excellent), the value placed inside its zone in proportion.
+export function gaugePosition(limit: SolverQualityLimitDto, value: number): number {
+  const [b0, b1, b2] = limit.bounds;
+  if (!Number.isFinite(value)) return limit.higherIsBetter ? 0 : 1;
+  const within = (from: number, to: number) => (to === from ? 0 : Math.min(1, Math.max(0, (value - from) / (to - from))));
+  if (limit.higherIsBetter) {
+    // zones by value: [0, b2] poor, [b2, b1] acceptable, [b1, b0] good, [b0, 1] excellent
+    if (value <= b2) return 0.25 * within(0, b2);
+    if (value <= b1) return 0.25 + 0.25 * within(b2, b1);
+    if (value <= b0) return 0.5 + 0.25 * within(b1, b0);
+    return 0.75 + 0.25 * within(b0, 1);
+  }
+  // smaller is better: the excellent zone [0, b0] sits on the right
+  if (value < b0) return 1 - 0.25 * within(0, b0);
+  if (value < b1) return 0.75 - 0.25 * within(b0, b1);
+  if (value < b2) return 0.5 - 0.25 * within(b1, b2);
+  return 0.25 - 0.25 * within(b2, 2 * b2);
+}
+
+// The numbers between the zones, left to right (for either direction the worst limit comes first).
+export function gaugeTicks(limit: SolverQualityLimitDto): number[] {
+  return [limit.bounds[2], limit.bounds[1], limit.bounds[0]];
+}

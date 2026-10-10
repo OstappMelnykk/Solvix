@@ -1,52 +1,64 @@
 <h4>Якість сітки</h4>
-<div class="stats">Куби: {{ hexCount() }} · поділ {{ divisionsText() }} (змінюється в Solver World)</div>
 
 <ng-container *ngIf="quality() as q; else loading">
-  <div class="group">
-    <div class="verdict" [style.border-left-color]="gradeColor(verdictGrade())">{{ verdict() }}</div>
-    <div class="grades">
-      <div class="grade" *ngFor="let g of gradeLabels"><span class="grade__swatch" [style.background]="gradeColor(g.key)"></span>{{ g.label }}: <b>{{ q.grades[g.key] }}</b></div>
+  <!-- 1. Чи все гаразд -->
+  <section class="verdict" [style.border-color]="gradeColor(verdictGrade())">
+    <div class="verdict__title">{{ verdict().title }}</div>
+    <div class="verdict__sub">{{ verdict().sub }}</div>
+    <div class="bar" title="Усі елементи сітки за оцінкою">
+      <span *ngFor="let s of segments()" class="bar__seg" [style.flex-grow]="s.count" [style.background]="gradeColor(s.grade)"></span>
     </div>
-    <div class="hint">Оцінка — найгірша з Scaled Jacobian, відношення якобіанів і aspect ratio. Рахується для кожного малого елемента сітки, яку бачить солвер.</div>
-  </div>
+    <div class="counts">
+      <span *ngFor="let s of segments()" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeNames[s.grade] }}</span>
+    </div>
+  </section>
 
-  <div class="group">
-    <div class="group-label">Чим фарбувати сцену</div>
-    <div class="chips">
-      <button type="button" class="chip" [class.chip--on]="metric() === 'grade'" (click)="setMetric('grade')">Загальна оцінка</button>
-      <button type="button" class="chip" *ngFor="let l of q.limits" [class.chip--on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.label }}</button>
+  <!-- 2. Чим фарбувати -->
+  <section>
+    <h5>Фарбувати сцену за</h5>
+    <div class="seg">
+      <button type="button" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
+      <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="text[l.key].tip" (click)="setMetric(l.key)">{{ text[l.key].short }}</button>
     </div>
     <div class="legend">
-      <span *ngFor="let g of gradeOrder"><span class="grade__swatch" [style.background]="gradeColor(g)"></span>{{ gradeNames[g] }}</span>
+      <span *ngFor="let g of gradeOrder"><i [style.background]="gradeColor(g)"></i>{{ gradeNames[g] }}</span>
     </div>
-  </div>
+  </section>
 
-  <div class="group">
-    <div class="group-label">Межі прийняття</div>
-    <div class="limit" *ngFor="let l of q.limits">
-      <div class="limit__head">
-        <span class="limit__name" [title]="l.hint">{{ l.label }}</span>
-        <span class="limit__value" [style.color]="gradeColor(worstGrade(l))">{{ worstValue(l) | number: decimals(l) }}</span>
+  <!-- 3. Яка міра слабка -->
+  <section>
+    <h5>Найгірше по сітці</h5>
+    <div class="gauge" *ngFor="let l of q.limits" [class.gauge--note]="!l.graded">
+      <div class="gauge__head">
+        <span class="gauge__name" [title]="text[l.key].tip">{{ text[l.key].title }} <small>{{ text[l.key].tech }}</small></span>
+        <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ worstValue(l) | number: decimals(l) }}{{ unit(l) }}</span>
       </div>
-      <div class="limit__bounds">{{ boundsText(l) }} · гірше — {{ gradeNames['poor'] }}{{ l.higherIsBetter ? ', ≤ 0 — невалідний' : '' }}</div>
-      <div class="limit__note" [class.limit__note--off]="!l.graded">{{ l.graded ? 'входить в оцінку' : 'довідково, в оцінку не входить' }}</div>
+      <div class="gauge__track">
+        <span *ngFor="let z of zones" class="gauge__zone" [style.background]="gradeColor(z)"></span>
+        <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
+      </div>
+      <div class="gauge__ticks"><span *ngFor="let t of gaugeTicks(l)">{{ t }}</span></div>
+      <div class="gauge__note" *ngIf="!l.graded">довідково, на оцінку не впливає</div>
     </div>
-    <div class="hint">Значення справа — найгірше серед усіх малих елементів. Межі відповідають практиці ANSYS / Abaqus / Altair для квадратичних гексаедрів.</div>
-  </div>
+  </section>
 
-  <div class="group">
-    <div class="group-label">Проблемні елементи ({{ rows().length }})</div>
-    <div class="hint" *ngIf="rows().length === 0">Немає елементів гірших за «відмінний» за цим критерієм.</div>
-    <div class="hint" *ngIf="rows().length > 0">Клік по елементу — він підсвічується на сцені. Клік по елементу на сцені — він виділяється тут.</div>
+  <!-- 4. Де проблеми -->
+  <section>
+    <h5>Проблемні елементи <span class="badge">{{ rows().length }}</span></h5>
+    <div class="empty" *ngIf="rows().length === 0">Таких немає 👍</div>
     <button type="button" class="row" *ngFor="let r of rows().slice(0, 60)" [class.row--picked]="isPicked(r.element)" (click)="pick(r.element)">
-      <span class="row__title"><span class="grade__swatch" [style.background]="gradeColor(r.grade)"></span>Куб #{{ r.element.hex }}{{ placeText(r.element) }} — {{ gradeNames[r.grade] }}</span>
-      <span class="row__issue" *ngFor="let i of r.issues" [class.row__issue--off]="!i.graded">
-        <span class="grade__swatch" [style.background]="gradeColor(i.grade)"></span>{{ i.label }}: {{ valueText(i.label, i.value) }}{{ i.graded ? '' : ' (довідково)' }}
+      <span class="row__head">
+        <i [style.background]="gradeColor(r.grade)"></i>
+        <b>Куб {{ r.element.hex }}{{ placeText(r.element) }}</b>
+        <span class="row__grade">{{ gradeNames[r.grade] }}</span>
+      </span>
+      <span class="row__chips">
+        <span *ngFor="let i of r.issues" class="chip" [class.chip--note]="!i.graded" [style.border-color]="gradeColor(i.grade)" [title]="text[i.key].tech">
+          {{ text[i.key].title }} <b>{{ valueText(i.key, i.value) }}</b>
+        </span>
       </span>
     </button>
-    <div class="hint" *ngIf="rows().length > 60">Показано 60 найгірших із {{ rows().length }}.</div>
-  </div>
-
-  <button class="btn" type="button" (click)="refresh()">Оцінити заново</button>
+    <div class="more" *ngIf="rows().length > 60">Показано 60 найгірших із {{ rows().length }}</div>
+  </section>
 </ng-container>
-<ng-template #loading><div class="hint">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>
+<ng-template #loading><div class="empty">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>

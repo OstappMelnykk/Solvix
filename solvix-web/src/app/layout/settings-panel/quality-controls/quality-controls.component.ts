@@ -1,19 +1,19 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
-import { QualityGradeName, SolverElementQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
+import { QualityGradeName, QualityMetricKey, SolverElementQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
 import { GRADE_COLORS } from '../../../geometry/solver-view';
-import { GRADE_NAMES, GRADE_ORDER, QualityMetric, boundsText, measuredGrade, metricGrade, metricValue } from '../../../geometry/quality-grading';
+import { GRADE_NAMES, GRADE_ORDER, METRIC_TEXT, QualityMetric, gaugePosition, gaugeTicks, measuredGrade, metricGrade, metricValue } from '../../../geometry/quality-grading';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 
 interface Row {
   readonly element: SolverElementQualityDto;
   readonly grade: QualityGradeName;
-  readonly issues: readonly { label: string; value: number; grade: QualityGradeName; graded: boolean }[];
+  readonly issues: readonly { key: QualityMetricKey; value: number; grade: QualityGradeName; graded: boolean }[];
 }
 
-// The Quality World's panel: how well the elements the solver would use can be integrated, where the limits lie and
-// which small elements break them. Picking an element here outlines it on the scene (and a click on an element there picks it here).
+// The Quality World's panel: is the mesh good enough, which measure is the weak one, and where are the bad elements.
+// Picking an element in the list outlines it on the scene (and a click on an element there picks it here).
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
@@ -29,7 +29,9 @@ export class QualityControlsComponent implements DoCheck {
 
   readonly gradeOrder = GRADE_ORDER;
   readonly gradeNames = GRADE_NAMES;
-  readonly boundsText = boundsText;
+  readonly text = METRIC_TEXT;
+  readonly gaugeTicks = gaugeTicks;
+  readonly zones: readonly QualityGradeName[] = ['poor', 'acceptable', 'good', 'excellent'];
 
   // The quality follows the mesh: it is asked again whenever the mesh or the division changed.
   ngDoCheck(): void {
@@ -48,14 +50,6 @@ export class QualityControlsComponent implements DoCheck {
     this.solver.setQualityMetric(this.sessionId, metric);
   }
 
-  readonly gradeLabels: readonly { key: QualityGradeName; label: string }[] = [
-    { key: 'excellent', label: 'Відмінні' },
-    { key: 'good', label: 'Добрі' },
-    { key: 'acceptable', label: 'Прийнятні' },
-    { key: 'poor', label: 'Погані' },
-    { key: 'invalid', label: 'Невалідні' }
-  ];
-
   gradeColor(grade: QualityGradeName): string {
     return `#${GRADE_COLORS[grade].toString(16).padStart(6, '0')}`;
   }
@@ -64,27 +58,33 @@ export class QualityControlsComponent implements DoCheck {
     return this.editor.getState(this.sessionId)?.hexes.length ?? 0;
   }
 
-  divisionsText(): string {
-    return this.solver.divisions(this.sessionId).join(' × ');
-  }
-
   refresh(): void {
     this.solver.refreshQuality(this.sessionId);
   }
 
-  verdict(): string {
-    const q = this.quality();
-    if (!q) return '';
-    if (q.grades.invalid > 0) return `Є невалідні елементи (${q.grades.invalid}): розрахунок неможливий`;
-    if (q.grades.poor > 0) return `Є погані елементи (${q.grades.poor}): напруження біля них неточні`;
-    if (q.grades.acceptable > 0) return 'Сітка придатна, є елементи середньої якості';
-    return 'Сітка якісна';
-  }
+  // --- the verdict ---
 
   verdictGrade(): QualityGradeName {
     const q = this.quality();
     return q ? (GRADE_ORDER.slice().reverse().find(g => q.grades[g] > 0) ?? 'excellent') : 'excellent';
   }
+
+  verdict(): { title: string; sub: string } {
+    const q = this.quality();
+    if (!q) return { title: '', sub: '' };
+    if (q.grades.invalid > 0) return { title: 'Розрахунок неможливий', sub: `Вивернутих елементів: ${q.grades.invalid}` };
+    if (q.grades.poor > 0) return { title: 'Є погані елементи', sub: `${q.grades.poor} — напруження біля них будуть неточні` };
+    if (q.grades.acceptable > 0) return { title: 'Сітка придатна', sub: `${q.grades.acceptable} елементів середньої якості` };
+    return { title: 'Сітка якісна', sub: 'Усі елементи добрі або відмінні' };
+  }
+
+  // The bar of all elements by grade: only the grades that occur, as wide as their share.
+  segments(): { grade: QualityGradeName; count: number }[] {
+    const q = this.quality();
+    return q ? GRADE_ORDER.map(grade => ({ grade, count: q.grades[grade] })).filter(s => s.count > 0) : [];
+  }
+
+  // --- the measures: a gauge each ---
 
   worstValue(limit: SolverQualityLimitDto): number {
     const q = this.quality()!;
@@ -100,9 +100,19 @@ export class QualityControlsComponent implements DoCheck {
     return metricGrade(limit, this.worstValue(limit));
   }
 
-  decimals(limit: SolverQualityLimitDto): string {
-    return limit.key === 'skew' ? '1.0-0' : limit.key === 'aspectRatio' ? '1.1-1' : '1.2-3';
+  markerLeft(limit: SolverQualityLimitDto): string {
+    return `${(gaugePosition(limit, this.worstValue(limit)) * 100).toFixed(1)}%`;
   }
+
+  decimals(limit: SolverQualityLimitDto): string {
+    return limit.key === 'skew' ? '1.0-0' : limit.key === 'aspectRatio' ? '1.1-1' : '1.2-2';
+  }
+
+  unit(limit: SolverQualityLimitDto): string {
+    return limit.key === 'skew' ? '°' : '';
+  }
+
+  // --- the bad elements ---
 
   // The small elements that are not excellent by what the scene is coloured by, the worst first. (An element the
   // server did not flag is excellent in every measure.)
@@ -115,15 +125,15 @@ export class QualityControlsComponent implements DoCheck {
         element,
         grade: measuredGrade(element, metric, q.limits),
         issues: q.limits
-          .map(l => ({ label: l.label, value: metricValue(element, l.key), grade: metricGrade(l, metricValue(element, l.key)), graded: l.graded }))
+          .map(l => ({ key: l.key, value: metricValue(element, l.key), grade: metricGrade(l, metricValue(element, l.key)), graded: l.graded }))
           .filter(i => i.grade !== 'excellent')
       }))
       .filter(r => r.grade !== 'excellent')
       .sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade) || a.element.scaledJacobian - b.element.scaledJacobian);
   }
 
-  pickOf(element: SolverElementQualityDto): QualityPick {
-    return { hex: element.hex, ex: element.ex, ey: element.ey, ez: element.ez };
+  valueText(key: QualityMetricKey, value: number): string {
+    return key === 'skew' ? `${value.toFixed(0)}°` : key === 'aspectRatio' ? value.toFixed(1) : value.toFixed(2);
   }
 
   isPicked(element: SolverElementQualityDto): boolean {
@@ -132,20 +142,12 @@ export class QualityControlsComponent implements DoCheck {
   }
 
   pick(element: SolverElementQualityDto): void {
-    this.solver.setQualityPick(this.sessionId, this.pickOf(element));
+    const pick: QualityPick = { hex: element.hex, ex: element.ex, ey: element.ey, ez: element.ez };
+    this.solver.setQualityPick(this.sessionId, pick);
   }
 
   // A cube is cut into more than one element only when the division says so.
   placeText(element: SolverElementQualityDto): string {
-    return this.solver.divisions(this.sessionId).some(n => n > 1) ? ` · елемент (${element.ex}, ${element.ey}, ${element.ez})` : '';
-  }
-
-  limitFor(label: string): SolverQualityLimitDto | undefined {
-    return this.quality()?.limits.find(l => l.label === label);
-  }
-
-  valueText(label: string, value: number): string {
-    const limit = this.limitFor(label);
-    return limit?.key === 'skew' ? `${value.toFixed(0)}°` : limit?.key === 'aspectRatio' ? value.toFixed(1) : value.toFixed(2);
+    return this.solver.divisions(this.sessionId).some(n => n > 1) ? ` · (${element.ex}, ${element.ey}, ${element.ez})` : '';
   }
 }
