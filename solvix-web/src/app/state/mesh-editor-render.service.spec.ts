@@ -12,6 +12,7 @@ import { singleCubeState } from '../geometry/mesh-state.fixture.spec';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverService } from './solver.service';
 import { SolverHubClient } from '../api/solver-hub.client';
+import { SurfaceAttachmentService } from './surface-attachment.service';
 import * as THREE from 'three';
 
 describe('MeshEditorRenderService', () => {
@@ -68,6 +69,36 @@ describe('MeshEditorRenderService', () => {
     editor.refresh(sessionId);
     http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}/state`).flush(singleCubeState(2));
     expect(render.getView(sessionId, REAL_WORLD_INDEX)).not.toBe(afterSelection);
+  });
+
+  it('draws the nodes stuck to the imported surface in a colour of their own in the Real World, and rebuilds when that changes', () => {
+    loadState(singleCubeState());
+    const attachments = TestBed.inject(SurfaceAttachmentService);
+    const colourOf = (view: NonNullable<ReturnType<MeshEditorRenderService['getView']>>, id: number) => (view.nodeMeshes.get(id)!.material as THREE.MeshBasicMaterial).color.getHex();
+    const plain = render.getView(sessionId, REAL_WORLD_INDEX)!;
+    const plainColour = colourOf(plain, 4);
+
+    attachments.attach(sessionId, 4);
+
+    const stuck = render.getView(sessionId, REAL_WORLD_INDEX)!;
+    expect(stuck).not.toBe(plain);
+    expect(colourOf(stuck, 4)).not.toBe(plainColour);
+    expect(colourOf(stuck, 5)).toBe(colourOf(plain, 5));
+    expect(render.getView(sessionId, REAL_WORLD_INDEX)).toBe(stuck);
+    // the Ideal World's lattice has nothing to stick to
+    const ideal = render.getView(sessionId, IDEAL_WORLD_INDEX)!;
+    expect(colourOf(ideal, 4)).toBe(plainColour);
+  });
+
+  it('forgets the stuck nodes that are no longer in the mesh', () => {
+    loadState(singleCubeState());
+    const attachments = TestBed.inject(SurfaceAttachmentService);
+    attachments.attach(sessionId, 4);
+    attachments.attach(sessionId, 9999);
+
+    render.getView(sessionId, REAL_WORLD_INDEX);
+
+    expect([...attachments.attached(sessionId)]).toEqual([4]);
   });
 
   it('rebuilds the view when the inner-grid setting changes', () => {

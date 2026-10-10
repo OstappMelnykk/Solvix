@@ -7,6 +7,7 @@ import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceStyle } from '../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../state/imported-reference-render.service';
+import { SurfaceAttachmentService } from '../../state/surface-attachment.service';
 import { SolverViewerComponent } from '../solver-viewer/solver-viewer.component';
 import { SolverOverlayComponent } from '../solver-overlay/solver-overlay.component';
 import { SolverService } from '../../state/solver.service';
@@ -26,6 +27,8 @@ import * as THREE from 'three';
 // WorldRepresentationService), not which canvases exist. Stays mounted (see
 // AppComponent's [hidden], not *ngIf) even when there are zero sessions
 // open - the 3 canvases just show nothing until a session exists again.
+const NO_NODES: ReadonlySet<number> = new Set<number>();
+
 @Component({
   selector: 'app-render-window',
   standalone: true,
@@ -41,6 +44,7 @@ export class RenderWindowComponent {
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly importedReferenceRender = inject(ImportedReferenceRenderService);
   private readonly meshEditorRender = inject(MeshEditorRenderService);
+  private readonly attachments = inject(SurfaceAttachmentService);
   private readonly qualityRender = inject(QualityRenderService);
   private readonly solverRender = inject(SolverRenderService);
   private readonly solver = inject(SolverService);
@@ -77,7 +81,7 @@ export class RenderWindowComponent {
   // imported at all - WorldCanvasComponent doesn't need to know visibility
   // is a separate concept from "is there anything to show".
   getImportedReference(worldIndex: number): THREE.Object3D | null {
-    if (worldIndex !== IDEAL_WORLD_INDEX) {
+    if (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX) {
       return null;
     }
     const sessionId = this.sessions.activeSessionId();
@@ -92,7 +96,7 @@ export class RenderWindowComponent {
   // importedReference is itself non-null, so null here (no active
   // session) is never actually used to build anything.
   getImportedReferenceStyle(worldIndex: number): ImportedReferenceStyle | null {
-    if (worldIndex !== IDEAL_WORLD_INDEX) {
+    if (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX) {
       return null;
     }
     const sessionId = this.sessions.activeSessionId();
@@ -146,6 +150,19 @@ export class RenderWindowComponent {
     if (worldIndex === SOLVER_WORLD_INDEX) return this.solverRender.getView(sessionId, worldIndex);
     if (worldIndex === QUALITY_WORLD_INDEX) return this.qualityRender.getView(sessionId, worldIndex);
     return this.meshEditorRender.getView(sessionId, worldIndex);
+  }
+
+  // The nodes stuck to the imported surface (Real World).
+  getAttachedNodes(worldIndex: number): ReadonlySet<number> {
+    const sessionId = this.sessions.activeSessionId();
+    return worldIndex === REAL_WORLD_INDEX && sessionId !== null ? this.attachments.attached(sessionId) : NO_NODES;
+  }
+
+  onNodeAttach(event: { nodeId: number; attached: boolean }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    if (event.attached) this.attachments.attach(sessionId, event.nodeId);
+    else this.attachments.detach(sessionId, event.nodeId);
   }
 
   // Nodes are dragged only in the Real World; the Ideal World's lattice is fixed.

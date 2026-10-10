@@ -1,6 +1,7 @@
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
 import * as THREE from 'three';
+import { SurfaceSnapper, stick } from '../../../geometry/surface-snap';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
@@ -27,6 +28,8 @@ const SETTLE_DURATION_MS = 180;
 // Above this many CSS pixels of movement between pointerdown and pointerup the
 // gesture was an OrbitControls drag, not a click - the browser's own `click`
 // has no such threshold, so it is tracked by hand.
+// A node dragged to within this share of the surface's size sticks to it.
+const SNAP_RADIUS_SHARE = 0.03;
 const CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
@@ -113,6 +116,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Fired when a drag of the gizmo ends: where the user dropped the node.
   // Fired continuously while the gizmo is dragged: where the node is right now.
   @Output() readonly nodeDragging = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
+  // The nodes stuck to the imported surface (Real World): they slide along it when dragged, and turn up in a colour of
+  // their own. A node sticks when it is dragged to within a few percent of the surface's size from it.
+  @Input() attachedNodeIds: ReadonlySet<number> = new Set<number>();
+  @Output() readonly nodeAttach = new EventEmitter<{ nodeId: number; attached: boolean }>();
   @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
@@ -280,6 +287,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.oitRenderer.render(this.scene, this.camera);
   };
 
+  private snapper: SurfaceSnapper | null = null;
+  private altHeld = false;
   private painting = false;
   private lastPaintKey = '';
   private paintFrame = 0;
@@ -308,6 +317,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   };
   private hoverFrame = 0;
   private onPointerMove = (event: PointerEvent) => {
+    this.altHeld = event.altKey;
     if (this.painting) {
       // the faces under the pointer while the button is down: one raycast per frame, and a face only once in a row
       const x = event.clientX;
@@ -464,6 +474,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.scene.add(this.nodeGizmo.getHelper());
     // Live feedback while dragging: the dot follows the gizmo.
     this.nodeGizmo.addEventListener('objectChange', () => {
+      if (this.gizmoNodeId !== null) this.stickToSurface(this.gizmoNodeId);
       const mesh = this.gizmoNodeId === null ? undefined : this.currentMeshView?.nodeMeshes.get(this.gizmoNodeId);
       mesh?.position.copy(this.nodeProxy.position);
       if (this.gizmoNodeId !== null) {
@@ -682,6 +693,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.currentImportedReference = null;
     }
 
+    this.snapper = null;
     if (source === null) {
       return;
     }
@@ -689,12 +701,24 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const clone = buildImportedReferenceClone(source, style);
     this.currentImportedReference = clone;
     this.scene.add(clone);
-    this.rotateGizmo.attach(clone);
+    // The reference is turned and re-aimed in the Ideal World only; the Real World shows it for nodes to stick to.
+    if (this.worldIndex === IDEAL_WORLD_INDEX) this.rotateGizmo.attach(clone);
+    else if (this.worldIndex === REAL_WORLD_INDEX) this.snapper = new SurfaceSnapper(clone);
     this.renderer.compile(this.scene, this.camera);
 
-    if (geometryChanged) {
+    if (geometryChanged && this.worldIndex === IDEAL_WORLD_INDEX) {
       this.centerOrbitTargetOn(clone);
     }
+  }
+
+  // While a node is dragged: close enough to the imported surface, it sticks to it; a stuck node is kept on the surface
+  // - the nearest point of it to where the gizmo is - so it slides instead of moving freely. Alt lets go.
+  private stickToSurface(nodeId: number): void {
+    const snapper = this.snapper;
+    if (!snapper) return;
+    const result = stick(snapper, this.nodeProxy.position, this.attachedNodeIds.has(nodeId), this.altHeld, SNAP_RADIUS_SHARE);
+    if (result.point) this.nodeProxy.position.copy(result.point);
+    if (result.change) this.nodeAttach.emit({ nodeId, attached: result.change === 'attach' });
   }
 
   // Re-aims OrbitControls at the reference's current world-space bounding-
@@ -961,6 +985,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return this.worldIndex === IDEAL_WORLD_INDEX;
   }
 
+  // The reference is shown in the Ideal World to build around and in the Real World for nodes to stick to.
+  showsReferenceToggle(): boolean {
+    return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;
+  }
+
   // Backing state for the on-canvas STL-reference visibility toggle -
   // mirrors the settings-panel's own "Показати" checkbox
   // (ImportedReferenceControlsComponent.isReferenceVisible/
@@ -981,7 +1010,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   toggleImportedReferenceVisible(): void {
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+    if (!this.showsReferenceToggle() || this.sessionId === null) {
       return;
     }
     const currentlyVisible = this.importedReferenceDisplay.getStyle(this.sessionId).visible;

@@ -420,3 +420,12 @@ kbd {
     white-space: nowrap;
   }
 }
+
+.stuck {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 79, 216, 0.12);
+  border: 1px solid #ff4fd8;
+  border-radius: 6px;
+  font-size: 11px;
+}

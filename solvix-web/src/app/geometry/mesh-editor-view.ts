@@ -125,6 +125,8 @@ export interface MeshViewOptions {
   readonly subdivisions: number | readonly [number, number, number];
   // Draw (and make pickable) the node dots; off for a big body that is only looked at. Default on.
   readonly showNodes?: boolean;
+  // Nodes stuck to the imported surface: drawn in a colour of their own, a little larger.
+  readonly attachedNodeIds?: ReadonlySet<number>;
 }
 
 const GRID_LINE_SAMPLES = 12;
@@ -150,6 +152,7 @@ const ADAPTING_HEX_COLOR = 0xc77dff;
 const PREVIEW_FACE_COLOR = 0x6ee06e;
 const PICKED_FACE_COLOR = 0xffe14d;
 const SELECTED_NODE_COLOR = 0xff3b3b;
+const ATTACHED_NODE_COLOR = 0xff4fd8;
 const EDGE_COLOR = 0xe6e8ec;
 const CORNER_COLOR = 0xffffff;
 const MIDPOINT_COLOR = 0xf2d34a;
@@ -378,12 +381,14 @@ export function buildMeshView(
   for (const node of options.showNodes === false ? [] : state.nodes) {
     const isCorner = cornerIds.has(node.id);
     const selected = selection.nodeId === node.id;
+    const attached = options.attachedNodeIds?.has(node.id) === true;
     const mesh = new THREE.Mesh(
       isCorner ? cornerGeometry : midGeometry,
-      new THREE.MeshBasicMaterial({ color: selected ? SELECTED_NODE_COLOR : isCorner ? CORNER_COLOR : MIDPOINT_COLOR })
+      new THREE.MeshBasicMaterial({ color: selected ? SELECTED_NODE_COLOR : attached ? ATTACHED_NODE_COLOR : isCorner ? CORNER_COLOR : MIDPOINT_COLOR })
     );
     mesh.position.copy(nodePosition(node, mode));
     if (selected) mesh.scale.setScalar(1.6);
+    else if (attached) mesh.scale.setScalar(1.35);
     root.add(mesh);
     nodeMeshes.set(node.id, mesh);
 

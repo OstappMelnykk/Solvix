@@ -4,6 +4,7 @@ import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { SessionsService } from '../../../state/sessions.service';
+import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { SolverService } from '../../../state/solver.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
@@ -69,6 +70,7 @@ export class MeshEditorControlsComponent {
   private readonly sessions = inject(SessionsService);
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
+  private readonly attachments = inject(SurfaceAttachmentService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
@@ -112,6 +114,26 @@ export class MeshEditorControlsComponent {
 
   nodeCount(): number {
     return this.state?.nodes.length ?? 0;
+  }
+
+  // --- nodes stuck to the imported surface ---
+
+  isNodeAttached(): boolean {
+    const id = this.selectedNodeId();
+    return this.sessionId !== null && id !== null && this.attachments.isAttached(this.sessionId, id);
+  }
+
+  attachedCount(): number {
+    return this.sessionId === null ? 0 : this.attachments.count(this.sessionId);
+  }
+
+  detachNode(): void {
+    const id = this.selectedNodeId();
+    if (this.sessionId !== null && id !== null) this.attachments.detach(this.sessionId, id);
+  }
+
+  detachAllNodes(): void {
+    if (this.sessionId !== null) this.attachments.detachAll(this.sessionId);
   }
 
   canUndo(): boolean {

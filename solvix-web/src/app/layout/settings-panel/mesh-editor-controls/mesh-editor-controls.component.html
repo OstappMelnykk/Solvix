@@ -145,10 +145,21 @@
         <span>Кут тягне середини своїх ребер</span>
         <input type="checkbox" [checked]="carryEdgeMidpoints" (change)="onCarryChange($event)" />
       </label>
+      <div class="stuck" *ngIf="isNodeAttached()">
+        <b>Прикріплений до STL:</b> тягніть — вузол їздить по поверхні (дві осі замість трьох).
+        <button class="chip chip--wide" type="button" (click)="detachNode()">Відкріпити</button>
+      </div>
     </ng-container>
     <ng-template #idealHint><div class="hint">Вузли рухаються у вкладці <b>Real World</b> — перемкніться туди.</div></ng-template>
   </ng-container>
   <ng-template #noNode><div class="hint">Клік по вузлу (точці) на сцені. Рухати вузли можна у вкладці Real World.</div></ng-template>
+</div>
+
+<div class="group" *ngIf="isRealWorld">
+  <div class="group-label">Прикріплення до STL</div>
+  <div class="hint">Перетягніть вершину до STL (на відстань кількох відсотків його розміру) — вона прилипне й надалі їздитиме лише по поверхні. Утримуйте <b>Alt</b> під час перетягування, щоб відірвати.</div>
+  <div class="selected">Прикріплено вершин: <b>{{ attachedCount() }}</b></div>
+  <button class="tool" type="button" [disabled]="attachedCount() === 0" (click)="detachAllNodes()">Відкріпити всі</button>
 </div>
 
 <div class="group">

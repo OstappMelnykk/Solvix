@@ -18,6 +18,8 @@
     [paintEnabled]="isBrushOn(i)"
     (paint)="onPaint($event)"
     [draggableNodeId]="getDraggableNodeId(i)"
+    [attachedNodeIds]="getAttachedNodes(i)"
+    (nodeAttach)="onNodeAttach($event)"
     (nodeDragging)="onNodeDragging($event)"
     (nodeMoved)="onNodeMoved($event)"
     [active]="activeWorldIndex() === i"

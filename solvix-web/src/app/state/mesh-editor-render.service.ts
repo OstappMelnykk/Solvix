@@ -3,6 +3,7 @@ import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { SolverService } from './solver.service';
+import { SurfaceAttachmentService } from './surface-attachment.service';
 import { MeshView, buildMeshView, withNodeMoved } from '../geometry/mesh-editor-view';
 
 interface Cached {
@@ -23,6 +24,7 @@ export class MeshEditorRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly solver = inject(SolverService);
+  private readonly attachments = inject(SurfaceAttachmentService);
   private readonly cache = new Map<string, Cached>();
 
   // A node being dragged right now: the Real World shows it (and what follows from it) before the server has
@@ -44,11 +46,15 @@ export class MeshEditorRenderService {
       this.cache.delete(cacheKey);
       return null;
     }
+    if (worldIndex === REAL_WORLD_INDEX && this.attachments.count(sessionId) > 0) {
+      const ids = new Set(state.nodes.map(n => n.id));
+      this.attachments.retain(sessionId, id => ids.has(id));
+    }
     const preview = this.preview;
     if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
     if (live) state = withNodeMoved(state, live.nodeId, live.position, live.carry);
-    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}`;
+    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 
@@ -61,7 +67,7 @@ export class MeshEditorRenderService {
         hoverFace: this.selection.hoverFace(sessionId),
         nodeId: this.selection.nodeId(sessionId)
       },
-      { subdivisions: this.solver.divisions(sessionId) as [number, number, number] }
+      { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined }
     );
     this.cache.set(cacheKey, { key, view });
     return view;
