@@ -3,6 +3,7 @@ import { NgFor } from '@angular/common';
 import * as THREE from 'three';
 import { SurfaceSnapper, stick } from '../../../geometry/surface-snap';
 import { GroundCell, groundCellUnder } from '../../../geometry/ground-cell';
+import { centreIsInView } from '../../../geometry/view-check';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
@@ -952,8 +953,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.scene.add(source.root);
     this.renderer.compile(this.scene, this.camera);
     // The first cube of a session: aim the orbit at it instead of leaving the
-    // camera pointed at the world origin.
-    if (!hadMesh) {
+    // camera pointed at the world origin - unless it is already in view (a cube put down by a click where the user is
+    // looking), when the view must stay put instead of jumping.
+    if (!hadMesh && !centreIsInView(this.camera, source.root)) {
       this.centerOrbitTargetOn(source.root);
     }
   }
