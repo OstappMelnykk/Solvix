@@ -112,9 +112,11 @@ i {
     gap: 6px;
   }
 
-  &__caption {
-    color: $muted;
-    font-size: 12px;
+  &__line {
+    width: 100%;
+    margin: 2px 0;
+    border: none;
+    border-top: 1px solid $field-border;
   }
 
   &__btn {

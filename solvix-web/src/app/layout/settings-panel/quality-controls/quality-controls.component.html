@@ -56,7 +56,7 @@
     <h5>Фарбувати сцену за</h5>
     <div class="choice">
       <button type="button" class="choice__btn choice__grade" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
-      <div class="choice__caption">або лише один показник:</div>
+      <hr class="choice__line" />
       <div class="choice__measures">
         <button type="button" class="choice__btn" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">
           <span>{{ l.label }}</span><small *ngIf="!l.label.includes(l.tech)">{{ l.tech }}</small>
