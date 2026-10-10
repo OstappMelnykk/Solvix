@@ -205,6 +205,10 @@ export interface QualityDecision {
   readonly rejectedByMost: number;
   // whether going on to the solver is advised, allowed only with care, or not possible
   readonly canSolve: boolean;
+  // for laying the card out: the number of elements, the folded ones, and what to do about it
+  readonly total: number;
+  readonly folded: number;
+  readonly advice: string;
 }
 
 // Whether the user may go on to the solver, from how all the standards judge the mesh:
@@ -221,31 +225,35 @@ export function decide(report: SolverQualityReportDto): QualityDecision {
   const total = report.profiles[0]?.elements ?? 0;
   const names = rejecting.map(r => r.name).join(', ');
   const count = report.profiles.length;
-  if (total === 0) return { level: 'ok', title: 'Сітка порожня', reasons: ['Побудуйте хоча б один куб.'], rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: false };
+  if (total === 0) return { level: 'ok', title: 'Сітка порожня', reasons: ['Побудуйте хоча б один куб.'], rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: false, total: 0, folded: 0, advice: '' };
   if (folded > 0) {
     return {
       level: 'blocked', title: 'Розрахунок неможливий',
       reasons: [`${folded} елементів вивернуті або вироджені — їх відхиляють усі стандарти.`, 'Виправте сітку (перетягніть вузли) або змініть поділ, поки такі елементи є, розрахунок не запуститься.'],
-      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: false
+      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: false, total, folded,
+      advice: 'Виправте сітку (перетягніть вузли) або змініть поділ. Поки такі елементи є, розрахунок не запуститься.'
     };
   }
   if (byMost > 0) {
     return {
       level: 'bad', title: 'Краще не рахувати',
       reasons: [`${byMost} елементів відхиляє більшість стандартів (3 і більше з ${count}).`, `Відхиляють: ${names}.`, 'Результат біля цих елементів буде неточним. Виправте їх або рахуйте на власний ризик.'],
-      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: true
+      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: true, total, folded,
+      advice: 'Результат біля цих елементів буде неточним. Виправте їх або рахуйте на власний ризик.'
     };
   }
   if (byAny > 0) {
     return {
       level: 'caution', title: 'Можна рахувати, з обережністю',
       reasons: [`${byAny} елементів не проходять хоча б в одному стандарті, але більшість стандартів їх приймає.`, `Відхиляють: ${names}.`, 'Напруження поруч із ними можуть бути менш точними — перевірте їх на карті якості.'],
-      rejecting, rejectedByAny: byAny, rejectedByMost: 0, canSolve: true
+      rejecting, rejectedByAny: byAny, rejectedByMost: 0, canSolve: true, total, folded,
+      advice: 'Напруження поруч із ними можуть бути менш точними. Перевірте їх на карті якості.'
     };
   }
   return {
     level: 'ok', title: 'Можна рахувати',
     reasons: [`Усі ${total} елементів проходять у всіх ${count} стандартах.`],
-    rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: true
+    rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: true, total, folded,
+    advice: ''
   };
 }

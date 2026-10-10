@@ -207,4 +207,15 @@ describe('QualityControlsComponent', () => {
     expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'fixed', true);
     expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'loads', false);
   });
+
+  it('lays the conclusion out: a banner with the verdict, the figure, who rejects, and what to do', () => {
+    const root = render().nativeElement as HTMLElement;
+    const text = (el: Element | null) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+    expect(text(root.querySelector('.decision__banner'))).toContain('Можна рахувати, з обережністю');
+    expect(text(root.querySelector('.decision__stat'))).toContain('1 із 3 елементів (33%)');
+    expect(Array.from(root.querySelectorAll('.decision__who .chip')).map(c => text(c))).toEqual(['Solvix 1', 'Abaqus/CAE 1']);
+    expect(text(root.querySelector('.decision__advice'))).toContain('Перевірте їх на карті якості');
+    expect(Array.from(root.querySelectorAll('.decision__actions .go')).map(b => text(b))).toEqual(['Перейти до розрахунку →', 'Показати проблемні елементи']);
+  });
 });

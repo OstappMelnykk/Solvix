@@ -4,18 +4,40 @@
   <!-- Висновок: чи можна переходити до розрахунку -->
   <section class="part" *ngIf="decision() as d">
     <h5>Чи можна рахувати</h5>
-  <div class="decision" [attr.data-level]="d.level">
-    <div class="decision__head">
-      <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
-      <span class="decision__title">{{ d.title }}</span>
+    <div class="decision" [attr.data-level]="d.level">
+      <div class="decision__banner">
+        <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
+        <span class="decision__title">{{ d.title }}</span>
+      </div>
+
+      <div class="decision__body">
+        <p class="decision__stat" *ngIf="d.level === 'ok'">Усі <b>{{ d.total }}</b> елементів проходять у всіх стандартах.</p>
+        <p class="decision__stat" *ngIf="d.level === 'caution'">
+          <b>{{ d.rejectedByAny }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejectedByAny, d.total) }})</span>
+          не проходять хоча б в одному стандарті. Більшість стандартів їх приймає.
+        </p>
+        <p class="decision__stat" *ngIf="d.level === 'bad'">
+          <b>{{ d.rejectedByMost }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejectedByMost, d.total) }})</span>
+          не приймає більшість стандартів (три й більше).
+        </p>
+        <p class="decision__stat" *ngIf="d.level === 'blocked'">
+          <b>{{ d.folded }}</b> елементів вивернуті або вироджені: їх не приймає жоден стандарт.
+        </p>
+
+        <div class="decision__who" *ngIf="d.rejecting.length > 0">
+          <span class="decision__label">Не проходять у:</span>
+          <span class="chip" *ngFor="let r of d.rejecting; trackBy: trackName"><b>{{ r.name }}</b> {{ r.rejected }}</span>
+        </div>
+
+        <p class="decision__advice" *ngIf="d.advice">{{ d.advice }}</p>
+      </div>
     </div>
-    <ul class="decision__reasons"><li *ngFor="let r of d.reasons; trackBy: trackIndex">{{ r }}</li></ul>
-  </div>
+
     <div class="decision__actions">
-      <button type="button" class="go" *ngIf="d.canSolve" [class.go--primary]="d.level === 'ok'" (click)="goToSolver()">
+      <button type="button" class="go" [class.go--primary]="d.level === 'ok' || d.level === 'caution'" (click)="goToSolver()">
         {{ d.level === 'bad' ? 'Все одно рахувати' : 'Перейти до розрахунку' }} →
       </button>
-      <button type="button" class="go" *ngIf="d.level !== 'ok'" [class.go--primary]="d.level !== 'caution'" (click)="showWorst()">Показати проблемні елементи</button>
+      <button type="button" class="go" *ngIf="d.level !== 'ok'" [class.go--primary]="d.level === 'bad' || d.level === 'blocked'" (click)="showWorst()">Показати проблемні елементи</button>
     </div>
   </section>
 

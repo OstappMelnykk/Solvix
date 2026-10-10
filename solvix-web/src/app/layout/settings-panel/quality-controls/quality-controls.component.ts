@@ -87,6 +87,15 @@ export class QualityControlsComponent implements DoCheck {
     if (worst) this.solver.setQualityPick(this.sessionId, { hex: worst.hex, ex: worst.ex, ey: worst.ey, ez: worst.ez });
   }
 
+  trackName(_: number, item: { name: string }): string {
+    return item.name;
+  }
+
+  percentOf(part: number, total: number): string {
+    const share = total > 0 ? (part / total) * 100 : 0;
+    return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
+  }
+
   decisionIcon(level: DecisionLevel): string {
     return level === 'ok' ? '✓' : level === 'caution' ? '!' : '✗';
   }

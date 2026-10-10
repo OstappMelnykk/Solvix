@@ -142,6 +142,8 @@ describe('can the solver be used', () => {
 
     expect(d.level).toBe('ok');
     expect(d.canSolve).toBeTrue();
+    expect(d.total).toBe(10);
+    expect(d.advice).toBe('');
   });
 
   it('says go on with care when some standards reject elements but not most of them', () => {
@@ -150,6 +152,8 @@ describe('can the solver be used', () => {
     expect(d.level).toBe('caution');
     expect(d.canSolve).toBeTrue();
     expect(d.rejectedByAny).toBe(2);
+    expect(d.total).toBe(10);
+    expect(d.advice).toContain('Перевірте');
     expect(d.rejecting.map(r => r.name)).toEqual(['s1', 's2']);
   });
 
@@ -166,6 +170,8 @@ describe('can the solver be used', () => {
 
     expect(d.level).toBe('blocked');
     expect(d.canSolve).toBeFalse();
+    expect(d.folded).toBe(1);
+    expect(d.advice).toContain('розрахунок не запуститься');
   });
 
   it('has nothing to judge without elements', () => {

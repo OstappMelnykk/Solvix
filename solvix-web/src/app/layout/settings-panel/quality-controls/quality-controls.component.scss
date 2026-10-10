@@ -347,23 +347,6 @@ i {
   }
 }
 
-.chip {
-  padding: 1px 7px;
-  border: 1px solid;
-  border-radius: 10px;
-  font-size: 12px;
-  color: $muted;
-
-  b {
-    color: $text;
-  }
-
-  &--note {
-    border-style: dashed;
-    opacity: 0.7;
-  }
-}
-
 // the standards, side by side
 .standards {
   display: flex;
@@ -450,78 +433,127 @@ i {
 
 // the conclusion: can the solver be used
 .decision {
-  padding: 12px;
-  border: 1px solid;
-  border-left-width: 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  --level: #2fbf4f;
+  overflow: hidden;
+  border: 1px solid var(--level);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
 
   &[data-level='ok'] {
-    border-color: #2fbf4f;
+    --level: #2fbf4f;
   }
 
   &[data-level='caution'] {
-    border-color: #f0d43a;
+    --level: #f0b429;
   }
 
   &[data-level='bad'] {
-    border-color: #f08a2e;
+    --level: #f08a2e;
   }
 
   &[data-level='blocked'] {
-    border-color: #e02b2b;
+    --level: #e8584a;
   }
 
-  &__head {
+  &__banner {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    padding: 12px 14px;
+    background: color-mix(in srgb, var(--level) 22%, transparent);
+    border-bottom: 1px solid var(--level);
   }
 
   &__icon {
     display: inline-flex;
+    flex: none;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
-    font-size: 18px;
-    font-weight: 700;
+    background: var(--level);
+    color: #1a1c1f;
+    font-size: 20px;
+    font-weight: 800;
   }
 
   &__title {
     font-size: 18px;
     font-weight: 700;
+    line-height: 1.2;
   }
 
-  &__reasons {
-    margin: 8px 0;
-    padding-left: 18px;
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 14px;
+  }
+
+  &__stat {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+
+    b {
+      font-size: 17px;
+    }
+  }
+
+  &__pct {
+    color: $muted;
+  }
+
+  &__who {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__label {
     color: $muted;
     font-size: 12px;
+  }
 
-    li {
-      margin-bottom: 2px;
-    }
+  &__advice {
+    margin: 0;
+    padding-top: 10px;
+    border-top: 1px solid $field-border;
+    color: $muted;
+    font-size: 13px;
+    line-height: 1.4;
   }
 
   &__actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+  }
+}
+
+.chip {
+  padding: 3px 10px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 12px;
+  font-size: 12px;
+
+  b {
+    margin-right: 4px;
   }
 }
 
 .go {
-  flex: 1 1 auto;
-  padding: 8px 10px;
+  padding: 11px 12px;
   background: $field-bg;
   border: 1px solid $field-border;
   border-radius: 8px;
   color: $text;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 
   &:hover {
