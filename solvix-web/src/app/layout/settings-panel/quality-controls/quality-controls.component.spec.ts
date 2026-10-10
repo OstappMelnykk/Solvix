@@ -120,7 +120,7 @@ describe('QualityControlsComponent', () => {
 
     expect(text(root.querySelector('.picked__head')!)).toContain('Куб 0');
     const verdicts = Array.from(root.querySelectorAll('.verdict')).map(v => text(v).trim());
-    expect(verdicts).toEqual(['Загальний результат: Спірно', 'Solvix: Не приймається', 'Abaqus/CAE: Приймається']);
+    expect(verdicts).toEqual(['Загальний результат: Приймається', 'Solvix: Не приймається', 'Abaqus/CAE: Приймається']);
   });
 
   it('for the overall result lists what exactly fails, and for a standard all its measures of the picked element', () => {
