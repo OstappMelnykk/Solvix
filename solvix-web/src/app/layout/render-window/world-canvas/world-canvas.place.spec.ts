@@ -72,4 +72,15 @@ describe('WorldCanvasComponent: placing a node on the surface by a click', () =>
     expect(placed[0].nodeId).toBe(7);
     expect(placed[0].position.z).toBeCloseTo(-3, 3);
   });
+
+  it('a click on nothing drops the selection', () => {
+    const picks: unknown[] = [];
+    fixture.componentInstance.meshPick.subscribe(e => picks.push(e.pick));
+    fixture.componentInstance.importedReference = null;
+    fixture.detectChanges();
+    return frames(4).then(() => {
+      click(20, 20);
+      expect(picks).toEqual([null]);
+    });
+  });
 });

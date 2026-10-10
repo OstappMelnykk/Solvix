@@ -1017,7 +1017,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         return;
       }
     }
-    if (pick?.kind === 'node') this.meshPick.emit({ pick, additive: false });
+    // a node is picked; a click on nothing (or on a cube, which takes no clicks here) drops the selection
+    this.meshPick.emit({ pick: pick?.kind === 'node' ? pick : null, additive: false });
   }
 
   // A right click (not a pan) while building: add a cube where the pointer is.
