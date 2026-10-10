@@ -157,4 +157,30 @@ describe('QualityControlsComponent', () => {
 
     expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
   });
+
+  it('makes the choice between the overall grade and a single measure a thing of its own, and lists the measures only for the latter', () => {
+    current = 'solvix';
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    const modes = Array.from(root.querySelectorAll<HTMLButtonElement>('.mode__btn'));
+
+    expect(modes.map(m => m.querySelector('.mode__name')!.textContent)).toEqual(['Загальна оцінка', 'Окремий показник']);
+    expect(modes[0].classList).toContain('mode__btn--on');
+    expect(root.textContent).not.toContain('Який показник');
+
+    modes[1].click();
+
+    expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'aspectRatio');          // the first measure of the standard
+  });
+
+  it('shows the measures to pick from while a single measure is chosen', () => {
+    current = 'solvix';
+    solver.qualityMetric.and.returnValue('aspectRatio');
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.textContent).toContain('Який показник');
+    expect(root.querySelector('.seg button.on')!.textContent).toContain('Витягнутість');
+    expect(root.querySelectorAll('.mode__btn')[1].classList).toContain('mode__btn--on');
+  });
 });

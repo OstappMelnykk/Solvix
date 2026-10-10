@@ -99,6 +99,52 @@ i {
 }
 
 // what to colour by
+// the choice between the overall grade and a single measure: two big buttons of the same size, whichever is chosen
+.mode {
+  display: flex;
+  gap: 8px;
+
+  &__btn {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    background: $field-bg;
+    border: 2px solid $field-border;
+    border-radius: 10px;
+    color: $text;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $accent-toggle;
+    }
+
+    &--on {
+      border-color: $accent-toggle;
+      background: rgba(218, 104, 11, 0.16);
+    }
+  }
+
+  &__name {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  &__about {
+    color: $muted;
+    font-size: 12px;
+  }
+}
+
+.seg-caption {
+  margin: 12px 0 6px;
+  color: $muted;
+  font-size: 12px;
+}
+
 // the choices of what to colour by wrap onto as many rows as they need (a standard can have ten measures)
 .seg {
   display: flex;

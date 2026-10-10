@@ -53,6 +53,12 @@ export class QualityControlsComponent implements DoCheck {
     this.solver.setQualityMetric(this.sessionId, metric);
   }
 
+  // From the overall grade to a single measure: the first one of the standard until the user picks another.
+  chooseMeasure(): void {
+    const first = this.quality()?.limits[0];
+    if (this.metric() === 'grade' && first) this.setMetric(first.key);
+  }
+
   gradeColor(grade: QualityGradeName): string {
     return `#${GRADE_COLORS[grade].toString(16).padStart(6, '0')}`;
   }
