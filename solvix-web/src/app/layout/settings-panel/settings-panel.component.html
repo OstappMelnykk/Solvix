@@ -1,6 +1,5 @@
 <div class="context">Session {{ sessionId() }} · World {{ worldIndex() }}</div>
 
-<app-quality-controls *ngIf="showsQuality() && sessionId() !== null" [sessionId]="sessionId()!" />
 <app-solver-controls *ngIf="showsSolver() && sessionId() !== null" [sessionId]="sessionId()!" />
 <app-mesh-editor-controls *ngIf="showsMeshEditor()" [sessionId]="sessionId()" [worldIndex]="worldIndex()" />
 
