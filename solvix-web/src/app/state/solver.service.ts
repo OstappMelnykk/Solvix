@@ -88,6 +88,8 @@ interface SessionSolver {
   qualityKey: string | null;
   // The full-window result viewer (everything but the body and the viewing tools is gone).
   viewer: boolean;
+  // The viewer shows where the body is clamped and loaded.
+  viewerMarks: boolean;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -139,6 +141,7 @@ export class SolverService {
       result: null,
       display: { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true },
       viewer: false,
+      viewerMarks: true,
       tool: 'view',
       scope: 'cell',
       depth: 0,
@@ -450,6 +453,15 @@ export class SolverService {
 
   viewer(sessionId: number): boolean {
     return this.entry(sessionId).viewer;
+  }
+
+  viewerMarks(sessionId: number): boolean {
+    return this.entry(sessionId).viewerMarks;
+  }
+
+  setViewerMarks(sessionId: number, on: boolean): void {
+    this.entry(sessionId).viewerMarks = on;
+    this.touch(sessionId);
   }
 
   setViewer(sessionId: number, on: boolean): void {

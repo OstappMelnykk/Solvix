@@ -5,6 +5,9 @@ import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValu
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
 
+// In the result viewer the supports and loads are a light coat, so the field under them stays readable.
+const VIEWER_MARKS_OPACITY = 0.3;
+
 interface Cached {
   readonly key: string;
   readonly view: MeshView | null;
@@ -33,7 +36,7 @@ export class SolverRenderService {
       this.cache.delete(sessionId);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}:${this.solver.viewerMarks(sessionId)}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) {
       this.follow(sessionId, cached);
@@ -48,7 +51,7 @@ export class SolverRenderService {
       field: display.field,
       deformationScale: display.deformationScale,
       colorMax: display.colorMax,
-      hideMarks: this.solver.viewer(sessionId),
+      marksOpacity: this.solver.viewer(sessionId) ? (this.solver.viewerMarks(sessionId) ? VIEWER_MARKS_OPACITY : 0) : undefined,
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
       showInner: this.solver.showInner(sessionId),

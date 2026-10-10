@@ -245,6 +245,14 @@ export class SolverViewerComponent implements OnDestroy {
     this.solver.setShowInner(this.sessionId, !this.showInner());
   }
 
+  showMarks(): boolean {
+    return this.solver.viewerMarks(this.sessionId);
+  }
+
+  toggleMarks(): void {
+    this.solver.setViewerMarks(this.sessionId, !this.showMarks());
+  }
+
   showEdges(): boolean {
     return this.solver.display(this.sessionId).edges;
   }

@@ -14,6 +14,10 @@
     <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" />
     <span>{{ opacityPercent() }}%</span>
   </label>
+  <label class="check" title="Де тіло закріплене (синє) і де прикладене навантаження (зелене)">
+    <input type="checkbox" [checked]="showMarks()" (change)="toggleMarks()" />
+    <span class="dot dot--fix"></span>Опори <span class="dot dot--load"></span>Навантаження
+  </label>
   <label class="check"><input type="checkbox" [checked]="showEdges()" (change)="toggleEdges()" />Ребра</label>
   <label class="check" title="Грані між елементами: видно сітку всередині"><input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />Внутрішні грані</label>
   <span class="chips">
@@ -24,19 +28,22 @@
 </div>
 
 <div class="scale" *ngIf="field() !== 'none'">
-  <div class="scale__max">
-    <input type="number" class="num" step="any" [value]="maxInput()" (change)="onMaxInput($event)" title="Верх шкали кольорів: значення вище фарбуються однаково" />
+  <div class="scale__title">{{ field() === 'vonMises' ? 'Напруження' : 'Переміщення' }}</div>
+  <div class="scale__max" title="Значення, якому відповідає червоний. Усе, що більше, теж червоне. Зменшіть, щоб краще бачити різницю в решті тіла.">
+    <span class="scale__label">Верх шкали</span>
+    <input type="number" class="num" step="any" [value]="maxInput()" (change)="onMaxInput($event)" />
     <span>{{ unitText() }}</span>
   </div>
   <div class="scale__body">
     <div class="scale__bar" [style.background]="gradient()"></div>
     <div class="scale__ticks"><span *ngFor="let t of tick25()">{{ t }}</span></div>
   </div>
+  <div class="scale__label">Відкинути найвищі точки</div>
   <div class="scale__caps">
-    <button type="button" [class.on]="!isCapped()" (click)="capAt(100)" title="Весь діапазон">100%</button>
-    <button type="button" (click)="capAt(99.9)" title="Без найвищих 0,1% вузлів">99,9</button>
-    <button type="button" (click)="capAt(99)" title="Без найвищого 1% вузлів (піки в кутах і біля опор)">99</button>
-    <button type="button" (click)="capAt(95)" title="Без найвищих 5% вузлів">95</button>
+    <button type="button" [class.on]="!isCapped()" (click)="capAt(100)" title="Нічого не відкидати: червоний = справжній максимум">нічого</button>
+    <button type="button" (click)="capAt(99.9)" title="Верх шкали = рівень, нижче якого 99,9% точок">0,1%</button>
+    <button type="button" (click)="capAt(99)" title="Верх шкали = рівень, нижче якого 99% точок (піки в кутах і біля опор не псують картину)">1%</button>
+    <button type="button" (click)="capAt(95)" title="Верх шкали = рівень, нижче якого 95% точок">5%</button>
   </div>
 </div>
 

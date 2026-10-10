@@ -124,7 +124,17 @@ select,
   padding: 8px;
   width: 132px;
 
+  &__title {
+    font-weight: 700;
+  }
+
+  &__label {
+    font-size: 11px;
+    color: $muted;
+  }
+
   &__max {
+    flex-wrap: wrap;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -209,5 +219,19 @@ select,
 
   b {
     color: $text;
+  }
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+
+  &--fix {
+    background: #3388ff;
+  }
+
+  &--load {
+    background: #44ff44;
   }
 }
