@@ -11,8 +11,8 @@ import { buildHoleHighlight, disposeHoleHighlight } from '../geometry/scene-obje
 import { findHoleBoundaryClusters, findHoleBoundaryEdges, findHoleBoundaryLoops } from '../geometry/watertight-check';
 
 const DEFAULT_DENSITY = 10;
-const MIN_DENSITY = 1;
-const MAX_DENSITY = 90;
+const MIN_DENSITY = 0.1;
+const MAX_DENSITY = 500;
 
 // Owns everything about how the imported reference is actually PLACED and
 // DRAWN in the 3D view, per session - scale (see "density" below), user-
@@ -84,7 +84,7 @@ export class ImportedReferenceRenderService {
   }
 
   setDensity(sessionId: number, density: number): void {
-    const clamped = Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, Math.round(density)));
+    const clamped = Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, Math.round(density * 100) / 100));
     this.densityBySession.set(sessionId, clamped);
     this.refreshScaledReference(sessionId);
   }

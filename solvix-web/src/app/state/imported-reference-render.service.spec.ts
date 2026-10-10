@@ -43,18 +43,18 @@ describe('ImportedReferenceRenderService', () => {
     expect(render.getScaledReference(sessionId)).toBeNull();
   });
 
-  it('setDensity clamps to [1, 90] and rounds', () => {
+  it('setDensity clamps to [0.1, 500] and rounds to hundredths', () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(2, 1, 1), 'model.glb');
 
-    render.setDensity(sessionId, 500);
-    expect(render.getDensity(sessionId)).toBe(90);
+    render.setDensity(sessionId, 900);
+    expect(render.getDensity(sessionId)).toBe(500);
 
     render.setDensity(sessionId, -5);
-    expect(render.getDensity(sessionId)).toBe(1);
+    expect(render.getDensity(sessionId)).toBe(0.1);
 
-    render.setDensity(sessionId, 12.6);
-    expect(render.getDensity(sessionId)).toBe(13);
+    render.setDensity(sessionId, 12.634);
+    expect(render.getDensity(sessionId)).toBe(12.63);
   });
 
   it('computes scale as density / longest bounding-box length', () => {
