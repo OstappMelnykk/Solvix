@@ -99,29 +99,30 @@ i {
 }
 
 // what to colour by
+// the choices of what to colour by wrap onto as many rows as they need (a standard can have ten measures)
 .seg {
   display: flex;
-  border: 1px solid $field-border;
-  border-radius: 8px;
-  overflow: hidden;
+  flex-wrap: wrap;
+  gap: 6px;
 
   button {
-    flex: 1;
-    padding: 7px 2px;
+    flex: 0 0 auto;
+    padding: 6px 12px;
     background: $field-bg;
-    border: none;
-    border-left: 1px solid $field-border;
+    border: 1px solid $field-border;
+    border-radius: 16px;
     color: $text;
     font-family: inherit;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
 
-    &:first-child {
-      border-left: none;
+    &:hover {
+      border-color: $accent-toggle;
     }
 
     &.on {
       background: $accent-toggle;
+      border-color: $accent-toggle;
       color: #fff;
       font-weight: 600;
     }
