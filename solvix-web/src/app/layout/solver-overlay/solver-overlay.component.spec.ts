@@ -50,6 +50,18 @@ describe('SolverOverlayComponent', () => {
     component.sessionId = 1;
   });
 
+  describe('folding the windows', () => {
+    it('both are open at first; a tick folds one and brings it back, independently', () => {
+      expect(component.open('tools')).toBeTrue();
+      expect(component.open('view')).toBeTrue();
+      component.toggleOpen('view');
+      expect(component.open('view')).toBeFalse();
+      expect(component.open('tools')).toBeTrue();
+      component.toggleOpen('view');
+      expect(component.open('view')).toBeTrue();
+    });
+  });
+
   describe('the tool', () => {
     it('offers View, Load, Fix and Material, and switches between them', () => {
       expect(component.tools.map(t => t.tool)).toEqual(['view', 'load', 'fix', 'material']);

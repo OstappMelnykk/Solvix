@@ -1,6 +1,7 @@
 <div class="side">
 <div class="toolbox">
-  <div class="segmented" role="tablist" aria-label="Інструмент">
+  <label class="box-title" title="Показати або згорнути вікно"><input type="checkbox" [checked]="open('tools')" (change)="toggleOpen('tools')" />Інструменти</label>
+  <div class="segmented" *ngIf="open('tools')" role="tablist" aria-label="Інструмент">
     <button
       *ngFor="let item of tools"
       type="button"
@@ -17,14 +18,14 @@
     </button>
   </div>
 
-  <div class="row" *ngIf="isFaceTool()">
+  <div class="row" *ngIf="open('tools') && isFaceTool()">
     <span class="caption">Пензель</span>
     <button type="button" class="brush" [class.brush--on]="brush()" (click)="toggleBrush()" title="Малювати по поверхні: тримайте кнопку миші й проводьте — те, чого торкнеться пензель, стане навантаженим, закріпленим або матиме обраний матеріал">
       {{ brush() ? '🖌 Малюю: вимкнути' : '🖌 Малювати по поверхні' }}
     </button>
   </div>
 
-  <div class="row" *ngIf="scopes().length > 0">
+  <div class="row" *ngIf="open('tools') && scopes().length > 0">
     <span class="caption">Охоплення</span>
     <div class="segmented segmented--small">
       <button *ngFor="let item of scopes(); trackBy: trackScope" type="button" class="segment" [class.segment--on]="scope() === item.scope" [title]="item.title" (click)="setScope(item.scope)">
@@ -33,7 +34,7 @@
     </div>
   </div>
 
-  <div class="row" *ngIf="hasDepth()">
+  <div class="row" *ngIf="open('tools') && hasDepth()">
     <span class="caption">Глибина</span>
     <div class="stepper">
       <button type="button" (click)="deeper(-1)" [disabled]="depth() === 0" aria-label="Менше">−</button>
@@ -43,7 +44,7 @@
     <span class="hint">елементів углиб від грані</span>
   </div>
 
-  <div class="palette" *ngIf="isMaterialTool()">
+  <div class="palette" *ngIf="open('tools') && isMaterialTool()">
     <button
       *ngFor="let material of materials()"
       type="button"
@@ -56,11 +57,12 @@
     </button>
   </div>
 
-  <div class="hint hint--wide">{{ hint() }}</div>
+  <div class="hint hint--wide" *ngIf="open('tools')">{{ hint() }}</div>
 </div>
 
 <div class="viewbox">
-  <div class="viewbox__title">Вигляд</div>
+  <label class="box-title" title="Показати або згорнути вікно"><input type="checkbox" [checked]="open('view')" (change)="toggleOpen('view')" />Вигляд</label>
+  <ng-container *ngIf="open('view')">
   <div class="control">
     <span class="caption">Прозорість</span>
     <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" aria-label="Прозорість" />
@@ -90,6 +92,7 @@
   <div class="hint" *ngIf="hasResult()">Максимум ×{{ top() | number: '1.0-0' }}: далі форма тіла була б неправдоподібною.</div>
   <div class="hint" *ngIf="hasResult()">{{ shownText() }}</div>
   <button *ngIf="hasResult()" type="button" class="viewer-btn" (click)="openViewer()" title="Усе зайве зникає, лишається тіло й інструменти перегляду: плеєр деформації, шкала кольорів">▶ Режим перегляду</button>
+</ng-container>
 </div>
 </div>
 

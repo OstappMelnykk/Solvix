@@ -39,6 +39,17 @@ export class SolverOverlayComponent {
 
   readonly tools = TOOLS;
 
+  // The two windows can be folded to their title and a tick.
+  private readonly closed = new Set<'tools' | 'view'>();
+
+  open(box: 'tools' | 'view'): boolean {
+    return !this.closed.has(box);
+  }
+
+  toggleOpen(box: 'tools' | 'view'): void {
+    if (!this.closed.delete(box)) this.closed.add(box);
+  }
+
   // --- the brush ---
 
   // The tools that can paint: Pressure, Support and Material.
