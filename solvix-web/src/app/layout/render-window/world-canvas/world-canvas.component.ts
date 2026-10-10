@@ -1,6 +1,7 @@
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
 import * as THREE from 'three';
+import { nearestNodeOnScreen } from '../../../geometry/view-gizmo';
 import { SurfaceSnapper, stick } from '../../../geometry/surface-snap';
 import { GroundCell, groundCellUnder } from '../../../geometry/ground-cell';
 import { centreIsInView } from '../../../geometry/view-check';
@@ -997,16 +998,26 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // In place-on-surface mode: a node is picked; otherwise the point of the imported surface under the pointer is where the
   // selected node goes.
   private placeOrPick(event: PointerEvent, pick: MeshPick | null): void {
-    if (pick?.kind === 'node') {
-      this.meshPick.emit({ pick, additive: false });
-      return;
-    }
     const nodeId = this.draggableNodeId;
     const reference = this.currentImportedReference;
-    if (nodeId === null || !reference) return;
-    this.aimRay(event.clientX, event.clientY);
-    const hit = this.raycaster.intersectObject(reference, true)[0];
-    if (hit) this.surfacePlace.emit({ nodeId, position: { x: hit.point.x, y: hit.point.y, z: hit.point.z } });
+    if (nodeId !== null && reference) {
+      this.aimRay(event.clientX, event.clientY);
+      const hit = this.raycaster.intersectObject(reference, true)[0];
+      if (hit) {
+        // With a vertex selected, a click on the surface places it - unless the pointer is right on another vertex
+        // (nodes lie on the surface, so a wide node pick would otherwise swallow every click near them).
+        const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+        const nodes = Array.from(this.currentMeshView?.nodeMeshes ?? [], ([id, mesh]): [number, THREE.Vector3] => [id, mesh.getWorldPosition(new THREE.Vector3())]);
+        const near = nearestNodeOnScreen(nodes, this.camera, rect.width, rect.height, new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top), 9);
+        if (near && near.nodeId !== nodeId) {
+          this.meshPick.emit({ pick: { kind: 'node', nodeId: near.nodeId }, additive: false });
+          return;
+        }
+        this.surfacePlace.emit({ nodeId, position: { x: hit.point.x, y: hit.point.y, z: hit.point.z } });
+        return;
+      }
+    }
+    if (pick?.kind === 'node') this.meshPick.emit({ pick, additive: false });
   }
 
   // A right click (not a pan) while building: add a cube where the pointer is.
