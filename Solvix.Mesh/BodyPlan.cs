@@ -1,7 +1,8 @@
 namespace Solvix.Mesh;
 
 /// <summary>One cube of a ready-made body: its lattice cell and the 20 node positions in slot order.</summary>
-public sealed record BodyCell(int I, int J, int K, IReadOnlyList<Vec3> Positions);
+/// <param name="Layer">Optional name of the layer the cube belongs to (enamel, dentin, ...): a group the user can give a material.</param>
+public sealed record BodyCell(int I, int J, int K, IReadOnlyList<Vec3> Positions, string? Layer = null);
 
 /// <summary>
 /// A whole body prepared outside any mesh - the cells it occupies on the ideal lattice

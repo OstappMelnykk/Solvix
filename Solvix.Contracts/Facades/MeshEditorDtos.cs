@@ -8,7 +8,8 @@ namespace Solvix.Contracts.Facades;
 public sealed record MeshNodeDto(int Id, double X, double Y, double Z, int IdealX, int IdealY, int IdealZ);
 
 /// <param name="NodeIds">The 20 node ids: slots 0..7 corners, 8..19 edge midpoints.</param>
-public sealed record MeshHexDto(int Id, int CellI, int CellJ, int CellK, IReadOnlyList<int> NodeIds);
+/// <param name="Layer">The named group the cube belongs to (enamel, dentin...), or null.</param>
+public sealed record MeshHexDto(int Id, int CellI, int CellJ, int CellK, IReadOnlyList<int> NodeIds, string? Layer = null);
 
 public sealed record MeshLinkDto(int HexA, string FaceA, int HexB, string FaceB);
 

@@ -24,6 +24,9 @@ public sealed class Hex20
     /// <summary>Reserved for local refinement: the hex this one was split from.</summary>
     public int? ParentId { get; internal set; }
 
+    /// <summary>The layer this cube belongs to (a named group such as enamel or dentin), or null.</summary>
+    public string? Layer { get; internal set; }
+
     public int[] NodeIds { get; } = new int[Hex20Reference.NodeCount];
 
     /// <summary>The 8-corner cube primitive (real positions).</summary>

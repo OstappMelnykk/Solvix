@@ -14,7 +14,7 @@ public sealed record HexMeshState(
 
 public sealed record NodeState(int Id, Vec3 Position, int IdealX, int IdealY, int IdealZ);
 
-public sealed record HexState(int Id, int I, int J, int K, int? ParentId, IReadOnlyList<int> NodeIds);
+public sealed record HexState(int Id, int I, int J, int K, int? ParentId, IReadOnlyList<int> NodeIds, string? Layer = null);
 
 /// <summary>One direction of a face link; a link between two hexes appears twice.</summary>
 public sealed record LinkState(int Hex, HexFace Face, int Other);

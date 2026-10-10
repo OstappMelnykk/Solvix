@@ -14,7 +14,7 @@ internal static class MeshStateMapper
             editor.CanUndo,
             editor.CanRedo,
             state.Nodes.Select(n => new MeshNodeDto(n.Id, n.Position.X, n.Position.Y, n.Position.Z, n.IdealX, n.IdealY, n.IdealZ)).ToList(),
-            state.Hexes.Select(h => new MeshHexDto(h.Id, h.I, h.J, h.K, h.NodeIds)).ToList(),
+            state.Hexes.Select(h => new MeshHexDto(h.Id, h.I, h.J, h.K, h.NodeIds, h.Layer)).ToList(),
             state.Links.Where(l => l.Face.Sign() > 0)
                 .Select(l => new MeshLinkDto(l.Hex, l.Face.ToString(), l.Other, l.Face.Opposite().ToString())).ToList(),
             mesh.AllFaceStates().Select(f => new MeshFaceDto(

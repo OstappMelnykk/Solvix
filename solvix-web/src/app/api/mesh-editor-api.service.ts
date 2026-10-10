@@ -28,6 +28,8 @@ export interface MeshHexDto {
   readonly cellK: number;
   // 20 node ids: slots 0..7 corners, 8..19 edge midpoints.
   readonly nodeIds: readonly number[];
+  // The named group (layer) the cube belongs to - enamel, dentin... - or null/absent.
+  readonly layer?: string | null;
 }
 
 export interface MeshLinkDto {

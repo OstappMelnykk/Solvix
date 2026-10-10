@@ -16,6 +16,7 @@ public static class Materials
         new SolverMaterialDto("enamel", "Емаль зуба", 8.0e10, 0.33),
         new SolverMaterialDto("dentin", "Дентин", 1.8e10, 0.31),
         new SolverMaterialDto("bone", "Кістка", 1.5e10, 0.30),
+        new SolverMaterialDto("pulp", "Пульпа", 2.0e6, 0.45),
     };
 
     /// <summary>Null when valid, otherwise what is wrong.</summary>

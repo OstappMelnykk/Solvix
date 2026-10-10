@@ -229,6 +229,7 @@ public sealed class HexMesh
         var shift = new Vec3(di, dj, dk);
 
         var hexes = plan.Cells.Select(c => NewHex((c.I + di, c.J + dj, c.K + dk))).ToList();
+        for (int h = 0; h < hexes.Count; h++) hexes[h].Layer = plan.Cells[h].Layer;
         var index = hexes.Select((h, i) => (h.Cell, i)).ToDictionary(x => x.Cell, x => x.i);
 
         // Union the slots that links make one node.
@@ -593,7 +594,7 @@ public sealed class HexMesh
         _nextNodeId,
         _nextHexId,
         _nodes.Values.OrderBy(n => n.Id).Select(n => new NodeState(n.Id, n.Position, n.Ideal.X, n.Ideal.Y, n.Ideal.Z)).ToList(),
-        _hexes.Values.OrderBy(h => h.Id).Select(h => new HexState(h.Id, h.Cell.I, h.Cell.J, h.Cell.K, h.ParentId, h.NodeIds.ToArray())).ToList(),
+        _hexes.Values.OrderBy(h => h.Id).Select(h => new HexState(h.Id, h.Cell.I, h.Cell.J, h.Cell.K, h.ParentId, h.NodeIds.ToArray(), h.Layer)).ToList(),
         _links.OrderBy(kv => kv.Key.Hex).ThenBy(kv => kv.Key.Face).Select(kv => new LinkState(kv.Key.Hex, kv.Key.Face, kv.Value)).ToList());
 
     public static HexMesh FromState(HexMeshState state)
@@ -606,7 +607,7 @@ public sealed class HexMesh
         }
         foreach (var h in state.Hexes)
         {
-            var hex = new Hex20(mesh, h.Id, (h.I, h.J, h.K)) { ParentId = h.ParentId };
+            var hex = new Hex20(mesh, h.Id, (h.I, h.J, h.K)) { ParentId = h.ParentId, Layer = h.Layer };
             for (int s = 0; s < Hex20Reference.NodeCount; s++)
             {
                 hex.NodeIds[s] = h.NodeIds[s];
