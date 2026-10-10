@@ -1,9 +1,9 @@
 import { SolverQualityLimitDto } from '../api/solver-api.service';
-import { SolverQualityReportDto } from '../api/solver-api.service';
-import { anglesText, buildConsensus, decide, gaugePosition, gaugeZones, metricGrade, passes, rejectedBy, ruleText, worstAngle } from './quality-grading';
+import { SolverQualityDto } from '../api/solver-api.service';
+import { anglesText, decide, gaugePosition, gaugeZones, metricGrade, passes, ruleText, worstAngle } from './quality-grading';
 
 const limit = (over: Partial<SolverQualityLimitDto>): SolverQualityLimitDto =>
-  ({ key: 'k', label: '', short: '', tech: '', hint: '', higherIsBetter: true, levels: 4, bounds: [], unit: '', decimals: 2, kind: 'plain', ...over });
+  ({ key: 'k', label: '', short: '', tech: '', hint: '', higherIsBetter: true, levels: 4, bounds: [], unit: '', decimals: 2, kind: 'plain', errorBound: null, ...over });
 const jacobian = limit({ key: 'scaledJacobian', higherIsBetter: true, bounds: [0.7, 0.4, 0.15] });
 const aspect = limit({ key: 'aspectRatio', higherIsBetter: false, bounds: [3, 10, 30] });
 
@@ -93,88 +93,50 @@ describe('standards that only pass or fail', () => {
   });
 });
 
-describe('the consensus of the standards', () => {
-  const profile = (id: string, flagged: { hex: number; grade: 'good' | 'poor' }[], elements = 4) => ({
-    id, name: id, source: '', note: '', elements,
-    grades: { excellent: elements - flagged.length, good: 0, acceptable: 0, poor: flagged.filter(f => f.grade === 'poor').length, invalid: 0 },
-    worst: {}, limits: [],
-    flagged: flagged.map(f => ({ hex: f.hex, ex: 0, ey: 0, ez: 0, grade: f.grade, values: {} }))
-  });
-  const report: SolverQualityReportDto = {
-    profiles: [
-      profile('a', [{ hex: 0, grade: 'poor' }, { hex: 1, grade: 'poor' }, { hex: 2, grade: 'good' }]),
-      profile('b', [{ hex: 0, grade: 'poor' }, { hex: 1, grade: 'poor' }]),
-      profile('c', [{ hex: 0, grade: 'poor' }])
-    ]
-  };
-
-  it('counts in how many standards each element is rejected, and ignores the ones that only grade it down', () => {
-    const consensus = buildConsensus(report);
-    const rejected = (hex: number) => consensus.flagged.find(f => f.hex === hex)?.values['rejected'];
-
-    expect(rejected(0)).toBe(3);
-    expect(rejected(1)).toBe(2);
-    expect(rejected(2)).toBeUndefined();               // only graded 'good' in one: nobody rejects it
-    expect(consensus.grades.poor).toBe(1);             // three votes
-    expect(consensus.grades.acceptable).toBe(1);       // two votes
-    expect(consensus.grades.excellent).toBe(2);
-    expect(consensus.worst['rejected']).toBe(3);
+describe('is the mesh accepted', () => {
+  const limits = [
+    limit({ key: 'jacobianRatio', label: 'Рівномірність якобіана', tech: 'Jacobian ratio', higherIsBetter: false, levels: 2, bounds: [30] }),
+    limit({ key: 'aspectRatio', label: 'Витягнутість', tech: 'Aspect ratio', higherIsBetter: false, levels: 2, bounds: [20] })
+  ];
+  const solvix = (elements: number, flagged: { grade: 'poor' | 'invalid'; values: Record<string, number> }[]): SolverQualityDto => ({
+    id: 'solvix', name: 'Solvix', source: '', note: '', elements,
+    grades: { excellent: elements - flagged.length, good: 0, acceptable: 0, poor: flagged.filter(f => f.grade === 'poor').length, invalid: flagged.filter(f => f.grade === 'invalid').length },
+    worst: {}, limits,
+    flagged: flagged.map((f, i) => ({ hex: i, ex: 0, ey: 0, ez: 0, grade: f.grade, values: f.values }))
   });
 
-  it('names the standards that reject an element', () => {
-    expect(rejectedBy(report, { hex: 1, ex: 0, ey: 0, ez: 0 })).toEqual(['a', 'b']);
-    expect(rejectedBy(report, { hex: 2, ex: 0, ey: 0, ez: 0 })).toEqual([]);
-  });
-});
-
-describe('can the solver be used', () => {
-  const profile = (id: string, elements: number, flagged: { hex: number; grade: 'good' | 'poor' | 'invalid' }[]) => ({
-    id, name: id, source: '', note: '', elements,
-    grades: { excellent: elements - flagged.length, good: flagged.filter(f => f.grade === 'good').length, acceptable: 0, poor: flagged.filter(f => f.grade === 'poor').length, invalid: flagged.filter(f => f.grade === 'invalid').length },
-    worst: {}, limits: [],
-    flagged: flagged.map(f => ({ hex: f.hex, ex: 0, ey: 0, ez: 0, grade: f.grade, values: {} }))
-  });
-  const reportOf = (...perProfile: { hex: number; grade: 'good' | 'poor' | 'invalid' }[][]): SolverQualityReportDto => ({ profiles: perProfile.map((f, i) => profile(`s${i}`, 10, f)) });
-  const poor = (hex: number) => ({ hex, grade: 'poor' as const });
-
-  it('says go on when nobody rejects anything', () => {
-    const d = decide(reportOf([], [], [], [], []));
+  it('accepts a mesh in which no element is rejected', () => {
+    const d = decide(solvix(10, []));
 
     expect(d.level).toBe('ok');
-    expect(d.canSolve).toBeTrue();
-    expect(d.total).toBe(10);
-    expect(d.advice).toBe('');
+    expect(d.title).toBe('Сітка приймається');
+    expect(d.rejected).toBe(0);
+    expect(d.summary).toContain('Усі 10 елементів');
   });
 
-  it('says go on with care when some standards reject elements but not most of them', () => {
-    const d = decide(reportOf([], [poor(1)], [poor(1), poor(2)], [], []));
-
-    expect(d.level).toBe('caution');
-    expect(d.canSolve).toBeTrue();
-    expect(d.rejectedByAny).toBe(2);
-    expect(d.total).toBe(10);
-    expect(d.advice).toContain('Перевірте');
-    expect(d.rejecting.map(r => r.name)).toEqual(['s1', 's2']);
-  });
-
-  it('advises against when most of the standards reject an element', () => {
-    const d = decide(reportOf([poor(1)], [poor(1)], [poor(1)], [], []));
+  it('does not accept a mesh with a rejected element, and counts the elements that fail each measure', () => {
+    const d = decide(solvix(10, [
+      { grade: 'poor', values: { jacobianRatio: 45, aspectRatio: 3 } },
+      { grade: 'poor', values: { jacobianRatio: 50, aspectRatio: 25 } },
+      { grade: 'poor', values: { jacobianRatio: 2, aspectRatio: 30 } }
+    ]));
 
     expect(d.level).toBe('bad');
-    expect(d.rejectedByMost).toBe(1);
-    expect(d.reasons.join(' ')).toContain('s0, s1, s2');
+    expect(d.title).toBe('Сітка не приймається');
+    expect(d.rejected).toBe(3);
+    expect(d.failing.map(f => `${f.tech} ${f.count}`)).toEqual(['Jacobian ratio 2', 'Aspect ratio 2']);
+    expect(d.summary).toBe('3 із 10 елементів не проходять критерії Solvix.');
   });
 
-  it('does not allow the solver with a folded element', () => {
-    const d = decide(reportOf([{ hex: 1, grade: 'invalid' }], [{ hex: 1, grade: 'invalid' }], [], [], []));
+  it('refuses a mesh with an inverted element', () => {
+    const d = decide(solvix(10, [{ grade: 'invalid', values: { jacobianRatio: 1e9, aspectRatio: 1 } }]));
 
     expect(d.level).toBe('blocked');
-    expect(d.canSolve).toBeFalse();
     expect(d.folded).toBe(1);
     expect(d.advice).toContain('розрахунок не запуститься');
   });
 
   it('has nothing to judge without elements', () => {
-    expect(decide({ profiles: [profile('a', 0, [])] }).canSolve).toBeFalse();
+    expect(decide(solvix(0, [])).title).toBe('Сітка порожня');
   });
 });

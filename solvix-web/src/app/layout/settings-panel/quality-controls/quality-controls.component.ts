@@ -1,18 +1,26 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
-import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../../../api/solver-api.service';
+import { QualityGradeName, SolverQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
+import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
 import { RESULT_COLORS } from '../../../geometry/solver-view';
 import {
-  CONSENSUS_ID, DecisionLevel, GRADE_ORDER, QualityDecision, QualityMetric, RESULT_NAMES, Result, resultOf, anglesText, buildConsensus, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue,
-  decide, passes, rejectedBy, rejectedCount, ruleText, worstAngle
+  DecisionLevel, QualityDecision, QualityMetric, RESULT_NAMES, Result, SOLVIX_ID, decide, gaugePosition, gaugeZones, measuredGrade, metricGrade, passes, rejectedCount, resultOf,
+  ruleText
 } from '../../../geometry/quality-grading';
-import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
 import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
+import { QualityPick, SolverService } from '../../../state/solver.service';
 
-// The Quality World's panel: the mesh judged by several standards that can be switched and compared, is it good
-// enough by the chosen one, which measure is the weak one, and - after a click on an element of the scene - everything about that element.
+interface Measure {
+  readonly limit: SolverQualityLimitDto;
+  readonly value: number;
+  readonly shown: string;
+  readonly ok: boolean;
+}
+
+// The Quality World's panel. Solvix has one criterion - the shape checks that ANSYS documents for the 20-node brick -
+// and it alone says whether the mesh is accepted. Other tools' marks can be looked at on the scene, in a block of their
+// own that decides nothing.
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
@@ -29,20 +37,127 @@ export class QualityControlsComponent implements DoCheck {
 
   readonly resultNames = RESULT_NAMES;
   readonly gaugeZones = gaugeZones;
-  readonly consensusId = CONSENSUS_ID;
+
+  // The tools list of the block of other tools is open (UI only).
+  toolsOpen = false;
 
   // The quality follows the mesh: it is asked again whenever the mesh or the division changed.
   ngDoCheck(): void {
     this.solver.ensureQuality(this.sessionId);
   }
 
-  quality() {
+  // Solvix's own judgement - what decides.
+  solvix(): SolverQualityDto | null {
+    return this.solver.solvixQuality(this.sessionId);
+  }
+
+  // What the scene shows now: Solvix's, or another tool's while looking at it.
+  shown(): SolverQualityDto | null {
     return this.solver.quality(this.sessionId);
   }
 
-  report() {
-    return this.solver.qualityReport(this.sessionId);
+  hexCount(): number {
+    return this.editor.getState(this.sessionId)?.hexes.length ?? 0;
   }
+
+  // The lists here are rebuilt on every change-detection pass (the 3D canvas triggers one every frame); without a
+  // track function the buttons would be torn down and recreated between mouse-down and mouse-up, and a click would
+  // never arrive.
+  trackById(_: number, item: { id: string }): string {
+    return item.id;
+  }
+
+  trackKey(_: number, item: { limit: { key: string } }): string {
+    return item.limit.key;
+  }
+
+  trackLimit(_: number, limit: { key: string }): string {
+    return limit.key;
+  }
+
+  trackLabel(_: number, item: { label: string }): string {
+    return item.label;
+  }
+
+  trackResult(_: number, item: { result: Result }): string {
+    return item.result;
+  }
+
+  color(result: Result): string {
+    return `#${RESULT_COLORS[result].toString(16).padStart(6, '0')}`;
+  }
+
+  // --- 1. is the mesh accepted ---
+
+  private decisionOf: { solvix: SolverQualityDto; value: QualityDecision } | null = null;
+
+  decision(): QualityDecision | null {
+    const solvix = this.solvix();
+    if (!solvix) return null;
+    if (this.decisionOf?.solvix !== solvix) this.decisionOf = { solvix, value: decide(solvix) };
+    return this.decisionOf.value;
+  }
+
+  percentOf(part: number, total: number): string {
+    const share = total > 0 ? (part / total) * 100 : 0;
+    return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
+  }
+
+  // The button to the solver is always there: it is the user who decides to go on. It only says what to expect.
+  goLabel(level: DecisionLevel): string {
+    return level === 'ok' ? 'Перейти до розрахунку' : level === 'bad' ? 'Все одно перейти до розрахунку' : 'Перейти до розрахунку (не запуститься)';
+  }
+
+  goToSolver(): void {
+    this.activeWorld.selectCurrentWorld(SOLVER_WORLD_INDEX);
+  }
+
+  decisionIcon(level: DecisionLevel): string {
+    return level === 'ok' ? '✓' : '✗';
+  }
+
+  // Picks the element that fails most clearly, so its measures are in front of the user.
+  showWorst(): void {
+    this.solver.setQualityCompare(this.sessionId, null);
+    const solvix = this.solvix();
+    if (!solvix) return;
+    this.solver.setQualityMetric(this.sessionId, 'grade');
+    const worst = solvix.flagged
+      .filter(e => e.grade === 'invalid')
+      .concat(solvix.flagged.filter(e => e.grade !== 'invalid'))[0];
+    if (worst) this.solver.setQualityPick(this.sessionId, { hex: worst.hex, ex: worst.ex, ey: worst.ey, ez: worst.ez });
+  }
+
+  // --- 2. the measures of the criterion ---
+
+  private measureOf(limit: SolverQualityLimitDto, value: number): Measure {
+    const shown = value >= 1e6 ? '∞' : `${value.toFixed(limit.decimals)}${limit.unit}`;
+    return { limit, value, shown, ok: passes(limit, value) };
+  }
+
+  // The worst value of each measure over the whole mesh.
+  meshMeasures(): Measure[] {
+    const solvix = this.solvix();
+    return solvix ? solvix.limits.map(limit => this.measureOf(limit, solvix.worst[limit.key])) : [];
+  }
+
+  limitText(limit: SolverQualityLimitDto): string {
+    return ruleText(limit);
+  }
+
+  errorText(limit: SolverQualityLimitDto): string {
+    return limit.errorBound === null ? '' : `Межа «помилка» ANSYS: ${limit.errorBound >= 1e6 ? '10⁶' : limit.errorBound}${limit.unit}`;
+  }
+
+  markerLeft(measure: Measure): string {
+    return `${(gaugePosition(measure.limit, measure.value) * 100).toFixed(1)}%`;
+  }
+
+  resultOfMeasure(measure: Measure): Result {
+    return measure.ok ? 'accepted' : 'rejected';
+  }
+
+  // --- 3. what the scene shows ---
 
   metric(): QualityMetric {
     return this.solver.qualityMetric(this.sessionId);
@@ -52,162 +167,14 @@ export class QualityControlsComponent implements DoCheck {
     this.solver.setQualityMetric(this.sessionId, metric);
   }
 
-  color(result: Result): string {
-    return `#${RESULT_COLORS[result].toString(16).padStart(6, '0')}`;
-  }
-
-  // The result of a grade in what is shown now: accepted or not (and, for the overall result, disputed).
-  resultOfGrade(grade: QualityGradeName): Result {
-    return resultOf(grade, this.overall());
-  }
-
-  hexCount(): number {
-    return this.editor.getState(this.sessionId)?.hexes.length ?? 0;
-  }
-
-  // --- can the solver be used ---
-
-  private decisionOf: { report: unknown; value: QualityDecision } | null = null;
-
-  decision(): QualityDecision | null {
-    const report = this.report();
-    if (!report) return null;
-    if (this.decisionOf?.report !== report) this.decisionOf = { report, value: decide(report) };
-    return this.decisionOf.value;
-  }
-
-  goToSolver(): void {
-    this.activeWorld.selectCurrentWorld(SOLVER_WORLD_INDEX);
-  }
-
-  // Shows the elements the standards reject most: the consensus, coloured by the vote, with the worst element picked.
-  showWorst(): void {
-    this.solver.setQualityProfile(this.sessionId, CONSENSUS_ID);
-    const worst = this.worstElement();
-    if (worst) this.solver.setQualityPick(this.sessionId, { hex: worst.hex, ex: worst.ex, ey: worst.ey, ez: worst.ez });
-  }
-
-  trackName(_: number, item: { name: string }): string {
-    return item.name;
-  }
-
-  percentOf(part: number, total: number): string {
-    const share = total > 0 ? (part / total) * 100 : 0;
-    return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
-  }
-
-  decisionIcon(level: DecisionLevel): string {
-    return level === 'ok' ? '✓' : level === 'caution' ? '!' : '✗';
-  }
-
-  // --- the standards, side by side ---
-
-  profile(): string {
-    return this.solver.qualityProfile(this.sessionId);
-  }
-
-  setProfile(id: string): void {
-    this.solver.setQualityProfile(this.sessionId, id);
-  }
-
-  // The lists below are rebuilt on every change-detection pass (the 3D canvas triggers one every frame); without a
-  // track function the buttons would be torn down and recreated between mouse-down and mouse-up, and a click would
-  // never arrive.
-  trackById(_: number, item: { id: string }): string {
-    return item.id;
-  }
-
-  trackIndex(index: number): number {
-    return index;
-  }
-
-  trackSegment(_: number, segment: { result: Result }): string {
-    return segment.result;
-  }
-
-  trackKey(_: number, item: { limit: { key: string } }): string {
-    return item.limit.key;
-  }
-
-  overall(): boolean {
-    return this.quality()?.id === CONSENSUS_ID;
-  }
-
-  trackZone(_: number, zone: { result: Result }): string {
-    return zone.result;
-  }
-
-  private consensusOf: { report: SolverQualityReportDto; dto: SolverQualityDto } | null = null;
-
-  private consensus(report: SolverQualityReportDto): SolverQualityDto {
-    if (this.consensusOf?.report !== report) this.consensusOf = { report, dto: buildConsensus(report) };
-    return this.consensusOf.dto;
-  }
-
-  // One row per standard (and the consensus) with the share of elements it rejects.
-  standards(): { id: string; name: string; rejected: number; share: number; dto: SolverQualityDto }[] {
-    const report = this.report();
-    if (!report) return [];
-    const consensus = this.consensus(report);
-    return [...report.profiles, consensus].map(dto => {
-      const rejected = dto.id === CONSENSUS_ID ? dto.grades.poor + dto.grades.invalid : rejectedCount(dto);
-      return { id: dto.id, name: dto.name, rejected, share: dto.elements > 0 ? rejected / dto.elements : 0, dto };
-    });
-  }
-
-  barWidth(share: number): string {
-    return `${Math.max(share > 0 ? 3 : 0, share * 100).toFixed(1)}%`;
-  }
-
-  percent(share: number): string {
-    return share === 0 ? '0%' : share < 0.01 ? '<1%' : `${(share * 100).toFixed(0)}%`;
-  }
-
-  // --- the verdict ---
-
-  // The result of the worst element: the colour of the verdict.
-  verdictResult(): Result {
-    const parts = this.segments();
-    return parts.some(p => p.result === 'rejected') ? 'rejected' : parts.some(p => p.result === 'disputed') ? 'disputed' : 'accepted';
-  }
-
-  verdict(): { title: string; sub: string } {
-    const q = this.quality();
-    if (!q) return { title: '', sub: '' };
-    if (q.id === CONSENSUS_ID) {
-      const n = q.grades.poor;
-      return n > 0
-        ? { title: 'Більшість стандартів не приймає', sub: `${n} елементів не проходять у 3 і більше стандартах` }
-        : q.flagged.length > 0
-          ? { title: 'Є спірні елементи', sub: `${q.flagged.length} елементів не проходять хоча б в одному стандарті` }
-          : { title: 'Усі стандарти згодні', sub: 'Жоден елемент не відхилено' };
-    }
-    if (q.grades.invalid > 0) return { title: 'Розрахунок неможливий', sub: `Вивернутих елементів: ${q.grades.invalid}` };
-    if (q.grades.poor > 0) return { title: 'Є елементи, що не проходять', sub: `${q.grades.poor} із ${q.elements}` };
-    return { title: 'Усе проходить', sub: 'Жоден елемент не порушує меж' };
-  }
-
-  rule(): string {
-    return this.overall()
-      ? 'Елемент не приймається, якщо його відхиляють три й більше стандартів; спірний, якщо один-два.'
-      : 'Елемент проходить, якщо кожен його показник у межах.';
-  }
-
-  // The bar of all elements by result: only the results that occur, as wide as their share.
-  segments(): { result: Result; count: number }[] {
-    const q = this.quality();
+  // The colours the scene uses now, with their meaning.
+  legend(): { result: Result; text: string }[] {
+    const q = this.shown();
     if (!q) return [];
-    const g = q.grades;
-    const parts: { result: Result; count: number }[] = this.overall()
-      ? [{ result: 'accepted', count: g.excellent }, { result: 'disputed', count: g.good + g.acceptable }, { result: 'rejected', count: g.poor + g.invalid }]
-      : [{ result: 'accepted', count: g.excellent + g.good + g.acceptable }, { result: 'rejected', count: g.poor + g.invalid }];
-    return parts.filter(p => p.count > 0);
-  }
-
-  resultWord(result: Result): string {
-    return this.overall()
-      ? { accepted: 'приймають усі', disputed: 'спірні', rejected: 'не приймає більшість' }[result]
-      : { accepted: 'проходять', disputed: 'спірні', rejected: 'не проходять' }[result];
+    return [
+      { result: 'accepted', text: `Приймається (${q.name})` },
+      { result: 'rejected', text: `Не приймається (${q.name})` }
+    ];
   }
 
   showMark(kind: 'fixed' | 'loads'): boolean {
@@ -218,60 +185,7 @@ export class QualityControlsComponent implements DoCheck {
     this.solver.setMarks(this.sessionId, 'quality', kind, !this.showMark(kind));
   }
 
-  // The colours the scene uses in this mode, with their meaning.
-  legend(): { result: Result; text: string }[] {
-    const q = this.quality();
-    if (!q) return [];
-    return this.overall()
-      ? [
-          { result: 'accepted', text: 'Приймається всіма стандартами' },
-          { result: 'disputed', text: 'Спірно: один-два стандарти не приймають' },
-          { result: 'rejected', text: 'Не приймається: три й більше стандартів' }
-        ]
-      : [
-          { result: 'accepted', text: `Приймається за ${q.name}` },
-          { result: 'rejected', text: `Не приймається за ${q.name}` }
-        ];
-  }
-
-  // --- the measures: a gauge each ---
-
-  worstValue(limit: SolverQualityLimitDto): number {
-    return this.quality()!.worst[limit.key];
-  }
-
-  worstResult(limit: SolverQualityLimitDto): Result {
-    return resultOf(metricGrade(limit, this.worstValue(limit)), false);
-  }
-
-  passed(limit: SolverQualityLimitDto): boolean {
-    return passes(limit, this.worstValue(limit));
-  }
-
-  ruleOf(limit: SolverQualityLimitDto): string {
-    return limit.key === 'rejected' ? 'Допустимо: жоден стандарт не відхиляє' : ruleText(limit);
-  }
-
-  // What the big number of a gauge says: for the angles the worst angle itself, not its distance from 90.
-  shownValue(limit: SolverQualityLimitDto): number {
-    const q = this.quality()!;
-    return limit.kind === 'angleDeviation' ? worstAngle(q.worst['minAngle'], q.worst['maxAngle']) : q.worst[limit.key];
-  }
-
-  sub(limit: SolverQualityLimitDto): string {
-    const q = this.quality()!;
-    return limit.kind === 'angleDeviation' ? `найменший ${q.worst['minAngle'].toFixed(0)}° · найбільший ${q.worst['maxAngle'].toFixed(0)}°` : '';
-  }
-
-  markerLeft(limit: SolverQualityLimitDto): string {
-    return `${(gaugePosition(limit, this.worstValue(limit)) * 100).toFixed(1)}%`;
-  }
-
-  decimals(limit: SolverQualityLimitDto): string {
-    return limit.kind === 'angleDeviation' ? '1.0-0' : `1.${limit.decimals}-${limit.decimals}`;
-  }
-
-  // --- the picked element ---
+  // --- 4. the picked element ---
 
   pickedElement(): QualityPick | null {
     return this.solver.qualityPick(this.sessionId);
@@ -291,46 +205,76 @@ export class QualityControlsComponent implements DoCheck {
     return this.solver.qualityDetail(this.sessionId) !== null;
   }
 
-  // The picked element's measures: of the chosen standard, or - with the overall result chosen - of every standard.
-  details(): { id: string; name: string; grade: QualityGradeName; rows: { limit: SolverQualityLimitDto; shown: string; grade: QualityGradeName; ok: boolean }[] }[] {
-    const detail = this.solver.qualityDetail(this.sessionId);
-    const report = this.report();
-    const q = this.quality();
-    if (!detail || !report || !q) return [];
+  // The picked element's value of every measure of Solvix's criterion.
+  elementMeasures(): Measure[] {
+    const solvix = this.solvix();
+    const one = this.solver.qualityDetail(this.sessionId)?.profiles.find(p => p.id === SOLVIX_ID);
+    return solvix && one ? solvix.limits.map(limit => this.measureOf(limit, one.values[limit.key])) : [];
+  }
+
+  // Whether Solvix accepts the picked element.
+  elementResult(): Result {
+    const one = this.solver.qualityDetail(this.sessionId)?.profiles.find(p => p.id === SOLVIX_ID);
+    return one ? resultOf(one.grade) : 'accepted';
+  }
+
+  // What the other tool on the scene says of the picked element (only while looking at that tool).
+  otherToolResult(): Result | null {
+    const id = this.solver.qualityCompare(this.sessionId);
+    const one = id ? this.solver.qualityDetail(this.sessionId)?.profiles.find(p => p.id === id) : undefined;
+    return one ? resultOf(one.grade) : null;
+  }
+
+  // --- 5. how other tools would mark the mesh (a look only) ---
+
+  openTools(): void {
+    this.toolsOpen = true;
+  }
+
+  closeTools(): void {
+    this.toolsOpen = false;
+    this.solver.setQualityCompare(this.sessionId, null);
+  }
+
+  compareId(): string | null {
+    return this.solver.qualityCompare(this.sessionId);
+  }
+
+  // The other tools with the share of elements each accepts.
+  tools(): { id: string; name: string; percent: number; dto: SolverQualityDto }[] {
+    const report = this.solver.qualityReport(this.sessionId);
+    if (!report) return [];
     return report.profiles
-      .filter(p => q.id === CONSENSUS_ID || p.id === q.id)
-      .map(profile => {
-        const one = detail.profiles.find(d => d.id === profile.id)!;
-        return {
-          id: profile.id,
-          name: profile.name,
-          grade: one.grade,
-          rows: profile.limits.map(limit => {
-            const value = one.values[limit.key];
-            const grade = metricGrade(limit, value);
-            const shown = limit.kind === 'angleDeviation' ? anglesText(one.values['minAngle'], one.values['maxAngle']) : `${value.toFixed(limit.decimals)}${limit.unit}`;
-            return { limit, shown, grade, ok: grade !== 'poor' && grade !== 'invalid' };
-          })
-        };
-      });
+      .filter(p => p.id !== SOLVIX_ID)
+      .map(dto => ({ id: dto.id, name: dto.name, percent: dto.elements > 0 ? ((dto.elements - rejectedCount(dto)) / dto.elements) * 100 : 100, dto }));
   }
 
-  // How many standards reject the picked element (for the overall result).
-  rejectedByCount(): number {
-    return (this.solver.qualityDetail(this.sessionId)?.profiles ?? []).filter(p => p.grade === 'poor' || p.grade === 'invalid').length;
+  percentText(percent: number): string {
+    return percent >= 100 ? '100%' : percent > 99 ? '>99%' : `${Math.round(percent)}%`;
   }
 
-  limitText(limit: SolverQualityLimitDto): string {
-    return ruleText(limit);
+  chooseTool(id: string): void {
+    this.solver.setQualityCompare(this.sessionId, this.compareId() === id ? null : id);
   }
 
-  // The element the standards reject most, for "show the problem" (not listed: the user finds it on the scene).
-  private worstElement(): SolverElementQualityDto | null {
-    const q = this.quality();
-    if (!q) return null;
-    const metric = this.metric();
-    return q.flagged
-      .filter(e => measuredGrade(e, metric, q.limits) !== 'excellent')
-      .sort((a, b) => GRADE_ORDER.indexOf(measuredGrade(b, metric, q.limits)) - GRADE_ORDER.indexOf(measuredGrade(a, metric, q.limits)))[0] ?? null;
+  chosenTool(): SolverQualityDto | null {
+    const id = this.compareId();
+    return id ? (this.solver.qualityReport(this.sessionId)?.profiles.find(p => p.id === id) ?? null) : null;
+  }
+
+  // The measures to pick from while colouring by Solvix's criterion.
+  metricChoices(): SolverQualityLimitDto[] {
+    return this.solvix()?.limits.slice() ?? [];
+  }
+
+  // The grade of an element by the measure on the scene (for the tests of the worst element).
+  gradeOnScene(element: { grade: QualityGradeName; values: Readonly<Record<string, number>> }): QualityGradeName {
+    const q = this.shown();
+    return q ? measuredGrade(element, this.metric(), q.limits) : element.grade;
+  }
+
+  // The result of a value for the gauge colours.
+  resultOfValue(limit: SolverQualityLimitDto, value: number): Result {
+    return resultOf(metricGrade(limit, value));
   }
 }

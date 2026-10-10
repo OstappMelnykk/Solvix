@@ -1,4 +1,4 @@
-import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../api/solver-api.service';
+import { QualityGradeName, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../api/solver-api.service';
 
 // What the Quality World can colour the elements by: the overall grade (the worst of the measures) or one measure.
 export type QualityMetric = 'grade' | string;
@@ -113,76 +113,21 @@ export function passes(limit: SolverQualityLimitDto, value: number): boolean {
 // An element is rejected by a standard when its grade there is poor or invalid.
 export const isRejected = (grade: QualityGradeName): boolean => grade === 'poor' || grade === 'invalid';
 
-export const CONSENSUS_ID = 'consensus';
+// What the user sees of a grade: accepted or not. (The finer grades only say how far from the limit an element is; they
+// decide nothing, so they are not shown.)
+export type Result = 'accepted' | 'rejected';
 
-// What the user sees of a grade: accepted or not. Only the overall result has a middle state, when some of the
-// standards reject an element and the others accept it. (The finer grades only say how far from the limit an element
-// is; they decide nothing, so they are not shown.)
-export type Result = 'accepted' | 'disputed' | 'rejected';
+export const RESULT_NAMES: Record<Result, string> = { accepted: 'Приймається', rejected: 'Не приймається' };
 
-export const RESULT_NAMES: Record<Result, string> = { accepted: 'Приймається', disputed: 'Спірно', rejected: 'Не приймається' };
-
-export function resultOf(grade: QualityGradeName, overall: boolean): Result {
-  if (isRejected(grade)) return 'rejected';
-  return overall && grade !== 'excellent' ? 'disputed' : 'accepted';
+export function resultOf(grade: QualityGradeName): Result {
+  return isRejected(grade) ? 'rejected' : 'accepted';
 }
 
-// The "average" of the standards: for each element, in how many standards it is rejected. 0 excellent, 1 good, 2
-// acceptable, 3 or more poor - so the standards vote, and an element only the strictest one dislikes stays mild.
-export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto {
-  const profiles = report.profiles;
-  const rejectedIn = new Map<string, { element: SolverElementQualityDto; count: number }>();
-  for (const profile of profiles) {
-    for (const element of profile.flagged) {
-      if (!isRejected(element.grade)) continue;
-      const key = `${element.hex}:${element.ex}:${element.ey}:${element.ez}`;
-      const entry = rejectedIn.get(key);
-      if (entry) entry.count++;
-      else rejectedIn.set(key, { element, count: 1 });
-    }
-  }
-  const total = profiles[0]?.elements ?? 0;
-  const limit: SolverQualityLimitDto = {
-    key: 'rejected',
-    label: 'Скільки стандартів не приймають',
-    short: 'Не приймають',
-    tech: 'голосування',
-    hint: `У скількох із ${profiles.length} стандартів елемент не проходить.`,
-    higherIsBetter: false,
-    levels: 4,
-    bounds: [1, 2, 3],
-    unit: '',
-    decimals: 0,
-    kind: 'plain'
-  };
-  const grades: Record<QualityGradeName, number> = { excellent: 0, good: 0, acceptable: 0, poor: 0, invalid: 0 };
-  const flagged: SolverElementQualityDto[] = [];
-  let most = 0;
-  for (const { element, count } of rejectedIn.values()) {
-    const grade = metricGrade(limit, count);
-    grades[grade]++;
-    most = Math.max(most, count);
-    flagged.push({ hex: element.hex, ex: element.ex, ey: element.ey, ez: element.ez, grade, values: { rejected: count } });
-  }
-  grades.excellent = Math.max(0, total - flagged.length);
-  return {
-    id: CONSENSUS_ID,
-    name: 'Загальний результат',
-    source: `Усереднення: у скількох із ${profiles.length} стандартів елемент не проходить. 0 — усі згодні, що добрий; 3 і більше — більшість відхиляє.`,
-    note: 'Це не окремий стандарт, а голосування решти. Щоб побачити, хто саме відхиляє, оберіть стандарт у списку.',
-    elements: total,
-    grades,
-    worst: { rejected: most },
-    limits: [limit],
-    flagged
-  };
-}
+// The id of Solvix's own criterion in the report: the one that decides whether the mesh is accepted.
+export const SOLVIX_ID = 'solvix';
 
-// The standards that reject an element, by name.
-export function rejectedBy(report: SolverQualityReportDto, element: { hex: number; ex: number; ey: number; ez: number }): string[] {
-  return report.profiles
-    .filter(p => p.flagged.some(f => f.hex === element.hex && f.ex === element.ex && f.ey === element.ey && f.ez === element.ez && isRejected(f.grade)))
-    .map(p => p.name);
+export function solvixOf(report: SolverQualityReportDto): SolverQualityDto | null {
+  return report.profiles.find(p => p.id === SOLVIX_ID) ?? null;
 }
 
 // How many elements a standard rejects.
@@ -190,70 +135,54 @@ export function rejectedCount(profile: SolverQualityDto): number {
   return profile.grades.poor + profile.grades.invalid;
 }
 
-export type DecisionLevel = 'ok' | 'caution' | 'bad' | 'blocked';
+export type DecisionLevel = 'ok' | 'bad' | 'blocked';
+
+// The measures that rejected elements fail, with how many elements fail each (an element can fail several).
+export interface FailingMeasure {
+  readonly label: string;
+  readonly tech: string;
+  readonly count: number;
+}
 
 export interface QualityDecision {
   readonly level: DecisionLevel;
-  // "Можна рахувати"
+  // "Сітка приймається"
   readonly title: string;
-  // the reasons, one line each
-  readonly reasons: readonly string[];
-  // the standards that reject something, with how many elements
-  readonly rejecting: readonly { name: string; rejected: number }[];
-  // elements rejected by at least one standard / by most of them
-  readonly rejectedByAny: number;
-  readonly rejectedByMost: number;
-  // whether going on to the solver is advised, allowed only with care, or not possible
-  readonly canSolve: boolean;
-  // for laying the card out: the number of elements, the folded ones, and what to do about it
   readonly total: number;
+  readonly rejected: number;
+  // inverted or degenerate elements (the Jacobian changes sign): the solver refuses them
   readonly folded: number;
+  readonly failing: readonly FailingMeasure[];
   readonly advice: string;
+  // one line for a narrow place
+  readonly summary: string;
 }
 
-// Whether the user may go on to the solver, from how all the standards judge the mesh:
-//  - a folded element (invalid): not possible;
-//  - elements rejected by most of the standards (3 or more of 5): better not;
-//  - elements rejected by some standard but accepted by most: go on, with care;
-//  - nothing rejected: go on.
-export function decide(report: SolverQualityReportDto): QualityDecision {
-  const consensus = buildConsensus(report);
-  const rejecting = report.profiles.map(p => ({ name: p.name, rejected: rejectedCount(p) })).filter(r => r.rejected > 0);
-  const folded = Math.max(0, ...report.profiles.map(p => p.grades.invalid));
-  const byAny = consensus.flagged.length;
-  const byMost = consensus.grades.poor + consensus.grades.invalid;
-  const total = report.profiles[0]?.elements ?? 0;
-  const names = rejecting.map(r => r.name).join(', ');
-  const count = report.profiles.length;
-  if (total === 0) return { level: 'ok', title: 'Сітка порожня', reasons: ['Побудуйте хоча б один куб.'], rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: false, total: 0, folded: 0, advice: '' };
+// Whether the mesh is accepted - by Solvix's criterion only (see docs/research/mesh-quality):
+//  - an element is rejected when any measure is beyond its limit;
+//  - an inverted element (Jacobian changes sign) cannot be used: the solver refuses it;
+//  - the mesh is accepted when no element is rejected.
+export function decide(solvix: SolverQualityDto): QualityDecision {
+  const total = solvix.elements;
+  const rejected = rejectedCount(solvix);
+  const folded = solvix.grades.invalid;
+  const failing = solvix.limits
+    .map(limit => ({ label: limit.label, tech: limit.tech, count: solvix.flagged.filter(f => !passes(limit, f.values[limit.key])).length }))
+    .filter(f => f.count > 0);
+  if (total === 0) return { level: 'ok', title: 'Сітка порожня', total, rejected: 0, folded: 0, failing: [], advice: 'Побудуйте хоча б один куб.', summary: 'Побудуйте хоча б один куб.' };
   if (folded > 0) {
     return {
-      level: 'blocked', title: 'Розрахунок неможливий',
-      reasons: [`${folded} елементів вивернуті або вироджені — їх відхиляють усі стандарти.`, 'Виправте сітку (перетягніть вузли) або змініть поділ, поки такі елементи є, розрахунок не запуститься.'],
-      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: false, total, folded,
-      advice: 'Виправте сітку (перетягніть вузли) або змініть поділ. Поки такі елементи є, розрахунок не запуститься.'
+      level: 'blocked', title: 'Розрахунок неможливий', total, rejected, folded, failing,
+      advice: 'Виправте сітку (перетягніть вузли) або змініть поділ. Поки такі елементи є, розрахунок не запуститься.',
+      summary: `${folded} елементів вивернуті або вироджені.`
     };
   }
-  if (byMost > 0) {
+  if (rejected > 0) {
     return {
-      level: 'bad', title: 'Краще не рахувати',
-      reasons: [`${byMost} елементів відхиляє більшість стандартів (3 і більше з ${count}).`, `Відхиляють: ${names}.`, 'Результат біля цих елементів буде неточним. Виправте їх або рахуйте на власний ризик.'],
-      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: true, total, folded,
-      advice: 'Результат біля цих елементів буде неточним. Виправте їх або рахуйте на власний ризик.'
+      level: 'bad', title: 'Сітка не приймається', total, rejected, folded, failing,
+      advice: 'Результат біля цих елементів може бути неточним. Виправте їх або рахуйте на власний ризик.',
+      summary: `${rejected} із ${total} елементів не проходять критерії Solvix.`
     };
   }
-  if (byAny > 0) {
-    return {
-      level: 'caution', title: 'Можна рахувати, з обережністю',
-      reasons: [`${byAny} елементів не проходять хоча б в одному стандарті, але більшість стандартів їх приймає.`, `Відхиляють: ${names}.`, 'Напруження поруч із ними можуть бути менш точними — перевірте їх на карті якості.'],
-      rejecting, rejectedByAny: byAny, rejectedByMost: 0, canSolve: true, total, folded,
-      advice: 'Напруження поруч із ними можуть бути менш точними. Перевірте їх на карті якості.'
-    };
-  }
-  return {
-    level: 'ok', title: 'Можна рахувати',
-    reasons: [`Усі ${total} елементів проходять у всіх ${count} стандартах.`],
-    rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: true, total, folded,
-    advice: ''
-  };
+  return { level: 'ok', title: 'Сітка приймається', total, rejected, folded, failing, advice: '', summary: `Усі ${total} елементів проходять критерії Solvix.` };
 }

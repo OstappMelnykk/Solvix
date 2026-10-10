@@ -1,46 +1,51 @@
 import { TestBed } from '@angular/core/testing';
 import { QualityControlsComponent } from './quality-controls.component';
 import { SolverService } from '../../../state/solver.service';
+import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { ActiveWorldService } from '../../../state/active-world.service';
 import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
-import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { SolverElementReportDto, SolverQualityDto, SolverQualityReportDto } from '../../../api/solver-api.service';
-import { buildConsensus } from '../../../geometry/quality-grading';
+import { SolverElementReportDto, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../../../api/solver-api.service';
 import { linkedPairState } from '../../../geometry/mesh-state.fixture.spec';
 
 describe('QualityControlsComponent', () => {
-  const grades = { excellent: 2, good: 0, acceptable: 0, poor: 1, invalid: 0 };
-  const profile = (id: string, name: string): SolverQualityDto => ({
-    id, name, source: `source of ${name}`, note: '', elements: 3, grades, worst: { aspectRatio: 12 },
-    limits: [{ key: 'aspectRatio', label: 'Витягнутість', short: 'Витягнутість', tech: 'Aspect ratio', hint: '', higherIsBetter: false, levels: 2, bounds: [10], unit: '', decimals: 1, kind: 'plain' }],
-    flagged: [{ hex: 0, ex: 0, ey: 0, ez: 0, grade: 'poor', values: { aspectRatio: 12 } }]
+  const aspect: SolverQualityLimitDto = {
+    key: 'aspectRatio', label: 'Витягнутість', short: 'Витягнутість', tech: 'Aspect ratio', hint: 'довге ребро до короткого', higherIsBetter: false, levels: 2,
+    bounds: [20], unit: '', decimals: 1, kind: 'plain', errorBound: 1_000_000
+  };
+  const profile = (id: string, name: string, rejected: number): SolverQualityDto => ({
+    id, name, source: `source of ${name}`, note: `note of ${name}`, elements: 4,
+    grades: { excellent: 4 - rejected, good: 0, acceptable: 0, poor: rejected, invalid: 0 }, worst: { aspectRatio: 25 }, limits: [aspect],
+    flagged: Array.from({ length: rejected }, (_, i) => ({ hex: i, ex: 0, ey: 0, ez: 0, grade: 'poor' as const, values: { aspectRatio: 25 } }))
   });
-  const report: SolverQualityReportDto = { profiles: [profile('solvix', 'Solvix'), profile('abaqus', 'Abaqus/CAE')] };
-
+  const report: SolverQualityReportDto = { profiles: [profile('solvix', 'Solvix', 1), profile('abaqus', 'Abaqus/CAE', 0), profile('cubit', 'Cubit (Sandia)', 3)] };
   const detail: SolverElementReportDto = {
     hex: 0, ex: 0, ey: 0, ez: 0,
-    profiles: [{ id: 'solvix', grade: 'poor', values: { aspectRatio: 12 } }, { id: 'abaqus', grade: 'poor', values: { aspectRatio: 12 } }]
+    profiles: [{ id: 'solvix', grade: 'poor', values: { aspectRatio: 25 } }, { id: 'abaqus', grade: 'excellent', values: { aspectRatio: 25 } }]
   };
-  let picked: { hex: number; ex: number; ey: number; ez: number } | null;
+
   let solver: jasmine.SpyObj<SolverService>;
-  let current: string;
   let world: jasmine.SpyObj<ActiveWorldService>;
+  let compare: string | null;
+  let picked: { hex: number; ex: number; ey: number; ez: number } | null;
 
   beforeEach(() => {
-    current = 'consensus';
+    compare = null;
     picked = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
-      'quality', 'qualityReport', 'qualityProfile', 'setQualityProfile', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick', 'qualityDetail', 'marks', 'setMarks', 'ensureQuality', 'divisions'
+      'quality', 'solvixQuality', 'qualityReport', 'qualityCompare', 'setQualityCompare', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick',
+      'qualityDetail', 'marks', 'setMarks', 'ensureQuality', 'divisions'
     ]);
     solver.qualityReport.and.returnValue(report);
-    solver.qualityProfile.and.callFake(() => current);
-    solver.quality.and.callFake(() => (current === 'consensus' ? buildConsensus(report) : report.profiles.find(p => p.id === current)!));
+    solver.solvixQuality.and.returnValue(report.profiles[0]);
+    solver.qualityCompare.and.callFake(() => compare);
+    solver.quality.and.callFake(() => report.profiles.find(p => p.id === (compare ?? 'solvix'))!);
     solver.qualityMetric.and.returnValue('grade');
-    solver.marks.and.returnValue({ fixed: false, loads: true });
-    solver.qualityDetail.and.callFake(() => (picked ? detail : null));
     solver.qualityPick.and.callFake(() => picked);
+    solver.qualityDetail.and.callFake(() => (picked ? detail : null));
+    solver.marks.and.returnValue({ fixed: false, loads: true });
     solver.divisions.and.returnValue([1, 1, 1]);
-    solver.setQualityProfile.and.callFake((_s, id) => (current = id));
+    solver.setQualityCompare.and.callFake((_s, id) => (compare = id));
+    solver.setQualityPick.and.callFake((_s, p) => (picked = p));
     const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState']);
     editor.getState.and.callFake(() => linkedPairState());
     world = jasmine.createSpyObj<ActiveWorldService>('ActiveWorldService', ['selectCurrentWorld']);
@@ -55,121 +60,63 @@ describe('QualityControlsComponent', () => {
     fixture.detectChanges();
     return fixture;
   };
-  const buttons = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLButtonElement>('.standard'));
+  const text = (el: Element | null) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const link = (root: HTMLElement, label: string) => Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(b => text(b).includes(label))!;
 
-  it('lists the standards and the consensus, each with how many elements it rejects', () => {
+  it('has its sections under headers of their own, and no list of problem elements, no vote of the standards', () => {
     const root = render().nativeElement as HTMLElement;
 
-    expect(buttons(root).map(b => b.querySelector('b')!.textContent)).toEqual(['Solvix', 'Abaqus/CAE', 'Загальний результат']);
-    expect(buttons(root)[0].textContent).toContain('1');
+    expect(Array.from(root.querySelectorAll('h5')).map(h => text(h))).toEqual([
+      'Чи приймається сітка', 'Критерії Solvix', 'Фарбувати сцену за', 'Вибраний елемент', 'Як позначили б інші інструменти'
+    ]);
+    expect(root.textContent).not.toMatch(/Проблемні елементи|Консенсус|Загальний результат/);
   });
 
-  it('keeps the buttons themselves between change-detection passes, so a click is not lost (the 3D canvas triggers a pass every frame)', () => {
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
-    const before = buttons(root);
-    const rows = Array.from(root.querySelectorAll('.row'));
+  it('says by Solvix\'s criterion alone whether the mesh is accepted, with how many elements fail and by which measure', () => {
+    const root = render().nativeElement as HTMLElement;
 
-    fixture.detectChanges();
-    fixture.detectChanges();
-
-    expect(buttons(root).every((b, i) => b === before[i])).toBeTrue();
-    expect(Array.from(root.querySelectorAll('.row')).every((r, i) => r === rows[i])).toBeTrue();
+    expect(text(root.querySelector('.decision__banner'))).toContain('Сітка не приймається');
+    expect(text(root.querySelector('.decision__stat'))).toContain('1 із 4 елементів (25%)');
+    expect(Array.from(root.querySelectorAll('.decision__who .chip')).map(c => text(c))).toEqual(['Aspect ratio 1']);
   });
 
-  it('switches the standard on a click and shows that standard\'s limits', () => {
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
+  it('always has the way to the solver, and says what to expect', () => {
+    const root = render().nativeElement as HTMLElement;
+    const go = root.querySelector<HTMLButtonElement>('.decision__actions .go')!;
 
-    buttons(root)[1].click();
-    fixture.detectChanges();
-
-    expect(solver.setQualityProfile).toHaveBeenCalledWith(1, 'abaqus');
-    expect(buttons(root)[1].classList).toContain('standard--on');
-    expect(root.textContent).toContain('source of Abaqus/CAE');
-    expect(root.textContent).toContain('Не проходить');
-  });
-
-  it('answers first whether the solver can be used, and takes the user there', () => {
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
-    const card = root.querySelector('.decision')!;
-
-    // both standards reject the same element, but that is less than most of the five: go on with care
-    expect(card.getAttribute('data-level')).toBe('caution');
-    expect(card.textContent).toContain('Можна рахувати, з обережністю');
-    (card.parentElement!.querySelector('.go') as HTMLButtonElement).click();
+    expect(text(go)).toContain('Все одно перейти до розрахунку');
+    go.click();
 
     expect(world.selectCurrentWorld).toHaveBeenCalledWith(SOLVER_WORLD_INDEX);
   });
 
-  it('shows the elements that are rejected on request', () => {
-    const fixture = render();
-    const show = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.go')).find(b => b.textContent!.includes('проблемні'))!;
+  it('shows each measure with its limit, the worst value, pass or fail, where it comes from and the error limit', () => {
+    const root = render().nativeElement as HTMLElement;
+    const gauge = text(root.querySelector('.gauge'));
 
-    show.click();
-
-    expect(solver.setQualityProfile).toHaveBeenCalledWith(1, 'consensus');
-    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
+    expect(text(root.querySelectorAll('.part')[1])).toContain('source of Solvix');
+    expect(gauge).toContain('Витягнутість');
+    expect(gauge).toContain('25.0');
+    expect(gauge).toContain('✗ Не проходить');
+    expect(gauge).toContain('Допустимо: не більше 20');
+    expect(gauge).toContain('Межа «помилка» ANSYS: 10⁶');
   });
 
-  it('has no list of problem elements; the user clicks on the scene instead and is told so', () => {
+  it('knows only accepted or not: two zones per measure and two colours', () => {
     const root = render().nativeElement as HTMLElement;
 
-    expect(root.textContent).not.toContain('Проблемні елементи');
-    expect(root.querySelector('.row')).toBeNull();
-    expect(root.textContent).toContain('Клікніть на куб на сцені');
+    expect(root.querySelectorAll('.gauge__zone').length).toBe(2);
+    expect(Array.from(root.querySelectorAll('.legend span')).map(l => text(l))).toEqual(['Приймається (Solvix)', 'Не приймається (Solvix)']);
+    expect(root.textContent).not.toMatch(/відмінн|добр|прийнятн|невалідн/i);
   });
 
-  it('shows everything about the clicked element: the verdict and every measure of the standard, with its value and limit', () => {
-    current = 'solvix';
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
-    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
-
-    fixture.detectChanges();
-
-    const text = (root.querySelector('.picked__head')!.parentElement!.textContent ?? '').replace(/\s+/g, ' ');
-    expect(text).toContain('Куб 0');
-    expect(text).toContain('Витягнутість');
-    expect(text).toContain('12.0');
-    expect(text).toContain('Допустимо: не більше 10');
-    expect(root.querySelector('.measure--bad')).not.toBeNull();
-  });
-
-  it('for the overall result shows the element by every standard and how many reject it', () => {
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
-    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
-
-    fixture.detectChanges();
-
-    expect(Array.from(root.querySelectorAll('.detail__head b')).map(b => b.textContent)).toEqual(['Solvix', 'Abaqus/CAE']);
-    expect(root.querySelector('.by')!.textContent).toContain('2');
-  });
-
-  it('clears the pick with the same element picked again', () => {
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
-    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
-    fixture.detectChanges();
-
-    root.querySelector<HTMLButtonElement>('.picked__head .link')!.click();
-
-    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
-  });
-
-  it('puts the overall grade on a row of its own and the single measures under it, each with its full name', () => {
-    current = 'solvix';
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
+  it('puts the overall grade on a row of its own and the single measures under it with their full names', () => {
+    const root = render().nativeElement as HTMLElement;
     const grade = root.querySelector<HTMLButtonElement>('.choice__grade')!;
     const measures = Array.from(root.querySelectorAll<HTMLButtonElement>('.choice__measures .choice__btn'));
 
-    expect(grade.textContent!.trim()).toBe('Оцінка');
-    expect(grade.parentElement!.classList).toContain('choice');
-    expect(measures.map(m => (m.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['ВитягнутістьAspect ratio']);
-    expect(measures.some(m => m.contains(grade))).toBeFalse();
+    expect(text(grade)).toBe('Оцінка');
+    expect(measures.map(m => text(m))).toEqual(['ВитягнутістьAspect ratio']);
 
     measures[0].click();
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'aspectRatio');
@@ -177,30 +124,11 @@ describe('QualityControlsComponent', () => {
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'grade');
   });
 
-  it('knows only accepted or not for a standard - the finer grades are not shown', () => {
-    current = 'abaqus';
+  it('has a switch for the supports and one for the loads', () => {
     const root = render().nativeElement as HTMLElement;
-
-    expect(Array.from(root.querySelectorAll('.legend span')).map(l => (l.textContent ?? '').trim())).toEqual(['Приймається за Abaqus/CAE', 'Не приймається за Abaqus/CAE']);
-    expect(root.textContent).not.toMatch(/відмінн|добр|прийнятн|невалідн/i);
-  });
-
-  it('adds "disputed" for the overall result, where some standards reject an element and the others accept it', () => {
-    current = 'consensus';
-    const root = render().nativeElement as HTMLElement;
-
-    expect(Array.from(root.querySelectorAll('.legend span')).map(l => (l.textContent ?? '').trim())).toEqual([
-      'Приймається всіма стандартами', 'Спірно: один-два стандарти не приймають', 'Не приймається: три й більше стандартів'
-    ]);
-  });
-
-  it('has a switch for the supports and one for the loads, each in its own state', () => {
-    const fixture = render();
-    const root = fixture.nativeElement as HTMLElement;
     const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('.mark input'));
 
     expect(boxes.map(b => b.checked)).toEqual([false, true]);
-
     boxes[0].click();
     boxes[1].click();
 
@@ -208,14 +136,98 @@ describe('QualityControlsComponent', () => {
     expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'loads', false);
   });
 
-  it('lays the conclusion out: a banner with the verdict, the figure, who rejects, and what to do', () => {
-    const root = render().nativeElement as HTMLElement;
-    const text = (el: Element | null) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  it('asks to click on the scene when nothing is picked, and shows the picked element\'s measures by Solvix', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(text(root)).toContain('Клікніть на куб на сцені');
 
-    expect(text(root.querySelector('.decision__banner'))).toContain('Можна рахувати, з обережністю');
-    expect(text(root.querySelector('.decision__stat'))).toContain('1 із 3 елементів (33%)');
-    expect(Array.from(root.querySelectorAll('.decision__who .chip')).map(c => text(c))).toEqual(['Solvix 1', 'Abaqus/CAE 1']);
-    expect(text(root.querySelector('.decision__advice'))).toContain('Перевірте їх на карті якості');
-    expect(Array.from(root.querySelectorAll('.decision__actions .go')).map(b => text(b))).toEqual(['Перейти до розрахунку →', 'Показати проблемні елементи']);
+    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
+    fixture.detectChanges();
+
+    expect(text(root.querySelector('.picked__head'))).toContain('Куб 0');
+    expect(text(root.querySelector('.detail__head'))).toContain('Solvix');
+    expect(text(root.querySelector('.detail__head'))).toContain('Не приймається');
+    expect(root.querySelector('.measure--bad')).not.toBeNull();
+    expect(text(root.querySelector('.measure'))).toContain('Допустимо: не більше 20');
+  });
+
+  it('clears the pick with the same element picked again', () => {
+    const fixture = render();
+    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
+    fixture.detectChanges();
+
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.picked__head .link')!.click();
+
+    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
+  });
+
+  it('picks the worst element for "show the problem element"', () => {
+    const root = render().nativeElement as HTMLElement;
+
+    link(root, 'Показати проблемний елемент').click();
+
+    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
+  });
+
+  describe('the look at other tools', () => {
+    it('is closed at first and says that it decides nothing', () => {
+      const root = render().nativeElement as HTMLElement;
+      const part = root.querySelector('.part--look')!;
+
+      expect(text(part)).toContain('Це ніяк не впливає на висновок і на розрахунок');
+      expect(part.querySelector('.pill')).toBeNull();
+    });
+
+    it('lists the other tools, never Solvix itself, with the share of elements each accepts', () => {
+      const fixture = render();
+      const root = fixture.nativeElement as HTMLElement;
+
+      link(root, 'Подивитись, як це позначили б інші інструменти').click();
+      fixture.detectChanges();
+
+      expect(Array.from(root.querySelectorAll('.pill')).map(p => text(p))).toEqual(['Abaqus/CAE100%', 'Cubit (Sandia)25%']);
+      expect(text(root.querySelector('.look-note'))).toContain('Лише перегляд');
+    });
+
+    it('puts the marks of the chosen tool on the scene, and takes them off again; the verdict stays Solvix\'s', () => {
+      const fixture = render();
+      const root = fixture.nativeElement as HTMLElement;
+      link(root, 'Подивитись, як це позначили б інші інструменти').click();
+      fixture.detectChanges();
+
+      root.querySelectorAll<HTMLButtonElement>('.pill')[1].click();
+      fixture.detectChanges();
+      expect(solver.setQualityCompare).toHaveBeenCalledWith(1, 'cubit');
+      expect(text(root.querySelector('.decision__banner'))).toContain('Сітка не приймається');       // Solvix's own, not Cubit's
+      expect(text(root.querySelector('.legend'))).toContain('Cubit (Sandia)');
+
+      link(root, 'Закрити й повернути позначки Solvix').click();
+      fixture.detectChanges();
+      expect(solver.setQualityCompare).toHaveBeenCalledWith(1, null);
+      expect(root.querySelector('.pill')).toBeNull();
+    });
+
+    it('keeps the buttons themselves between change-detection passes, so a click is not lost', () => {
+      const fixture = render();
+      const root = fixture.nativeElement as HTMLElement;
+      link(root, 'Подивитись, як це позначили б інші інструменти').click();
+      fixture.detectChanges();
+      const before = Array.from(root.querySelectorAll('.pill'));
+
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      expect(Array.from(root.querySelectorAll('.pill')).every((b, i) => b === before[i])).toBeTrue();
+    });
+
+    it('shows what the chosen tool says of the picked element', () => {
+      compare = 'abaqus';
+      picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
+      const fixture = render();
+      const root = fixture.nativeElement as HTMLElement;
+
+      expect(text(root.querySelector('.detail__head--other'))).toContain('Abaqus/CAE');
+      expect(text(root.querySelector('.detail__head--other'))).toContain('Приймається · лише перегляд');
+    });
   });
 });

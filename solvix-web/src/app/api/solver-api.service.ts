@@ -116,6 +116,8 @@ export interface SolverQualityLimitDto {
   readonly unit: string;
   readonly decimals: number;
   readonly kind: 'plain' | 'angleDeviation';
+  // beyond this the tool the limits come from refuses the element (shown for information; null if there is none)
+  readonly errorBound: number | null;
 }
 
 // A small element (place ex, ey, ez in its cube) that is not excellent by a profile, with its value of every measure.

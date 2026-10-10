@@ -7,7 +7,7 @@ import { MeshEditorService } from './mesh-editor.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
 import { PickedFace } from '../geometry/mesh-editor-view';
 import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, elementTargets, faceTargets, sameFace, smallFacesOf } from '../geometry/solver-targets';
-import { CONSENSUS_ID, QualityMetric, buildConsensus } from '../geometry/quality-grading';
+import { QualityMetric, SOLVIX_ID } from '../geometry/quality-grading';
 import {
   SolverApiService,
   SolverFaceDto,
@@ -90,10 +90,10 @@ interface SessionSolver {
   showInner: boolean;
   // Colour the cubes by the quality of their worst element instead of by material.
   showQuality: boolean;
-  // The mesh judged by every standard, the standard shown now (or the consensus of them), and that consensus built.
+  // The mesh judged by Solvix's criterion and, to look at, by other tools.
   qualityReport: SolverQualityReportDto | null;
-  qualityProfile: string;
-  consensus: SolverQualityDto | null;
+  // The other tool whose marks are drawn on the scene instead of Solvix's, for a look only (null: Solvix's own).
+  qualityCompare: string | null;
   // The picked element as every standard judges it (null until the server answers).
   qualityDetail: SolverElementReportDto | null;
   // The Quality World: what the cubes are coloured by, the cube picked in its list, and the mesh the quality
@@ -168,8 +168,7 @@ export class SolverService {
       showInner: false,
       showQuality: false,
       qualityReport: null,
-      qualityProfile: CONSENSUS_ID,
-      consensus: null,
+      qualityCompare: null,
       qualityDetail: null,
       qualityMetric: 'grade',
       qualityPick: null,
@@ -365,13 +364,18 @@ export class SolverService {
 
   // --- mesh quality ---
 
-  // The standard that is shown now - or, for the consensus, the standards voting.
+  // What the scene shows: Solvix's own judgement, or - while the user looks at how another tool would mark the mesh -
+  // that tool's. Only the first decides anything.
   quality(sessionId: number): SolverQualityDto | null {
     const entry = this.entry(sessionId);
     const report = entry.qualityReport;
     if (!report) return null;
-    if (entry.qualityProfile === CONSENSUS_ID) return (entry.consensus ??= buildConsensus(report));
-    return report.profiles.find(p => p.id === entry.qualityProfile) ?? report.profiles[0] ?? null;
+    return report.profiles.find(p => p.id === (entry.qualityCompare ?? SOLVIX_ID)) ?? report.profiles[0] ?? null;
+  }
+
+  // Solvix's judgement, the one that decides whether the mesh is accepted.
+  solvixQuality(sessionId: number): SolverQualityDto | null {
+    return this.entry(sessionId).qualityReport?.profiles.find(p => p.id === SOLVIX_ID) ?? null;
   }
 
   // Every standard's judgement of the mesh, for comparing them.
@@ -384,14 +388,15 @@ export class SolverService {
     return this.entry(sessionId).qualityDetail;
   }
 
-  qualityProfile(sessionId: number): string {
-    return this.entry(sessionId).qualityProfile;
+  qualityCompare(sessionId: number): string | null {
+    return this.entry(sessionId).qualityCompare;
   }
 
-  setQualityProfile(sessionId: number, id: string): void {
+  // null returns to Solvix's own marks.
+  setQualityCompare(sessionId: number, id: string | null): void {
     const entry = this.entry(sessionId);
-    entry.qualityProfile = id;
-    entry.qualityMetric = 'grade';       // the measures differ between standards
+    entry.qualityCompare = id;
+    entry.qualityMetric = 'grade';       // the measures differ between tools
     this.touch(sessionId);
   }
 
@@ -400,7 +405,6 @@ export class SolverService {
       next: report => {
         const entry = this.entry(sessionId);
         entry.qualityReport = report;
-        entry.consensus = null;
         this.touch(sessionId);
       },
       error: () => this.notifications.error('Не вдалось оцінити якість сітки: сервер недоступний.')

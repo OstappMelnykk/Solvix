@@ -503,10 +503,13 @@ describe('SolverService', () => {
       const request = http.expectOne(`${api}/${sessionId}/quality`);
       const profile = (id: string, rejected: number) => ({ id, name: id, source: '', note: '', elements: 2, grades: { ...grades, poor: rejected }, worst: {}, limits: [], flagged: [] });
       request.flush({ profiles: [profile('solvix', 0), profile('abaqus', 1)] });
-      expect(solver.quality(sessionId)!.id).toBe('consensus');                     // the standards voting is what is shown first
-      expect(solver.quality(sessionId)!.elements).toBe(2);
-      solver.setQualityProfile(sessionId, 'abaqus');
+      expect(solver.quality(sessionId)!.id).toBe('solvix');                          // Solvix's own judgement is what is shown first
+      expect(solver.solvixQuality(sessionId)!.id).toBe('solvix');
+      solver.setQualityCompare(sessionId, 'abaqus');                                 // a look at another tool: the scene shows it ...
       expect(solver.quality(sessionId)!.id).toBe('abaqus');
+      expect(solver.solvixQuality(sessionId)!.id).toBe('solvix');                    // ... but what decides stays Solvix's
+      solver.setQualityCompare(sessionId, null);
+      expect(solver.quality(sessionId)!.id).toBe('solvix');
       expect(solver.qualityReport(sessionId)!.profiles.length).toBe(2);
       expect(solver.showQuality(sessionId)).toBeTrue();
       solver.setShowQuality(sessionId, false);

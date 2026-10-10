@@ -100,8 +100,8 @@ export const GRADE_COLORS: Record<QualityGradeName, number> = {
   invalid: 0xe02b2b
 };
 
-// The colours of a quality result: accepted, disputed by some of the standards (the overall result only), rejected.
-export const RESULT_COLORS: Record<Result, number> = { accepted: 0x2fbf4f, disputed: 0xf0b429, rejected: 0xe02b2b };
+// The colours of a quality result: accepted or not.
+export const RESULT_COLORS: Record<Result, number> = { accepted: 0x2fbf4f, rejected: 0xe02b2b };
 
 // A stable colour per material name, so the same material looks the same everywhere.
 export function materialColor(name: string): THREE.Color {
@@ -461,7 +461,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       }
     }
     const colorOf = (face: DrawnFace, value: number) =>
-      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent', input.quality!.id === 'consensus')]) : materialColor(materialOf(face.owner.id, ...face.element));
+      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent')]) : materialColor(materialOf(face.owner.id, ...face.element));
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);

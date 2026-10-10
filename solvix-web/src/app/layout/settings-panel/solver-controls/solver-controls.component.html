@@ -70,8 +70,8 @@
   <div class="group-label">Якість сітки</div>
   <ng-container *ngIf="decision() as d; else checking">
     <div class="decision" [attr.data-level]="d.level">
-      <b>{{ d.level === 'ok' ? '✓' : d.level === 'caution' ? '!' : '✗' }} {{ d.title }}</b>
-      <span>{{ d.reasons[0] }}</span>
+      <b>{{ d.level === 'ok' ? '✓' : '✗' }} {{ d.title }}</b>
+      <span>{{ d.summary }}</span>
     </div>
     <button class="btn" type="button" (click)="openQuality()">Порівняння стандартів у Quality World →</button>
   </ng-container>

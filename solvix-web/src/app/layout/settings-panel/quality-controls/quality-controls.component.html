@@ -1,118 +1,80 @@
 <h4>Якість сітки</h4>
 
-<ng-container *ngIf="quality() as q; else loading">
-  <!-- Висновок: чи можна переходити до розрахунку -->
+<ng-container *ngIf="solvix() as sx; else loading">
+
+  <!-- 1. Чи приймається сітка (критерій Solvix) -->
   <section class="part" *ngIf="decision() as d">
-    <h5>Чи можна рахувати</h5>
+    <h5>Чи приймається сітка</h5>
     <div class="decision" [attr.data-level]="d.level">
       <div class="decision__banner">
         <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
         <span class="decision__title">{{ d.title }}</span>
       </div>
-
       <div class="decision__body">
-        <p class="decision__stat" *ngIf="d.level === 'ok'">Усі <b>{{ d.total }}</b> елементів проходять у всіх стандартах.</p>
-        <p class="decision__stat" *ngIf="d.level === 'caution'">
-          <b>{{ d.rejectedByAny }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejectedByAny, d.total) }})</span>
-          не проходять хоча б в одному стандарті. Більшість стандартів їх приймає.
-        </p>
+        <p class="decision__stat" *ngIf="d.level === 'ok'">Усі <b>{{ d.total }}</b> елементів проходять критерії Solvix.</p>
         <p class="decision__stat" *ngIf="d.level === 'bad'">
-          <b>{{ d.rejectedByMost }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejectedByMost, d.total) }})</span>
-          не приймає більшість стандартів (три й більше).
+          <b>{{ d.rejected }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejected, d.total) }})</span> не проходять критерії Solvix.
         </p>
         <p class="decision__stat" *ngIf="d.level === 'blocked'">
-          <b>{{ d.folded }}</b> елементів вивернуті або вироджені: їх не приймає жоден стандарт.
+          <b>{{ d.folded }}</b> елементів вивернуті або вироджені: у них змінюється знак якобіана.
         </p>
-
-        <div class="decision__who" *ngIf="d.rejecting.length > 0">
-          <span class="decision__label">Не проходять у:</span>
-          <span class="chip" *ngFor="let r of d.rejecting; trackBy: trackName"><b>{{ r.name }}</b> {{ r.rejected }}</span>
+        <div class="decision__who" *ngIf="d.failing.length > 0">
+          <span class="decision__label">Не проходять за:</span>
+          <span class="chip" *ngFor="let f of d.failing; trackBy: trackLabel"><b>{{ f.tech }}</b> {{ f.count }}</span>
         </div>
-
         <p class="decision__advice" *ngIf="d.advice">{{ d.advice }}</p>
       </div>
     </div>
-
     <div class="decision__actions">
-      <button type="button" class="go" [class.go--primary]="d.level === 'ok' || d.level === 'caution'" (click)="goToSolver()">
-        {{ d.level === 'bad' ? 'Все одно рахувати' : 'Перейти до розрахунку' }} →
-      </button>
-      <button type="button" class="go" *ngIf="d.level !== 'ok'" [class.go--primary]="d.level === 'bad' || d.level === 'blocked'" (click)="showWorst()">Показати проблемні елементи</button>
+      <button type="button" class="go" [class.go--primary]="d.level === 'ok'" (click)="goToSolver()">{{ goLabel(d.level) }} →</button>
+      <button type="button" class="go go--primary" *ngIf="d.level !== 'ok'" (click)="showWorst()">Показати проблемний елемент</button>
     </div>
   </section>
 
-  <!-- 0. За яким стандартом судимо -->
+  <!-- 2. Критерії -->
   <section class="part">
-    <h5>За яким стандартом</h5>
-    <div class="standards">
-      <button type="button" class="standard" *ngFor="let s of standards(); trackBy: trackById" [class.standard--on]="profile() === s.id" [class.standard--consensus]="s.id === consensusId" (click)="setProfile(s.id)" [title]="s.dto.source">
-        <span class="standard__head">
-          <b>{{ s.name }}</b>
-          <span class="standard__count">{{ s.rejected }} <small>не проходять · {{ percent(s.share) }}</small></span>
-        </span>
-        <span class="standard__bar"><span class="standard__fill" [style.width]="barWidth(s.share)"></span></span>
-      </button>
+    <h5>Критерії Solvix</h5>
+    <p class="about">{{ sx.source }}</p>
+    <p class="about about--note" *ngIf="sx.note">{{ sx.note }}</p>
+    <div class="gauge" *ngFor="let m of meshMeasures(); trackBy: trackKey">
+      <div class="gauge__head">
+        <span class="gauge__name" [title]="m.limit.hint">{{ m.limit.label }} <small>{{ m.limit.tech }}</small></span>
+        <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
+      </div>
+      <div class="gauge__verdict" [class.gauge__verdict--bad]="!m.ok">
+        {{ m.ok ? '✓ Проходить' : '✗ Не проходить' }} · {{ limitText(m.limit) }}
+      </div>
+      <div class="gauge__track">
+        <span class="gauge__marker" [style.left]="markerLeft(m)"></span>
+        <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__zone" [style.background]="color(z.result)"></span>
+      </div>
+      <div class="gauge__labels">
+        <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
+      </div>
+      <div class="gauge__hint">{{ m.limit.hint }}</div>
+      <div class="gauge__error" *ngIf="errorText(m.limit)">{{ errorText(m.limit) }}</div>
     </div>
-    <div class="source">{{ q.source }}</div>
-    <div class="source source--note" *ngIf="q.note">{{ q.note }}</div>
+    <p class="about">Значення — найгірше серед усіх елементів сітки.</p>
   </section>
 
-  <!-- 1. Чи все гаразд -->
-  <section class="part">
-    <h5>Результат за цим стандартом</h5>
-  <div class="verdict" [style.border-color]="color(verdictResult())">
-    <div class="verdict__title">{{ verdict().title }}</div>
-    <div class="verdict__sub">{{ verdict().sub }}</div>
-    <div class="rule">{{ rule() }}</div>
-    <div class="bar" title="Усі елементи сітки">
-      <span *ngFor="let s of segments(); trackBy: trackSegment" class="bar__seg" [style.flex-grow]="s.count" [style.background]="color(s.result)"></span>
-    </div>
-    <div class="counts">
-      <span *ngFor="let s of segments(); trackBy: trackSegment" class="count"><i [style.background]="color(s.result)"></i><b>{{ s.count }}</b> {{ resultWord(s.result) }}</span>
-    </div>
-  </div>
-  </section>
-
-  <!-- 2. Чим фарбувати -->
+  <!-- 3. Що показує сцена -->
   <section class="part">
     <h5>Фарбувати сцену за</h5>
     <div class="choice">
       <button type="button" class="choice__btn choice__grade" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
       <hr class="choice__line" />
       <div class="choice__measures">
-        <button type="button" class="choice__btn" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">
-          <span>{{ l.label }}</span><small *ngIf="!l.label.includes(l.tech)">{{ l.tech }}</small>
+        <button type="button" class="choice__btn" *ngFor="let l of metricChoices(); trackBy: trackLimit" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">
+          <span>{{ l.label }}</span><small>{{ l.tech }}</small>
         </button>
       </div>
     </div>
     <div class="legend">
-      <span *ngFor="let l of legend()"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
+      <span *ngFor="let l of legend(); trackBy: trackResult"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
     </div>
     <div class="marks">
       <label class="mark"><input type="checkbox" [checked]="showMark('fixed')" (change)="toggleMark('fixed')" /><i class="mark__swatch mark__swatch--fixed"></i>Показувати закріплення</label>
       <label class="mark"><input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" /><i class="mark__swatch mark__swatch--loads"></i>Показувати навантаження</label>
-    </div>
-  </section>
-
-  <!-- 3. Яка міра слабка -->
-  <section class="part">
-    <h5>Найгірше по сітці</h5>
-    <div class="gauge" *ngFor="let l of q.limits">
-      <div class="gauge__head">
-        <span class="gauge__name" [title]="l.hint">{{ l.label }} <small>{{ l.tech }}</small></span>
-        <span class="gauge__value" [style.color]="color(worstResult(l))">{{ shownValue(l) | number: decimals(l) }}{{ l.kind === 'angleDeviation' ? '°' : l.unit }}</span>
-      </div>
-      <div class="gauge__sub" *ngIf="sub(l)">{{ sub(l) }}</div>
-      <div class="gauge__verdict" [class.gauge__verdict--bad]="!passed(l)">
-        {{ passed(l) ? '✓ Проходить' : '✗ Не проходить' }} · {{ ruleOf(l) }}
-      </div>
-      <div class="gauge__track">
-        <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
-        <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__zone" [style.background]="color(z.result)"></span>
-      </div>
-      <div class="gauge__labels">
-        <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
-      </div>
     </div>
   </section>
 
@@ -125,22 +87,48 @@
         <button type="button" class="link" (click)="clearPick()">Зняти вибір</button>
       </div>
       <ng-container *ngIf="hasDetail(); else waiting">
-        <div class="by" *ngIf="overall()">Не приймають цей елемент: <b>{{ rejectedByCount() }}</b> із {{ report()?.profiles?.length }} стандартів</div>
-        <div class="detail" *ngFor="let d of details(); trackBy: trackById">
-          <div class="detail__head"><i [style.background]="color(resultOfGrade(d.grade))"></i><b>{{ d.name }}</b><span>{{ resultNames[resultOfGrade(d.grade)] }}</span></div>
-          <div class="measure" *ngFor="let r of d.rows; trackBy: trackKey" [class.measure--bad]="!r.ok">
-            <div class="measure__line">
-              <span class="measure__name" [title]="r.limit.hint">{{ r.limit.label }} <small>{{ r.limit.tech }}</small></span>
-              <span class="measure__value"><span class="measure__mark" [class.measure__mark--ok]="r.ok">{{ r.ok ? '✓' : '✗' }}</span>{{ r.shown }}</span>
-            </div>
-            <div class="measure__rule">{{ limitText(r.limit) }}</div>
+        <div class="detail__head">
+          <i [style.background]="color(elementResult())"></i><b>Solvix</b><span>{{ resultNames[elementResult()] }}</span>
+        </div>
+        <div class="measure" *ngFor="let m of elementMeasures(); trackBy: trackKey" [class.measure--bad]="!m.ok">
+          <div class="measure__line">
+            <span class="measure__name" [title]="m.limit.hint">{{ m.limit.label }} <small>{{ m.limit.tech }}</small></span>
+            <span class="measure__value"><span class="measure__mark" [class.measure__mark--ok]="m.ok">{{ m.ok ? '✓' : '✗' }}</span>{{ m.shown }}</span>
           </div>
+          <div class="measure__rule">{{ limitText(m.limit) }}</div>
+        </div>
+        <div class="detail__head detail__head--other" *ngIf="otherToolResult() as r">
+          <i [style.background]="color(r)"></i><b>{{ chosenTool()?.name }}</b><span>{{ resultNames[r] }} · лише перегляд</span>
         </div>
       </ng-container>
       <ng-template #waiting><div class="empty">Завантажую показники…</div></ng-template>
     </ng-container>
     <ng-template #nothingPicked>
       <div class="empty">Клікніть на куб на сцені — тут з'являться всі показники якості його скінченного елемента.</div>
+    </ng-template>
+  </section>
+
+  <!-- 5. Інші інструменти: лише подивитись -->
+  <section class="part part--look">
+    <h5>Як позначили б інші інструменти</h5>
+    <ng-container *ngIf="!toolsOpen; else toolList">
+      <p class="about">Лише для порівняння на сцені. Це ніяк не впливає на висновок і на розрахунок.</p>
+      <button type="button" class="go" (click)="openTools()">Подивитись, як це позначили б інші інструменти</button>
+    </ng-container>
+    <ng-template #toolList>
+      <div class="look-note">Лише перегляд: сцена показує позначки обраного інструмента. Висновок і розрахунок лишаються за Solvix.</div>
+      <div class="pills">
+        <button type="button" class="pill" *ngFor="let t of tools(); trackBy: trackById" [class.pill--on]="compareId() === t.id" [title]="t.dto.source" (click)="chooseTool(t.id)">
+          <span class="pill__name">{{ t.name }}</span>
+          <span class="pill__percent">{{ percentText(t.percent) }}</span>
+        </button>
+      </div>
+      <ng-container *ngIf="chosenTool() as tool">
+        <p class="about">{{ tool.source }}</p>
+        <p class="about about--note" *ngIf="tool.note">{{ tool.note }}</p>
+      </ng-container>
+      <p class="about" *ngIf="!chosenTool()">Оберіть інструмент. Відсоток — частка елементів, які він приймає.</p>
+      <button type="button" class="go" (click)="closeTools()">Закрити й повернути позначки Solvix</button>
     </ng-template>
   </section>
 </ng-container>

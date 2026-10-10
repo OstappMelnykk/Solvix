@@ -689,3 +689,34 @@ i {
     }
   }
 }
+
+// the look at other tools is set apart: dashed, and it says it decides nothing
+.part--look {
+  border-style: dashed;
+}
+
+.look-note {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: rgba(240, 180, 41, 0.12);
+  border-radius: 6px;
+  color: #e8cf8a;
+  font-size: 12px;
+}
+
+.detail__head--other {
+  margin-top: 8px;
+  opacity: 0.85;
+}
+
+.gauge__hint {
+  margin-top: 4px;
+  color: $muted;
+  font-size: 12px;
+}
+
+.gauge__error {
+  margin-top: 2px;
+  color: #c9a24a;
+  font-size: 11px;
+}

@@ -163,13 +163,13 @@ export class SolverControlsComponent implements DoCheck {
     this.solver.ensureQuality(this.sessionId);
   }
 
-  private decisionOf: { report: unknown; value: QualityDecision } | null = null;
+  private decisionOf: { solvix: unknown; value: QualityDecision } | null = null;
 
-  // Whether the solver can be used on this mesh, by all the standards together (see decide()).
+  // Whether the mesh is accepted by Solvix's criterion (see decide()).
   decision(): QualityDecision | null {
-    const report = this.solver.qualityReport(this.sessionId);
-    if (!report) return null;
-    if (this.decisionOf?.report !== report) this.decisionOf = { report, value: decide(report) };
+    const solvix = this.solver.solvixQuality(this.sessionId);
+    if (!solvix) return null;
+    if (this.decisionOf?.solvix !== solvix) this.decisionOf = { solvix, value: decide(solvix) };
     return this.decisionOf.value;
   }
 
@@ -266,7 +266,10 @@ export class SolverControlsComponent implements DoCheck {
     this.solver.validate(this.sessionId);
   }
 
+  // A mesh Solvix does not accept can still be solved, but the user is asked first; an unusable one the server refuses.
   solve(): void {
+    const decision = this.decision();
+    if (decision?.level === 'bad' && !window.confirm(`Сітка не приймається за критеріями Solvix: ${decision.summary}\nРезультат біля цих елементів може бути неточним. Рахувати все одно?`)) return;
     void this.solver.solve(this.sessionId);
   }
 

@@ -44,7 +44,7 @@ describe('SolverControlsComponent', () => {
     display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
-      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
+      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
       'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
@@ -68,6 +68,7 @@ describe('SolverControlsComponent', () => {
     solver.layerMaterial.and.returnValue('steel');
     solver.quality.and.returnValue(null);
     solver.qualityReport.and.returnValue(null);
+    solver.solvixQuality.and.returnValue(null);
     solver.showQuality.and.returnValue(false);
     solver.tool.and.returnValue('view');
     solver.materialCounts.and.returnValue(new Map([['steel', 7], ['rubber', 3]]));
@@ -269,6 +270,38 @@ describe('SolverControlsComponent', () => {
 
       expect(solver.validate).toHaveBeenCalledWith(1);
       expect(solver.solve).toHaveBeenCalledWith(1);
+    });
+
+    describe('a mesh Solvix does not accept', () => {
+      const solvix = (rejected: number, invalid: number) => ({
+        id: 'solvix', name: 'Solvix', source: '', note: '', elements: 10,
+        grades: { excellent: 10 - rejected - invalid, good: 0, acceptable: 0, poor: rejected, invalid },
+        worst: {}, limits: [], flagged: []
+      });
+
+      it('asks first, and solves only when the user agrees', () => {
+        solver.solvixQuality.and.returnValue(solvix(3, 0));
+        const confirm = spyOn(window, 'confirm').and.returnValue(false);
+
+        component.solve();
+        expect(confirm).toHaveBeenCalled();
+        expect(solver.solve).not.toHaveBeenCalled();
+
+        confirm.and.returnValue(true);
+        component.solve();
+        expect(solver.solve).toHaveBeenCalledWith(1);
+      });
+
+      it('asks nothing when the mesh is accepted, and leaves an unusable one to the server', () => {
+        const confirm = spyOn(window, 'confirm');
+        solver.solvixQuality.and.returnValue(solvix(0, 0));
+        component.solve();
+        solver.solvixQuality.and.returnValue(solvix(0, 2));
+        component.solve();
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(solver.solve).toHaveBeenCalledTimes(2);
+      });
     });
 
     it('shows the stage and percentage while running, and the reason when it fails', () => {
