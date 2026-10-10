@@ -1,6 +1,21 @@
 <h4>Якість сітки</h4>
 
 <ng-container *ngIf="quality() as q; else loading">
+  <!-- Висновок: чи можна переходити до розрахунку -->
+  <section class="decision" *ngIf="decision() as d" [attr.data-level]="d.level">
+    <div class="decision__head">
+      <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
+      <span class="decision__title">{{ d.title }}</span>
+    </div>
+    <ul class="decision__reasons"><li *ngFor="let r of d.reasons; trackBy: trackIndex">{{ r }}</li></ul>
+    <div class="decision__actions">
+      <button type="button" class="go" *ngIf="d.canSolve" [class.go--primary]="d.level === 'ok'" (click)="goToSolver()">
+        {{ d.level === 'bad' ? 'Все одно рахувати' : 'Перейти до розрахунку' }} →
+      </button>
+      <button type="button" class="go" *ngIf="d.level !== 'ok'" [class.go--primary]="d.level !== 'ok' && d.level !== 'caution'" (click)="showWorst()">Показати проблемні елементи</button>
+    </div>
+  </section>
+
   <!-- 0. За яким стандартом судимо -->
   <section>
     <h5>За яким стандартом</h5>

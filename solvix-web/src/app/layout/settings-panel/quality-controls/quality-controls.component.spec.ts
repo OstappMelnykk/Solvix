@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { QualityControlsComponent } from './quality-controls.component';
 import { SolverService } from '../../../state/solver.service';
+import { ActiveWorldService } from '../../../state/active-world.service';
+import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { SolverQualityDto, SolverQualityReportDto } from '../../../api/solver-api.service';
 import { buildConsensus } from '../../../geometry/quality-grading';
@@ -17,6 +19,7 @@ describe('QualityControlsComponent', () => {
 
   let solver: jasmine.SpyObj<SolverService>;
   let current: string;
+  let world: jasmine.SpyObj<ActiveWorldService>;
 
   beforeEach(() => {
     current = 'consensus';
@@ -32,8 +35,9 @@ describe('QualityControlsComponent', () => {
     solver.setQualityProfile.and.callFake((_s, id) => (current = id));
     const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState']);
     editor.getState.and.callFake(() => linkedPairState());
+    world = jasmine.createSpyObj<ActiveWorldService>('ActiveWorldService', ['selectCurrentWorld']);
     TestBed.configureTestingModule({
-      providers: [{ provide: SolverService, useValue: solver }, { provide: MeshEditorService, useValue: editor }]
+      providers: [{ provide: SolverService, useValue: solver }, { provide: MeshEditorService, useValue: editor }, { provide: ActiveWorldService, useValue: world }]
     });
   });
 
@@ -76,5 +80,28 @@ describe('QualityControlsComponent', () => {
     expect(buttons(root)[1].classList).toContain('standard--on');
     expect(root.textContent).toContain('source of Abaqus/CAE');
     expect(root.textContent).toContain('Не проходить');
+  });
+
+  it('answers first whether the solver can be used, and takes the user there', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    const card = root.querySelector('.decision')!;
+
+    // both standards reject the same element, but that is less than most of the five: go on with care
+    expect(card.getAttribute('data-level')).toBe('caution');
+    expect(card.textContent).toContain('Можна рахувати, з обережністю');
+    (card.querySelector('.go') as HTMLButtonElement).click();
+
+    expect(world.selectCurrentWorld).toHaveBeenCalledWith(SOLVER_WORLD_INDEX);
+  });
+
+  it('shows the elements that are rejected on request', () => {
+    const fixture = render();
+    const show = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.go')).find(b => b.textContent!.includes('проблемні'))!;
+
+    show.click();
+
+    expect(solver.setQualityProfile).toHaveBeenCalledWith(1, 'consensus');
+    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
   });
 });

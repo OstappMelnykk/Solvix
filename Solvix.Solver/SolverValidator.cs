@@ -36,7 +36,9 @@ internal static class SolverValidator
 
         // elements that can be integrated but badly, and materials so different that the iterative solve struggles
         var quality = elements > MaxElements ? null : MeshQuality.Evaluate(setup, mesh).Profiles.First(p => p.Id == "solvix");
-        int poor = quality is null ? 0 : quality.Grades["poor"] + quality.Grades["invalid"];
+        int invalid = quality?.Grades["invalid"] ?? 0;
+        if (invalid > 0 && mesh.FoldedHexes.Count == 0) Error($"{invalid} малих елементів вивернуті або вироджені після поділу кубів: розрахунок неможливий. Перегляньте їх у Quality World і виправте сітку або поділ.");
+        int poor = quality is null ? 0 : quality.Grades["poor"] + invalid;
         if (quality is not null && poor > 0) Warning($"{poor} елементів мають низьку якість (найгірша форма {quality.Worst["scaledJacobian"]:0.00}, кути {quality.Worst["minAngle"]:0}–{quality.Worst["maxAngle"]:0}°): напруження біля них будуть неточними.");
         var moduli = used.Where(setup.MaterialsByName.ContainsKey).Select(n => setup.MaterialsByName[n].E).ToList();
         if (moduli.Count > 1 && moduli.Max() / moduli.Min() > 1e4)

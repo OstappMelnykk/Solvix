@@ -68,20 +68,15 @@
 
 <div class="group">
   <div class="group-label">Якість сітки</div>
-  <div class="hint">Наскільки елементи придатні для інтегрування.</div>
-  <div class="pair">
-    <button class="btn" type="button" (click)="refreshQuality()">Оцінити</button>
-    <button class="btn" type="button" [class.btn--on]="showQuality()" (click)="toggleQuality()">Показати на сцені</button>
-  </div>
-  <ng-container *ngIf="quality() as q">
-    <div class="verdict">{{ qualityVerdict() }}</div>
-    <div class="grades">
-      <div class="grade" *ngFor="let g of gradeLabels" [title]="g.label">
-        <span class="grade__swatch" [style.background]="gradeColor(g.key)"></span>{{ g.label }}: <b>{{ q.grades[g.key] }}</b>
-      </div>
+  <ng-container *ngIf="decision() as d; else checking">
+    <div class="decision" [attr.data-level]="d.level">
+      <b>{{ d.level === 'ok' ? '✓' : d.level === 'caution' ? '!' : '✗' }} {{ d.title }}</b>
+      <span>{{ d.reasons[0] }}</span>
     </div>
-    <div class="hint">Докладно, за різними стандартами — у вкладці Quality World.</div>
+    <button class="btn" type="button" (click)="openQuality()">Порівняння стандартів у Quality World →</button>
   </ng-container>
+  <ng-template #checking><div class="hint">Оцінюю сітку…</div></ng-template>
+  <button class="btn" type="button" [class.btn--on]="showQuality()" (click)="toggleQuality()">Показати на сцені</button>
 </div>
 
 <div class="group">

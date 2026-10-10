@@ -407,3 +407,91 @@ i {
   font-size: 11px;
   color: $muted;
 }
+
+// the conclusion: can the solver be used
+.decision {
+  padding: 12px;
+  border: 1px solid;
+  border-left-width: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+
+  &[data-level='ok'] {
+    border-color: #2fbf4f;
+  }
+
+  &[data-level='caution'] {
+    border-color: #f0d43a;
+  }
+
+  &[data-level='bad'] {
+    border-color: #f08a2e;
+  }
+
+  &[data-level='blocked'] {
+    border-color: #e02b2b;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  &__title {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  &__reasons {
+    margin: 8px 0;
+    padding-left: 18px;
+    color: $muted;
+    font-size: 12px;
+
+    li {
+      margin-bottom: 2px;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+.go {
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 8px;
+  color: $text;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &--primary {
+    background: $accent-toggle;
+    border-color: $accent-toggle;
+    color: #fff;
+    font-weight: 600;
+  }
+}

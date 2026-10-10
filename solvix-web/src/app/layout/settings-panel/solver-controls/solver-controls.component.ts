@@ -1,7 +1,10 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, DoCheck, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { HexFaceName } from '../../../api/mesh-editor-api.service';
 import { SolverMaterialDto } from '../../../api/solver-api.service';
+import { QUALITY_WORLD_INDEX } from '../../../config/app-settings';
+import { QualityDecision, decide } from '../../../geometry/quality-grading';
+import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { GRADE_COLORS, materialColor } from '../../../geometry/solver-view';
 import { QualityGradeName } from '../../../api/solver-api.service';
@@ -20,9 +23,10 @@ const GPA = 1e9;
   templateUrl: './solver-controls.component.html',
   styleUrl: './solver-controls.component.scss'
 })
-export class SolverControlsComponent {
+export class SolverControlsComponent implements DoCheck {
   private readonly solver = inject(SolverService);
   private readonly editor = inject(MeshEditorService);
+  private readonly activeWorld = inject(ActiveWorldService);
 
   @Input({ required: true }) sessionId!: number;
 
@@ -153,6 +157,25 @@ export class SolverControlsComponent {
   }
 
   // --- mesh quality ---
+
+  // The quality follows the mesh: it is asked again whenever the mesh or the division changed.
+  ngDoCheck(): void {
+    this.solver.ensureQuality(this.sessionId);
+  }
+
+  private decisionOf: { report: unknown; value: QualityDecision } | null = null;
+
+  // Whether the solver can be used on this mesh, by all the standards together (see decide()).
+  decision(): QualityDecision | null {
+    const report = this.solver.qualityReport(this.sessionId);
+    if (!report) return null;
+    if (this.decisionOf?.report !== report) this.decisionOf = { report, value: decide(report) };
+    return this.decisionOf.value;
+  }
+
+  openQuality(): void {
+    this.activeWorld.selectCurrentWorld(QUALITY_WORLD_INDEX);
+  }
 
   quality() {
     return this.solver.quality(this.sessionId);

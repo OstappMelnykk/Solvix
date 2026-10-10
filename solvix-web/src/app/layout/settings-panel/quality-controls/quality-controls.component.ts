@@ -3,9 +3,11 @@ import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../../../api/solver-api.service';
 import { GRADE_COLORS } from '../../../geometry/solver-view';
 import {
-  CONSENSUS_ID, GRADE_NAMES, GRADE_ORDER, QualityMetric, anglesText, buildConsensus, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue,
-  passes, rejectedBy, rejectedCount, ruleText, worstAngle
+  CONSENSUS_ID, DecisionLevel, GRADE_NAMES, GRADE_ORDER, QualityDecision, QualityMetric, anglesText, buildConsensus, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue,
+  decide, passes, rejectedBy, rejectedCount, ruleText, worstAngle
 } from '../../../geometry/quality-grading';
+import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
+import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 
@@ -28,6 +30,7 @@ interface Row {
 export class QualityControlsComponent implements DoCheck {
   private readonly solver = inject(SolverService);
   private readonly editor = inject(MeshEditorService);
+  private readonly activeWorld = inject(ActiveWorldService);
 
   @Input({ required: true }) sessionId!: number;
 
@@ -63,6 +66,32 @@ export class QualityControlsComponent implements DoCheck {
 
   hexCount(): number {
     return this.editor.getState(this.sessionId)?.hexes.length ?? 0;
+  }
+
+  // --- can the solver be used ---
+
+  private decisionOf: { report: unknown; value: QualityDecision } | null = null;
+
+  decision(): QualityDecision | null {
+    const report = this.report();
+    if (!report) return null;
+    if (this.decisionOf?.report !== report) this.decisionOf = { report, value: decide(report) };
+    return this.decisionOf.value;
+  }
+
+  goToSolver(): void {
+    this.activeWorld.selectCurrentWorld(SOLVER_WORLD_INDEX);
+  }
+
+  // Shows the elements the standards reject most: the consensus, coloured by the vote, with the worst element picked.
+  showWorst(): void {
+    this.solver.setQualityProfile(this.sessionId, CONSENSUS_ID);
+    const worst = this.rows()[0];
+    if (worst) this.pick(worst.element);
+  }
+
+  decisionIcon(level: DecisionLevel): string {
+    return level === 'ok' ? '✓' : level === 'caution' ? '!' : '✗';
   }
 
   // --- the standards, side by side ---

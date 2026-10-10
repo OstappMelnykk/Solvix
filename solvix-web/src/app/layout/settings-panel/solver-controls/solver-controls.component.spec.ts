@@ -44,7 +44,7 @@ describe('SolverControlsComponent', () => {
     display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
-      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'refreshQuality', 'showQuality', 'setShowQuality',
+      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
       'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
@@ -67,6 +67,7 @@ describe('SolverControlsComponent', () => {
     solver.layers.and.returnValue([{ name: 'enamel', hexes: [0] }]);
     solver.layerMaterial.and.returnValue('steel');
     solver.quality.and.returnValue(null);
+    solver.qualityReport.and.returnValue(null);
     solver.showQuality.and.returnValue(false);
     solver.tool.and.returnValue('view');
     solver.materialCounts.and.returnValue(new Map([['steel', 7], ['rubber', 3]]));

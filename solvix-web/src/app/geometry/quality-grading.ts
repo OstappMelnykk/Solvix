@@ -208,3 +208,63 @@ export function rejectedBy(report: SolverQualityReportDto, element: { hex: numbe
 export function rejectedCount(profile: SolverQualityDto): number {
   return profile.grades.poor + profile.grades.invalid;
 }
+
+export type DecisionLevel = 'ok' | 'caution' | 'bad' | 'blocked';
+
+export interface QualityDecision {
+  readonly level: DecisionLevel;
+  // "Можна рахувати"
+  readonly title: string;
+  // the reasons, one line each
+  readonly reasons: readonly string[];
+  // the standards that reject something, with how many elements
+  readonly rejecting: readonly { name: string; rejected: number }[];
+  // elements rejected by at least one standard / by most of them
+  readonly rejectedByAny: number;
+  readonly rejectedByMost: number;
+  // whether going on to the solver is advised, allowed only with care, or not possible
+  readonly canSolve: boolean;
+}
+
+// Whether the user may go on to the solver, from how all the standards judge the mesh:
+//  - a folded element (invalid): not possible;
+//  - elements rejected by most of the standards (3 or more of 5): better not;
+//  - elements rejected by some standard but accepted by most: go on, with care;
+//  - nothing rejected: go on.
+export function decide(report: SolverQualityReportDto): QualityDecision {
+  const consensus = buildConsensus(report);
+  const rejecting = report.profiles.map(p => ({ name: p.name, rejected: rejectedCount(p) })).filter(r => r.rejected > 0);
+  const folded = Math.max(0, ...report.profiles.map(p => p.grades.invalid));
+  const byAny = consensus.flagged.length;
+  const byMost = consensus.grades.poor + consensus.grades.invalid;
+  const total = report.profiles[0]?.elements ?? 0;
+  const names = rejecting.map(r => r.name).join(', ');
+  const count = report.profiles.length;
+  if (total === 0) return { level: 'ok', title: 'Сітка порожня', reasons: ['Побудуйте хоча б один куб.'], rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: false };
+  if (folded > 0) {
+    return {
+      level: 'blocked', title: 'Розрахунок неможливий',
+      reasons: [`${folded} елементів вивернуті або вироджені — їх відхиляють усі стандарти.`, 'Виправте сітку (перетягніть вузли) або змініть поділ, поки такі елементи є, розрахунок не запуститься.'],
+      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: false
+    };
+  }
+  if (byMost > 0) {
+    return {
+      level: 'bad', title: 'Краще не рахувати',
+      reasons: [`${byMost} елементів відхиляє більшість стандартів (3 і більше з ${count}).`, `Відхиляють: ${names}.`, 'Результат біля цих елементів буде неточним. Виправте їх або рахуйте на власний ризик.'],
+      rejecting, rejectedByAny: byAny, rejectedByMost: byMost, canSolve: true
+    };
+  }
+  if (byAny > 0) {
+    return {
+      level: 'caution', title: 'Можна рахувати, з обережністю',
+      reasons: [`${byAny} елементів не проходять хоча б в одному стандарті, але більшість стандартів їх приймає.`, `Відхиляють: ${names}.`, 'Напруження поруч із ними можуть бути менш точними — перевірте їх на карті якості.'],
+      rejecting, rejectedByAny: byAny, rejectedByMost: 0, canSolve: true
+    };
+  }
+  return {
+    level: 'ok', title: 'Можна рахувати',
+    reasons: [`Усі ${total} елементів проходять у всіх ${count} стандартах.`],
+    rejecting, rejectedByAny: 0, rejectedByMost: 0, canSolve: true
+  };
+}

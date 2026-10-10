@@ -1,6 +1,6 @@
 import { SolverQualityLimitDto } from '../api/solver-api.service';
 import { SolverQualityReportDto } from '../api/solver-api.service';
-import { anglesText, buildConsensus, gaugePosition, gaugeZones, metricGrade, passes, rejectedBy, ruleText, worstAngle } from './quality-grading';
+import { anglesText, buildConsensus, decide, gaugePosition, gaugeZones, metricGrade, passes, rejectedBy, ruleText, worstAngle } from './quality-grading';
 
 const limit = (over: Partial<SolverQualityLimitDto>): SolverQualityLimitDto =>
   ({ key: 'k', label: '', short: '', tech: '', hint: '', higherIsBetter: true, levels: 4, bounds: [], unit: '', decimals: 2, kind: 'plain', ...over });
@@ -131,5 +131,51 @@ describe('the consensus of the standards', () => {
   it('names the standards that reject an element', () => {
     expect(rejectedBy(report, { hex: 1, ex: 0, ey: 0, ez: 0 })).toEqual(['a', 'b']);
     expect(rejectedBy(report, { hex: 2, ex: 0, ey: 0, ez: 0 })).toEqual([]);
+  });
+});
+
+describe('can the solver be used', () => {
+  const profile = (id: string, elements: number, flagged: { hex: number; grade: 'good' | 'poor' | 'invalid' }[]) => ({
+    id, name: id, source: '', note: '', elements,
+    grades: { excellent: elements - flagged.length, good: flagged.filter(f => f.grade === 'good').length, acceptable: 0, poor: flagged.filter(f => f.grade === 'poor').length, invalid: flagged.filter(f => f.grade === 'invalid').length },
+    worst: {}, limits: [],
+    flagged: flagged.map(f => ({ hex: f.hex, ex: 0, ey: 0, ez: 0, grade: f.grade, values: {} }))
+  });
+  const reportOf = (...perProfile: { hex: number; grade: 'good' | 'poor' | 'invalid' }[][]): SolverQualityReportDto => ({ profiles: perProfile.map((f, i) => profile(`s${i}`, 10, f)) });
+  const poor = (hex: number) => ({ hex, grade: 'poor' as const });
+
+  it('says go on when nobody rejects anything', () => {
+    const d = decide(reportOf([], [], [], [], []));
+
+    expect(d.level).toBe('ok');
+    expect(d.canSolve).toBeTrue();
+  });
+
+  it('says go on with care when some standards reject elements but not most of them', () => {
+    const d = decide(reportOf([], [poor(1)], [poor(1), poor(2)], [], []));
+
+    expect(d.level).toBe('caution');
+    expect(d.canSolve).toBeTrue();
+    expect(d.rejectedByAny).toBe(2);
+    expect(d.rejecting.map(r => r.name)).toEqual(['s1', 's2']);
+  });
+
+  it('advises against when most of the standards reject an element', () => {
+    const d = decide(reportOf([poor(1)], [poor(1)], [poor(1)], [], []));
+
+    expect(d.level).toBe('bad');
+    expect(d.rejectedByMost).toBe(1);
+    expect(d.reasons.join(' ')).toContain('s0, s1, s2');
+  });
+
+  it('does not allow the solver with a folded element', () => {
+    const d = decide(reportOf([{ hex: 1, grade: 'invalid' }], [{ hex: 1, grade: 'invalid' }], [], [], []));
+
+    expect(d.level).toBe('blocked');
+    expect(d.canSolve).toBeFalse();
+  });
+
+  it('has nothing to judge without elements', () => {
+    expect(decide({ profiles: [profile('a', 0, [])] }).canSolve).toBeFalse();
   });
 });
