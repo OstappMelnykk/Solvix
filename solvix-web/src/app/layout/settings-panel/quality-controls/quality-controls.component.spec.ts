@@ -4,7 +4,7 @@ import { SolverService } from '../../../state/solver.service';
 import { ActiveWorldService } from '../../../state/active-world.service';
 import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { SolverQualityDto, SolverQualityReportDto } from '../../../api/solver-api.service';
+import { SolverElementReportDto, SolverQualityDto, SolverQualityReportDto } from '../../../api/solver-api.service';
 import { buildConsensus } from '../../../geometry/quality-grading';
 import { linkedPairState } from '../../../geometry/mesh-state.fixture.spec';
 
@@ -17,20 +17,27 @@ describe('QualityControlsComponent', () => {
   });
   const report: SolverQualityReportDto = { profiles: [profile('solvix', 'Solvix'), profile('abaqus', 'Abaqus/CAE')] };
 
+  const detail: SolverElementReportDto = {
+    hex: 0, ex: 0, ey: 0, ez: 0,
+    profiles: [{ id: 'solvix', grade: 'poor', values: { aspectRatio: 12 } }, { id: 'abaqus', grade: 'poor', values: { aspectRatio: 12 } }]
+  };
+  let picked: { hex: number; ex: number; ey: number; ez: number } | null;
   let solver: jasmine.SpyObj<SolverService>;
   let current: string;
   let world: jasmine.SpyObj<ActiveWorldService>;
 
   beforeEach(() => {
     current = 'consensus';
+    picked = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
-      'quality', 'qualityReport', 'qualityProfile', 'setQualityProfile', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick', 'ensureQuality', 'divisions'
+      'quality', 'qualityReport', 'qualityProfile', 'setQualityProfile', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick', 'qualityDetail', 'ensureQuality', 'divisions'
     ]);
     solver.qualityReport.and.returnValue(report);
     solver.qualityProfile.and.callFake(() => current);
     solver.quality.and.callFake(() => (current === 'consensus' ? buildConsensus(report) : report.profiles.find(p => p.id === current)!));
     solver.qualityMetric.and.returnValue('grade');
-    solver.qualityPick.and.returnValue(null);
+    solver.qualityDetail.and.callFake(() => (picked ? detail : null));
+    solver.qualityPick.and.callFake(() => picked);
     solver.divisions.and.returnValue([1, 1, 1]);
     solver.setQualityProfile.and.callFake((_s, id) => (current = id));
     const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState']);
@@ -102,6 +109,52 @@ describe('QualityControlsComponent', () => {
     show.click();
 
     expect(solver.setQualityProfile).toHaveBeenCalledWith(1, 'consensus');
+    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
+  });
+
+  it('has no list of problem elements; the user clicks on the scene instead and is told so', () => {
+    const root = render().nativeElement as HTMLElement;
+
+    expect(root.textContent).not.toContain('Проблемні елементи');
+    expect(root.querySelector('.row')).toBeNull();
+    expect(root.textContent).toContain('Клікніть на куб на сцені');
+  });
+
+  it('shows everything about the clicked element: the verdict and every measure of the standard, with its value and limit', () => {
+    current = 'solvix';
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
+
+    fixture.detectChanges();
+
+    const text = (root.querySelector('.picked__head')!.parentElement!.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('Куб 0');
+    expect(text).toContain('Витягнутість');
+    expect(text).toContain('12.0');
+    expect(text).toContain('Допустимо: не більше 10');
+    expect(root.querySelector('.measure--bad')).not.toBeNull();
+  });
+
+  it('for the overall result shows the element by every standard and how many reject it', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
+
+    fixture.detectChanges();
+
+    expect(Array.from(root.querySelectorAll('.detail__head b')).map(b => b.textContent)).toEqual(['Solvix', 'Abaqus/CAE']);
+    expect(root.querySelector('.by')!.textContent).toContain('2');
+  });
+
+  it('clears the pick with the same element picked again', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
+    fixture.detectChanges();
+
+    root.querySelector<HTMLButtonElement>('.picked__head .link')!.click();
+
     expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
   });
 });

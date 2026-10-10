@@ -11,15 +11,8 @@ import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 
-interface Row {
-  readonly element: SolverElementQualityDto;
-  readonly grade: QualityGradeName;
-  readonly issues: readonly { limit: SolverQualityLimitDto; value: number; grade: QualityGradeName }[];
-}
-
 // The Quality World's panel: the mesh judged by several standards that can be switched and compared, is it good
-// enough by the chosen one, which measure is the weak one, and where are the bad elements. Picking an element in the
-// list outlines it on the scene (and a click on an element there picks it here).
+// enough by the chosen one, which measure is the weak one, and - after a click on an element of the scene - everything about that element.
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
@@ -86,8 +79,8 @@ export class QualityControlsComponent implements DoCheck {
   // Shows the elements the standards reject most: the consensus, coloured by the vote, with the worst element picked.
   showWorst(): void {
     this.solver.setQualityProfile(this.sessionId, CONSENSUS_ID);
-    const worst = this.rows()[0];
-    if (worst) this.pick(worst.element);
+    const worst = this.worstElement();
+    if (worst) this.solver.setQualityPick(this.sessionId, { hex: worst.hex, ex: worst.ex, ey: worst.ey, ez: worst.ez });
   }
 
   decisionIcon(level: DecisionLevel): string {
@@ -115,12 +108,16 @@ export class QualityControlsComponent implements DoCheck {
     return index;
   }
 
-  trackRow(_: number, row: Row): string {
-    return `${row.element.hex}:${row.element.ex}:${row.element.ey}:${row.element.ez}`;
-  }
-
   trackSegment(_: number, segment: { grade: QualityGradeName }): string {
     return segment.grade;
+  }
+
+  trackKey(_: number, item: { limit: { key: string } }): string {
+    return item.limit.key;
+  }
+
+  overall(): boolean {
+    return this.quality()?.id === CONSENSUS_ID;
   }
 
   trackZone(_: number, zone: { grade: QualityGradeName }): string {
@@ -234,55 +231,66 @@ export class QualityControlsComponent implements DoCheck {
     return limit.kind === 'angleDeviation' ? '1.0-0' : `1.${limit.decimals}-${limit.decimals}`;
   }
 
-  // --- the bad elements ---
+  // --- the picked element ---
 
-  // The small elements that are not excellent by what the scene is coloured by, the worst first. (An element the
-  // server did not flag is excellent in every measure.)
-  rows(): Row[] {
-    const q = this.quality();
-    if (!q) return [];
-    const metric = this.metric();
-    return q.flagged
-      .map(element => ({
-        element,
-        grade: measuredGrade(element, metric, q.limits),
-        issues: q.limits
-          .map(limit => ({ limit, value: metricValue(element, limit.key), grade: metricGrade(limit, metricValue(element, limit.key)) }))
-          .filter(i => i.grade !== 'excellent')
-      }))
-      .filter(r => r.grade !== 'excellent')
-      .sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade) || firstValue(a.element) - firstValue(b.element));
+  pickedElement(): QualityPick | null {
+    return this.solver.qualityPick(this.sessionId);
   }
 
-  valueText(limit: SolverQualityLimitDto, value: number, element: SolverElementQualityDto): string {
-    if (limit.kind === 'angleDeviation') return anglesText(element.values['minAngle'], element.values['maxAngle']);
-    return `${value.toFixed(limit.decimals)}${limit.unit}`;
-  }
-
-  // In the consensus: the names of the standards that reject the element.
-  rejectedByText(element: SolverElementQualityDto): string {
-    const report = this.report();
-    return report && this.quality()?.id === CONSENSUS_ID ? rejectedBy(report, element).join(', ') : '';
-  }
-
-  isPicked(element: SolverElementQualityDto): boolean {
-    const picked = this.solver.qualityPick(this.sessionId);
-    return picked !== null && sameElement(picked, element);
-  }
-
-  pick(element: SolverElementQualityDto): void {
-    const pick: QualityPick = { hex: element.hex, ex: element.ex, ey: element.ey, ez: element.ez };
-    this.solver.setQualityPick(this.sessionId, pick);
+  clearPick(): void {
+    const pick = this.pickedElement();
+    if (pick) this.solver.setQualityPick(this.sessionId, pick);          // picking the same element again clears it
   }
 
   // A cube is cut into more than one element only when the division says so.
-  placeText(element: SolverElementQualityDto): string {
-    return this.solver.divisions(this.sessionId).some(n => n > 1) ? ` · (${element.ex}, ${element.ey}, ${element.ez})` : '';
+  placeText(pick: QualityPick): string {
+    return this.solver.divisions(this.sessionId).some(n => n > 1) ? `Куб ${pick.hex}, елемент (${pick.ex}, ${pick.ey}, ${pick.ez})` : `Куб ${pick.hex}`;
   }
-}
 
-// an arbitrary but stable order among elements of the same grade: by their first measure
-function firstValue(element: SolverElementQualityDto): number {
-  const first = Object.values(element.values)[0];
-  return Number.isFinite(first) ? first : 0;
+  hasDetail(): boolean {
+    return this.solver.qualityDetail(this.sessionId) !== null;
+  }
+
+  // The picked element's measures: of the chosen standard, or - with the overall result chosen - of every standard.
+  details(): { id: string; name: string; grade: QualityGradeName; rows: { limit: SolverQualityLimitDto; shown: string; grade: QualityGradeName; ok: boolean }[] }[] {
+    const detail = this.solver.qualityDetail(this.sessionId);
+    const report = this.report();
+    const q = this.quality();
+    if (!detail || !report || !q) return [];
+    return report.profiles
+      .filter(p => q.id === CONSENSUS_ID || p.id === q.id)
+      .map(profile => {
+        const one = detail.profiles.find(d => d.id === profile.id)!;
+        return {
+          id: profile.id,
+          name: profile.name,
+          grade: one.grade,
+          rows: profile.limits.map(limit => {
+            const value = one.values[limit.key];
+            const grade = metricGrade(limit, value);
+            const shown = limit.kind === 'angleDeviation' ? anglesText(one.values['minAngle'], one.values['maxAngle']) : `${value.toFixed(limit.decimals)}${limit.unit}`;
+            return { limit, shown, grade, ok: grade !== 'poor' && grade !== 'invalid' };
+          })
+        };
+      });
+  }
+
+  // How many standards reject the picked element (for the overall result).
+  rejectedByCount(): number {
+    return (this.solver.qualityDetail(this.sessionId)?.profiles ?? []).filter(p => p.grade === 'poor' || p.grade === 'invalid').length;
+  }
+
+  limitText(limit: SolverQualityLimitDto): string {
+    return ruleText(limit);
+  }
+
+  // The element the standards reject most, for "show the problem" (not listed: the user finds it on the scene).
+  private worstElement(): SolverElementQualityDto | null {
+    const q = this.quality();
+    if (!q) return null;
+    const metric = this.metric();
+    return q.flagged
+      .filter(e => measuredGrade(e, metric, q.limits) !== 'excellent')
+      .sort((a, b) => GRADE_ORDER.indexOf(measuredGrade(b, metric, q.limits)) - GRADE_ORDER.indexOf(measuredGrade(a, metric, q.limits)))[0] ?? null;
+  }
 }

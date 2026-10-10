@@ -514,6 +514,33 @@ describe('SolverService', () => {
       expect(solver.showQuality(sessionId)).toBeFalse();
     });
 
+    it('fetches the details of the picked element and drops them when the pick is cleared', () => {
+      solver.setQualityPick(sessionId, { hex: 1, ex: 0, ey: 0, ez: 0 });
+
+      const request = http.expectOne(r => r.url === `${api}/${sessionId}/quality/element`);
+      expect(request.request.params.get('hex')).toBe('1');
+      expect(solver.qualityDetail(sessionId)).toBeNull();
+      request.flush({ hex: 1, ex: 0, ey: 0, ez: 0, profiles: [] });
+      expect(solver.qualityDetail(sessionId)!.hex).toBe(1);
+
+      solver.setQualityPick(sessionId, { hex: 1, ex: 0, ey: 0, ez: 0 });         // the same element again: cleared
+      http.expectNone(r => r.url === `${api}/${sessionId}/quality/element`);
+      expect(solver.qualityPick(sessionId)).toBeNull();
+      expect(solver.qualityDetail(sessionId)).toBeNull();
+    });
+
+    it('ignores the details of an element that is no longer the picked one', () => {
+      solver.setQualityPick(sessionId, { hex: 1, ex: 0, ey: 0, ez: 0 });
+      const first = http.expectOne(r => r.url === `${api}/${sessionId}/quality/element`);
+      solver.setQualityPick(sessionId, { hex: 2, ex: 0, ey: 0, ez: 0 });
+      const second = http.expectOne(r => r.url === `${api}/${sessionId}/quality/element` && r.params.get('hex') === '2');
+
+      first.flush({ hex: 1, ex: 0, ey: 0, ez: 0, profiles: [] });
+      expect(solver.qualityDetail(sessionId)).toBeNull();
+      second.flush({ hex: 2, ex: 0, ey: 0, ez: 0, profiles: [] });
+      expect(solver.qualityDetail(sessionId)!.hex).toBe(2);
+    });
+
     it('reports an unreachable server for the quality', () => {
       solver.refreshQuality(sessionId);
 

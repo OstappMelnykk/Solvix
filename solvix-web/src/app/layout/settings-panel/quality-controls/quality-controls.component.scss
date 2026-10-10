@@ -495,3 +495,95 @@ i {
     font-weight: 600;
   }
 }
+
+// the picked element
+.picked__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.link {
+  padding: 0;
+  background: none;
+  border: none;
+  color: #6fb3ff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.by {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: $muted;
+}
+
+.detail {
+  margin-bottom: 10px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 4px;
+
+    span {
+      margin-left: auto;
+      color: $muted;
+      font-size: 12px;
+    }
+  }
+}
+
+.measure {
+  margin-bottom: 4px;
+  padding: 6px 9px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-left: 4px solid #2fbf4f;
+  border-radius: 6px;
+  font-size: 12px;
+
+  &--bad {
+    border-left-color: #e8584a;
+  }
+
+  &__line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__name small {
+    margin-left: 4px;
+    color: $muted;
+  }
+
+  &__value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__mark {
+    margin-right: 6px;
+    color: #e8584a;
+
+    &--ok {
+      color: #2fbf4f;
+    }
+  }
+
+  &__rule {
+    margin-top: 2px;
+    color: $muted;
+    font-size: 11px;
+  }
+}

@@ -79,24 +79,32 @@
     </div>
   </section>
 
-  <!-- 4. Де проблеми -->
+  <!-- 4. Вибраний елемент -->
   <section>
-    <h5>Проблемні елементи <span class="badge">{{ rows().length }}</span></h5>
-    <div class="empty" *ngIf="rows().length === 0">Таких немає 👍</div>
-    <button type="button" class="row" *ngFor="let r of rows().slice(0, 60); trackBy: trackRow" [class.row--picked]="isPicked(r.element)" (click)="pick(r.element)">
-      <span class="row__head">
-        <i [style.background]="gradeColor(r.grade)"></i>
-        <b>Куб {{ r.element.hex }}{{ placeText(r.element) }}</b>
-        <span class="row__grade">{{ gradeNames[r.grade] }}</span>
-      </span>
-      <span class="row__chips">
-        <span *ngFor="let i of r.issues; trackBy: trackIndex" class="chip" [style.border-color]="gradeColor(i.grade)" [title]="i.limit.tech">
-          {{ i.limit.short }} <b>{{ valueText(i.limit, i.value, r.element) }}</b>
-        </span>
-      </span>
-      <span class="row__by" *ngIf="rejectedByText(r.element) as by">відхиляють: {{ by }}</span>
-    </button>
-    <div class="more" *ngIf="rows().length > 60">Показано 60 найгірших із {{ rows().length }}</div>
+    <h5>Вибраний елемент</h5>
+    <ng-container *ngIf="pickedElement() as p; else nothingPicked">
+      <div class="picked__head">
+        <b>{{ placeText(p) }}</b>
+        <button type="button" class="link" (click)="clearPick()">Зняти вибір</button>
+      </div>
+      <ng-container *ngIf="hasDetail(); else waiting">
+        <div class="by" *ngIf="overall()">Не приймають цей елемент: <b>{{ rejectedByCount() }}</b> із {{ report()?.profiles?.length }} стандартів</div>
+        <div class="detail" *ngFor="let d of details(); trackBy: trackById">
+          <div class="detail__head"><i [style.background]="gradeColor(d.grade)"></i><b>{{ d.name }}</b><span>{{ gradeNames[d.grade] }}</span></div>
+          <div class="measure" *ngFor="let r of d.rows; trackBy: trackKey" [class.measure--bad]="!r.ok">
+            <div class="measure__line">
+              <span class="measure__name" [title]="r.limit.hint">{{ r.limit.label }} <small>{{ r.limit.tech }}</small></span>
+              <span class="measure__value"><span class="measure__mark" [class.measure__mark--ok]="r.ok">{{ r.ok ? '✓' : '✗' }}</span>{{ r.shown }}</span>
+            </div>
+            <div class="measure__rule">{{ limitText(r.limit) }}</div>
+          </div>
+        </div>
+      </ng-container>
+      <ng-template #waiting><div class="empty">Завантажую показники…</div></ng-template>
+    </ng-container>
+    <ng-template #nothingPicked>
+      <div class="empty">Клікніть на куб на сцені — тут з'являться всі показники якості його скінченного елемента.</div>
+    </ng-template>
   </section>
 </ng-container>
 <ng-template #loading><div class="empty">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>
