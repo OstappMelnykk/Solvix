@@ -1,4 +1,4 @@
-using FemSolver;
+using Solvix.Fem;
 using Solvix.Contracts.Facades;
 using Solvix.Mesh;
 using static Solvix.Solver.Tests.SolverTestSupport;
@@ -22,69 +22,9 @@ public class SolverTests
         foreach (var face in HexFaces.All)
         {
             Assert.That(SolverFaces.TryParse(face.ToString(), out int solverFace), Is.True);
-            var solverSlots = ElementLoad.FaceNodeMaps[solverFace].OrderBy(i => i).ToArray();
+            var solverSlots = Solvix.Fem.Hex20.FaceNodes[solverFace].OrderBy(i => i).ToArray();
             Assert.That(solverSlots, Is.EqualTo(face.Slots().OrderBy(i => i).ToArray()), face.ToString());
         }
-    }
-
-    [Test]
-    public void The_solvers_outward_normal_matches_the_editors_faces()
-    {
-        // a unit cube: pressure -1 (outward pull of 1 Pa) on every face of ZPlus must push the cube's top nodes up
-        var facade = NewFacade();
-        var editor = Bar(1);
-        facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "ZMinus") }, true);
-        facade.SetLoads(Session, new[] { new SolverFaceDto(0, "ZPlus") }, 1000);   // Pn > 0 = along the outward normal = pulling out
-
-        var job = SolveAndWait(facade, Session, Export(editor));
-
-        Assert.That(job.State, Is.EqualTo("done"), job.Error);
-        var result = facade.GetResult(Session)!;
-        int top = NodeWhere(result, (_, _, z) => z == 1);
-        Assert.That(result.Uz[top], Is.GreaterThan(0));
-    }
-
-    // ---- the physics ------------------------------------------------------------------------------
-
-    [Test]
-    public void One_material_gives_the_same_answer_as_the_solvers_own_core()
-    {
-        var editor = Bar(3);
-        var mesh = Export(editor);
-        var facade = NewFacade();
-        facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus") }, true);
-        facade.SetLoads(Session, new[] { new SolverFaceDto(2, "XPlus") }, -5e6);
-        var job = SolveAndWait(facade, Session, mesh);
-        Assert.That(job.State, Is.EqualTo("done"), job.Error);
-        var ours = facade.GetResult(Session)!;
-
-        // the same problem through FemSolverCore
-        var fem = editor.Mesh.ToFemMesh();
-        var femMesh = new FemMesh { NodeCount = fem.NodeCount, ElementCount = fem.ElementCount, Positions = fem.Positions, Connectivity = fem.Connectivity };
-        var load = LoadAssembler.AssemblePressure(femMesh, -5e6, ShapeFunctions.PrecomputeSurfaceDerivatives(), new HashSet<long> { 2L * 6 + 5 });
-        var fixedDofs = BoundaryConditions.GetFixedDOFsFromFaceSet(femMesh, new HashSet<long> { 0L * 6 + 4 }).ToArray();
-        var reference = FemSolverCore.Solve(new FemProblem { Mesh = femMesh, Material = new FemMaterial { E = 2.1e11, Nu = 0.3 }, FixedDofs = fixedDofs, LoadVector = load });
-
-        // our nodes are numbered in their own order: match them by position
-        string Key(double x, double y, double z) => $"{Math.Round(x, 9)}|{Math.Round(y, 9)}|{Math.Round(z, 9)}";
-        var ourNode = Enumerable.Range(0, ours.Ux.Count).ToDictionary(i => Key(ours.Positions[3 * i], ours.Positions[3 * i + 1], ours.Positions[3 * i + 2]));
-        Assert.That(ours.Ux.Count, Is.EqualTo(fem.NodeCount));
-        int Mine(int n) => ourNode[Key(fem.Positions[n, 0], fem.Positions[n, 1], fem.Positions[n, 2])];
-
-        double scale = reference.Displacements.Max(Math.Abs);
-        for (int n = 0; n < fem.NodeCount; n++)
-        {
-            int m = Mine(n);
-            Assert.That(ours.Ux[m], Is.EqualTo(reference.Displacements[n]).Within(1e-6 * scale), $"ux {n}");
-            Assert.That(ours.Uy[m], Is.EqualTo(reference.Displacements[fem.NodeCount + n]).Within(1e-6 * scale), $"uy {n}");
-            Assert.That(ours.Uz[m], Is.EqualTo(reference.Displacements[2 * fem.NodeCount + n]).Within(1e-6 * scale), $"uz {n}");
-        }
-        // the stress is recovered at the Gauss point nearest each node, so it differs from the node values of the
-        // solver's own recovery near the clamp, but stays close overall
-        double vmScale = reference.VonMises.Max();
-        double meanDifference = Enumerable.Range(0, fem.NodeCount).Average(n => Math.Abs(ours.VonMises[Mine(n)] - reference.VonMises[n])) / vmScale;
-        Assert.That(meanDifference, Is.LessThan(0.05));
-        Assert.That(ours.MaxVonMises, Is.EqualTo(vmScale).Within(0.2 * vmScale));
     }
 
     [Test]

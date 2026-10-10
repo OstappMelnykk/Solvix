@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using FemSolver;
+using Solvix.Fem;
 using Solvix.Contracts.Facades;
 
 namespace Solvix.Solver;
@@ -115,7 +115,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     // ---- the background run -----------------------------------------------------------------
 
-    private void Run(int sessionId, FemMeshDto mesh, FemRun.Input input, int ticket, CancellationToken cancel)
+    private void Run(int sessionId, FemMeshDto mesh, SolverProblem input, int ticket, CancellationToken cancel)
     {
         var clock = Stopwatch.StartNew();
         double lastReported = -1;
@@ -127,7 +127,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         }
         try
         {
-            var output = FemRun.Solve(input, Report, cancel);
+            var output = LinearStaticSolver.Solve(input.Model, input.Loads, Report, cancel);
             if (!output.Converged)
             {
                 Publish(sessionId, ticket, new SolverJobDto("failed", 1, "", $"Ітерації не збіглися (нев'язка {output.Residual:E1}): система погано обумовлена, спробуйте менший контраст матеріалів або менше кубів.", ticket));
@@ -175,39 +175,36 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     // ---- set-up + mesh -> solver input ------------------------------------------------------
 
-    private static FemRun.Input BuildInput(SolverSetup setup, FemMeshDto mesh)
+    private static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh)
     {
         // every cube cut into nx*ny*nz small elements, as the solver's own mesh does
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
-        var femMesh = new FemMesh { NodeCount = fine.NodeCount, ElementCount = fine.ElementCount, Positions = fine.Positions, Connectivity = fine.Connectivity };
 
-        var lambda = new double[fine.ElementCount];
-        var mu = new double[fine.ElementCount];
+        var byName = setup.MaterialsByName.ToDictionary(m => m.Key, m => Material.Isotropic(m.Value.E, m.Value.Nu, m.Key));
+        var materials = new Material[fine.ElementCount];
         for (int e = 0; e < fine.ElementCount; e++)
-        {
-            var material = setup.MaterialsByName[setup.MaterialOf(new ElementKey(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e]))];
-            var fem = new FemMaterial { E = material.E, Nu = material.Nu };
-            lambda[e] = fem.Lambda;
-            mu[e] = fem.Mu;
-        }
+            materials[e] = byName[setup.MaterialOf(new ElementKey(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e]))];
 
         var cubeIndex = new Dictionary<int, int>();
         for (int e = 0; e < mesh.ElementCount; e++) cubeIndex[mesh.ElementIds[e]] = e;
         // a small face of a cube is the outward face of the one small element behind it
-        long Key(SubFace f)
+        ElementFace Face(SubFace f)
         {
             var (element, face) = fine.BoundaryElement(cubeIndex[f.Hex], f.Face, f.P, f.Q);
-            return (long)element * 6 + face;
+            return new ElementFace(element, face);
         }
         bool Known(SubFace f) => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face);
 
-        var fixedFaces = new HashSet<long>(setup.Fixed.Where(Known).Select(Key));
-        // one pass per distinct pressure; Pn is the solver's: along the outward normal, negative = compression
-        var loads = setup.Loads.Where(l => Known(l.Key))
-            .GroupBy(l => l.Value)
-            .Select(g => (new HashSet<long>(g.Select(l => Key(l.Key))), g.Key))
-            .ToList();
-        return new FemRun.Input(fine, femMesh, lambda, mu, fixedFaces, loads);
+        var loads = new LoadCase
+        {
+            Fixed = setup.Fixed.Where(Known).Select(Face).ToList(),
+            // Pn is the solver's: along the outward normal, negative = compression
+            Pressures = setup.Loads.Where(l => Known(l.Key)).Select(l => new FacePressure(Face(l.Key), l.Value)).ToList()
+        };
+        return new SolverProblem(fine, new FemModel(fine.Positions, fine.Connectivity, materials), loads);
     }
 }
+
+/// <summary>The divided mesh with its model and load case - what one solve works on.</summary>
+internal sealed record SolverProblem(FineMesh Fine, FemModel Model, LoadCase Loads);
