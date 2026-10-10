@@ -56,7 +56,7 @@
     <h5>Фарбувати сцену за</h5>
     <div class="seg">
       <button type="button" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
-      <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.short }}</button>
+      <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.label }}<small *ngIf="!l.label.includes(l.tech)"> · {{ l.tech }}</small></button>
     </div>
     <div class="legend">
       <span *ngFor="let g of gradeOrder"><i [style.background]="gradeColor(g)"></i>{{ gradeNames[g] }}</span>
