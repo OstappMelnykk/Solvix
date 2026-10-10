@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
-import { SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
+import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { SolverViewInput, buildHighlight, buildSolverView, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -568,5 +568,50 @@ describe('the coats over the material', () => {
     expect(faceResolution([1, 1, 1])).toBe(12);
     expect(faceResolution([8, 8, 8])).toBe(3);
     expect(faceResolution([2, 1, 1])).toBe(6);
+  });
+});
+
+describe('colouring by mesh quality', () => {
+  const quality = (grade0: 'excellent' | 'poor' | 'invalid', grade1: 'excellent' | 'poor' | 'invalid'): SolverQualityDto => ({
+    elements: 2,
+    grades: { excellent: 0, good: 0, acceptable: 0, poor: 0, invalid: 0 },
+    worstScaledJacobian: 0.5, worstJacobianRatio: 0.5, worstAspectRatio: 2, worstSkewDegrees: 3,
+    cubes: [
+      { hex: 0, grade: grade0, scaledJacobian: 1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 },
+      { hex: 1, grade: grade1, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 }
+    ]
+  });
+  const colourOf = (view: ReturnType<typeof buildSolverView>, hex: number) => {
+    const mesh = (view.pickables as THREE.Mesh[]).find(m => (m.userData['pick'] as { hex: number }).hex === hex)!;
+    const c = mesh.geometry.getAttribute('color');
+    return new THREE.Color(c.getX(0), c.getY(0), c.getZ(0));
+  };
+
+  it('has a colour per grade, from green to red', () => {
+    expect(GRADE_COLORS.excellent).not.toBe(GRADE_COLORS.poor);
+    expect(new THREE.Color(GRADE_COLORS.invalid).r).toBeGreaterThan(new THREE.Color(GRADE_COLORS.invalid).g * 3);
+    expect(new THREE.Color(GRADE_COLORS.excellent).g).toBeGreaterThan(new THREE.Color(GRADE_COLORS.excellent).r);
+  });
+
+  it('paints each cube with the colour of its grade instead of its material', () => {
+    const view = buildSolverView({ state: linkedPairState(), setup: setup(), result: null, field: 'vonMises', deformationScale: 1, opacity: 1, quality: quality('excellent', 'invalid') });
+
+    const good = colourOf(view, 0);
+    const bad = colourOf(view, 1);
+
+    expect(good.g).toBeGreaterThan(good.r);                  // green (shading only darkens)
+    expect(bad.r).toBeGreaterThan(bad.g * 2);                // red
+    disposeMeshView(view);
+  });
+
+  it('wins over the field of a result while it is shown', () => {
+    const state = singleCubeState();
+    const result = resultFor(state, [1, 1, 1], () => ({ vm: 5e6 }));
+    const q = { ...quality('poor', 'poor'), cubes: [{ hex: 0, grade: 'poor' as const, scaledJacobian: 0.1, jacobianRatio: 1, aspectRatio: 1, skewDegrees: 0 }] };
+
+    const view = buildSolverView({ state, setup: setup(), result, field: 'vonMises', deformationScale: 1, opacity: 1, quality: q });
+
+    expect(colourOf(view, 0).r).toBeGreaterThan(colourOf(view, 0).b * 2);        // the grade's orange, not the ramp's blue/red
+    disposeMeshView(view);
   });
 });

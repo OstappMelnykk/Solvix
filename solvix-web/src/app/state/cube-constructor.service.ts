@@ -17,6 +17,7 @@ import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { NotificationService } from './notification.service';
 import { SessionsService } from './sessions.service';
+import { SolverService } from './solver.service';
 
 export const UNIT_PARAMETERS: MeshShapeParametersDto = { length: 1, height: 1, depth: 1, taper: 1, shearX: 0, shearZ: 0 };
 
@@ -48,6 +49,7 @@ export class CubeConstructorService {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly sessions = inject(SessionsService);
   private readonly notifications = inject(NotificationService);
+  private readonly solver = inject(SolverService);
 
   readonly isOpen = signal(false);
   // 'cube': one cube designed node by node; 'template': a ready-made body (pipe, sphere...) with parameters.
@@ -333,7 +335,8 @@ export class CubeConstructorService {
     if (target.kind === 'body') {
       const request = this.templateRequest();
       if (request !== null) {
-        this.editor.addTemplate(sessionId, request);
+        // layers named like a material (enamel, dentin, pulp) get it
+        this.editor.addTemplate(sessionId, request, () => this.solver.applyLayerNamedMaterials(sessionId));
       }
     } else if (target.kind === 'first') {
       this.editor.addFirstHex(sessionId, this.shape());

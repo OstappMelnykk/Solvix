@@ -7,6 +7,7 @@ import { SolverHubClient } from '../api/solver-hub.client';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { NotificationService } from './notification.service';
 import { SessionsService } from './sessions.service';
+import { MeshEditorService } from './mesh-editor.service';
 import { SolverJobDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { linkedPairState, singleCubeState } from '../geometry/mesh-state.fixture.spec';
 import { PickedFace } from '../geometry/mesh-editor-view';
@@ -447,6 +448,73 @@ describe('SolverService', () => {
 
         expect(solver.hover(sessionId)).toBeNull();
       });
+    });
+  });
+
+  describe('layers and mesh quality', () => {
+    const layered = () => {
+      const base = linkedPairState();
+      return { ...base, hexes: [{ ...base.hexes[0], layer: 'enamel' }, { ...base.hexes[1], layer: 'dentin' }] };
+    };
+    const grades = { excellent: 1, good: 1, acceptable: 0, poor: 0, invalid: 0 };
+
+    beforeEach(() => {
+      http.match(`${meshApi}/${sessionId}/state`);
+      TestBed.inject(MeshEditorService).refresh(sessionId);
+      http.expectOne(`${meshApi}/${sessionId}/state`).flush(layered());
+    });
+
+    it('lists the layers of the body with their cubes, in order, and none without layers', () => {
+      expect(solver.layers(sessionId)).toEqual([{ name: 'enamel', hexes: [0] }, { name: 'dentin', hexes: [1] }]);
+    });
+
+    it('a layer has a material when all its cubes share one, and none when mixed', () => {
+      loadSetup({ ...emptySetup, hexMaterials: { '1': 'rubber' } });
+
+      expect(solver.layerMaterial(sessionId, 'enamel')).toBe('steel');
+      expect(solver.layerMaterial(sessionId, 'dentin')).toBe('rubber');
+      expect(solver.layerMaterial(sessionId, 'nothing')).toBeNull();
+    });
+
+    it('gives the cubes of a layer a material', () => {
+      loadSetup();
+
+      solver.setLayerMaterial(sessionId, 'dentin', 'rubber');
+
+      expect(http.expectOne(`${api}/${sessionId}/hexes/material`).request.body).toEqual({ hexIds: [1], material: 'rubber' });
+    });
+
+    it('a layer named like a material gets that material, once, and others are left alone', () => {
+      loadSetup({
+        ...emptySetup,
+        materials: [...emptySetup.materials, { name: 'dentin', label: 'Дентин', e: 1.8e10, nu: 0.31 }]
+      });
+
+      solver.applyLayerNamedMaterials(sessionId);
+
+      expect(http.expectOne(`${api}/${sessionId}/hexes/material`).request.body).toEqual({ hexIds: [1], material: 'dentin' });   // "enamel" is not in this library
+    });
+
+    it('asks the server for the quality and keeps it; colouring by quality is a setting that fetches it', () => {
+      expect(solver.quality(sessionId)).toBeNull();
+
+      solver.setShowQuality(sessionId, true);
+
+      const request = http.expectOne(`${api}/${sessionId}/quality`);
+      request.flush({ elements: 2, grades, worstScaledJacobian: 0.9, worstJacobianRatio: 1, worstAspectRatio: 1.5, worstSkewDegrees: 2, cubes: [] });
+      expect(solver.quality(sessionId)!.elements).toBe(2);
+      expect(solver.showQuality(sessionId)).toBeTrue();
+      solver.setShowQuality(sessionId, false);
+      http.expectNone(`${api}/${sessionId}/quality`);
+      expect(solver.showQuality(sessionId)).toBeFalse();
+    });
+
+    it('reports an unreachable server for the quality', () => {
+      solver.refreshQuality(sessionId);
+
+      http.expectOne(`${api}/${sessionId}/quality`).flush('x', { status: 500, statusText: 'Server Error' });
+
+      expect(lastToast().kind).toBe('error');
     });
   });
 

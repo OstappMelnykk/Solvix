@@ -42,7 +42,8 @@ export class SolverRenderService {
       deformationScale: display.deformationScale,
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
-      showInner: this.solver.showInner(sessionId)
+      showInner: this.solver.showInner(sessionId),
+      quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
     };
     const view = buildSolverView(input);
     this.cache.set(sessionId, { key, view, input });

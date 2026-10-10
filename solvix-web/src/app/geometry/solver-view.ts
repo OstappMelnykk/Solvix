@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
-import { SolverFaceDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
+import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { markForWeightedOit } from '../rendering/weighted-oit';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
@@ -25,6 +25,8 @@ export interface SolverViewInput {
   readonly hiddenMaterials?: ReadonlySet<string>;
   // Also draw the faces between visible elements (the grid inside the body).
   readonly showInner?: boolean;
+  // When given, cubes are coloured by the quality grade of their worst element instead of by material.
+  readonly quality?: SolverQualityDto | null;
 }
 
 const EDGE_SEGMENTS = 8;
@@ -54,6 +56,15 @@ const KNOWN_COLORS: Record<string, number> = {
   enamel: 0xf4efe0,
   dentin: 0xe8c27a,
   bone: 0xc8b98a
+};
+
+// Colour of a quality grade: green good ... red invalid.
+export const GRADE_COLORS: Record<QualityGradeName, number> = {
+  excellent: 0x2fbf4f,
+  good: 0x9bd04a,
+  acceptable: 0xf0d43a,
+  poor: 0xf08a2e,
+  invalid: 0xe02b2b
 };
 
 // A stable colour per material name, so the same material looks the same everywhere.
@@ -285,10 +296,11 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
 
-  const values = result ? fieldValues(result, field) : null;
+  const values = result && !input.quality ? fieldValues(result, field) : null;
   const range: FieldRange = values ? { min: 0, max: fieldRange(values).max } : { min: 0, max: 0 };
   const span = range.max - range.min;
 
+  const qualityColors = input.quality ? new Map(input.quality.cubes.map(c => [c.hex, c.grade])) : null;
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -396,7 +408,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       for (const [a, m, b] of FACE_EDGES) pushEdge(lines, small.positions[a], small.positions[m], small.positions[b], EDGE_SEGMENTS);
     }
     const colorOf = (face: DrawnFace, value: number) =>
-      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : materialColor(materialOf(face.owner.id, ...face.element));
+      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(GRADE_COLORS[qualityColors.get(face.owner.id) ?? 'excellent']) : materialColor(materialOf(face.owner.id, ...face.element));
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);

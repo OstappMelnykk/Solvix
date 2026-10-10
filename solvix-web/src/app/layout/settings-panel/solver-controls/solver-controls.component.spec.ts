@@ -44,6 +44,7 @@ describe('SolverControlsComponent', () => {
     display = { field: 'vonMises', deformationScale: 1, opacity: 1 };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
+      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'refreshQuality', 'showQuality', 'setShowQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
       'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
@@ -63,6 +64,10 @@ describe('SolverControlsComponent', () => {
     solver.fixedFaceCount.and.returnValue(5);
     solver.solve.and.resolveTo();
     solver.activeMaterial.and.returnValue('rubber');
+    solver.layers.and.returnValue([{ name: 'enamel', hexes: [0] }]);
+    solver.layerMaterial.and.returnValue('steel');
+    solver.quality.and.returnValue(null);
+    solver.showQuality.and.returnValue(false);
     solver.tool.and.returnValue('view');
     solver.materialCounts.and.returnValue(new Map([['steel', 7], ['rubber', 3]]));
     solver.isHidden.and.callFake((_s, name) => name === 'rubber');
@@ -325,6 +330,51 @@ describe('SolverControlsComponent', () => {
       result = null;
 
       expect(component.summary()).toEqual([]);
+    });
+  });
+
+  describe('layers', () => {
+    it('lists the layers with the material of each and sets one for the whole layer', () => {
+      expect(component.layers()).toEqual([{ name: 'enamel', hexes: [0] }]);
+      expect(component.layerMaterial('enamel')).toBe('steel');
+      solver.layerMaterial.and.returnValue(null);
+      expect(component.layerMaterial('enamel')).toBe('');
+
+      component.onLayerMaterial('enamel', { target: { value: 'rubber' } } as unknown as Event);
+      component.onLayerMaterial('enamel', { target: { value: '' } } as unknown as Event);
+
+      expect(solver.setLayerMaterial.calls.allArgs()).toEqual([[1, 'enamel', 'rubber']]);
+    });
+  });
+
+  describe('mesh quality', () => {
+    const grades = { excellent: 3, good: 0, acceptable: 0, poor: 0, invalid: 0 };
+    const q = (over: Record<string, number> = {}) => ({ elements: 3, grades: { ...grades, ...over }, worstScaledJacobian: 1, worstJacobianRatio: 1, worstAspectRatio: 1, worstSkewDegrees: 0, cubes: [] });
+
+    it('evaluates and switches the colouring', () => {
+      component.refreshQuality();
+      component.toggleQuality();
+
+      expect(solver.refreshQuality).toHaveBeenCalledWith(1);
+      expect(solver.setShowQuality).toHaveBeenCalledWith(1, true);
+    });
+
+    it('gives the verdict in one line, worst problem first', () => {
+      expect(component.qualityVerdict()).toBe('');
+      solver.quality.and.returnValue(q());
+      expect(component.qualityVerdict()).toBe('Сітка якісна');
+      solver.quality.and.returnValue(q({ acceptable: 1 }));
+      expect(component.qualityVerdict()).toContain('середньої якості');
+      solver.quality.and.returnValue(q({ acceptable: 1, poor: 2 }));
+      expect(component.qualityVerdict()).toContain('погані елементи (2)');
+      solver.quality.and.returnValue(q({ poor: 2, invalid: 1 }));
+      expect(component.qualityVerdict()).toContain('неможливий');
+    });
+
+    it('has a label and a colour for every grade', () => {
+      expect(component.gradeLabels.map(g => g.key)).toEqual(['excellent', 'good', 'acceptable', 'poor', 'invalid']);
+      expect(component.gradeColor('excellent')).toBe('#2fbf4f');
+      expect(component.gradeColor('invalid')).toBe('#e02b2b');
     });
   });
 });

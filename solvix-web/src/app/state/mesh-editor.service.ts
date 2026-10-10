@@ -93,8 +93,9 @@ export class MeshEditorService {
     this.run(sessionId, this.api.addFirstHex(sessionId, shape));
   }
 
-  addTemplate(sessionId: number, request: MeshTemplateRequestDto): void {
-    this.run(sessionId, this.api.addTemplate(sessionId, request));
+  // `then` runs after the new state has arrived (a body with layers gets its materials from it).
+  addTemplate(sessionId: number, request: MeshTemplateRequestDto, then?: () => void): void {
+    this.run(sessionId, this.api.addTemplate(sessionId, request), then);
   }
 
   addHexOnFace(sessionId: number, hexId: number, face: HexFaceName, shape?: MeshShapeDto): void {
@@ -149,13 +150,14 @@ export class MeshEditorService {
     this.selection.retain(sessionId, id => hexes.has(id), id => nodes.has(id));
   }
 
-  private run(sessionId: number, request: Observable<MeshCommandResultDto>): void {
+  private run(sessionId: number, request: Observable<MeshCommandResultDto>, then?: () => void): void {
     this.busy.set(true);
     request.subscribe({
       next: result => {
         this.accept(sessionId, result.state);
         if (!result.ok && result.error) this.notifications.warning(result.error);
         this.busy.set(false);
+        if (result.ok) then?.();
       },
       error: () => {
         this.notifications.error('Не вдалось виконати команду: сервер недоступний.');

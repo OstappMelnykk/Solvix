@@ -12,6 +12,7 @@ import {
   SolverFaceDto,
   SolverJobDto,
   SolverMaterialDto,
+  SolverQualityDto,
   SolverResultDto,
   SolverSetupDto,
   SolverValidationDto
@@ -62,6 +63,9 @@ interface SessionSolver {
   hidden: Set<string>;
   // Also draw the faces between the elements (the grid inside the body).
   showInner: boolean;
+  // Colour the cubes by the quality of their worst element instead of by material.
+  showQuality: boolean;
+  quality: SolverQualityDto | null;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -118,6 +122,8 @@ export class SolverService {
       activeMaterial: 'rubber',
       hidden: new Set<string>(),
       showInner: false,
+      showQuality: false,
+      quality: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
       loadSide: null,
@@ -274,6 +280,61 @@ export class SolverService {
   toggleHidden(sessionId: number, material: string): void {
     const hidden = this.entry(sessionId).hidden;
     if (!hidden.delete(material)) hidden.add(material);
+    this.touch(sessionId);
+  }
+
+  // --- layers: named groups of cubes (enamel, dentin...) that are given a material together ---
+
+  // The layers of the body with how many cubes each has, in order of first appearance.
+  layers(sessionId: number): { name: string; hexes: number[] }[] {
+    const layers = new Map<string, number[]>();
+    for (const hex of this.editor.getState(sessionId)?.hexes ?? []) {
+      if (!hex.layer) continue;
+      (layers.get(hex.layer) ?? layers.set(hex.layer, []).get(hex.layer)!).push(hex.id);
+    }
+    return [...layers].map(([name, hexes]) => ({ name, hexes }));
+  }
+
+  // The material the cubes of a layer have, when they all have the same one; null when mixed.
+  layerMaterial(sessionId: number, layer: string): string | null {
+    const names = new Set(this.layers(sessionId).find(l => l.name === layer)?.hexes.map(h => this.materialOf(sessionId, h)));
+    return names.size === 1 ? [...names][0] : null;
+  }
+
+  setLayerMaterial(sessionId: number, layer: string, material: string | null): void {
+    const hexes = this.layers(sessionId).find(l => l.name === layer)?.hexes ?? [];
+    this.setMaterial(sessionId, hexes, material);
+  }
+
+  // A layer named after a material of the library (enamel, dentin, pulp...) gets that material.
+  applyLayerNamedMaterials(sessionId: number): void {
+    const known = new Set(this.entry(sessionId).setup?.materials.map(m => m.name));
+    for (const layer of this.layers(sessionId)) if (known.has(layer.name) && this.layerMaterial(sessionId, layer.name) !== layer.name) this.setLayerMaterial(sessionId, layer.name, layer.name);
+  }
+
+  // --- mesh quality ---
+
+  quality(sessionId: number): SolverQualityDto | null {
+    return this.entry(sessionId).quality;
+  }
+
+  refreshQuality(sessionId: number): void {
+    this.api.quality(sessionId).subscribe({
+      next: quality => {
+        this.entry(sessionId).quality = quality;
+        this.touch(sessionId);
+      },
+      error: () => this.notifications.error('Не вдалось оцінити якість сітки: сервер недоступний.')
+    });
+  }
+
+  showQuality(sessionId: number): boolean {
+    return this.entry(sessionId).showQuality;
+  }
+
+  setShowQuality(sessionId: number, show: boolean): void {
+    this.entry(sessionId).showQuality = show;
+    if (show) this.refreshQuality(sessionId);
     this.touch(sessionId);
   }
 

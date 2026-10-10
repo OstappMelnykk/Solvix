@@ -54,6 +54,41 @@
   </div>
 </div>
 
+<div class="group" *ngIf="layers().length > 0">
+  <div class="group-label">Шари</div>
+  <div class="hint">Куби шару діляться матеріалом. Шар, названий як матеріал (емаль, дентин, пульпа), одразу його отримує.</div>
+  <label class="row" *ngFor="let layer of layers()">
+    <span>{{ layer.name }} ({{ layer.hexes.length }})</span>
+    <select [value]="layerMaterial(layer.name)" (change)="onLayerMaterial(layer.name, $event)">
+      <option value="">— різні —</option>
+      <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
+    </select>
+  </label>
+</div>
+
+<div class="group">
+  <div class="group-label">Якість сітки</div>
+  <div class="hint">Наскільки елементи придатні для інтегрування (scaled Jacobian, відношення якобіанів, форма, перекіс).</div>
+  <div class="pair">
+    <button class="btn" type="button" (click)="refreshQuality()">Оцінити</button>
+    <button class="btn" type="button" [class.btn--on]="showQuality()" (click)="toggleQuality()">Показати на сцені</button>
+  </div>
+  <ng-container *ngIf="quality() as q">
+    <div class="verdict">{{ qualityVerdict() }}</div>
+    <div class="grades">
+      <div class="grade" *ngFor="let g of gradeLabels" [title]="g.label">
+        <span class="grade__swatch" [style.background]="gradeColor(g.key)"></span>{{ g.label }}: <b>{{ q.grades[g.key] }}</b>
+      </div>
+    </div>
+    <table class="summary">
+      <tr title="Найгірший scaled Jacobian: 1 — ідеал, 0 — виродження"><th>Scaled Jacobian</th><td>{{ q.worstScaledJacobian | number: '1.2-3' }}</td></tr>
+      <tr title="Найгірше відношення min/max якобіана"><th>Відношення якобіанів</th><td>{{ q.worstJacobianRatio | number: '1.2-3' }}</td></tr>
+      <tr title="Найбільше відношення довших і коротших ребер"><th>Aspect ratio</th><td>{{ q.worstAspectRatio | number: '1.1-1' }}</td></tr>
+      <tr title="Найбільше відхилення кута від 90°"><th>Перекіс, °</th><td>{{ q.worstSkewDegrees | number: '1.0-0' }}</td></tr>
+    </table>
+  </ng-container>
+</div>
+
 <div class="group">
   <div class="group-label"><span class="step">3</span> Навантаження і опори</div>
   <div class="hint">Точково — інструментами «Тиск» і «Опора» на сцені (до окремої грані елемента). Цілу сторону — кнопками нижче.</div>

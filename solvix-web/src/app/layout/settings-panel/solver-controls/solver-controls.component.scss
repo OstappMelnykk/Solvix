@@ -366,3 +366,31 @@ h4 {
   font-size: 15px;
   cursor: pointer;
 }
+
+.btn--on {
+  background: $accent-toggle;
+  border-color: $accent-toggle;
+  color: #fff;
+}
+
+.verdict {
+  margin: 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.grade__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+}

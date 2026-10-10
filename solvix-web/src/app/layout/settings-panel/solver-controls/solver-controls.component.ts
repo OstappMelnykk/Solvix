@@ -1,9 +1,10 @@
 import { Component, Input, inject } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { HexFaceName } from '../../../api/mesh-editor-api.service';
 import { SolverMaterialDto } from '../../../api/solver-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { materialColor } from '../../../geometry/solver-view';
+import { GRADE_COLORS, materialColor } from '../../../geometry/solver-view';
+import { QualityGradeName } from '../../../api/solver-api.service';
 import { ResultField, SIDES, SolverService } from '../../../state/solver.service';
 
 const MPA = 1e6;
@@ -15,7 +16,7 @@ const GPA = 1e9;
 @Component({
   selector: 'app-solver-controls',
   standalone: true,
-  imports: [NgIf, NgFor],
+  imports: [NgIf, NgFor, DecimalPipe],
   templateUrl: './solver-controls.component.html',
   styleUrl: './solver-controls.component.scss'
 })
@@ -134,6 +135,61 @@ export class SolverControlsComponent {
   private numberField(event: Event, apply: (value: number) => void): void {
     const value = Number((event.target as HTMLInputElement).value);
     if (Number.isFinite(value)) apply(value);
+  }
+
+  // --- layers ---
+
+  layers(): { name: string; hexes: number[] }[] {
+    return this.solver.layers(this.sessionId);
+  }
+
+  layerMaterial(layer: string): string {
+    return this.solver.layerMaterial(this.sessionId, layer) ?? '';
+  }
+
+  onLayerMaterial(layer: string, event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value) this.solver.setLayerMaterial(this.sessionId, layer, value);
+  }
+
+  // --- mesh quality ---
+
+  quality() {
+    return this.solver.quality(this.sessionId);
+  }
+
+  refreshQuality(): void {
+    this.solver.refreshQuality(this.sessionId);
+  }
+
+  showQuality(): boolean {
+    return this.solver.showQuality(this.sessionId);
+  }
+
+  toggleQuality(): void {
+    this.solver.setShowQuality(this.sessionId, !this.showQuality());
+  }
+
+  readonly gradeLabels: readonly { key: QualityGradeName; label: string }[] = [
+    { key: 'excellent', label: 'Відмінні' },
+    { key: 'good', label: 'Добрі' },
+    { key: 'acceptable', label: 'Прийнятні' },
+    { key: 'poor', label: 'Погані' },
+    { key: 'invalid', label: 'Невалідні' }
+  ];
+
+  gradeColor(grade: QualityGradeName): string {
+    return `#${GRADE_COLORS[grade].toString(16).padStart(6, '0')}`;
+  }
+
+  // The verdict in one line: can the solver be trusted with this mesh.
+  qualityVerdict(): string {
+    const q = this.quality();
+    if (!q) return '';
+    if (q.grades.invalid > 0) return `Є невалідні елементи (${q.grades.invalid}): розрахунок неможливий`;
+    if (q.grades.poor > 0) return `Є погані елементи (${q.grades.poor}): напруження біля них неточні`;
+    if (q.grades.acceptable > 0) return 'Сітка придатна, є елементи середньої якості';
+    return 'Сітка якісна';
   }
 
   // --- the load and the clamping, as in the solver ---

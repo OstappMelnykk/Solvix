@@ -97,6 +97,29 @@ export interface SolverResultDto {
   readonly elapsedSeconds: number;
 }
 
+export type QualityGradeName = 'excellent' | 'good' | 'acceptable' | 'poor' | 'invalid';
+
+export interface SolverCubeQualityDto {
+  readonly hex: number;
+  readonly grade: QualityGradeName;
+  readonly scaledJacobian: number;
+  readonly jacobianRatio: number;
+  readonly aspectRatio: number;
+  readonly skewDegrees: number;
+}
+
+// How well the mesh, cut at the current division, can be integrated: the worst small element of each cube, counts
+// per grade over all small elements, and the worst values overall.
+export interface SolverQualityDto {
+  readonly elements: number;
+  readonly grades: Readonly<Record<QualityGradeName, number>>;
+  readonly worstScaledJacobian: number;
+  readonly worstJacobianRatio: number;
+  readonly worstAspectRatio: number;
+  readonly worstSkewDegrees: number;
+  readonly cubes: readonly SolverCubeQualityDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class SolverApiService {
   private readonly http = inject(HttpClient);
@@ -153,6 +176,10 @@ export class SolverApiService {
 
   clearSetup(sessionId: number): Observable<SolverSetupDto> {
     return this.http.delete<SolverSetupDto>(this.url(sessionId, 'setup'));
+  }
+
+  quality(sessionId: number): Observable<SolverQualityDto> {
+    return this.http.get<SolverQualityDto>(this.url(sessionId, 'quality'));
   }
 
   validate(sessionId: number): Observable<SolverValidationDto> {
