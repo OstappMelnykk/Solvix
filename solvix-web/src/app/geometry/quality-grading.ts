@@ -41,81 +41,50 @@ export function measuredGrade(element: QualityMeasured, metric: QualityMetric, l
   return limit ? metricGrade(limit, metricValue(element, metric)) : element.grade;
 }
 
-// Where a value sits on the gauge of its measure, 0..1, the worst on the left. With four levels: four equal zones
-// (poor, acceptable, good, excellent) and the value placed inside its zone in proportion. With two: failing on the
-// left half, passing on the right half.
+// The value from which an element passes a measure: the one limit of a pass/fail measure, or the last of the three
+// limits of a graded one.
+function passLimit(limit: SolverQualityLimitDto): number {
+  return limit.levels === 2 ? limit.bounds[0] : limit.bounds[2];
+}
+
+// Where a value sits on the gauge of its measure, 0..1: not passing on the left half, passing on the right half, the
+// ideal at the right end.
 export function gaugePosition(limit: SolverQualityLimitDto, value: number): number {
-  const [b0, b1, b2] = limit.bounds;
+  const t = passLimit(limit);
   const clamp = (x: number) => Math.min(1, Math.max(0, x));
   if (!Number.isFinite(value)) return limit.higherIsBetter ? 0 : 1;
-  if (limit.levels === 2) {
-    const t = b0;
-    const angle = limit.unit === '°';
-    if (limit.higherIsBetter) {
-      const ideal = angle ? 90 : 1;
-      return value >= t ? 0.5 + 0.5 * clamp((value - t) / Math.max(1e-9, ideal - t)) : 0.5 - 0.5 * clamp((t - value) / Math.max(1e-9, t));
-    }
-    if (angle) return value <= t ? 0.5 + 0.5 * clamp((t - value) / Math.max(1e-9, t - 90)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, 180 - t));
-    return value <= t ? 1 - 0.5 * clamp(value / Math.max(1e-9, t)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, t));
-  }
-  const within = (from: number, to: number) => (to === from ? 0 : clamp((value - from) / (to - from)));
+  const plainAngle = limit.unit === '°' && limit.kind !== 'angleDeviation';
   if (limit.higherIsBetter) {
-    // zones by value: [0, b2] poor, [b2, b1] acceptable, [b1, b0] good, [b0, 1] excellent
-    if (value <= b2) return 0.25 * within(0, b2);
-    if (value <= b1) return 0.25 + 0.25 * within(b2, b1);
-    if (value <= b0) return 0.5 + 0.25 * within(b1, b0);
-    return 0.75 + 0.25 * within(b0, 1);
+    const ideal = plainAngle ? 90 : 1;
+    return value >= t ? 0.5 + 0.5 * clamp((value - t) / Math.max(1e-9, ideal - t)) : 0.5 - 0.5 * clamp((t - value) / Math.max(1e-9, t));
   }
-  // smaller is better: the excellent zone [0, b0] sits on the right
-  if (value < b0) return 1 - 0.25 * within(0, b0);
-  if (value < b1) return 0.75 - 0.25 * within(b0, b1);
-  if (value < b2) return 0.5 - 0.25 * within(b1, b2);
-  return 0.25 - 0.25 * within(b2, 2 * b2);
+  if (plainAngle) return value <= t ? 0.5 + 0.5 * clamp((t - value) / Math.max(1e-9, t - 90)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, 180 - t));
+  return value <= t ? 1 - 0.5 * clamp(value / Math.max(1e-9, t)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, t));
 }
 
 export interface GaugeZone {
-  readonly grade: QualityGradeName;
+  readonly result: Result;
   // how the zone is called
   readonly label: string;
-  // the range of values that fall in this zone, as text
+  // the values that fall in this zone, as text
   readonly range: string;
 }
 
-const num = (v: number): string => String(v);
-
-// The zones of a measure from the worst (left) to the best (right) with the values that belong to each.
+// The two zones of a measure, the one that does not pass on the left, with the values that belong to each.
 export function gaugeZones(limit: SolverQualityLimitDto): GaugeZone[] {
-  const [b0, b1, b2] = limit.bounds;
+  const t = passLimit(limit);
   const u = limit.unit;
-  if (limit.levels === 2) {
-    return [
-      { grade: 'poor', label: 'Не проходить', range: limit.higherIsBetter ? `менше ${num(b0)}${u}` : `більше ${num(b0)}${u}` },
-      { grade: 'excellent', label: 'Проходить', range: limit.higherIsBetter ? `від ${num(b0)}${u}` : `до ${num(b0)}${u}` }
-    ];
-  }
   if (limit.kind === 'angleDeviation') {
-    // the bounds are deviations from a right angle; shown as the angles they allow
-    const around = (d: number) => `${90 - d}–${90 + d}°`;
     return [
-      { grade: 'poor', label: GRADE_NAMES.poor, range: `<${90 - b2}° або >${90 + b2}°` },
-      { grade: 'acceptable', label: GRADE_NAMES.acceptable, range: `${90 - b2}–${90 - b1}°, ${90 + b1}–${90 + b2}°` },
-      { grade: 'good', label: GRADE_NAMES.good, range: `${90 - b1}–${90 - b0}°, ${90 + b0}–${90 + b1}°` },
-      { grade: 'excellent', label: GRADE_NAMES.excellent, range: around(b0) }
+      { result: 'rejected', label: 'Не проходить', range: `<${90 - t}° або >${90 + t}°` },
+      { result: 'accepted', label: 'Проходить', range: `${90 - t}–${90 + t}°` }
     ];
   }
-  if (limit.higherIsBetter) {
-    return [
-      { grade: 'poor', label: GRADE_NAMES.poor, range: `до ${num(b2)}` },
-      { grade: 'acceptable', label: GRADE_NAMES.acceptable, range: `${num(b2)} – ${num(b1)}` },
-      { grade: 'good', label: GRADE_NAMES.good, range: `${num(b1)} – ${num(b0)}` },
-      { grade: 'excellent', label: GRADE_NAMES.excellent, range: `від ${num(b0)}` }
-    ];
-  }
+  // a pass/fail measure lets the limit itself pass, a graded one needs to be beyond it
+  const inclusive = limit.levels === 2;
   return [
-    { grade: 'poor', label: GRADE_NAMES.poor, range: `від ${num(b2)}` },
-    { grade: 'acceptable', label: GRADE_NAMES.acceptable, range: `${num(b1)} – ${num(b2)}` },
-    { grade: 'good', label: GRADE_NAMES.good, range: `${num(b0)} – ${num(b1)}` },
-    { grade: 'excellent', label: GRADE_NAMES.excellent, range: `до ${num(b0)}` }
+    { result: 'rejected', label: 'Не проходить', range: limit.higherIsBetter ? (inclusive ? `менше ${t}${u}` : `до ${t}${u}`) : (inclusive ? `більше ${t}${u}` : `від ${t}${u}`) },
+    { result: 'accepted', label: 'Проходить', range: limit.higherIsBetter ? (inclusive ? `від ${t}${u}` : `більше ${t}${u}`) : (inclusive ? `до ${t}${u}` : `менше ${t}${u}`) }
   ];
 }
 
@@ -146,6 +115,18 @@ export const isRejected = (grade: QualityGradeName): boolean => grade === 'poor'
 
 export const CONSENSUS_ID = 'consensus';
 
+// What the user sees of a grade: accepted or not. Only the overall result has a middle state, when some of the
+// standards reject an element and the others accept it. (The finer grades only say how far from the limit an element
+// is; they decide nothing, so they are not shown.)
+export type Result = 'accepted' | 'disputed' | 'rejected';
+
+export const RESULT_NAMES: Record<Result, string> = { accepted: 'Приймається', disputed: 'Спірно', rejected: 'Не приймається' };
+
+export function resultOf(grade: QualityGradeName, overall: boolean): Result {
+  if (isRejected(grade)) return 'rejected';
+  return overall && grade !== 'excellent' ? 'disputed' : 'accepted';
+}
+
 // The "average" of the standards: for each element, in how many standards it is rejected. 0 excellent, 1 good, 2
 // acceptable, 3 or more poor - so the standards vote, and an element only the strictest one dislikes stays mild.
 export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto {
@@ -163,8 +144,8 @@ export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto
   const total = profiles[0]?.elements ?? 0;
   const limit: SolverQualityLimitDto = {
     key: 'rejected',
-    label: 'Скільки стандартів відхиляє',
-    short: 'Відхиляють',
+    label: 'Скільки стандартів не приймають',
+    short: 'Не приймають',
     tech: 'голосування',
     hint: `У скількох із ${profiles.length} стандартів елемент не проходить.`,
     higherIsBetter: false,
@@ -186,7 +167,7 @@ export function buildConsensus(report: SolverQualityReportDto): SolverQualityDto
   grades.excellent = Math.max(0, total - flagged.length);
   return {
     id: CONSENSUS_ID,
-    name: 'Консенсус',
+    name: 'Загальний результат',
     source: `Усереднення: у скількох із ${profiles.length} стандартів елемент не проходить. 0 — усі згодні, що добрий; 3 і більше — більшість відхиляє.`,
     note: 'Це не окремий стандарт, а голосування решти. Щоб побачити, хто саме відхиляє, оберіть стандарт у списку.',
     elements: total,

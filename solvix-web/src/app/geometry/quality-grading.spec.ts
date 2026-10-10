@@ -8,20 +8,19 @@ const jacobian = limit({ key: 'scaledJacobian', higherIsBetter: true, bounds: [0
 const aspect = limit({ key: 'aspectRatio', higherIsBetter: false, bounds: [3, 10, 30] });
 
 describe('quality gauge', () => {
-  it('puts the worst on the left and the best on the right, a quarter for each grade', () => {
+  it('puts what does not pass on the left half and what passes on the right half, the ideal at the right end', () => {
     expect(gaugePosition(jacobian, 0)).toBe(0);
-    expect(gaugePosition(jacobian, 0.15)).toBeCloseTo(0.25, 6);
-    expect(gaugePosition(jacobian, 0.4)).toBeCloseTo(0.5, 6);
-    expect(gaugePosition(jacobian, 0.7)).toBeCloseTo(0.75, 6);
+    expect(gaugePosition(jacobian, 0.15)).toBeCloseTo(0.5, 6);                 // the limit is the middle
+    expect(gaugePosition(jacobian, 0.1)).toBeLessThan(0.5);
+    expect(gaugePosition(jacobian, 0.4)).toBeGreaterThan(0.5);
     expect(gaugePosition(jacobian, 1)).toBeCloseTo(1, 6);
+    expect(gaugePosition(aspect, 30)).toBeCloseTo(0.5, 6);
     expect(gaugePosition(aspect, 1)).toBeGreaterThan(gaugePosition(aspect, 5));
-    expect(gaugePosition(aspect, 3)).toBeCloseTo(0.75, 6);
-    expect(gaugePosition(aspect, 10)).toBeCloseTo(0.5, 6);
-    expect(gaugePosition(aspect, 30)).toBeCloseTo(0.25, 6);
+    expect(gaugePosition(aspect, 40)).toBeLessThan(0.5);
     expect(gaugePosition(aspect, 1e9)).toBe(0);
   });
 
-  it('grows with the grade and stays inside the gauge', () => {
+  it('stays inside the gauge for any value', () => {
     for (const value of [-1, 0, 0.1, 0.3, 0.5, 0.9, 5]) {
       const p = gaugePosition(jacobian, value);
       expect(p).toBeGreaterThanOrEqual(0);
@@ -33,9 +32,9 @@ describe('quality gauge', () => {
 });
 
 describe('quality limits as text', () => {
-  it('lists the grades from worst to best with the values that belong to each', () => {
-    expect(gaugeZones(jacobian).map(z => `${z.grade} ${z.range}`)).toEqual(['poor до 0.15', 'acceptable 0.15 – 0.4', 'good 0.4 – 0.7', 'excellent від 0.7']);
-    expect(gaugeZones(aspect).map(z => `${z.grade} ${z.range}`)).toEqual(['poor від 30', 'acceptable 10 – 30', 'good 3 – 10', 'excellent до 3']);
+  it('has two zones - what does not pass and what passes - with the values that belong to each', () => {
+    expect(gaugeZones(jacobian).map(z => `${z.result}: ${z.range}`)).toEqual(['rejected: до 0.15', 'accepted: більше 0.15']);
+    expect(gaugeZones(aspect).map(z => `${z.result}: ${z.range}`)).toEqual(['rejected: від 30', 'accepted: менше 30']);
   });
 
   it('lets excellent, good and acceptable pass and nothing else', () => {
@@ -50,22 +49,16 @@ describe('quality limits as text', () => {
 describe('angles', () => {
   const skew = limit({ key: 'skew', higherIsBetter: false, bounds: [30, 45, 75], kind: 'angleDeviation', unit: '°' });
 
-  it('allows angles from 15 to 165 degrees and calls 45 to 135 good', () => {
-    expect(metricGrade(skew, 20)).toBe('excellent');         // angles 70-110
-    expect(metricGrade(skew, 44)).toBe('good');              // 46-134
-    expect(metricGrade(skew, 60)).toBe('acceptable');        // 30-150
-    expect(metricGrade(skew, 80)).toBe('poor');              // 10-170
+  it('allows angles from 15 to 165 degrees and nothing beyond', () => {
+    expect(passes(skew, 20)).toBeTrue();                     // angles 70-110
+    expect(passes(skew, 60)).toBeTrue();                     // 30-150
     expect(passes(skew, 74)).toBeTrue();
-    expect(passes(skew, 76)).toBeFalse();
+    expect(passes(skew, 76)).toBeFalse();                    // 14-166
+    expect(passes(skew, 80)).toBeFalse();
   });
 
   it('shows the limits as angles, not as distances from a right angle', () => {
-    expect(gaugeZones(skew).map(z => `${z.grade} ${z.range}`)).toEqual([
-      'poor <15° або >165°',
-      'acceptable 15–45°, 135–165°',
-      'good 45–60°, 120–135°',
-      'excellent 60–120°'
-    ]);
+    expect(gaugeZones(skew).map(z => `${z.result}: ${z.range}`)).toEqual(['rejected: <15° або >165°', 'accepted: 15–165°']);
     expect(ruleText(skew)).toBe('Допустимо: кути від 15° до 165°');
   });
 

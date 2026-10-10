@@ -59,7 +59,7 @@ describe('QualityControlsComponent', () => {
   it('lists the standards and the consensus, each with how many elements it rejects', () => {
     const root = render().nativeElement as HTMLElement;
 
-    expect(buttons(root).map(b => b.querySelector('b')!.textContent)).toEqual(['Solvix', 'Abaqus/CAE', 'Консенсус']);
+    expect(buttons(root).map(b => b.querySelector('b')!.textContent)).toEqual(['Solvix', 'Abaqus/CAE', 'Загальний результат']);
     expect(buttons(root)[0].textContent).toContain('1');
   });
 
@@ -174,5 +174,22 @@ describe('QualityControlsComponent', () => {
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'aspectRatio');
     grade.click();
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'grade');
+  });
+
+  it('knows only accepted or not for a standard - the finer grades are not shown', () => {
+    current = 'abaqus';
+    const root = render().nativeElement as HTMLElement;
+
+    expect(Array.from(root.querySelectorAll('.legend span')).map(l => (l.textContent ?? '').trim())).toEqual(['Приймається за Abaqus/CAE', 'Не приймається за Abaqus/CAE']);
+    expect(root.textContent).not.toMatch(/відмінн|добр|прийнятн|невалідн/i);
+  });
+
+  it('adds "disputed" for the overall result, where some standards reject an element and the others accept it', () => {
+    current = 'consensus';
+    const root = render().nativeElement as HTMLElement;
+
+    expect(Array.from(root.querySelectorAll('.legend span')).map(l => (l.textContent ?? '').trim())).toEqual([
+      'Приймається всіма стандартами', 'Спірно: один-два стандарти не приймають', 'Не приймається: три й більше стандартів'
+    ]);
   });
 });

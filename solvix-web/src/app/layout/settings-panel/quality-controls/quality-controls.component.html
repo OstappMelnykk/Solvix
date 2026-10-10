@@ -38,15 +38,15 @@
   <!-- 1. Чи все гаразд -->
   <section class="part">
     <h5>Результат за цим стандартом</h5>
-  <div class="verdict" [style.border-color]="gradeColor(verdictGrade())">
+  <div class="verdict" [style.border-color]="color(verdictResult())">
     <div class="verdict__title">{{ verdict().title }}</div>
     <div class="verdict__sub">{{ verdict().sub }}</div>
     <div class="rule">{{ rule() }}</div>
-    <div class="bar" title="Усі елементи сітки за оцінкою">
-      <span *ngFor="let s of segments(); trackBy: trackSegment" class="bar__seg" [style.flex-grow]="s.count" [style.background]="gradeColor(s.grade)"></span>
+    <div class="bar" title="Усі елементи сітки">
+      <span *ngFor="let s of segments(); trackBy: trackSegment" class="bar__seg" [style.flex-grow]="s.count" [style.background]="color(s.result)"></span>
     </div>
     <div class="counts">
-      <span *ngFor="let s of segments(); trackBy: trackSegment" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeWord(s.grade) }}</span>
+      <span *ngFor="let s of segments(); trackBy: trackSegment" class="count"><i [style.background]="color(s.result)"></i><b>{{ s.count }}</b> {{ resultWord(s.result) }}</span>
     </div>
   </div>
   </section>
@@ -64,7 +64,7 @@
       </div>
     </div>
     <div class="legend">
-      <span *ngFor="let g of gradeOrder"><i [style.background]="gradeColor(g)"></i>{{ gradeNames[g] }}</span>
+      <span *ngFor="let l of legend()"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
     </div>
   </section>
 
@@ -74,7 +74,7 @@
     <div class="gauge" *ngFor="let l of q.limits">
       <div class="gauge__head">
         <span class="gauge__name" [title]="l.hint">{{ l.label }} <small>{{ l.tech }}</small></span>
-        <span class="gauge__value" [style.color]="gradeColor(worstGrade(l))">{{ shownValue(l) | number: decimals(l) }}{{ l.kind === 'angleDeviation' ? '°' : l.unit }}</span>
+        <span class="gauge__value" [style.color]="color(worstResult(l))">{{ shownValue(l) | number: decimals(l) }}{{ l.kind === 'angleDeviation' ? '°' : l.unit }}</span>
       </div>
       <div class="gauge__sub" *ngIf="sub(l)">{{ sub(l) }}</div>
       <div class="gauge__verdict" [class.gauge__verdict--bad]="!passed(l)">
@@ -82,7 +82,7 @@
       </div>
       <div class="gauge__track">
         <span class="gauge__marker" [style.left]="markerLeft(l)"></span>
-        <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__zone" [style.background]="gradeColor(z.grade)"></span>
+        <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__zone" [style.background]="color(z.result)"></span>
       </div>
       <div class="gauge__labels">
         <span *ngFor="let z of gaugeZones(l); trackBy: trackZone" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
@@ -101,7 +101,7 @@
       <ng-container *ngIf="hasDetail(); else waiting">
         <div class="by" *ngIf="overall()">Не приймають цей елемент: <b>{{ rejectedByCount() }}</b> із {{ report()?.profiles?.length }} стандартів</div>
         <div class="detail" *ngFor="let d of details(); trackBy: trackById">
-          <div class="detail__head"><i [style.background]="gradeColor(d.grade)"></i><b>{{ d.name }}</b><span>{{ gradeNames[d.grade] }}</span></div>
+          <div class="detail__head"><i [style.background]="color(resultOfGrade(d.grade))"></i><b>{{ d.name }}</b><span>{{ resultNames[resultOfGrade(d.grade)] }}</span></div>
           <div class="measure" *ngFor="let r of d.rows; trackBy: trackKey" [class.measure--bad]="!r.ok">
             <div class="measure__line">
               <span class="measure__name" [title]="r.limit.hint">{{ r.limit.label }} <small>{{ r.limit.tech }}</small></span>

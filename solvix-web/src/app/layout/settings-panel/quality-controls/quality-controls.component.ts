@@ -1,9 +1,9 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto, SolverQualityReportDto } from '../../../api/solver-api.service';
-import { GRADE_COLORS } from '../../../geometry/solver-view';
+import { RESULT_COLORS } from '../../../geometry/solver-view';
 import {
-  CONSENSUS_ID, DecisionLevel, GRADE_NAMES, GRADE_ORDER, QualityDecision, QualityMetric, anglesText, buildConsensus, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue,
+  CONSENSUS_ID, DecisionLevel, GRADE_ORDER, QualityDecision, QualityMetric, RESULT_NAMES, Result, resultOf, anglesText, buildConsensus, gaugePosition, gaugeZones, measuredGrade, metricGrade, metricValue,
   decide, passes, rejectedBy, rejectedCount, ruleText, worstAngle
 } from '../../../geometry/quality-grading';
 import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
@@ -27,8 +27,7 @@ export class QualityControlsComponent implements DoCheck {
 
   @Input({ required: true }) sessionId!: number;
 
-  readonly gradeOrder = GRADE_ORDER;
-  readonly gradeNames = GRADE_NAMES;
+  readonly resultNames = RESULT_NAMES;
   readonly gaugeZones = gaugeZones;
   readonly consensusId = CONSENSUS_ID;
 
@@ -53,8 +52,13 @@ export class QualityControlsComponent implements DoCheck {
     this.solver.setQualityMetric(this.sessionId, metric);
   }
 
-  gradeColor(grade: QualityGradeName): string {
-    return `#${GRADE_COLORS[grade].toString(16).padStart(6, '0')}`;
+  color(result: Result): string {
+    return `#${RESULT_COLORS[result].toString(16).padStart(6, '0')}`;
+  }
+
+  // The result of a grade in what is shown now: accepted or not (and, for the overall result, disputed).
+  resultOfGrade(grade: QualityGradeName): Result {
+    return resultOf(grade, this.overall());
   }
 
   hexCount(): number {
@@ -108,8 +112,8 @@ export class QualityControlsComponent implements DoCheck {
     return index;
   }
 
-  trackSegment(_: number, segment: { grade: QualityGradeName }): string {
-    return segment.grade;
+  trackSegment(_: number, segment: { result: Result }): string {
+    return segment.result;
   }
 
   trackKey(_: number, item: { limit: { key: string } }): string {
@@ -120,8 +124,8 @@ export class QualityControlsComponent implements DoCheck {
     return this.quality()?.id === CONSENSUS_ID;
   }
 
-  trackZone(_: number, zone: { grade: QualityGradeName }): string {
-    return zone.grade;
+  trackZone(_: number, zone: { result: Result }): string {
+    return zone.result;
   }
 
   private consensusOf: { report: SolverQualityReportDto; dto: SolverQualityDto } | null = null;
@@ -152,9 +156,10 @@ export class QualityControlsComponent implements DoCheck {
 
   // --- the verdict ---
 
-  verdictGrade(): QualityGradeName {
-    const q = this.quality();
-    return q ? (GRADE_ORDER.slice().reverse().find(g => q.grades[g] > 0) ?? 'excellent') : 'excellent';
+  // The result of the worst element: the colour of the verdict.
+  verdictResult(): Result {
+    const parts = this.segments();
+    return parts.some(p => p.result === 'rejected') ? 'rejected' : parts.some(p => p.result === 'disputed') ? 'disputed' : 'accepted';
   }
 
   verdict(): { title: string; sub: string } {
@@ -163,35 +168,53 @@ export class QualityControlsComponent implements DoCheck {
     if (q.id === CONSENSUS_ID) {
       const n = q.grades.poor;
       return n > 0
-        ? { title: 'Більшість стандартів відхиляє', sub: `${n} елементів не проходять у 3 і більше стандартах` }
+        ? { title: 'Більшість стандартів не приймає', sub: `${n} елементів не проходять у 3 і більше стандартах` }
         : q.flagged.length > 0
           ? { title: 'Є спірні елементи', sub: `${q.flagged.length} елементів не проходять хоча б в одному стандарті` }
           : { title: 'Усі стандарти згодні', sub: 'Жоден елемент не відхилено' };
     }
-    const twoLevels = q.limits.every(l => l.levels === 2);
     if (q.grades.invalid > 0) return { title: 'Розрахунок неможливий', sub: `Вивернутих елементів: ${q.grades.invalid}` };
-    if (q.grades.poor > 0) return { title: twoLevels ? 'Є елементи, що не проходять' : 'Є погані елементи', sub: `${q.grades.poor}${twoLevels ? '' : ' — напруження біля них будуть неточні'}` };
-    if (q.grades.acceptable > 0) return { title: 'Сітка придатна', sub: `${q.grades.acceptable} елементів середньої якості` };
-    return { title: twoLevels ? 'Усе проходить' : 'Сітка якісна', sub: twoLevels ? 'Жоден елемент не порушує меж' : 'Усі елементи добрі або відмінні' };
+    if (q.grades.poor > 0) return { title: 'Є елементи, що не проходять', sub: `${q.grades.poor} із ${q.elements}` };
+    return { title: 'Усе проходить', sub: 'Жоден елемент не порушує меж' };
   }
 
   rule(): string {
-    const q = this.quality();
-    if (q?.id === CONSENSUS_ID) return 'Елемент відхилено, якщо він не проходить у цьому стандарті. Консенсус рахує, у скількох.';
-    return q?.limits.every(l => l.levels === 2) ? 'Кожна міра має одну межу: проходить або ні.' : 'Допустимі: відмінні, добрі й прийнятні. Погані та невалідні — ні.';
+    return this.overall()
+      ? 'Елемент не приймається, якщо його відхиляють три й більше стандартів; спірний, якщо один-два.'
+      : 'Елемент проходить, якщо кожен його показник у межах.';
   }
 
-  // The bar of all elements by grade: only the grades that occur, as wide as their share.
-  segments(): { grade: QualityGradeName; count: number }[] {
+  // The bar of all elements by result: only the results that occur, as wide as their share.
+  segments(): { result: Result; count: number }[] {
     const q = this.quality();
-    return q ? GRADE_ORDER.map(grade => ({ grade, count: q.grades[grade] })).filter(s => s.count > 0) : [];
+    if (!q) return [];
+    const g = q.grades;
+    const parts: { result: Result; count: number }[] = this.overall()
+      ? [{ result: 'accepted', count: g.excellent }, { result: 'disputed', count: g.good + g.acceptable }, { result: 'rejected', count: g.poor + g.invalid }]
+      : [{ result: 'accepted', count: g.excellent + g.good + g.acceptable }, { result: 'rejected', count: g.poor + g.invalid }];
+    return parts.filter(p => p.count > 0);
   }
 
-  gradeWord(grade: QualityGradeName): string {
+  resultWord(result: Result): string {
+    return this.overall()
+      ? { accepted: 'приймають усі', disputed: 'спірні', rejected: 'не приймає більшість' }[result]
+      : { accepted: 'проходять', disputed: 'спірні', rejected: 'не проходять' }[result];
+  }
+
+  // The colours the scene uses in this mode, with their meaning.
+  legend(): { result: Result; text: string }[] {
     const q = this.quality();
-    if (q && q.id !== CONSENSUS_ID && q.limits.every(l => l.levels === 2)) return grade === 'excellent' ? 'проходять' : grade === 'poor' ? 'не проходять' : GRADE_NAMES[grade];
-    if (q?.id === CONSENSUS_ID) return grade === 'excellent' ? 'ніхто не відхиляє' : grade === 'good' ? '1 стандарт відхиляє' : grade === 'acceptable' ? '2 відхиляють' : '3+ відхиляють';
-    return GRADE_NAMES[grade];
+    if (!q) return [];
+    return this.overall()
+      ? [
+          { result: 'accepted', text: 'Приймається всіма стандартами' },
+          { result: 'disputed', text: 'Спірно: один-два стандарти не приймають' },
+          { result: 'rejected', text: 'Не приймається: три й більше стандартів' }
+        ]
+      : [
+          { result: 'accepted', text: `Приймається за ${q.name}` },
+          { result: 'rejected', text: `Не приймається за ${q.name}` }
+        ];
   }
 
   // --- the measures: a gauge each ---
@@ -200,8 +223,8 @@ export class QualityControlsComponent implements DoCheck {
     return this.quality()!.worst[limit.key];
   }
 
-  worstGrade(limit: SolverQualityLimitDto): QualityGradeName {
-    return metricGrade(limit, this.worstValue(limit));
+  worstResult(limit: SolverQualityLimitDto): Result {
+    return resultOf(metricGrade(limit, this.worstValue(limit)), false);
   }
 
   passed(limit: SolverQualityLimitDto): boolean {
