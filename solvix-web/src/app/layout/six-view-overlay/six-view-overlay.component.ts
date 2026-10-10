@@ -13,6 +13,13 @@ import { NodeDrag, positionText, roundedPosition } from '../../geometry/mesh-edi
 import { stick } from '../../geometry/surface-snap';
 import { Gizmo, GizmoAxis, gizmoFor, hitGizmo, nearestNodeOnScreen } from '../../geometry/view-gizmo';
 
+// A node is grabbed (and its ring shows) only when the pointer is this close to it, in pixels: far enough that a press
+// beside a node still pans the view.
+const GRAB_RADIUS_PX = 8;
+// In the views a node is dragged in a plane and passes the surface more often than in the World's own view, so it sticks
+// at half the distance set in the panel.
+const SIX_VIEW_STICK_FACTOR = 0.5;
+
 interface ViewDirection {
   readonly label: string;
   readonly eye: THREE.Vector3;
@@ -444,7 +451,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
       return null;
     }
     const nodes = Array.from(view.nodeMeshes, ([id, mesh]) => [id, mesh.position] as [number, THREE.Vector3]);
-    return nearestNodeOnScreen(nodes, camera, width, height, this.pixelOf(canvas, event))?.nodeId ?? null;
+    return nearestNodeOnScreen(nodes, camera, width, height, this.pixelOf(canvas, event), GRAB_RADIUS_PX)?.nodeId ?? null;
   }
 
   // Sticking to the imported surface, as in the World's own view: a node dragged close to it sticks and from then on
@@ -453,7 +460,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     const surface = this.overlay.active()?.surface;
     const snapper = surface?.snapper();
     if (!surface || !snapper || !surface.enabled()) return position;
-    const result = stick(snapper, position, surface.isAttached(nodeId), released, surface.share());
+    const result = stick(snapper, position, surface.isAttached(nodeId), released, surface.share() * SIX_VIEW_STICK_FACTOR);
     if (result.change) surface.setAttached(nodeId, result.change === 'attach');
     return result.point ?? position;
   }
@@ -488,7 +495,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     }
     // The gizmo of the selected node comes first: its arrow holds the node to an axis, its centre moves it freely.
     const gizmo = this.gizmoOf(i);
-    const grabbed = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
+    const grabbed = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event), GRAB_RADIUS_PX) : null;
     let nodeId = grabbed ? this.meshSelection.nodeId(source.sessionId) : this.nodeUnderPointer(i, canvas, event);
     const mesh = nodeId === null ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
     if (nodeId === null || !mesh) {
@@ -510,7 +517,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (!this.drag) {
       if (this.canDragNodes()) {
         const gizmo = this.gizmoOf(i);
-        const over = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
+        const over = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event), GRAB_RADIUS_PX) : null;
         const node = over ? null : this.nodeUnderPointer(i, canvas, event);
         this.hoverNode[i] = node;
         canvas.style.cursor = over ? (over.kind === 'centre' ? 'move' : 'grab') : node !== null ? 'pointer' : '';
