@@ -72,7 +72,7 @@ export class SolverViewerComponent implements OnDestroy {
 
   top(): number {
     const result = this.result();
-    return result ? SolverService.maxScale(result) : 1;
+    return Math.max(1, result ? SolverService.maxScale(result) : 1);
   }
 
   position(): number {

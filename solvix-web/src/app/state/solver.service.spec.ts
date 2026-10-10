@@ -873,6 +873,8 @@ describe('SolverService', () => {
       expect(SolverService.visibleScale({ ...result(), maxDisplacement: 1e-12 })).toBe(500000);     // never beyond the viewer's limit
       expect(SolverService.visibleScale({ ...result(), maxDisplacement: 0 })).toBe(1);
       expect(SolverService.visibleScale({ ...result(), maxDisplacement: 0.05 })).toBe(2);
+      expect(SolverService.isUnreliable({ ...result(), maxDisplacement: 1e-5 })).toBeFalse();
+      expect(SolverService.isUnreliable({ ...result(), maxDisplacement: 50 })).toBeTrue();      // far bigger than the body (1 long)
     });
 
     it('forgets everything about a session after the mesh was reset', () => {

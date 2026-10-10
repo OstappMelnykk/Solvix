@@ -215,6 +215,13 @@ export class SolverOverlayComponent {
     this.solver.setViewer(this.sessionId, true);
   }
 
+  readonly unreliableText = SolverService.UNRELIABLE;
+
+  unreliable(): boolean {
+    const result = this.solver.result(this.sessionId);
+    return result !== null && SolverService.isUnreliable(result);
+  }
+
   hasResult(): boolean {
     return this.solver.result(this.sessionId) !== null;
   }

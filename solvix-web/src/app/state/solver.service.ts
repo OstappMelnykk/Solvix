@@ -936,10 +936,18 @@ export class SolverService {
         entry.result = result;
         entry.display.deformationScale = SolverService.visibleScale(result);
         entry.display.colorMax = null;
+        if (SolverService.isUnreliable(result)) this.notifications.warning(SolverService.UNRELIABLE);
         this.touch(sessionId);
       },
       error: () => this.notifications.error('Не вдалось отримати результат розрахунку.')
     });
+  }
+
+  static readonly UNRELIABLE = 'Переміщення більші за саме тіло: розв’язок недостовірний. Найімовірніше, тіло закріплене замало (або не там, де діє навантаження), чи навантаження надто велике для м’якого матеріалу.';
+
+  // The largest displacement is bigger than the whole body: no linear solution means anything then.
+  static isUnreliable(result: SolverResultDto): boolean {
+    return SolverService.scaleFor(result, 1) < 1;
   }
 
   // A displacement that is visible: the largest one drawn at a tenth of the body's size (the real ones are

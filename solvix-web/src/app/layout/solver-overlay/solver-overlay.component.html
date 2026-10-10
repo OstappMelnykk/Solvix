@@ -95,7 +95,8 @@
     <input type="number" class="num" min="0" [max]="top()" step="any" [value]="scale()" (change)="onScaleNumber($event)" />
   </div>
   <input *ngIf="hasResult()" type="range" min="0" [max]="sliderSteps" step="1" [value]="scaleSlider()" (input)="onScaleSlider($event)" aria-label="Деформація" />
-  <div class="hint" *ngIf="hasResult()">Максимум ×{{ top() | number: '1.0-0' }}: далі форма тіла була б неправдоподібною.</div>
+  <div class="hint hint--warn" *ngIf="unreliable()">{{ unreliableText }}</div>
+  <div class="hint" *ngIf="hasResult() && !unreliable()">Максимум ×{{ top() | number: '1.0-0' }}: далі форма тіла була б неправдоподібною.</div>
   <div class="hint" *ngIf="hasResult()">{{ shownText() }}</div>
   <button *ngIf="hasResult()" type="button" class="viewer-btn" (click)="openViewer()" title="Усе зайве зникає, лишається тіло й інструменти перегляду: плеєр деформації, шкала кольорів">▶ Режим перегляду</button>
 </ng-container>
