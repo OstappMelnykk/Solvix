@@ -99,38 +99,15 @@ i {
 }
 
 // what to colour by
-// the choices of what to colour by wrap onto as many rows as they need (a standard can have ten measures)
-.seg {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-
-  button {
-    flex: 0 0 auto;
-    padding: 6px 12px;
-    background: $field-bg;
-    border: 1px solid $field-border;
-    border-radius: 16px;
-    color: $text;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
-
-    small {
-      opacity: 0.7;
-      font-size: 11px;
-    }
-
-    &:hover {
-      border-color: $accent-toggle;
-    }
-
-    &.on {
-      background: $accent-toggle;
-      border-color: $accent-toggle;
-      color: #fff;
-    }
-  }
+.select {
+  width: 100%;
+  padding: 9px 10px;
+  background: $field-bg;
+  border: 1px solid $field-border;
+  border-radius: 8px;
+  color: $text;
+  font-family: inherit;
+  font-size: 14px;
 }
 
 .legend {

@@ -157,4 +157,17 @@ describe('QualityControlsComponent', () => {
 
     expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
   });
+
+  it('chooses what to colour by in a drop-down: the overall grade first, then every measure by its full name', () => {
+    current = 'solvix';
+    const fixture = render();
+    const select = (fixture.nativeElement as HTMLElement).querySelector<HTMLSelectElement>('select.select')!;
+
+    expect(Array.from(select.options).map(o => (o.textContent ?? '').trim())).toEqual(['Оцінка — за всіма показниками разом', 'Витягнутість · Aspect ratio']);
+
+    select.value = 'aspectRatio';
+    select.dispatchEvent(new Event('change'));
+
+    expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'aspectRatio');
+  });
 });
