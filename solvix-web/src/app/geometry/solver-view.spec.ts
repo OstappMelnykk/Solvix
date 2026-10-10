@@ -299,6 +299,19 @@ describe('solver-view', () => {
       [plain, marked].forEach(disposeMeshView);
     });
 
+    it('draws the supports and the loads independently of each other, and none when both are switched off', () => {
+      const setupWithBoth = setup({ fixed: [{ hex: 0, face: 'XMinus', p: 0, q: 0 }], loads: [{ hex: 1, face: 'XPlus', pressure: -1e6, p: 0, q: 0 }] });
+      const colourOfOverlay = (m: THREE.Mesh) => new THREE.Color(m.geometry.getAttribute('color').getX(0), m.geometry.getAttribute('color').getY(0), m.geometry.getAttribute('color').getZ(0)).getHex();
+      const onlyLoads = buildSolverView(input({ setup: setupWithBoth, showFixed: false }));
+      const onlyFixed = buildSolverView(input({ setup: setupWithBoth, showLoads: false }));
+      const neither = buildSolverView(input({ setup: setupWithBoth, showFixed: false, showLoads: false }));
+
+      expect(overlays(onlyLoads).map(colourOfOverlay)).toEqual([0x44ff44]);
+      expect(overlays(onlyFixed).map(colourOfOverlay)).toEqual([0x3388ff]);
+      expect(overlays(neither).length).toBe(0);
+      [onlyLoads, onlyFixed, neither].forEach(disposeMeshView);
+    });
+
     it('marks only the small faces that carry something: one of the two cells of a side', () => {
       const view = buildSolverView(input({
         state: singleCubeState(),

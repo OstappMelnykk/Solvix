@@ -37,6 +37,9 @@ export interface SolverViewInput {
   // Opacity of the coats of the clamped and pressed faces (default 0.62; 0 leaves them out): a light coat keeps the
   // field underneath readable.
   readonly marksOpacity?: number;
+  // Which marks are drawn (default both): the clamped faces and the pressed faces.
+  readonly showFixed?: boolean;
+  readonly showLoads?: boolean;
   // Draw the displacement vectors (default yes); the view can show and hide them later without a rebuild.
   readonly vectors?: boolean;
 }
@@ -477,8 +480,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     for (const face of faces) {
       if (!face.outer || input.marksOpacity === 0) continue;
       const key = `${face.owner.id}:${face.face}:${face.p}:${face.q}`;
-      if (isFixed.has(key)) pendingOverlays.push({ color: FIXED_COLOR, faces: [face] });
-      if (isLoaded.has(key)) pendingOverlays.push({ color: LOAD_COLOR, faces: [face] });
+      if (input.showFixed !== false && isFixed.has(key)) pendingOverlays.push({ color: FIXED_COLOR, faces: [face] });
+      if (input.showLoads !== false && isLoaded.has(key)) pendingOverlays.push({ color: LOAD_COLOR, faces: [face] });
     }
   }
 

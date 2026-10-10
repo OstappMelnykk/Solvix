@@ -627,3 +627,33 @@ i {
     font-size: 11px;
   }
 }
+
+// the supports and the loads on the scene can be shown or hidden
+.marks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid $field-border;
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+
+  &__swatch {
+    width: 14px;
+    height: 14px;
+
+    &--fixed {
+      background: #3388ff;
+    }
+
+    &--loads {
+      background: #44ff44;
+    }
+  }
+}

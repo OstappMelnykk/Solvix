@@ -153,6 +153,14 @@ export class SolverOverlayComponent {
 
   // --- deformation: the solver's number box plus a slider; the slider is cubic so that small factors stay reachable ---
 
+  showMark(kind: 'fixed' | 'loads'): boolean {
+    return this.solver.marks(this.sessionId, 'solver')[kind];
+  }
+
+  toggleMark(kind: 'fixed' | 'loads'): void {
+    this.solver.setMarks(this.sessionId, 'solver', kind, !this.showMark(kind));
+  }
+
   showVectors(): boolean {
     return this.solver.display(this.sessionId).vectors;
   }

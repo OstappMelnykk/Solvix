@@ -32,6 +32,12 @@ export interface QualityPick {
 
 export const sameElement = (a: QualityPick, b: QualityPick): boolean => a.hex === b.hex && a.ex === b.ex && a.ey === b.ey && a.ez === b.ez;
 
+export type MarksPage = 'solver' | 'quality';
+export interface Marks {
+  fixed: boolean;
+  loads: boolean;
+}
+
 export type ResultField = 'none' | 'vonMises' | 'displacement';
 
 // What is shown of a solve in the Solver World (a view setting only - nothing goes to the server).
@@ -99,6 +105,8 @@ interface SessionSolver {
   viewer: boolean;
   // The viewer shows where the body is clamped and loaded.
   viewerMarks: boolean;
+  // Whether the clamped and the pressed faces are drawn on the scene, in the Solver World and in the Quality World.
+  marks: Record<MarksPage, Marks>;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -151,6 +159,7 @@ export class SolverService {
       display: { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true },
       viewer: false,
       viewerMarks: true,
+      marks: { solver: { fixed: true, loads: true }, quality: { fixed: false, loads: false } },
       tool: 'view',
       scope: 'cell',
       depth: 0,
@@ -513,6 +522,17 @@ export class SolverService {
 
   viewer(sessionId: number): boolean {
     return this.entry(sessionId).viewer;
+  }
+
+  // Whether the supports and the loads are drawn on the scene of a page (the Quality World starts without them, so
+  // they do not cover the colours of the result).
+  marks(sessionId: number, page: MarksPage): Readonly<Marks> {
+    return this.entry(sessionId).marks[page];
+  }
+
+  setMarks(sessionId: number, page: MarksPage, kind: keyof Marks, on: boolean): void {
+    this.entry(sessionId).marks[page] = { ...this.entry(sessionId).marks[page], [kind]: on };
+    this.touch(sessionId);
   }
 
   viewerMarks(sessionId: number): boolean {

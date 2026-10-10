@@ -201,6 +201,14 @@ export class QualityControlsComponent implements DoCheck {
       : { accepted: 'проходять', disputed: 'спірні', rejected: 'не проходять' }[result];
   }
 
+  showMark(kind: 'fixed' | 'loads'): boolean {
+    return this.solver.marks(this.sessionId, 'quality')[kind];
+  }
+
+  toggleMark(kind: 'fixed' | 'loads'): void {
+    this.solver.setMarks(this.sessionId, 'quality', kind, !this.showMark(kind));
+  }
+
   // The colours the scene uses in this mode, with their meaning.
   legend(): { result: Result; text: string }[] {
     const q = this.quality();

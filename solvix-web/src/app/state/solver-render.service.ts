@@ -38,7 +38,7 @@ export class SolverRenderService {
       this.cache.delete(sessionId);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}:${this.solver.viewerMarks(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}:${this.solver.viewerMarks(sessionId)}:${this.solver.marks(sessionId, 'solver').fixed}${this.solver.marks(sessionId, 'solver').loads}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) {
       this.follow(sessionId, cached);
@@ -54,6 +54,8 @@ export class SolverRenderService {
       deformationScale: display.deformationScale,
       colorMax: display.colorMax,
       vectors: display.vectors,
+      showFixed: this.solver.marks(sessionId, 'solver').fixed,
+      showLoads: this.solver.marks(sessionId, 'solver').loads,
       marksOpacity: this.solver.viewer(sessionId) ? (this.solver.viewerMarks(sessionId) ? VIEWER_MARKS_OPACITY : 0) : undefined,
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),

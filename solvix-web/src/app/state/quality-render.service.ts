@@ -27,7 +27,7 @@ export class QualityRenderService {
       return null;
     }
     const quality = this.solver.quality(sessionId);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -39,7 +39,9 @@ export class QualityRenderService {
       deformationScale: 0,
       opacity: 1,
       quality,
-      qualityMetric: this.solver.qualityMetric(sessionId)
+      qualityMetric: this.solver.qualityMetric(sessionId),
+      showFixed: this.solver.marks(sessionId, 'quality').fixed,
+      showLoads: this.solver.marks(sessionId, 'quality').loads
     };
     const view = buildSolverView(input);
     const picked = this.solver.qualityPick(sessionId);

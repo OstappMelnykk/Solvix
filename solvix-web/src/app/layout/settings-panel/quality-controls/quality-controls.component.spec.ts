@@ -30,12 +30,13 @@ describe('QualityControlsComponent', () => {
     current = 'consensus';
     picked = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
-      'quality', 'qualityReport', 'qualityProfile', 'setQualityProfile', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick', 'qualityDetail', 'ensureQuality', 'divisions'
+      'quality', 'qualityReport', 'qualityProfile', 'setQualityProfile', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick', 'qualityDetail', 'marks', 'setMarks', 'ensureQuality', 'divisions'
     ]);
     solver.qualityReport.and.returnValue(report);
     solver.qualityProfile.and.callFake(() => current);
     solver.quality.and.callFake(() => (current === 'consensus' ? buildConsensus(report) : report.profiles.find(p => p.id === current)!));
     solver.qualityMetric.and.returnValue('grade');
+    solver.marks.and.returnValue({ fixed: false, loads: true });
     solver.qualityDetail.and.callFake(() => (picked ? detail : null));
     solver.qualityPick.and.callFake(() => picked);
     solver.divisions.and.returnValue([1, 1, 1]);
@@ -191,5 +192,19 @@ describe('QualityControlsComponent', () => {
     expect(Array.from(root.querySelectorAll('.legend span')).map(l => (l.textContent ?? '').trim())).toEqual([
       'Приймається всіма стандартами', 'Спірно: один-два стандарти не приймають', 'Не приймається: три й більше стандартів'
     ]);
+  });
+
+  it('has a switch for the supports and one for the loads, each in its own state', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('.mark input'));
+
+    expect(boxes.map(b => b.checked)).toEqual([false, true]);
+
+    boxes[0].click();
+    boxes[1].click();
+
+    expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'fixed', true);
+    expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'loads', false);
   });
 });

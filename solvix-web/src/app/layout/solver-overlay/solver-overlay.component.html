@@ -61,6 +61,14 @@
   <div class="presets">
     <button *ngFor="let percent of opacityPresets" type="button" [class.on]="opacityPercent() === percent" (click)="setOpacityPercent(percent)">{{ percent }}%</button>
   </div>
+  <label class="check" title="Сині грані: де тіло закріплене">
+    <input type="checkbox" [checked]="showMark('fixed')" (change)="toggleMark('fixed')" />
+    Показувати закріплення
+  </label>
+  <label class="check" title="Зелені грані: де прикладене навантаження">
+    <input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" />
+    Показувати навантаження
+  </label>
   <label class="check" title="Малювати грані між елементами: видно сітку всередині тіла">
     <input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />
     Внутрішні грані

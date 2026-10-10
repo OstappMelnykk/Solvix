@@ -541,6 +541,18 @@ describe('SolverService', () => {
       expect(solver.qualityDetail(sessionId)!.hex).toBe(2);
     });
 
+    it('keeps whether the supports and the loads are drawn separately for the Solver World and the Quality World', () => {
+      expect(solver.marks(sessionId, 'solver')).toEqual({ fixed: true, loads: true });
+      expect(solver.marks(sessionId, 'quality')).toEqual({ fixed: false, loads: false });       // so they do not cover the result
+
+      const before = solver.revision(sessionId);
+      solver.setMarks(sessionId, 'quality', 'fixed', true);
+
+      expect(solver.marks(sessionId, 'quality')).toEqual({ fixed: true, loads: false });
+      expect(solver.marks(sessionId, 'solver')).toEqual({ fixed: true, loads: true });
+      expect(solver.revision(sessionId)).toBe(before + 1);                                       // the view is rebuilt
+    });
+
     it('reports an unreachable server for the quality', () => {
       solver.refreshQuality(sessionId);
 
