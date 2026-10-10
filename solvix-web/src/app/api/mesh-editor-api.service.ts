@@ -167,8 +167,9 @@ export class MeshEditorApiService {
   }
 
   // `shape`: a designed cube to start from (the unit cube when absent).
-  addFirstHex(sessionId: number, shape?: MeshShapeDto): Observable<MeshCommandResultDto> {
-    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'hexes/first'), shape ? { shape } : {});
+  // `cell`: the lattice cell to start in (0, 0, 0 when absent).
+  addFirstHex(sessionId: number, shape?: MeshShapeDto, cell?: { i: number; j: number; k: number }): Observable<MeshCommandResultDto> {
+    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'hexes/first'), { ...(shape ? { shape } : {}), ...(cell ? { cell } : {}) });
   }
 
   // `shape`: a designed cube, fitted onto the face (a plain extrusion of the face when absent).

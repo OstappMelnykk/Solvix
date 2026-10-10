@@ -16,6 +16,8 @@ interface Selection {
   hoverFace: FaceRef | null;
   // The nodes are drawn over the cubes and picked through them, so the ones inside the body can be reached.
   xray: boolean;
+  // Building with the mouse: right click adds a cube (on a face, or the first one on the ground), left click removes one.
+  build: boolean;
   revision: number;
 }
 
@@ -111,6 +113,14 @@ export class MeshEditorSelectionService {
     }
   }
 
+  buildMode(sessionId: number): boolean {
+    return this.selection(sessionId).build;
+  }
+
+  setBuildMode(sessionId: number, on: boolean): void {
+    this.selection(sessionId).build = on;
+  }
+
   xrayNodes(sessionId: number): boolean {
     return this.selection(sessionId).xray;
   }
@@ -164,6 +174,6 @@ export class MeshEditorSelectionService {
   }
 
   private selection(sessionId: number): Selection {
-    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, xray: true, revision: 0 }));
+    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, xray: true, build: false, revision: 0 }));
   }
 }

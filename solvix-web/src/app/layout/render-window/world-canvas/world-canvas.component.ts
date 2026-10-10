@@ -2,6 +2,7 @@ import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, 
 import { NgFor } from '@angular/common';
 import * as THREE from 'three';
 import { SurfaceSnapper, stick } from '../../../geometry/surface-snap';
+import { GroundCell, groundCellUnder } from '../../../geometry/ground-cell';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
@@ -10,6 +11,7 @@ import { WorldCameraMemoryService } from '../../../state/world-camera-memory.ser
 import { SharedModelService } from '../../../state/shared-model.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
@@ -104,6 +106,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // while hoverEnabled. Null when it is over nothing.
   @Input() hoverEnabled = false;
   @Output() readonly meshHover = new EventEmitter<MeshPick | null>();
+  // Building with the mouse (Ideal World): a left click removes the cube under the pointer, a right click adds one -
+  // on the face under the pointer, or, on the ground, the first cube in that cell of the lattice.
+  @Input() buildEnabled = false;
+  @Output() readonly meshBuild = new EventEmitter<{ action: 'add' | 'remove'; pick: MeshPick | null; ground: GroundCell | null }>();
   // The brush: with the left button down the pointer paints over the surface (a stroke: start, the faces it passes,
   // end) instead of rotating the view or picking one face; the right button rotates then.
   @Input() paintEnabled = false;
@@ -209,6 +215,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
+  private readonly meshSelection = inject(MeshEditorSelectionService);
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -305,6 +312,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     }
   };
   private onPointerUp = (event: PointerEvent) => {
+    if (event.button === 2) {
+      this.handleRightClick(event);
+      return;
+    }
     if (this.painting) {
       // a stroke is not a click
       this.painting = false;
@@ -346,6 +357,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.meshHover.emit(this.pickAt(x, y));
     });
   };
+  // The right button builds: no browser menu on top of it.
+  private onContextMenu = (event: Event) => {
+    if (this.buildEnabled) event.preventDefault();
+  };
   private onPointerLeave = () => {
     if (this.hoverEnabled) this.meshHover.emit(null);
   };
@@ -381,6 +396,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.addEventListener('pointerup', this.onPointerUp);
     canvas.addEventListener('pointermove', this.onPointerMove);
     canvas.addEventListener('pointerleave', this.onPointerLeave);
+    canvas.addEventListener('contextmenu', this.onContextMenu);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -423,6 +439,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointermove', this.onPointerMove);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    canvas.removeEventListener('contextmenu', this.onContextMenu);
     if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
     if (this.currentImportedReference) {
       disposeImportedReferenceClone(this.currentImportedReference);
@@ -956,7 +973,32 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!this.currentMeshView) {
       return;
     }
+    if (this.buildEnabled) {
+      this.meshBuild.emit({ action: 'remove', pick: this.pickAt(event.clientX, event.clientY), ground: null });
+      return;
+    }
     this.meshPick.emit({ pick: this.pickAt(event.clientX, event.clientY), additive: event.shiftKey });
+  }
+
+  // A right click (not a pan) while building: add a cube where the pointer is.
+  private handleRightClick(event: PointerEvent): void {
+    const down = this.pointerDownClient;
+    this.pointerDownClient = null;
+    if (!this.buildEnabled || !down || !this.active) return;
+    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) return;
+    // with no cubes yet there is nothing to pick, but the ground is there
+    const pick = this.currentMeshView ? this.pickAt(event.clientX, event.clientY) : null;
+    this.aimRay(event.clientX, event.clientY);
+    const ground = pick === null ? groundCellUnder(this.raycaster.ray) : null;
+    this.meshBuild.emit({ action: 'add', pick, ground });
+  }
+
+  // Points the raycaster along the view ray through a point of the screen.
+  private aimRay(clientX: number, clientY: number): void {
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    this.pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
   }
 
   // What is under a point of the screen: a hit mesh names its pick, or - for a mesh holding many small faces, as
@@ -966,10 +1008,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!view) {
       return null;
     }
-    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
-    this.pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+    this.aimRay(clientX, clientY);
     const hits = this.raycaster.intersectObjects(view.pickables, false);
     // a node that is reachable through other cubes (the nodes of the picked cube) wins over whatever is in front of it
     const hit = preferredHit(hits);
@@ -987,6 +1026,14 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Input instead.
   isIdealWorldCanvas(): boolean {
     return this.worldIndex === IDEAL_WORLD_INDEX;
+  }
+
+  isBuildOn(): boolean {
+    return this.sessionId !== null && this.meshSelection.buildMode(this.sessionId);
+  }
+
+  toggleBuild(): void {
+    if (this.sessionId !== null) this.meshSelection.setBuildMode(this.sessionId, !this.isBuildOn());
   }
 
   // The reference is shown in the Ideal World to build around and in the Real World for nodes to stick to.

@@ -89,8 +89,8 @@ export class MeshEditorService {
     });
   }
 
-  addFirstHex(sessionId: number, shape?: MeshShapeDto): void {
-    this.run(sessionId, this.api.addFirstHex(sessionId, shape));
+  addFirstHex(sessionId: number, shape?: MeshShapeDto, cell?: { i: number; j: number; k: number }): void {
+    this.run(sessionId, this.api.addFirstHex(sessionId, shape, cell));
   }
 
   // `then` runs after the new state has arrived (a body with layers gets its materials from it).

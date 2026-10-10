@@ -216,4 +216,19 @@ describe('MeshEditorSelectionService', () => {
 
     expect(selection.face(1)).toBeNull();
   });
+
+  it('keeps whether building with the mouse is on per session (off to begin with), and the nodes seen through the cubes (on)', () => {
+    expect(selection.buildMode(1)).toBeFalse();
+    selection.setBuildMode(1, true);
+    expect(selection.buildMode(1)).toBeTrue();
+    expect(selection.buildMode(2)).toBeFalse();
+
+    expect(selection.xrayNodes(1)).toBeTrue();
+    const revision = selection.revision(1);
+    selection.setXrayNodes(1, false);
+    expect(selection.xrayNodes(1)).toBeFalse();
+    expect(selection.revision(1)).toBe(revision + 1);              // the view is drawn again
+    selection.setXrayNodes(1, false);
+    expect(selection.revision(1)).toBe(revision + 1);
+  });
 });

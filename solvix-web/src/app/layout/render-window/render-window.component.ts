@@ -17,6 +17,8 @@ import { MeshEditorRenderService } from '../../state/mesh-editor-render.service'
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshEditorService } from '../../state/mesh-editor.service';
 import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
+import { GroundCell } from '../../geometry/ground-cell';
+import { buildCommandFor } from '../../geometry/mesh-build';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -191,6 +193,23 @@ export class RenderWindowComponent {
     if (sessionId !== null) {
       this.meshEditor.moveNode(sessionId, event.nodeId, event.position, this.meshEditor.carryEdgeMidpoints);
     }
+  }
+
+  // Building with the mouse is for the Ideal World, where the cubes sit on the lattice, and when the user turned it on.
+  isBuildOn(worldIndex: number): boolean {
+    const sessionId = this.sessions.activeSessionId();
+    return worldIndex === IDEAL_WORLD_INDEX && sessionId !== null && this.meshSelection.buildMode(sessionId);
+  }
+
+  // Right click: a cube on the face under the pointer, or - with no cubes yet - the first one in the ground cell under
+  // it. Left click: the cube under the pointer goes (the server refuses a removal that would split the body).
+  onMeshBuild(event: { action: 'add' | 'remove'; pick: MeshPick | null; ground: GroundCell | null }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null || !this.meshSelection.buildMode(sessionId)) return;
+    const command = buildCommandFor(event, this.meshEditor.getState(sessionId)?.hexes.length ?? 0);
+    if (command?.kind === 'removeHex') this.meshEditor.removeHex(sessionId, command.hex);
+    else if (command?.kind === 'addOnFace') this.meshEditor.addHexOnFace(sessionId, command.hex, command.face);
+    else if (command?.kind === 'addFirst') this.meshEditor.addFirstHex(sessionId, undefined, command.cell);
   }
 
   // The brush paints in the Solver World with the Pressure, Support or Material tool.

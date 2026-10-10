@@ -93,3 +93,14 @@ canvas {
     cursor: default;
   }
 }
+
+.tool-button--on {
+  background: #da680b;
+  border-color: #da680b;
+  color: #fff;
+}
+
+.canvas-toolbar__hint {
+  color: #9aa0a6;
+  font-size: 11px;
+}

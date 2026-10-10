@@ -35,6 +35,20 @@
     </button>
   </div>
 
+  <div class="canvas-toolbar__group" [hidden]="!isIdealWorldCanvas()">
+    <div class="canvas-toolbar__label">Будування</div>
+    <button
+      class="tool-button"
+      [class.tool-button--on]="isBuildOn()"
+      type="button"
+      title="Мишею: права кнопка — додати куб (на грань під курсором; на землі — перший куб у клітинку); ліва — видалити куб під курсором. Скасувати можна Ctrl+Z."
+      (click)="toggleBuild()"
+    >
+      {{ isBuildOn() ? 'Будувати мишею: увімкнено' : 'Будувати мишею: вимкнено' }}
+    </button>
+    <div class="canvas-toolbar__hint" [hidden]="!isBuildOn()">ПКМ — додати · ЛКМ — видалити</div>
+  </div>
+
   <div class="canvas-toolbar__group" [hidden]="!showsReferenceToggle()">
     <div class="canvas-toolbar__label">Модель</div>
     <button

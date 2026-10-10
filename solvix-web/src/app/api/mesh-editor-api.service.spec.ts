@@ -47,6 +47,11 @@ describe('MeshEditorApiService', () => {
     expectCall('POST', 'hexes/3/faces/YPlus/attach', { shape }).flush({});
   });
 
+  it('POSTs the lattice cell the first cube starts in', () => {
+    api.addFirstHex(5, undefined, { i: 3, j: 0, k: -2 }).subscribe();
+    expectCall('POST', 'hexes/first', { cell: { i: 3, j: 0, k: -2 } }).flush({});
+  });
+
   it('talks to the session-free shape and template endpoints', () => {
     const root = `${environment.apiBaseUrl}/api/mesh-editor/shapes`;
     api.shapePresets().subscribe();
