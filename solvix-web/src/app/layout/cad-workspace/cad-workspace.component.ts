@@ -26,17 +26,17 @@ export class CadWorkspaceComponent {
   readonly sessions = inject(SessionsService);
   private readonly activeWorld = inject(ActiveWorldService);
 
-  // The Quality World's panel is a fixed 30% of the width: it cannot be dragged to another size.
-  static readonly QUALITY_PANEL_WIDTH = 30;
-  readonly panelLocked = computed(() => this.activeWorld.currentWorldIndex() === QUALITY_WORLD_INDEX);
-  readonly panelWidth = computed(() => (this.panelLocked() ? CadWorkspaceComponent.QUALITY_PANEL_WIDTH : this.split.settingsWidth()));
-  readonly panelMin = computed(() => (this.panelLocked() ? CadWorkspaceComponent.QUALITY_PANEL_WIDTH : this.split.settingsMinWidth));
-  readonly panelMax = computed(() => (this.panelLocked() ? CadWorkspaceComponent.QUALITY_PANEL_WIDTH : this.split.settingsMaxWidth));
+  // The Quality World has a width of its own for the panel, 30% to begin with and up to 50%.
+  readonly inQuality = computed(() => this.activeWorld.currentWorldIndex() === QUALITY_WORLD_INDEX);
+  readonly panelWidth = computed(() => (this.inQuality() ? this.split.qualityWidth() : this.split.settingsWidth()));
+  readonly panelMin = computed(() => (this.inQuality() ? this.split.qualityMinWidth : this.split.settingsMinWidth));
+  readonly panelMax = computed(() => (this.inQuality() ? this.split.qualityMaxWidth : this.split.settingsMaxWidth));
 
   onDragEnd(event: SplitGutterInteractionEvent): void {
     const settingsWidth = event.sizes[1];
-    if (typeof settingsWidth === 'number' && !this.panelLocked()) {
-      this.split.setSettingsWidth(settingsWidth);
+    if (typeof settingsWidth === 'number') {
+      if (this.inQuality()) this.split.setQualityWidth(settingsWidth);
+      else this.split.setSettingsWidth(settingsWidth);
     }
   }
 }

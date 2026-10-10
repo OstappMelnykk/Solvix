@@ -24,4 +24,17 @@ export class RenderSettingsSplitService {
   setSettingsWidth(width: number): void {
     this._settingsWidth.set(width);
   }
+
+  // The Quality World's panel is wider by default and may grow up to half of the window; its width is its own, so
+  // resizing it does not change the other Worlds' panel.
+  readonly qualityMinWidth = 20;
+  readonly qualityMaxWidth = 50;
+
+  private readonly _qualityWidth = signal(30);
+
+  readonly qualityWidth = this._qualityWidth.asReadonly();
+
+  setQualityWidth(width: number): void {
+    this._qualityWidth.set(width);
+  }
 }
