@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
 import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { markForWeightedOit } from '../rendering/weighted-oit';
-import { QualityMetric, cubeGrade } from './quality-grading';
+import { QualityMetric, measuredGrade } from './quality-grading';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
 // The Solver World's drawing of a body, the way the solver's own viewer shows its mesh: every cube cut into
@@ -26,7 +26,7 @@ export interface SolverViewInput {
   readonly hiddenMaterials?: ReadonlySet<string>;
   // Also draw the faces between visible elements (the grid inside the body).
   readonly showInner?: boolean;
-  // When given, cubes are coloured by the quality grade of their worst element instead of by material.
+  // When given, the small elements are coloured by their quality grade instead of by material.
   readonly quality?: SolverQualityDto | null;
   // What the quality colours show: the overall grade (default) or the grade of one measure.
   readonly qualityMetric?: QualityMetric;
@@ -329,7 +329,10 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const range: FieldRange = values ? { min: 0, max: input.colorMax && input.colorMax > 0 ? input.colorMax : fieldRange(values).max } : { min: 0, max: 0 };
   const span = range.max - range.min;
 
-  const qualityColors = input.quality ? new Map(input.quality.cubes.map(c => [c.hex, cubeGrade(c, input.qualityMetric ?? 'grade', input.quality!.limits)])) : null;
+  // the elements the server flagged; any other small element is excellent
+  const qualityColors = input.quality
+    ? new Map(input.quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, input.qualityMetric ?? 'grade', input.quality!.limits)]))
+    : null;
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -448,7 +451,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       }
     }
     const colorOf = (face: DrawnFace, value: number) =>
-      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(GRADE_COLORS[qualityColors.get(face.owner.id) ?? 'excellent']) : materialColor(materialOf(face.owner.id, ...face.element));
+      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(GRADE_COLORS[qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent']) : materialColor(materialOf(face.owner.id, ...face.element));
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);

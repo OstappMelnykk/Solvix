@@ -20,6 +20,16 @@ import {
 } from '../api/solver-api.service';
 import { SolverHubClient } from '../api/solver-hub.client';
 
+// A small element: the cube and its place (ex, ey, ez) in it.
+export interface QualityPick {
+  readonly hex: number;
+  readonly ex: number;
+  readonly ey: number;
+  readonly ez: number;
+}
+
+export const sameElement = (a: QualityPick, b: QualityPick): boolean => a.hex === b.hex && a.ex === b.ex && a.ey === b.ey && a.ez === b.ez;
+
 export type ResultField = 'none' | 'vonMises' | 'displacement';
 
 // What is shown of a solve in the Solver World (a view setting only - nothing goes to the server).
@@ -74,7 +84,7 @@ interface SessionSolver {
   // The Quality World: what the cubes are coloured by, the cube picked in its list, and the mesh the quality
   // above was asked for (so it is asked again when the mesh or the division changes).
   qualityMetric: QualityMetric;
-  qualityHex: number | null;
+  qualityPick: QualityPick | null;
   qualityKey: string | null;
   // The full-window result viewer (everything but the body and the viewing tools is gone).
   viewer: boolean;
@@ -138,7 +148,7 @@ export class SolverService {
       showQuality: false,
       quality: null,
       qualityMetric: 'grade',
-      qualityHex: null,
+      qualityPick: null,
       qualityKey: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
@@ -354,14 +364,15 @@ export class SolverService {
     this.touch(sessionId);
   }
 
-  // The cube the user picked in the quality list or on the scene (null = none).
-  qualityHex(sessionId: number): number | null {
-    return this.entry(sessionId).qualityHex;
+  // The small element the user picked in the quality list or on the scene (null = none); picking it again clears it.
+  qualityPick(sessionId: number): QualityPick | null {
+    return this.entry(sessionId).qualityPick;
   }
 
-  setQualityHex(sessionId: number, hex: number | null): void {
+  setQualityPick(sessionId: number, pick: QualityPick | null): void {
     const entry = this.entry(sessionId);
-    entry.qualityHex = entry.qualityHex === hex ? null : hex;
+    const same = pick !== null && entry.qualityPick !== null && sameElement(entry.qualityPick, pick);
+    entry.qualityPick = same ? null : pick;
     this.touch(sessionId);
   }
 

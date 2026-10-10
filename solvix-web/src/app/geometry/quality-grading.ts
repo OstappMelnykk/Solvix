@@ -1,4 +1,13 @@
-import { QualityGradeName, QualityMetricKey, SolverCubeQualityDto, SolverQualityLimitDto } from '../api/solver-api.service';
+import { QualityGradeName, QualityMetricKey, SolverQualityLimitDto } from '../api/solver-api.service';
+
+// What a cube or a small element says about its quality.
+export interface QualityMeasured {
+  readonly grade: QualityGradeName;
+  readonly scaledJacobian: number;
+  readonly jacobianRatio: number;
+  readonly aspectRatio: number;
+  readonly skewDegrees: number;
+}
 
 // What the Quality World can colour the cubes by: the overall grade (the worst of the graded measures) or one measure.
 export type QualityMetric = 'grade' | QualityMetricKey;
@@ -13,7 +22,7 @@ export const GRADE_NAMES: Record<QualityGradeName, string> = {
   invalid: 'невалідний'
 };
 
-export function metricValue(cube: SolverCubeQualityDto, key: QualityMetricKey): number {
+export function metricValue(cube: QualityMeasured, key: QualityMetricKey): number {
   switch (key) {
     case 'scaledJacobian': return cube.scaledJacobian;
     case 'jacobianRatio': return cube.jacobianRatio;
@@ -32,7 +41,7 @@ export function metricGrade(limit: SolverQualityLimitDto, value: number): Qualit
   return value < b0 ? 'excellent' : value < b1 ? 'good' : value < b2 ? 'acceptable' : 'poor';
 }
 
-export function cubeGrade(cube: SolverCubeQualityDto, metric: QualityMetric, limits: readonly SolverQualityLimitDto[]): QualityGradeName {
+export function measuredGrade(cube: QualityMeasured, metric: QualityMetric, limits: readonly SolverQualityLimitDto[]): QualityGradeName {
   if (metric === 'grade') return cube.grade;
   const limit = limits.find(l => l.key === metric);
   return limit ? metricGrade(limit, metricValue(cube, metric)) : cube.grade;
@@ -45,7 +54,7 @@ export interface QualityProblem {
 }
 
 // The measures of a cube that keep it from being excellent (graded ones only), worst first.
-export function problemsOf(cube: SolverCubeQualityDto, limits: readonly SolverQualityLimitDto[]): QualityProblem[] {
+export function problemsOf(cube: QualityMeasured, limits: readonly SolverQualityLimitDto[]): QualityProblem[] {
   return limits
     .filter(l => l.graded)
     .map(limit => ({ limit, value: metricValue(cube, limit.key), grade: metricGrade(limit, metricValue(cube, limit.key)) }))

@@ -1,19 +1,19 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
-import { QualityGradeName, SolverCubeQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
+import { QualityGradeName, SolverElementQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
 import { GRADE_COLORS } from '../../../geometry/solver-view';
-import { GRADE_NAMES, GRADE_ORDER, QualityMetric, boundsText, cubeGrade, metricGrade, metricValue } from '../../../geometry/quality-grading';
+import { GRADE_NAMES, GRADE_ORDER, QualityMetric, boundsText, measuredGrade, metricGrade, metricValue } from '../../../geometry/quality-grading';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { SolverService } from '../../../state/solver.service';
+import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 
 interface Row {
-  readonly cube: SolverCubeQualityDto;
+  readonly element: SolverElementQualityDto;
   readonly grade: QualityGradeName;
   readonly issues: readonly { label: string; value: number; grade: QualityGradeName; graded: boolean }[];
 }
 
 // The Quality World's panel: how well the elements the solver would use can be integrated, where the limits lie and
-// which cubes break them. Picking a cube here outlines it on the scene (and a click on a cube there picks it here).
+// which small elements break them. Picking an element here outlines it on the scene (and a click on an element there picks it here).
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
@@ -104,29 +104,40 @@ export class QualityControlsComponent implements DoCheck {
     return limit.key === 'skew' ? '1.0-0' : limit.key === 'aspectRatio' ? '1.1-1' : '1.2-3';
   }
 
-  // The cubes that are not excellent by what the scene is coloured by, the worst first.
+  // The small elements that are not excellent by what the scene is coloured by, the worst first. (An element the
+  // server did not flag is excellent in every measure.)
   rows(): Row[] {
     const q = this.quality();
     if (!q) return [];
     const metric = this.metric();
-    return q.cubes
-      .map(cube => ({
-        cube,
-        grade: cubeGrade(cube, metric, q.limits),
+    return q.flagged
+      .map(element => ({
+        element,
+        grade: measuredGrade(element, metric, q.limits),
         issues: q.limits
-          .map(l => ({ label: l.label, value: metricValue(cube, l.key), grade: metricGrade(l, metricValue(cube, l.key)), graded: l.graded }))
+          .map(l => ({ label: l.label, value: metricValue(element, l.key), grade: metricGrade(l, metricValue(element, l.key)), graded: l.graded }))
           .filter(i => i.grade !== 'excellent')
       }))
       .filter(r => r.grade !== 'excellent')
-      .sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade) || a.cube.scaledJacobian - b.cube.scaledJacobian);
+      .sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade) || a.element.scaledJacobian - b.element.scaledJacobian);
   }
 
-  isPicked(hex: number): boolean {
-    return this.solver.qualityHex(this.sessionId) === hex;
+  pickOf(element: SolverElementQualityDto): QualityPick {
+    return { hex: element.hex, ex: element.ex, ey: element.ey, ez: element.ez };
   }
 
-  pick(hex: number): void {
-    this.solver.setQualityHex(this.sessionId, hex);
+  isPicked(element: SolverElementQualityDto): boolean {
+    const picked = this.solver.qualityPick(this.sessionId);
+    return picked !== null && sameElement(picked, element);
+  }
+
+  pick(element: SolverElementQualityDto): void {
+    this.solver.setQualityPick(this.sessionId, this.pickOf(element));
+  }
+
+  // A cube is cut into more than one element only when the division says so.
+  placeText(element: SolverElementQualityDto): string {
+    return this.solver.divisions(this.sessionId).some(n => n > 1) ? ` · елемент (${element.ex}, ${element.ey}, ${element.ez})` : '';
   }
 
   limitFor(label: string): SolverQualityLimitDto | undefined {

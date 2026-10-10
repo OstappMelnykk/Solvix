@@ -9,7 +9,7 @@ internal static class MeshQuality
     public static SolverQualityDto Evaluate(SolverSetup setup, FemMeshDto mesh)
     {
         var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
-        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, Array.Empty<SolverCubeQualityDto>(), Limits);
+        if (mesh.ElementCount == 0) return new SolverQualityDto(0, grades, 1, 1, 1, 0, Array.Empty<SolverCubeQualityDto>(), Limits, Array.Empty<SolverElementQualityDto>());
 
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
@@ -33,7 +33,20 @@ internal static class MeshQuality
         return new SolverQualityDto(
             fine.ElementCount, grades,
             metrics.Min(m => m.ScaledJacobian), metrics.Min(m => m.JacobianRatio), metrics.Max(m => m.AspectRatio), metrics.Max(m => m.MaxSkewDegrees),
-            cubes, Limits);
+            cubes, Limits, Flagged(mesh, fine, metrics));
+    }
+
+    // the small elements that are not excellent in every measure - the rest are drawn and counted as excellent
+    private static List<SolverElementQualityDto> Flagged(FemMeshDto mesh, FineMesh fine, ElementQualityMetrics[] metrics)
+    {
+        var flagged = new List<SolverElementQualityDto>();
+        for (int e = 0; e < metrics.Length; e++)
+        {
+            var m = metrics[e];
+            if (m.Grade == QualityGrade.Excellent && m.MaxSkewDegrees < ElementQuality.SkewLimits[0]) continue;
+            flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(m.Grade), m.ScaledJacobian, m.JacobianRatio, m.AspectRatio, m.MaxSkewDegrees));
+        }
+        return flagged;
     }
 
     private static readonly IReadOnlyList<SolverQualityLimitDto> Limits = new[]

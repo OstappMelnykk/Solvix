@@ -10,8 +10,8 @@ interface Cached {
   readonly view: MeshView | null;
 }
 
-// The 3D view of the Quality World: the body cut into the solver's small elements, every cube coloured by the grade
-// of its worst element (or by one measure), the cube picked in the list outlined. Cached per session like the Solver
+// The 3D view of the Quality World: the body cut into the solver's small elements, every small element coloured by its grade
+// (or by one measure), the element picked in the list outlined. Cached per session like the Solver
 // World's view - the canvas asks on every change-detection pass, so identity has to stay stable between changes.
 @Injectable({ providedIn: 'root' })
 export class QualityRenderService {
@@ -27,7 +27,7 @@ export class QualityRenderService {
       return null;
     }
     const quality = this.solver.quality(sessionId);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${this.solver.qualityHex(sessionId)}:${quality ? this.solver.revision(sessionId) : 'none'}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -42,13 +42,8 @@ export class QualityRenderService {
       qualityMetric: this.solver.qualityMetric(sessionId)
     };
     const view = buildSolverView(input);
-    const picked = this.solver.qualityHex(sessionId);
-    if (picked !== null && view.setHighlight) {
-      const [nx, ny, nz] = this.solver.divisions(sessionId);
-      const elements: { hex: number; ex: number; ey: number; ez: number }[] = [];
-      for (let ex = 0; ex < nx; ex++) for (let ey = 0; ey < ny; ey++) for (let ez = 0; ez < nz; ez++) elements.push({ hex: picked, ex, ey, ez });
-      view.setHighlight(buildHighlight(input, { faces: [], elements, pointed: null }, elements.length));
-    }
+    const picked = this.solver.qualityPick(sessionId);
+    if (picked !== null && view.setHighlight) view.setHighlight(buildHighlight(input, { faces: [], elements: [picked], pointed: null }));
     this.cache.set(sessionId, { key, view });
     return view;
   }

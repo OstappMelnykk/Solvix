@@ -7,7 +7,7 @@
     <div class="grades">
       <div class="grade" *ngFor="let g of gradeLabels"><span class="grade__swatch" [style.background]="gradeColor(g.key)"></span>{{ g.label }}: <b>{{ q.grades[g.key] }}</b></div>
     </div>
-    <div class="hint">Оцінка — найгірша з Scaled Jacobian, відношення якобіанів і aspect ratio, по кожному елементу сітки поділу. Куб показує свій найгірший елемент.</div>
+    <div class="hint">Оцінка — найгірша з Scaled Jacobian, відношення якобіанів і aspect ratio. Рахується для кожного малого елемента сітки, яку бачить солвер.</div>
   </div>
 
   <div class="group">
@@ -31,15 +31,15 @@
       <div class="limit__bounds">{{ boundsText(l) }} · гірше — {{ gradeNames['poor'] }}{{ l.higherIsBetter ? ', ≤ 0 — невалідний' : '' }}</div>
       <div class="limit__note" [class.limit__note--off]="!l.graded">{{ l.graded ? 'входить в оцінку' : 'довідково, в оцінку не входить' }}</div>
     </div>
-    <div class="hint">Значення справа — найгірше по всій сітці. Межі відповідають практиці ANSYS / Abaqus / Altair для квадратичних гексаедрів.</div>
+    <div class="hint">Значення справа — найгірше серед усіх малих елементів. Межі відповідають практиці ANSYS / Abaqus / Altair для квадратичних гексаедрів.</div>
   </div>
 
   <div class="group">
-    <div class="group-label">Проблемні куби ({{ rows().length }})</div>
-    <div class="hint" *ngIf="rows().length === 0">Немає кубів гірших за «відмінний» за цим критерієм.</div>
-    <div class="hint" *ngIf="rows().length > 0">Клік по кубу — він підсвічується на сцені. Клік по кубу на сцені — він виділяється тут.</div>
-    <button type="button" class="row" *ngFor="let r of rows().slice(0, 60)" [class.row--picked]="isPicked(r.cube.hex)" (click)="pick(r.cube.hex)">
-      <span class="row__title"><span class="grade__swatch" [style.background]="gradeColor(r.grade)"></span>Куб #{{ r.cube.hex }} — {{ gradeNames[r.grade] }}</span>
+    <div class="group-label">Проблемні елементи ({{ rows().length }})</div>
+    <div class="hint" *ngIf="rows().length === 0">Немає елементів гірших за «відмінний» за цим критерієм.</div>
+    <div class="hint" *ngIf="rows().length > 0">Клік по елементу — він підсвічується на сцені. Клік по елементу на сцені — він виділяється тут.</div>
+    <button type="button" class="row" *ngFor="let r of rows().slice(0, 60)" [class.row--picked]="isPicked(r.element)" (click)="pick(r.element)">
+      <span class="row__title"><span class="grade__swatch" [style.background]="gradeColor(r.grade)"></span>Куб #{{ r.element.hex }}{{ placeText(r.element) }} — {{ gradeNames[r.grade] }}</span>
       <span class="row__issue" *ngFor="let i of r.issues" [class.row__issue--off]="!i.graded">
         <span class="grade__swatch" [style.background]="gradeColor(i.grade)"></span>{{ i.label }}: {{ valueText(i.label, i.value) }}{{ i.graded ? '' : ' (довідково)' }}
       </span>

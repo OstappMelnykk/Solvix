@@ -301,6 +301,23 @@ public class QualityApiTests
     }
 
     [Test]
+    public void Flagged_lists_the_small_elements_that_are_not_excellent_with_their_place_in_the_cube()
+    {
+        var editor = Bar(2);
+        editor.MoveNode(editor.Mesh.Hex(1).NodeIds[6], new Vec3(2.9, 1.8, 0.7), false);
+        var facade = NewFacade();
+        facade.SetDivisions(Session, 2, 2, 2);
+
+        var q = facade.Quality(Session, Export(editor));
+
+        Assert.That(q.Flagged, Is.Not.Empty);
+        Assert.That(q.Flagged.All(f => f.Hex == 1), "the regular cube has nothing to flag");
+        Assert.That(q.Flagged.All(f => f.Ex is >= 0 and < 2 && f.Ey is >= 0 and < 2 && f.Ez is >= 0 and < 2));
+        Assert.That(q.Flagged.Count(f => f.Grade != "excellent"), Is.EqualTo(q.Grades.Where(g => g.Key != "excellent").Sum(g => g.Value)));
+        Assert.That(NewFacade().Quality(Session, Export(Bar(3))).Flagged, Is.Empty);
+    }
+
+    [Test]
     public void A_folded_cube_is_invalid_and_an_empty_mesh_is_fine()
     {
         var editor = Bar(1);

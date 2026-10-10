@@ -86,7 +86,14 @@ public sealed record SolverQualityDto(
     double WorstAspectRatio,
     double WorstSkewDegrees,
     IReadOnlyList<SolverCubeQualityDto> Cubes,
-    IReadOnlyList<SolverQualityLimitDto> Limits);
+    IReadOnlyList<SolverQualityLimitDto> Limits,
+    IReadOnlyList<SolverElementQualityDto> Flagged);
+
+/// <summary>
+/// One small element that is not excellent in some measure (the skew, which does not change the grade, counts by its
+/// reference limit): the cube it lies in, its place (Ex, Ey, Ez) in that cube, and its own values.
+/// </summary>
+public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees);
 
 /// <summary>One measure of element quality and where its grades change.</summary>
 /// <param name="Key">"scaledJacobian", "jacobianRatio", "aspectRatio" or "skew".</param>

@@ -119,6 +119,21 @@ export interface SolverQualityDto {
   readonly worstSkewDegrees: number;
   readonly cubes: readonly SolverCubeQualityDto[];
   readonly limits: readonly SolverQualityLimitDto[];
+  // The small elements that are not excellent in some measure; every other small element is excellent.
+  readonly flagged: readonly SolverElementQualityDto[];
+}
+
+// A small element (place Ex, Ey, Ez in its cube) with its own quality values.
+export interface SolverElementQualityDto {
+  readonly hex: number;
+  readonly ex: number;
+  readonly ey: number;
+  readonly ez: number;
+  readonly grade: QualityGradeName;
+  readonly scaledJacobian: number;
+  readonly jacobianRatio: number;
+  readonly aspectRatio: number;
+  readonly skewDegrees: number;
 }
 
 export type QualityMetricKey = 'scaledJacobian' | 'jacobianRatio' | 'aspectRatio' | 'skew';

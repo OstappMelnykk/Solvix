@@ -183,9 +183,9 @@ export class RenderWindowComponent {
     // in the Solver World a click acts through the chosen tool (see SolverService.pick)
     if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick?.kind === 'face' ? pick : null);
     else if (this.activeWorldIndex() === QUALITY_WORLD_INDEX) {
-      // a click on a cube picks it in the quality list; a click on nothing clears the pick
-      if (pick?.kind === 'face') this.solver.setQualityHex(sessionId, pick.hex);
-      else if (this.solver.qualityHex(sessionId) !== null) this.solver.setQualityHex(sessionId, null);
+      // a click on a small element picks it in the quality list; a click on nothing clears the pick
+      if (pick?.kind === 'face' && pick.element) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: pick.element[0], ey: pick.element[1], ez: pick.element[2] });
+      else if (this.solver.qualityPick(sessionId) !== null) this.solver.setQualityPick(sessionId, null);
     } else this.meshSelection.applyPick(sessionId, pick, additive);
   }
 }
