@@ -54,10 +54,15 @@
   <!-- 2. Чим фарбувати -->
   <section class="part">
     <h5>Фарбувати сцену за</h5>
-    <select class="select" [value]="metric()" (change)="setMetric($any($event.target).value)" aria-label="Чим фарбувати сцену">
-      <option value="grade" [selected]="metric() === 'grade'">Оцінка — за всіма показниками разом</option>
-      <option *ngFor="let l of q.limits" [value]="l.key" [selected]="metric() === l.key">{{ l.label }}<ng-container *ngIf="!l.label.includes(l.tech)"> · {{ l.tech }}</ng-container></option>
-    </select>
+    <div class="choice">
+      <button type="button" class="choice__btn choice__grade" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
+      <div class="choice__caption">або лише один показник:</div>
+      <div class="choice__measures">
+        <button type="button" class="choice__btn" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">
+          <span>{{ l.label }}</span><small *ngIf="!l.label.includes(l.tech)">{{ l.tech }}</small>
+        </button>
+      </div>
+    </div>
     <div class="legend">
       <span *ngFor="let g of gradeOrder"><i [style.background]="gradeColor(g)"></i>{{ gradeNames[g] }}</span>
     </div>

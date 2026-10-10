@@ -158,16 +158,21 @@ describe('QualityControlsComponent', () => {
     expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
   });
 
-  it('chooses what to colour by in a drop-down: the overall grade first, then every measure by its full name', () => {
+  it('puts the overall grade on a row of its own and the single measures under it, each with its full name', () => {
     current = 'solvix';
     const fixture = render();
-    const select = (fixture.nativeElement as HTMLElement).querySelector<HTMLSelectElement>('select.select')!;
+    const root = fixture.nativeElement as HTMLElement;
+    const grade = root.querySelector<HTMLButtonElement>('.choice__grade')!;
+    const measures = Array.from(root.querySelectorAll<HTMLButtonElement>('.choice__measures .choice__btn'));
 
-    expect(Array.from(select.options).map(o => (o.textContent ?? '').trim())).toEqual(['Оцінка — за всіма показниками разом', 'Витягнутість · Aspect ratio']);
+    expect(grade.textContent!.trim()).toBe('Оцінка');
+    expect(grade.parentElement!.classList).toContain('choice');
+    expect(measures.map(m => (m.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual(['ВитягнутістьAspect ratio']);
+    expect(measures.some(m => m.contains(grade))).toBeFalse();
 
-    select.value = 'aspectRatio';
-    select.dispatchEvent(new Event('change'));
-
+    measures[0].click();
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'aspectRatio');
+    grade.click();
+    expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'grade');
   });
 });
