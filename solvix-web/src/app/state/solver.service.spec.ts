@@ -345,14 +345,18 @@ describe('SolverService', () => {
       http.expectNone(`${api}/${sessionId}/faces/load`);
     });
 
-    it('a new Pn goes to every pressed face, and is only remembered when nothing is pressed', () => {
-      loadSetup({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -1e6 }] });
+    it('a new Pn is only the pressure of the next faces; "apply to all" sends it to every pressed face', () => {
+      loadSetup({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -1e6, p: 0, q: 1 }, { hex: 1, face: 'XMinus', pressure: -5e6 }] });
 
       solver.setPressure(sessionId, -3e6);
-      const request = http.expectOne(`${api}/${sessionId}/faces/load`);
-      expect(request.request.body).toEqual({ faces: [{ hex: 1, face: 'XPlus' }], pressure: -3e6, replace: true });
-      request.flush({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -3e6 }] });
+      http.expectNone(`${api}/${sessionId}/faces/load`);
       expect(solver.pressure(sessionId)).toBe(-3e6);
+      expect(solver.loadedPressures(sessionId)).toEqual([{ pressure: -5e6, count: 1 }, { pressure: -1e6, count: 1 }]);
+
+      solver.applyPressureToAll(sessionId);
+      const request = http.expectOne(`${api}/${sessionId}/faces/load`);
+      expect(request.request.body).toEqual({ faces: [{ hex: 1, face: 'XPlus', p: 0, q: 1 }, { hex: 1, face: 'XMinus' }], pressure: -3e6, replace: true });
+      request.flush({ ...emptySetup, loads: [{ hex: 1, face: 'XPlus', pressure: -3e6, p: 0, q: 1 }] });
 
       solver.setPressure(sessionId, NaN);
       expect(solver.pressure(sessionId)).toBe(-3e6);

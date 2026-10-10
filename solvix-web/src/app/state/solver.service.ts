@@ -689,14 +689,24 @@ export class SolverService {
     this.apply(sessionId, this.api.replaceFixed(sessionId, faces));
   }
 
-  // Pn changes: every pressed face gets the new value.
+  // Pn changes: it is the pressure the next faces get; the faces already pressed keep theirs (see applyPressureToAll).
   setPressure(sessionId: number, pressure: number): void {
     if (!Number.isFinite(pressure)) return;
-    const entry = this.entry(sessionId);
-    entry.pressure = pressure;
-    const loaded = entry.setup?.loads ?? [];
+    this.entry(sessionId).pressure = pressure;
     this.touch(sessionId);
-    if (loaded.length > 0) this.apply(sessionId, this.api.replaceLoads(sessionId, loaded.map(l => ({ hex: l.hex, face: l.face })), pressure));
+  }
+
+  // Every pressed face gets the current Pn.
+  applyPressureToAll(sessionId: number): void {
+    const loaded = this.entry(sessionId).setup?.loads ?? [];
+    if (loaded.length > 0) this.apply(sessionId, this.api.replaceLoads(sessionId, loaded.map(l => (l.p === undefined || l.p === null ? { hex: l.hex, face: l.face } : { hex: l.hex, face: l.face, p: l.p, q: l.q ?? undefined })), this.entry(sessionId).pressure));
+  }
+
+  // The pressures that are set and how many small faces carry each, strongest first.
+  loadedPressures(sessionId: number): { pressure: number; count: number }[] {
+    const counts = new Map<number, number>();
+    for (const l of this.entry(sessionId).setup?.loads ?? []) counts.set(l.pressure, (counts.get(l.pressure) ?? 0) + 1);
+    return Array.from(counts, ([pressure, count]) => ({ pressure, count })).sort((a, b) => Math.abs(b.pressure) - Math.abs(a.pressure));
   }
 
   // A click on the scene: with the Load or Fix tool the small faces it reaches are marked as pressed or clamped (or

@@ -46,7 +46,7 @@ describe('SolverControlsComponent', () => {
       'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
       'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
-      'pressure', 'setPressure', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
+      'pressure', 'setPressure', 'applyPressureToAll', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
       'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
     ]);
     solver.setup.and.callFake(() => setup);

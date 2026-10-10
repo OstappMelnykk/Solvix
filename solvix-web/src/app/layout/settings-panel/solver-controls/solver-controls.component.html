@@ -84,11 +84,12 @@
   <div class="hint">Малюйте на сцені інструментами «Тиск» і «Опора»: клік по грані, або «Пензель» — проведіть по поверхні. Тут задається лише величина тиску.</div>
 
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
-    Pn — тиск на грані (Па)
+    Pn — тиск для нових граней (Па)
     <input type="number" step="100000" [value]="pressure()" (change)="onPressure($event)" />
     <span class="hint">{{ pressureHint() }} · від'ємне = стиск</span>
   </label>
 
+  <button class="btn" type="button" (click)="applyPressureToAll()" title="Усі вже навантажені грані отримають поточний Pn">Застосувати Pn до всіх навантажених</button>
   <button class="btn" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
 </div>
 

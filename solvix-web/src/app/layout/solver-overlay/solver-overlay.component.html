@@ -25,6 +25,12 @@
     </button>
   </div>
 
+  <div class="row" *ngIf="open('tools') && tool() === 'load'">
+    <span class="caption">Тиск, МПа</span>
+    <input type="number" class="num" step="0.5" [value]="pressureMpa()" (change)="onPressureMpa($event)" title="Тиск, яким позначаються нові грані. Від'ємний — стиск, додатний — розтяг. Вже навантажені грані його не змінюють." />
+    <span class="hint">нові грані отримають цей тиск</span>
+  </div>
+
   <div class="row" *ngIf="open('tools') && scopes().length > 0">
     <span class="caption">Охоплення</span>
     <div class="segmented segmented--small">

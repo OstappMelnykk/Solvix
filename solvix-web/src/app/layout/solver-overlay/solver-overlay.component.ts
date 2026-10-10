@@ -142,10 +142,24 @@ export class SolverOverlayComponent {
     }
   }
 
+  // --- the pressure the next faces get ---
+
+  pressureMpa(): number {
+    return this.solver.pressure(this.sessionId) / MPA;
+  }
+
+  onPressureMpa(event: Event): void {
+    const value = Number((event.target as HTMLInputElement).value);
+    if (Number.isFinite(value)) this.solver.setPressure(this.sessionId, value * MPA);
+  }
+
   // --- legend of the marked faces ---
 
   loadedText(): string {
-    return `${this.solver.loadedFaceCount(this.sessionId)} граней СЕ`;
+    const count = this.solver.loadedFaceCount(this.sessionId);
+    const groups = this.solver.loadedPressures(this.sessionId);
+    if (groups.length <= 1) return `${count} граней СЕ`;
+    return groups.map(g => `${g.count} × ${(g.pressure / MPA).toPrecision(3)} МПа`).join(', ');
   }
 
   fixedText(): string {

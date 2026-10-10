@@ -29,7 +29,7 @@ describe('SolverOverlayComponent', () => {
     result = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'tool', 'setTool', 'scopesOf', 'scope', 'setScope', 'depth', 'setDepth', 'divisions', 'setup', 'activeMaterial', 'setActiveMaterial',
-      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush'
+      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures'
     ]);
     solver.tool.and.callFake(() => tool);
     solver.brush.and.callFake(() => brush);
@@ -45,6 +45,8 @@ describe('SolverOverlayComponent', () => {
     solver.result.and.callFake(() => result);
     solver.display.and.callFake(() => display);
     solver.showInner.and.returnValue(false);
+    solver.pressure.and.returnValue(-1e6);
+    solver.loadedPressures.and.returnValue([]);
     TestBed.configureTestingModule({ providers: [{ provide: SolverService, useValue: solver }] });
     component = TestBed.runInInjectionContext(() => new SolverOverlayComponent());
     component.sessionId = 1;
@@ -59,6 +61,16 @@ describe('SolverOverlayComponent', () => {
       expect(component.open('tools')).toBeTrue();
       component.toggleOpen('view');
       expect(component.open('view')).toBeTrue();
+    });
+  });
+
+  describe('pressure', () => {
+    it('is set in MPa for the next faces, and the legend lists the different pressures', () => {
+      expect(component.pressureMpa()).toBe(-1);
+      component.onPressureMpa({ target: { value: '-2.5' } } as unknown as Event);
+      expect(solver.setPressure).toHaveBeenCalledWith(1, -2.5e6);
+      solver.loadedPressures.and.returnValue([{ pressure: -5e6, count: 2 }, { pressure: -1e6, count: 3 }]);
+      expect(component.loadedText()).toBe('2 × -5.00 МПа, 3 × -1.00 МПа');
     });
   });
 

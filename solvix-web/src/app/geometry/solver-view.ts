@@ -353,7 +353,10 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const visible = (hex: number, ex: number, ey: number, ez: number) => !hidden.has(materialOf(hex, ex, ey, ez));
 
   const isFixed = new Set((setup?.fixed ?? []).map(f => `${f.hex}:${f.face}:${f.p}:${f.q}`));
-  const isLoaded = new Set((setup?.loads ?? []).map(l => `${l.hex}:${l.face}:${l.p}:${l.q}`));
+  const pressureOf = new Map((setup?.loads ?? []).map(l => [`${l.hex}:${l.face}:${l.p}:${l.q}`, l.pressure]));
+  const isLoaded = new Set(pressureOf.keys());
+  // the larger the pressure on a face, the brighter its green
+  const strongest = Math.max(0, ...Array.from(pressureOf.values(), Math.abs));
 
   // ---- which faces to draw: those between a visible element and what is not (or, with showInner, all of them) ----
   const drawn = new Map<number, DrawnFace[]>();
@@ -485,12 +488,17 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     }
   }
 
+  const loadColor = (face: DrawnFace): THREE.Color => {
+    const pressure = pressureOf.get(`${face.owner.id}:${face.face}:${face.p}:${face.q}`) ?? 0;
+    return new THREE.Color(LOAD_COLOR).multiplyScalar(strongest > 0 ? 0.45 + 0.55 * (Math.abs(pressure) / strongest) : 1);
+  };
+
   // clamped and pressed faces: one translucent set per colour
   for (const color of [FIXED_COLOR, LOAD_COLOR]) {
     const faces = pendingOverlays.filter(o => o.color === color).flatMap(o => o.faces);
     if (faces.length === 0) continue;
     const overlay = new THREE.Mesh(
-      faceGeometry(faces, () => new THREE.Color(color), false, false),
+      faceGeometry(faces, face => (color === LOAD_COLOR ? loadColor(face) : new THREE.Color(color)), false, false),
       new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: input.marksOpacity ?? OVERLAY_OPACITY, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
     );
     root.add(overlay);

@@ -220,6 +220,10 @@ export class SolverControlsComponent implements DoCheck {
     return this.solver.pressure(this.sessionId);
   }
 
+  applyPressureToAll(): void {
+    this.solver.applyPressureToAll(this.sessionId);
+  }
+
   onPressure(event: Event): void {
     this.numberField(event, value => this.solver.setPressure(this.sessionId, value));
   }
