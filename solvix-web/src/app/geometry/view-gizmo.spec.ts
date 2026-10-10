@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { gizmoFor, hitGizmo } from './view-gizmo';
+import { gizmoFor, hitGizmo, nearestNodeOnScreen } from './view-gizmo';
 
 function ortho(eye: THREE.Vector3, up: THREE.Vector3): THREE.OrthographicCamera {
   const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
@@ -63,5 +63,30 @@ describe('the gizmo of a node in a view', () => {
       expect(hitGizmo(gizmo, new THREE.Vector2(290, 200))).toBeNull();
       expect(hitGizmo(gizmo, new THREE.Vector2(10, 10))).toBeNull();
     });
+  });
+});
+
+describe('the node nearest to the pointer', () => {
+  const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
+  camera.position.set(0, 0, 10);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+
+  it('finds a node by where it is on the screen, even with another node (or a cube) in front of it', () => {
+    const nodes: [number, THREE.Vector3][] = [[1, new THREE.Vector3(0, 0, 5)], [2, new THREE.Vector3(0, 0, -5)], [3, new THREE.Vector3(1, 1, 0)]];
+
+    const found = nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(203, 198));
+
+    expect(found?.nodeId === 1 || found?.nodeId === 2).toBeTrue();          // both lie on the same line of sight; either can be had
+    expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(300, 100))?.nodeId).toBe(3);
+  });
+
+  it('takes the closest one within the radius, and nothing beyond it', () => {
+    const nodes: [number, THREE.Vector3][] = [[1, new THREE.Vector3(0, 0, 0)], [2, new THREE.Vector3(0.1, 0, 0)]];       // 10 px apart
+
+    expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(209, 200))?.nodeId).toBe(2);
+    expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(201, 200))?.nodeId).toBe(1);
+    expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(100, 100))).toBeNull();
+    expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(240, 200), 14)).toBeNull();
   });
 });

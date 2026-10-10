@@ -63,3 +63,23 @@ export function hitGizmo(gizmo: Gizmo, pixel: THREE.Vector2, centreRadius = 10, 
   }
   return best?.hit ?? null;
 }
+
+// The node nearest to a point of the panel, among those within `radius` pixels of it - whatever is in front of it. In an
+// orthographic view the cubes cover each other, so a node is found by where it is on the screen, not by a ray that the
+// faces in front would stop.
+export function nearestNodeOnScreen(
+  nodes: Iterable<[number, THREE.Vector3]>,
+  camera: THREE.Camera,
+  width: number,
+  height: number,
+  pixel: THREE.Vector2,
+  radius = 14
+): { nodeId: number; distance: number } | null {
+  camera.updateMatrixWorld(true);
+  let best: { nodeId: number; distance: number } | null = null;
+  for (const [nodeId, position] of nodes) {
+    const distance = toPixels(position, camera, width, height).distanceTo(pixel);
+    if (distance <= radius && (best === null || distance < best.distance)) best = { nodeId, distance };
+  }
+  return best;
+}

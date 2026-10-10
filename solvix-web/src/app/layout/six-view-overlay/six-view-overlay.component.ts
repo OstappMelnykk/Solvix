@@ -10,7 +10,7 @@ import { MeshEditorService } from '../../state/mesh-editor.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshPick } from '../../geometry/mesh-editor-view';
 import { NodeDrag, positionText, roundedPosition } from '../../geometry/mesh-editor-drag';
-import { Gizmo, GizmoAxis, gizmoFor, hitGizmo } from '../../geometry/view-gizmo';
+import { Gizmo, GizmoAxis, gizmoFor, hitGizmo, nearestNodeOnScreen } from '../../geometry/view-gizmo';
 
 interface ViewDirection {
   readonly label: string;
@@ -72,6 +72,8 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   dragText: string | null = null;
   dragPanel: number | null = null;
   private drag: NodeDrag | null = null;
+  // The node under the pointer in each panel (a ring is drawn round it, so the user sees what a press would grab).
+  private readonly hoverNode: (number | null)[] = VIEW_DIRECTIONS.map(() => null);
   private reframeNextFrame = false;
   // Pointer handlers per panel, added with the panel's renderer and removed with it.
   private readonly pointerHandlers: Array<{ down: (e: PointerEvent) => void; move: (e: PointerEvent) => void; up: (e: PointerEvent) => void } | undefined> =
@@ -431,19 +433,17 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     return new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
   }
 
-  // The node (dot) under the pointer in panel i, if any.
+  // The node (dot) under the pointer in panel i, if any: the one nearest to the pointer on the screen, within a few
+  // pixels - found by where it is on the screen, so a node behind another cube can be had too.
   private nodeUnderPointer(i: number, canvas: HTMLCanvasElement, event: PointerEvent): number | null {
     const camera = this.cameras[i];
     const view = this.overlay.active()?.meshView?.();
-    if (!camera || !view) {
+    const { width, height } = this.panelSize(canvas);
+    if (!camera || !view || width === 0 || height === 0) {
       return null;
     }
-    camera.updateMatrixWorld();
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(this.ndcOf(canvas, event), camera);
-    const hit = raycaster.intersectObjects(view.pickables, false)[0];
-    const pick = hit?.object.userData['pick'] as MeshPick | undefined;
-    return pick?.kind === 'node' ? pick.nodeId : null;
+    const nodes = Array.from(view.nodeMeshes, ([id, mesh]) => [id, mesh.position] as [number, THREE.Vector3]);
+    return nearestNodeOnScreen(nodes, camera, width, height, this.pixelOf(canvas, event))?.nodeId ?? null;
   }
 
   // The gizmo of the selected node in panel i (null when no node is selected or nodes cannot be dragged).
@@ -499,7 +499,9 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
       if (this.canDragNodes()) {
         const gizmo = this.gizmoOf(i);
         const over = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
-        canvas.style.cursor = over ? (over.kind === 'centre' ? 'move' : 'grab') : this.nodeUnderPointer(i, canvas, event) !== null ? 'pointer' : '';
+        const node = over ? null : this.nodeUnderPointer(i, canvas, event);
+        this.hoverNode[i] = node;
+        canvas.style.cursor = over ? (over.kind === 'centre' ? 'move' : 'grab') : node !== null ? 'pointer' : '';
       }
       return;
     }
@@ -544,6 +546,23 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
 
   private static readonly AXIS_COLORS: Record<GizmoAxis, string> = { x: '#ff5c5c', y: '#5cff7a', z: '#5c9cff' };
 
+  // A ring round the node a press would grab.
+  private drawHoverRing(i: number, ctx: CanvasRenderingContext2D): void {
+    const nodeId = this.hoverNode[i];
+    const source = this.overlay.active();
+    const camera = this.cameras[i];
+    const canvas = this.canvasRefs?.get(i)?.nativeElement;
+    const mesh = nodeId === null || !source ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
+    if (!mesh || !camera || !canvas || this.drag) return;
+    const { width, height } = this.panelSize(canvas);
+    const centre = gizmoFor(camera, width, height, mesh.position).centre;
+    ctx.strokeStyle = '#ffe14d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   private drawGizmo(i: number, width: number, height: number): void {
     const canvas = this.gizmoRefs?.get(i)?.nativeElement;
     if (!canvas) return;
@@ -556,6 +575,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (!ctx) return;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, width, height);
+    this.drawHoverRing(i, ctx);
     const gizmo = this.gizmoOf(i);
     if (!gizmo) return;
     const active = this.drag && this.dragPanel === i;
