@@ -267,3 +267,65 @@ public class ElementTests
         Assert.That(facade.Validate(Session, Export(Bar(1))).Issues.Select(i => i.Message), Has.None.Contain("одночасно"));
     }
 }
+
+public class QualityApiTests
+{
+    private const int Session = 1;
+
+    [Test]
+    public void A_regular_bar_is_all_excellent()
+    {
+        var q = NewFacade().Quality(Session, Export(Bar(3)));
+
+        Assert.That(q.Elements, Is.EqualTo(3));
+        Assert.That(q.Grades["excellent"], Is.EqualTo(3));
+        Assert.That(q.WorstScaledJacobian, Is.EqualTo(1).Within(1e-9));
+        Assert.That(q.Cubes.Select(c => c.Grade), Is.All.EqualTo("excellent"));
+    }
+
+    [Test]
+    public void The_quality_counts_the_small_elements_and_names_the_cube_with_the_worst_one()
+    {
+        var editor = Bar(2);
+        editor.MoveNode(editor.Mesh.Hex(1).NodeIds[6], new Vec3(2.0, 1.0, 1.0), false);          // flattens the far top corner of cube 1
+        var facade = NewFacade();
+        facade.SetDivisions(Session, 2, 2, 2);
+
+        var q = facade.Quality(Session, Export(editor));
+
+        Assert.That(q.Elements, Is.EqualTo(16));
+        Assert.That(q.Grades.Values.Sum(), Is.EqualTo(16));
+        Assert.That(q.Cubes.Single(c => c.Hex == 0).Grade, Is.EqualTo("excellent"));
+        Assert.That(q.Cubes.Single(c => c.Hex == 1).ScaledJacobian, Is.LessThan(1));
+        Assert.That(q.WorstScaledJacobian, Is.EqualTo(q.Cubes.Min(c => c.ScaledJacobian)).Within(1e-12));
+    }
+
+    [Test]
+    public void A_folded_cube_is_invalid_and_an_empty_mesh_is_fine()
+    {
+        var editor = Bar(1);
+        editor.MoveNode(editor.Mesh.Hex(0).NodeIds[6], new Vec3(-3, -3, -3), false);
+
+        Assert.That(NewFacade().Quality(Session, Export(editor)).Cubes[0].Grade, Is.EqualTo("invalid"));
+        Assert.That(NewFacade().Quality(Session, Export(new HexMeshEditor())).Elements, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Validation_warns_about_poor_elements_and_about_a_huge_stiffness_contrast()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex(HexShapes.Parametric(40, 1, 1));                                   // aspect ratio 40: integrable, but poor
+        editor.AddHexOnFace(0, HexFace.XPlus, HexShapes.Parametric(40, 1, 1));
+        var facade = NewFacade();
+        facade.UpsertMaterial(Session, new SolverMaterialDto("hard", "H", 1e12, 0.3));
+        facade.UpsertMaterial(Session, new SolverMaterialDto("soft", "S", 1e6, 0.3));
+        facade.SetHexMaterial(Session, new[] { 0 }, "hard");
+        facade.SetHexMaterial(Session, new[] { 1 }, "soft");
+        facade.SetFixedFaces(Session, new[] { new SolverFaceDto(0, "XMinus") }, true);
+
+        var messages = facade.Validate(Session, Export(editor)).Issues.Where(i => i.Severity == "warning").Select(i => i.Message).ToList();
+
+        Assert.That(messages, Has.Some.Contain("низьку якість"));
+        Assert.That(messages, Has.Some.Contain("відрізняються"));
+    }
+}

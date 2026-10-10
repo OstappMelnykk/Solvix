@@ -70,3 +70,19 @@ public sealed record SolverResultDto(
     double MaxDisplacement,
     double MaxVonMises,
     double ElapsedSeconds);
+
+/// <param name="Grade">"excellent", "good", "acceptable", "poor" or "invalid".</param>
+public sealed record SolverCubeQualityDto(int Hex, string Grade, double ScaledJacobian, double JacobianRatio, double AspectRatio, double SkewDegrees);
+
+/// <summary>
+/// How well the mesh the solver would work on (every cube cut into the current division) can be integrated: the
+/// worst small element of each cube, counts per grade over all small elements, and the worst values overall.
+/// </summary>
+public sealed record SolverQualityDto(
+    int Elements,
+    IReadOnlyDictionary<string, int> Grades,
+    double WorstScaledJacobian,
+    double WorstJacobianRatio,
+    double WorstAspectRatio,
+    double WorstSkewDegrees,
+    IReadOnlyList<SolverCubeQualityDto> Cubes);

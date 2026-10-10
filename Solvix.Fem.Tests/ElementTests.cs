@@ -275,3 +275,88 @@ public class ElementTests
         for (int i = 0; i < 6; i++) for (int j = 0; j < 6; j++) Assert.That(d[i, j], Is.EqualTo(d[j, i]).Within(Math.Abs(d[i, j]) * 1e-9 + 1e-3));
     }
 }
+
+public class QualityTests
+{
+    private static double[,] Box(double lx, double ly, double lz)
+    {
+        var xyz = new double[20, 3];
+        for (int i = 0; i < 20; i++)
+        {
+            xyz[i, 0] = (Hex20.Local[i, 0] + 1) / 2.0 * lx;
+            xyz[i, 1] = (Hex20.Local[i, 1] + 1) / 2.0 * ly;
+            xyz[i, 2] = (Hex20.Local[i, 2] + 1) / 2.0 * lz;
+        }
+        return xyz;
+    }
+
+    [Test]
+    public void A_cube_is_perfect()
+    {
+        var q = ElementQuality.Of(Box(1, 1, 1));
+
+        Assert.That(q.ScaledJacobian, Is.EqualTo(1).Within(1e-12));
+        Assert.That(q.JacobianRatio, Is.EqualTo(1).Within(1e-12));
+        Assert.That(q.AspectRatio, Is.EqualTo(1).Within(1e-12));
+        Assert.That(q.MaxSkewDegrees, Is.EqualTo(0).Within(1e-9));
+        Assert.That(q.Grade, Is.EqualTo(QualityGrade.Excellent));
+    }
+
+    [Test]
+    public void A_long_box_is_still_perfect_in_angles_but_its_aspect_ratio_grades_it_down()
+    {
+        var q = ElementQuality.Of(Box(1, 1, 12));
+
+        Assert.That(q.ScaledJacobian, Is.EqualTo(1).Within(1e-12));
+        Assert.That(q.AspectRatio, Is.EqualTo(12).Within(1e-9));
+        Assert.That(q.Grade, Is.EqualTo(QualityGrade.Acceptable));
+        Assert.That(ElementQuality.Of(Box(1, 1, 40)).Grade, Is.EqualTo(QualityGrade.Poor));
+    }
+
+    [Test]
+    public void A_sheared_element_loses_scaled_jacobian_and_shows_its_skew()
+    {
+        var xyz = Box(1, 1, 1);
+        for (int i = 0; i < 20; i++) xyz[i, 0] += 1.0 * xyz[i, 2];        // 45 degrees
+
+        var q = ElementQuality.Of(xyz);
+
+        Assert.That(q.MaxSkewDegrees, Is.EqualTo(45).Within(1e-6));
+        Assert.That(q.ScaledJacobian, Is.InRange(0.5, 0.8));
+        Assert.That(q.JacobianRatio, Is.EqualTo(1).Within(1e-9));        // a shear keeps the volume element constant
+    }
+
+    [Test]
+    public void A_folded_element_is_invalid()
+    {
+        var xyz = Box(1, 1, 1);
+        xyz[6, 0] = -3; xyz[6, 1] = -3; xyz[6, 2] = -3;
+
+        var q = ElementQuality.Of(xyz);
+
+        Assert.That(q.Grade, Is.EqualTo(QualityGrade.Invalid));
+        Assert.That(q.MinDeterminant, Is.LessThan(0));
+    }
+
+    [Test]
+    public void A_nearly_collapsed_corner_is_poor_before_it_is_invalid()
+    {
+        var xyz = Box(1, 1, 1);
+        xyz[6, 0] = 0.15; xyz[6, 1] = 0.15; xyz[6, 2] = 0.15;      // top corner pulled almost to the centre
+
+        var q = ElementQuality.Of(xyz);
+
+        Assert.That(q.Grade, Is.AnyOf(QualityGrade.Poor, QualityGrade.Acceptable, QualityGrade.Invalid));
+        Assert.That(q.ScaledJacobian, Is.LessThan(0.4));
+    }
+
+    [Test]
+    public void The_grade_is_the_worst_of_the_three_measures()
+    {
+        Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 2, 0).Grade, Is.EqualTo(QualityGrade.Excellent));
+        Assert.That(new ElementQualityMetrics(1, 0.9, 0.9, 20, 0).Grade, Is.EqualTo(QualityGrade.Acceptable));
+        Assert.That(new ElementQualityMetrics(1, 0.9, 0.1, 2, 0).Grade, Is.EqualTo(QualityGrade.Acceptable));
+        Assert.That(new ElementQualityMetrics(1, 0.1, 0.9, 2, 0).Grade, Is.EqualTo(QualityGrade.Poor));
+        Assert.That(new ElementQualityMetrics(-1, 0.9, 0.9, 2, 0).Grade, Is.EqualTo(QualityGrade.Invalid));
+    }
+}

@@ -40,6 +40,9 @@ public interface ISolverFacade
     /// <summary>Drops the supports, loads and materials of cubes that no longer exist.</summary>
     SolverSetupDto Prune(int sessionId, IReadOnlyCollection<int> existingHexes);
 
+    /// <summary>The element quality of the mesh as it would be solved (per cube and overall).</summary>
+    SolverQualityDto Quality(int sessionId, FemMeshDto mesh);
+
     SolverValidationDto Validate(int sessionId, FemMeshDto mesh);
 
     /// <summary>Starts a solve in the background; if one is running, that one is reported instead.</summary>
