@@ -495,7 +495,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     }
     // The gizmo of the selected node comes first: its arrow holds the node to an axis, its centre moves it freely.
     const gizmo = this.gizmoOf(i);
-    const grabbed = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event), GRAB_RADIUS_PX) : null;
+    const grabbed = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
     let nodeId = grabbed ? this.meshSelection.nodeId(source.sessionId) : this.nodeUnderPointer(i, canvas, event);
     const mesh = nodeId === null ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
     if (nodeId === null || !mesh) {
@@ -517,7 +517,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (!this.drag) {
       if (this.canDragNodes()) {
         const gizmo = this.gizmoOf(i);
-        const over = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event), GRAB_RADIUS_PX) : null;
+        const over = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
         const node = over ? null : this.nodeUnderPointer(i, canvas, event);
         this.hoverNode[i] = node;
         canvas.style.cursor = over ? (over.kind === 'centre' ? 'move' : 'grab') : node !== null ? 'pointer' : '';

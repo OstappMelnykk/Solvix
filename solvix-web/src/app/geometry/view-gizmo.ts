@@ -53,12 +53,18 @@ function distanceToSegment(p: THREE.Vector2, a: THREE.Vector2, b: THREE.Vector2)
   return p.distanceTo(a.clone().add(ab.multiplyScalar(t)));
 }
 
-// What the pointer at `pixel` grabs: the centre (checked first, so it wins where the arrows start), an arrow, or nothing.
-export function hitGizmo(gizmo: Gizmo, pixel: THREE.Vector2, centreRadius = 10, arrowRadius = 7): GizmoHit | null {
+// What the pointer at `pixel` grabs: the centre (a generous round handle, checked first, for a free move), an arrow (only
+// beyond `arrowStart` pixels from the centre, so that a press on or near the node is never an axis drag by accident), or
+// nothing.
+export function hitGizmo(gizmo: Gizmo, pixel: THREE.Vector2, centreRadius = 12, arrowRadius = 6, arrowStart = 18): GizmoHit | null {
   if (pixel.distanceTo(gizmo.centre) <= centreRadius) return { kind: 'centre' };
   let best: { hit: GizmoHit; distance: number } | null = null;
   for (const arrow of gizmo.arrows) {
-    const distance = distanceToSegment(pixel, arrow.from, arrow.to);
+    const along = arrow.to.clone().sub(arrow.from);
+    const length = along.length();
+    if (length <= arrowStart) continue;
+    const begin = arrow.from.clone().add(along.multiplyScalar(arrowStart / length));
+    const distance = distanceToSegment(pixel, begin, arrow.to);
     if (distance <= arrowRadius && (best === null || distance < best.distance)) best = { hit: { kind: 'axis', axis: arrow.axis, direction: arrow.direction }, distance };
   }
   return best?.hit ?? null;

@@ -179,6 +179,7 @@
 }
 
 .six-view-overlay__drag-text {
+  pointer-events: none;
   position: absolute;
   bottom: 10px;
   left: 50%;

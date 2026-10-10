@@ -106,7 +106,7 @@ describe('SixViewOverlayComponent: dragging a node in a view', () => {
     selection.selectNode(1, 7);
     fixture.detectChanges();
     const start = pixelOf(4, node.position);
-    const onArrow = { x: start.x + 35, y: start.y };               // the X arrow runs to the right of the centre in this view
+    const onArrow = { x: start.x + 40, y: start.y };               // the X arrow runs to the right of the centre in this view (its grab zone starts 18 px out)
 
     fire(4, 'pointerdown', onArrow);
     fire(4, 'pointermove', { x: onArrow.x + 60, y: onArrow.y - 50 });

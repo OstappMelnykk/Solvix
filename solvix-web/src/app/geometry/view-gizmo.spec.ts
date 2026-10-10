@@ -46,8 +46,15 @@ describe('the gizmo of a node in a view', () => {
   describe('what the pointer grabs', () => {
     const gizmo = gizmoFor(ortho(new THREE.Vector3(0, 0, 10), new THREE.Vector3(0, 1, 0)), 400, 400, origin, 70);     // centre (200, 200)
 
-    it('the centre first, even where the arrows begin', () => {
+    it('the centre first, a round handle larger than the dot, so a press on the node itself is a free move', () => {
       expect(hitGizmo(gizmo, new THREE.Vector2(203, 198))).toEqual({ kind: 'centre' });
+      expect(hitGizmo(gizmo, new THREE.Vector2(211, 200))).toEqual({ kind: 'centre' });          // 11 px along the X arrow: still the centre
+      expect(hitGizmo(gizmo, new THREE.Vector2(200, 189))).toEqual({ kind: 'centre' });          // and up the Y arrow
+    });
+
+    it('an arrow only beyond its start, not next to the node', () => {
+      expect(hitGizmo(gizmo, new THREE.Vector2(213, 206))).toBeNull();                            // between the centre handle and the start of the arrow
+      expect((hitGizmo(gizmo, new THREE.Vector2(225, 203)) as { axis: string }).axis).toBe('x');
     });
 
     it('an arrow along its length, with its axis', () => {
