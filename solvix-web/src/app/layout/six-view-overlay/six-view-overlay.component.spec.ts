@@ -4,6 +4,8 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import * as THREE from 'three';
 import { SixViewOverlayComponent } from './six-view-overlay.component';
 import { SixViewOverlayService, SixViewSource } from '../../state/six-view-overlay.service';
+import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
+import { SurfaceSnapper } from '../../geometry/surface-snap';
 
 describe('SixViewOverlayComponent (main panel)', () => {
   let overlay: SixViewOverlayService;
@@ -95,6 +97,54 @@ describe('SixViewOverlayComponent (main panel)', () => {
       expect(component.headerHint()).toContain('будь-якому виді');
       expect(component.headerHint()).not.toContain('Shift');
       expect(component.headerHint()).not.toContain('⤢');
+    });
+  });
+
+  describe('letting go of a node stuck to the imported surface', () => {
+    let attached: Set<number>;
+    const withSurface = (): SixViewSource => ({
+      ...source(true),
+      surface: {
+        snapper: () => new SurfaceSnapper(new THREE.Group()),
+        isAttached: id => attached.has(id),
+        setAttached: (id, on) => (on ? attached.add(id) : attached.delete(id)),
+        share: () => 0.01,
+        enabled: () => true
+      }
+    });
+
+    beforeEach(() => {
+      attached = new Set<number>([5]);
+      overlay.open(withSurface());
+    });
+
+    it('offers it only for the selected node, and only when it is stuck', () => {
+      const selection = TestBed.inject(MeshEditorSelectionService);
+      expect(component.canDetach()).toBeFalse();            // nothing selected
+
+      selection.selectNode(1, 6);
+      expect(component.canDetach()).toBeFalse();            // a free node
+
+      selection.selectNode(1, 6);                           // unselect
+      selection.selectNode(1, 5);
+      expect(component.canDetach()).toBeTrue();
+    });
+
+    it('lets the node go', () => {
+      TestBed.inject(MeshEditorSelectionService).selectNode(1, 5);
+
+      component.detach();
+
+      expect(attached.has(5)).toBeFalse();
+      expect(component.canDetach()).toBeFalse();
+    });
+
+    it('has nothing to let go of where there is no surface (the Ideal World)', () => {
+      overlay.open(source(false));
+      TestBed.inject(MeshEditorSelectionService).selectNode(1, 5);
+
+      expect(component.canDetach()).toBeFalse();
+      expect(() => component.detach()).not.toThrow();
     });
   });
 });

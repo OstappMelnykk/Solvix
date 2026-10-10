@@ -49,6 +49,14 @@
     <div class="canvas-toolbar__hint" [hidden]="!isBuildOn()">ПКМ — додати · ЛКМ — видалити</div>
   </div>
 
+  <div class="canvas-toolbar__group" [hidden]="!canDetachSelected()">
+    <div class="canvas-toolbar__label">Вершина прилипла до STL</div>
+    <button class="tool-button" type="button" title="Відлипити вибрану вершину від STL: далі вона рухається вільно. Те саме — утримувати Alt під час тягнення." (click)="detachSelected()">
+      Відлипити від STL
+    </button>
+    <div class="canvas-toolbar__hint">Alt під час тягнення теж відриває</div>
+  </div>
+
   <div class="canvas-toolbar__group" [hidden]="!showsReferenceToggle()">
     <div class="canvas-toolbar__label">Модель</div>
     <button

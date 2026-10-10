@@ -1032,6 +1032,16 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     return this.worldIndex === IDEAL_WORLD_INDEX;
   }
 
+  // The node selected in the Real World is stuck to the imported surface: it can be let go with a button here (as well as
+  // with Alt while dragging).
+  canDetachSelected(): boolean {
+    return this.worldIndex === REAL_WORLD_INDEX && this.draggableNodeId !== null && this.attachedNodeIds.has(this.draggableNodeId);
+  }
+
+  detachSelected(): void {
+    if (this.canDetachSelected()) this.nodeAttach.emit({ nodeId: this.draggableNodeId!, attached: false });
+  }
+
   // Building with the mouse is in the Ideal World and the Real World.
   showsBuildToggle(): boolean {
     return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;

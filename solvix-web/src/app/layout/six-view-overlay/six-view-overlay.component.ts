@@ -391,6 +391,19 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     return 'Клікніть по вузлу, щоб вибрати. Стрілка тягне по осі, центр — вільно в площині виду. Працює в будь-якому виді.';
   }
 
+  // The selected node is stuck to the imported surface: let it go with a button (or hold Alt while dragging).
+  canDetach(): boolean {
+    const source = this.overlay.active();
+    const nodeId = source ? this.meshSelection.nodeId(source.sessionId) : null;
+    return nodeId !== null && source?.surface?.isAttached(nodeId) === true;
+  }
+
+  detach(): void {
+    const source = this.overlay.active();
+    const nodeId = source ? this.meshSelection.nodeId(source.sessionId) : null;
+    if (nodeId !== null && this.canDetach()) source!.surface!.setAttached(nodeId, false);
+  }
+
   // True when nodes can be dragged in the panels of this overlay.
   canDragNodes(): boolean {
     return this.overlay.active()?.nodesEditable === true;

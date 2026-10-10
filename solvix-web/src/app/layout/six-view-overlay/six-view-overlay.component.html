@@ -7,6 +7,7 @@
       <input type="range" min="0" max="100" [value]="referenceOpacityPercent()" (input)="onReferenceOpacityChange($event)" />
     </label>
   </div>
+  <button type="button" class="six-view-overlay__back" *ngIf="canDetach()" title="Вибрана вершина прилипла до STL. Alt під час тягнення теж відриває." (click)="detach()">Відлипити від STL</button>
   <button type="button" class="six-view-overlay__back" (click)="close()">Назад</button>
 </div>
 <!-- *ngIf, not just the host's own [hidden] - dispose() (teardownRenderers,
