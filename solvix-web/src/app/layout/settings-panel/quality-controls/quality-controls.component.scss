@@ -11,25 +11,32 @@ $text: #e4e6ea;
 }
 
 h4 {
-  margin: 0 0 10px;
-  padding-bottom: 4px;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
   border-bottom: 1px solid $field-border;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #9096a0;
 }
 
+// every part of the panel is a card of its own under a header that is easy to see
 h5 {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: $muted;
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid $field-border;
+  font-size: 16px;
+  font-weight: 700;
+  color: $text;
 }
 
-section {
+.part {
   margin-bottom: 14px;
+  padding: 12px 14px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid $field-border;
+  border-radius: 10px;
 }
 
 i {

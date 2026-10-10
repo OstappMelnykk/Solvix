@@ -2,12 +2,15 @@
 
 <ng-container *ngIf="quality() as q; else loading">
   <!-- Висновок: чи можна переходити до розрахунку -->
-  <section class="decision" *ngIf="decision() as d" [attr.data-level]="d.level">
+  <section class="part" *ngIf="decision() as d">
+    <h5>Чи можна рахувати</h5>
+  <div class="decision" [attr.data-level]="d.level">
     <div class="decision__head">
       <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
       <span class="decision__title">{{ d.title }}</span>
     </div>
     <ul class="decision__reasons"><li *ngFor="let r of d.reasons; trackBy: trackIndex">{{ r }}</li></ul>
+  </div>
     <div class="decision__actions">
       <button type="button" class="go" *ngIf="d.canSolve" [class.go--primary]="d.level === 'ok'" (click)="goToSolver()">
         {{ d.level === 'bad' ? 'Все одно рахувати' : 'Перейти до розрахунку' }} →
@@ -17,7 +20,7 @@
   </section>
 
   <!-- 0. За яким стандартом судимо -->
-  <section>
+  <section class="part">
     <h5>За яким стандартом</h5>
     <div class="standards">
       <button type="button" class="standard" *ngFor="let s of standards(); trackBy: trackById" [class.standard--on]="profile() === s.id" [class.standard--consensus]="s.id === consensusId" (click)="setProfile(s.id)" [title]="s.dto.source">
@@ -33,7 +36,9 @@
   </section>
 
   <!-- 1. Чи все гаразд -->
-  <section class="verdict" [style.border-color]="gradeColor(verdictGrade())">
+  <section class="part">
+    <h5>Результат за цим стандартом</h5>
+  <div class="verdict" [style.border-color]="gradeColor(verdictGrade())">
     <div class="verdict__title">{{ verdict().title }}</div>
     <div class="verdict__sub">{{ verdict().sub }}</div>
     <div class="rule">{{ rule() }}</div>
@@ -43,10 +48,11 @@
     <div class="counts">
       <span *ngFor="let s of segments(); trackBy: trackSegment" class="count"><i [style.background]="gradeColor(s.grade)"></i><b>{{ s.count }}</b> {{ gradeWord(s.grade) }}</span>
     </div>
+  </div>
   </section>
 
   <!-- 2. Чим фарбувати -->
-  <section>
+  <section class="part">
     <h5>Фарбувати сцену за</h5>
     <div class="seg">
       <button type="button" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
@@ -58,7 +64,7 @@
   </section>
 
   <!-- 3. Яка міра слабка -->
-  <section>
+  <section class="part">
     <h5>Найгірше по сітці</h5>
     <div class="gauge" *ngFor="let l of q.limits">
       <div class="gauge__head">
@@ -80,7 +86,7 @@
   </section>
 
   <!-- 4. Вибраний елемент -->
-  <section>
+  <section class="part">
     <h5>Вибраний елемент</h5>
     <ng-container *ngIf="pickedElement() as p; else nothingPicked">
       <div class="picked__head">
