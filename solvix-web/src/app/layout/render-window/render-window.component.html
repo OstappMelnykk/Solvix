@@ -1,6 +1,5 @@
 <app-world-tabs class="render-window__world-tabs" *ngIf="!isViewer" />
 
-<div class="render-window__body">
 <div class="render-window__canvases">
   <app-world-canvas
     *ngFor="let world of worlds; let i = index"
@@ -24,8 +23,4 @@
   />
   <app-solver-overlay *ngIf="activeWorldIndex() === solverWorldIndex && sessions.activeSessionId() !== null && !isViewer" [sessionId]="sessions.activeSessionId()!" />
   <app-solver-viewer *ngIf="isViewer" [sessionId]="sessions.activeSessionId()!" />
-</div>
-<aside class="render-window__quality" *ngIf="activeWorldIndex() === qualityWorldIndex && sessions.activeSessionId() !== null">
-  <app-quality-controls [sessionId]="sessions.activeSessionId()!" />
-</aside>
 </div>

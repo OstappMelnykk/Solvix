@@ -22,23 +22,6 @@
   display: none;
 }
 
-.render-window__body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-// In the Quality World the canvas area is shared: the canvas takes 70%, the quality panel 30%.
-.render-window__quality {
-  flex: 0 0 30%;
-  min-width: 320px;
-  overflow-y: auto;
-  box-sizing: border-box;
-  padding: 10px;
-  background: #2b2d30;
-  border-left: 1px solid #393b40;
-}
-
 .render-window__canvases {
   position: relative;
   flex: 1;
