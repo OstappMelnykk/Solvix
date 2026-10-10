@@ -54,22 +54,10 @@
   <!-- 2. Чим фарбувати -->
   <section class="part">
     <h5>Фарбувати сцену за</h5>
-    <div class="mode">
-      <button type="button" class="mode__btn" [class.mode__btn--on]="metric() === 'grade'" (click)="setMetric('grade')">
-        <span class="mode__name">Загальна оцінка</span>
-        <span class="mode__about">за всіма показниками разом, найгірший вирішує</span>
-      </button>
-      <button type="button" class="mode__btn" [class.mode__btn--on]="metric() !== 'grade'" (click)="chooseMeasure()">
-        <span class="mode__name">Окремий показник</span>
-        <span class="mode__about">дивитись сцену лише за одним показником</span>
-      </button>
+    <div class="seg">
+      <button type="button" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
+      <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.label }}<small *ngIf="!l.label.includes(l.tech)"> · {{ l.tech }}</small></button>
     </div>
-    <ng-container *ngIf="metric() !== 'grade'">
-      <div class="seg-caption">Який показник:</div>
-      <div class="seg">
-        <button type="button" *ngFor="let l of q.limits" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">{{ l.label }}<small *ngIf="!l.label.includes(l.tech)"> · {{ l.tech }}</small></button>
-      </div>
-    </ng-container>
     <div class="legend">
       <span *ngFor="let g of gradeOrder"><i [style.background]="gradeColor(g)"></i>{{ gradeNames[g] }}</span>
     </div>
