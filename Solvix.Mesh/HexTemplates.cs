@@ -208,7 +208,7 @@ public static class HexTemplates
 
     private static IReadOnlyList<TemplateKind> BuildKinds() => new[]
     {
-        Block(), BoxShell(), Cylinder(), Pipe(), Sphere(), HollowSphere(), Hemisphere(), Torus(), PlateWithHole(), Tooth(),
+        Block(), BoxShell(), Cylinder(), Pipe(), Sphere(), HollowSphere(), Hemisphere(), Torus(), PlateWithHole(),
         LProfile(), TProfile(), UProfile(), Cross(), Stairs(),
     };
 
@@ -326,68 +326,6 @@ public static class HexTemplates
                     (half ? 0 : c) + (v["radiusY"] - wall + f * wall) * uy * push,
                     c + (v["radiusZ"] - wall + f * wall) * uz * push);
             });
-    }
-
-    // A body made of nested shells - enamel outside, dentin under it, and in the middle either an empty chamber or
-    // a core of pulp - each shell its own layer (a named group that can be given its own material). The layers are
-    // shells of the lattice, so a layer is as many cubes thick as asked; their real thickness is set separately,
-    // as a fraction of the smallest semi-axis, and the shell boundaries are mapped onto the real thicknesses.
-    private static TemplateKind Tooth() => new("tooth", "Зуб (шари: емаль, дентин, пульпа)", "Шарові", new[]
-    {
-        P("around", "Кубів по діаметру", 8, 4, 12, true),
-        P("enamelCells", "Шарів кубів в емалі", 1, 1, 3, true), P("dentinCells", "Шарів кубів у дентині", 2, 1, 4, true),
-        P("pulpCavity", "Пульпа: 1 = порожня камера, 0 = заповнена", 1, 0, 1, true),
-        P("radiusX", "Піввісь X", 0.5, 0.01, 1000), P("radiusY", "Піввісь Y (висота)", 0.6, 0.01, 1000), P("radiusZ", "Піввісь Z", 0.5, 0.01, 1000),
-        P("enamelThickness", "Товщина емалі", 0.06, 0.001, 1000), P("dentinThickness", "Товщина дентину", 0.15, 0.001, 1000),
-    }, v => Fit(r => LayeredBody(v, r)));
-
-    private static BodyPlan LayeredBody(TemplateValues v, Rounding rounding)
-    {
-        int n = v.Int("around"), e = v.Int("enamelCells"), d = v.Int("dentinCells");
-        bool cavity = v.Int("pulpCavity") == 1;
-        double c = n / 2.0;
-        Require(2 * (e + d) < n, "Шари завеликі для такої кількості кубів: у центрі має лишитись хоч один куб пульпи (збільште «кубів по діаметру» або зменште шари).");
-        double rMin = Math.Min(v["radiusX"], Math.Min(v["radiusY"], v["radiusZ"]));
-        double sEnamel = 1 - v["enamelThickness"] / rMin, sDentin = sEnamel - v["dentinThickness"] / rMin;
-        Require(sDentin > 0, "Емаль і дентин разом товщі за піввісь: зменште товщини.");
-        double hDentin = c - e, hPulp = c - e - d;                       // lattice distance of the enamel/dentin and dentin/pulp interfaces
-        string? LayerOfShell(int shell) => shell < e ? "enamel" : shell < e + d ? "dentin" : cavity ? null : "pulp";
-
-        // the real radius, as a fraction of the outer one, at lattice distance rInf from the centre: piecewise linear
-        double Fraction(double rInf) =>
-            rInf >= hDentin ? sEnamel + (1 - sEnamel) * (rInf - hDentin) / (c - hDentin)
-            : rInf >= hPulp ? sDentin + (sEnamel - sDentin) * (rInf - hPulp) / (hDentin - hPulp)
-            : sDentin * rInf / hPulp;
-
-        // the pulp core is a small ball of its own and needs its own rounding: found on the core alone
-        int coreCells = n - 2 * (e + d);
-        var coreRounding = cavity ? rounding : FitWith(r => Plan(coreCells, coreCells, coreCells, (_, _, _) => true, q =>
-        {
-            double h = coreCells / 2.0;
-            var b = Ball((q.X - h) / h, (q.Y - h) / h, (q.Z - h) / h, coreCells, r);
-            return new Vec3(b.X, b.Y, b.Z);
-        })).Rounding;
-
-        return Plan(n, n, n,
-            (i, j, k) => LayerOfShell(Math.Min(Layer(i, n), Math.Min(Layer(j, n), Layer(k, n)))) is not null,
-            p =>
-            {
-                double x = p.X - c, y = p.Y - c, z = p.Z - c;
-                double rInf = Math.Max(Math.Abs(x), Math.Max(Math.Abs(y), Math.Abs(z))), len = Math.Sqrt(x * x + y * y + z * z);
-                // every shell has its own ridges (a cube surface of its own size), so the push is measured on the shell
-                int shellCells = Math.Max(2, (int)Math.Round(2 * rInf));
-                double push = rInf < 1e-9 ? 1 : Ridge3(x / rInf, y / rInf, z / rInf, shellCells, rounding);
-                if (!cavity && rInf <= hPulp + 1e-9)
-                {
-                    // the pulp core: a cube blended into a ball, as the solid sphere does, out to the dentin/pulp interface
-                    var core = Ball(x / hPulp, y / hPulp, z / hPulp, coreCells, coreRounding);
-                    return new Vec3(c + v["radiusX"] * sDentin * core.X, c + v["radiusY"] * sDentin * core.Y, c + v["radiusZ"] * sDentin * core.Z);
-                }
-                double f = Fraction(rInf) * push;
-                double ux = len < 1e-12 ? 0 : x / len, uy = len < 1e-12 ? 0 : y / len, uz = len < 1e-12 ? 0 : z / len;
-                return new Vec3(c + v["radiusX"] * f * ux, c + v["radiusY"] * f * uy, c + v["radiusZ"] * f * uz);
-            },
-            (i, j, k) => LayerOfShell(Math.Min(Layer(i, n), Math.Min(Layer(j, n), Layer(k, n)))));
     }
 
     private static TemplateKind Torus() => new("torus", "Тор (бублик)", "Кільця", new[]
@@ -529,10 +467,6 @@ public static class HexTemplates
         Preset("hollow-ellipsoid", "Порожній еліпсоїд", "hollow-sphere", ("radiusX", 1.6), ("radiusY", 1), ("radiusZ", 1)),
         Preset("hemisphere", "Напівкуля", "hemisphere"),
         Preset("dome", "Купол (оболонка)", "hemisphere", ("around", 8), ("wallCells", 1)),
-        Preset("tooth", "Зуб: емаль, дентин, порожня камера", "tooth"),
-        Preset("tooth-pulp", "Зуб із пульпою", "tooth", ("pulpCavity", 0)),
-        Preset("tooth-thin-enamel", "Зуб, тонка емаль", "tooth", ("enamelThickness", 0.03), ("dentinThickness", 0.2)),
-        Preset("tooth-fine", "Зуб, густа сітка", "tooth", ("around", 12), ("enamelCells", 2), ("dentinCells", 3)),
         Preset("torus", "Тор", "torus"),
         Preset("torus-thin", "Тонкий тор", "torus", ("around", 20), ("tubeCells", 1), ("tubeRadius", 0.3), ("ringRadius", 2.5)),
         Preset("plate-hole", "Пластина з отвором", "plate-hole"),
