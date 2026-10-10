@@ -701,9 +701,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const clone = buildImportedReferenceClone(source, style);
     this.currentImportedReference = clone;
     this.scene.add(clone);
-    // The reference is turned and re-aimed in the Ideal World only; the Real World shows it for nodes to stick to.
-    if (this.worldIndex === IDEAL_WORLD_INDEX) this.rotateGizmo.attach(clone);
-    else if (this.worldIndex === REAL_WORLD_INDEX) this.snapper = new SurfaceSnapper(clone);
+    // The reference can be turned in the Ideal and the Real World alike; in the Real World nodes also stick to it.
+    this.rotateGizmo.attach(clone);
+    if (this.worldIndex === REAL_WORLD_INDEX) this.snapper = new SurfaceSnapper(clone);
     this.renderer.compile(this.scene, this.camera);
 
     if (geometryChanged && this.worldIndex === IDEAL_WORLD_INDEX) {
@@ -1003,7 +1003,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // ImportedReferenceDisplayService's own DEFAULT_STYLE - never actually
   // shown there (isIdealWorldCanvas gates the button itself).
   isImportedReferenceVisible(): boolean {
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+    if (!this.showsReferenceToggle() || this.sessionId === null) {
       return true;
     }
     return this.importedReferenceDisplay.getStyle(this.sessionId).visible;

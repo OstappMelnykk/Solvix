@@ -51,6 +51,8 @@ export class SettingsPanelComponent {
   readonly sessionId = computed(() => this.sessions.activeSessionId());
   readonly worldIndex = this.activeWorld.currentWorldIndex;
   readonly isIdealWorld = computed(() => this.worldIndex() === IDEAL_WORLD_INDEX);
+  // The imported geometry is set up, and looked at, in the Ideal World and the Real World alike (nodes stick to it there).
+  readonly showsImport = computed(() => this.worldIndex() === IDEAL_WORLD_INDEX || this.worldIndex() === REAL_WORLD_INDEX);
   // The mesh editor works in the Ideal and Real Worlds; the Solver World has
   // its own controls (materials, supports, pressures, the solve).
   readonly showsQuality = computed(() => this.worldIndex() === QUALITY_WORLD_INDEX);

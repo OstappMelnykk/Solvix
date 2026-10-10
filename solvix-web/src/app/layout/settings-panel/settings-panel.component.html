@@ -4,7 +4,7 @@
 <app-solver-controls *ngIf="showsSolver() && sessionId() !== null" [sessionId]="sessionId()!" />
 <app-mesh-editor-controls *ngIf="showsMeshEditor()" [sessionId]="sessionId()" [worldIndex]="worldIndex()" />
 
-<ng-container *ngIf="isIdealWorld()">
+<ng-container *ngIf="showsImport()">
 <h4>Import</h4>
   <label class="tool">
     Import model ({{ acceptedExtensions }})
@@ -54,4 +54,4 @@
   </ng-container>
 </ng-container>
 
-<app-imported-reference-controls *ngIf="isIdealWorld()" [sessionId]="sessionId()" />
+<app-imported-reference-controls *ngIf="showsImport()" [sessionId]="sessionId()" />

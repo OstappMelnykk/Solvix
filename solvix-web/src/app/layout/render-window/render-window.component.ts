@@ -107,7 +107,7 @@ export class RenderWindowComponent {
   // (ImportedReferenceStyle.dimensionsVisible) - the measured size can stay
   // on screen even while the geometry itself is hidden, or vice versa.
   getDimensionLines(worldIndex: number): THREE.Object3D | null {
-    if (worldIndex !== IDEAL_WORLD_INDEX) {
+    if (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX) {
       return null;
     }
     const sessionId = this.sessions.activeSessionId();
@@ -120,7 +120,7 @@ export class RenderWindowComponent {
   // Ideal-World-only, independent of getImportedReference's own visibility
   // (ImportedReferenceStyle.rulerVisible) - same reasoning as getDimensionLines.
   getRuler(worldIndex: number): THREE.Object3D | null {
-    if (worldIndex !== IDEAL_WORLD_INDEX) {
+    if (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX) {
       return null;
     }
     const sessionId = this.sessions.activeSessionId();
@@ -133,7 +133,7 @@ export class RenderWindowComponent {
   // Ideal-World-only, independent of getImportedReference's own visibility
   // (ImportedReferenceStyle.holesVisible) - same reasoning as getDimensionLines.
   getHoleHighlight(worldIndex: number): THREE.Object3D | null {
-    if (worldIndex !== IDEAL_WORLD_INDEX) {
+    if (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX) {
       return null;
     }
     const sessionId = this.sessions.activeSessionId();
