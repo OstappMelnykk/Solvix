@@ -25,8 +25,9 @@ public sealed class HexMeshEditor
     public bool CanRedo => _redo.Count > 0;
 
     /// <param name="shape">A designed cube to start from; the plain unit cube when null.</param>
-    public EditResult AddFirstHex(HexShape? shape = null) => Apply(() =>
-        Mesh.Hexes.Count > 0 ? EditResult.Fail("The mesh already has hexes.") : Run(() => Mesh.AddFirst(shape)));
+    /// <param name="cell">The lattice cell to put it in; (0, 0, 0) when null.</param>
+    public EditResult AddFirstHex(HexShape? shape = null, (int I, int J, int K)? cell = null) => Apply(() =>
+        Mesh.Hexes.Count > 0 ? EditResult.Fail("The mesh already has hexes.") : Run(() => Mesh.AddFirst(shape, cell)));
 
     /// <param name="shape">A designed cube to attach (fitted onto the face); a plain extrusion of the face when null.</param>
     public EditResult AddHexOnFace(int hexId, HexFace face, HexShape? shape = null) => Apply(() =>

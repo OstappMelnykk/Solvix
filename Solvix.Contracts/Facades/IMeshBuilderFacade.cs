@@ -7,7 +7,8 @@ public interface IMeshBuilderFacade
     MeshStateDto GetState(int sessionId);
 
     /// <param name="shape">A designed cube to start from; the plain unit cube when null.</param>
-    MeshCommandResultDto AddFirstHex(int sessionId, MeshShapeDto? shape = null);
+    /// <param name="cell">The lattice cell to start in (0, 0, 0 when absent).</param>
+    MeshCommandResultDto AddFirstHex(int sessionId, MeshShapeDto? shape = null, MeshCellDto? cell = null);
 
     /// <param name="shape">A designed cube, fitted onto the face; a plain extrusion of the face when null.</param>
     MeshCommandResultDto AddHexOnFace(int sessionId, int hexId, string face, MeshShapeDto? shape = null);

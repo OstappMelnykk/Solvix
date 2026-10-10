@@ -11,10 +11,10 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
 {
     public MeshStateDto GetState(int sessionId) => sessions.With(sessionId, MeshStateMapper.ToDto);
 
-    public MeshCommandResultDto AddFirstHex(int sessionId, MeshShapeDto? shape = null)
+    public MeshCommandResultDto AddFirstHex(int sessionId, MeshShapeDto? shape = null, MeshCellDto? cell = null)
     {
         if (!MeshStateMapper.TryShape(shape, out var parsed, out var error)) return Reject(sessionId, error!);
-        return Command(sessionId, e => e.AddFirstHex(parsed));
+        return Command(sessionId, e => e.AddFirstHex(parsed, cell is null ? null : (cell.I, cell.J, cell.K)));
     }
 
     public FemMeshDto ExportFemMesh(int sessionId) => sessions.With(sessionId, editor =>

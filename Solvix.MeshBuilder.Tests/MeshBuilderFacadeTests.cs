@@ -18,6 +18,47 @@ public class MeshBuilderFacadeTests
     }
 
     [Test]
+    public void The_first_cube_can_start_in_any_cell_of_the_lattice()
+    {
+        var facade = NewFacade();
+
+        var result = facade.AddFirstHex(1, null, new MeshCellDto(3, 0, -2));
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        var nodes = facade.GetState(1).Nodes;
+        Assert.That(nodes.Min(n => n.X), Is.EqualTo(3).Within(1e-9));
+        Assert.That(nodes.Max(n => n.X), Is.EqualTo(4).Within(1e-9));
+        Assert.That(nodes.Min(n => n.Z), Is.EqualTo(-2).Within(1e-9));
+        Assert.That(nodes.Max(n => n.Z), Is.EqualTo(-1).Within(1e-9));
+        Assert.That(nodes.Min(n => n.Y), Is.EqualTo(0).Within(1e-9));
+        Assert.That(nodes.Min(n => n.IdealX), Is.EqualTo(6));              // the lattice is doubled: cell 3 starts at 6
+        Assert.That(nodes.Min(n => n.IdealZ), Is.EqualTo(-4));
+    }
+
+    [Test]
+    public void Cubes_added_on_the_faces_of_a_cube_that_started_far_from_the_origin_follow_it()
+    {
+        var facade = NewFacade();
+        // a cube in cell (5, 0, 5), then another on its +X face
+        Assert.That(facade.AddFirstHex(1, null, new MeshCellDto(5, 0, 5)).Ok, Is.True);
+        var next = facade.AddHexOnFace(1, 0, "XPlus");
+
+        Assert.That(next.Ok, Is.True, next.Error);
+        var nodes = facade.GetState(1).Nodes;
+        Assert.That(nodes.Min(n => n.X), Is.EqualTo(5).Within(1e-9));
+        Assert.That(nodes.Max(n => n.X), Is.EqualTo(7).Within(1e-9));
+    }
+
+    [Test]
+    public void A_second_start_is_refused_wherever_it_is()
+    {
+        var facade = NewFacade();
+        facade.AddFirstHex(1, null, new MeshCellDto(0, 0, 0));
+
+        Assert.That(facade.AddFirstHex(1, null, new MeshCellDto(4, 0, 4)).Ok, Is.False);
+    }
+
+    [Test]
     public void A_new_session_starts_empty()
     {
         var state = NewFacade().GetState(7);

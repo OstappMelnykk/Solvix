@@ -46,14 +46,16 @@ public sealed class HexMesh
     /// Creates the first cube: the unit cube (real coordinates equal ideal ones), or the
     /// given designed <paramref name="shape"/> at exactly the positions it carries.
     /// </summary>
-    public Hex20 AddFirst(HexShape? shape = null)
+    /// <param name="cell">The lattice cell to start in (default 0, 0, 0). A cell is one unit wide, so a designed cube is moved by the cell.</param>
+    public Hex20 AddFirst(HexShape? shape = null, (int I, int J, int K)? cell = null)
     {
         if (_hexes.Count > 0) throw new InvalidOperationException("The mesh already has hexes; use AddOnFace.");
-        var hex = NewHex((0, 0, 0));
+        var at = cell ?? (0, 0, 0);
+        var hex = NewHex(at);
         for (int s = 0; s < Hex20Reference.NodeCount; s++)
         {
             var ideal = IdealOf(hex.Cell, s);
-            var position = shape is null ? new Vec3(ideal.X / 2.0, ideal.Y / 2.0, ideal.Z / 2.0) : shape.Positions[s];
+            var position = shape is null ? new Vec3(ideal.X / 2.0, ideal.Y / 2.0, ideal.Z / 2.0) : shape.Positions[s] + new Vec3(at.I, at.J, at.K);
             hex.NodeIds[s] = NewNode(position, ideal).Id;
             Own(hex.NodeIds[s], hex.Id, s);
         }

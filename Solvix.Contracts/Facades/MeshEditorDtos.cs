@@ -34,6 +34,9 @@ public sealed record MeshPointDto(double X, double Y, double Z);
 /// <summary>A cube designed on its own: the 20 node positions in slot order (0..7 corners, 8..19 edge midpoints).</summary>
 public sealed record MeshShapeDto(IReadOnlyList<MeshPointDto> Positions);
 
+/// <summary>A cell of the integer lattice.</summary>
+public sealed record MeshCellDto(int I, int J, int K);
+
 public sealed record MeshShapeCheckDto(bool Valid, double MinDeterminant, string? Error);
 
 /// <param name="Taper">Top size / bottom size (1 = straight sides).</param>

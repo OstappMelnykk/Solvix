@@ -8,7 +8,7 @@ public record LinkFacesRequest(int HexA, string FaceA, int HexB, string FaceB, b
 
 public record LinkHexesRequest(int HexA, int HexB, bool AdaptSecond);
 
-public record AttachRequest(MeshShapeDto? Shape);
+public record AttachRequest(MeshShapeDto? Shape, MeshCellDto? Cell = null);
 
 public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = false);
 
@@ -40,10 +40,10 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade 
     public ActionResult<MeshCommandResultDto> AddTemplate(int sessionId, [FromBody] MeshTemplateRequestDto request) =>
         meshBuilder.AddTemplate(sessionId, request);
 
-    /// <summary>Starts the body; the optional body <c>{ shape }</c> is a designed cube (otherwise the unit cube).</summary>
+    /// <summary>Starts the body; the optional body <c>{ shape, cell }</c>: a designed cube (otherwise the unit cube) and the lattice cell to put it in (otherwise 0, 0, 0).</summary>
     [HttpPost("hexes/first")]
     public ActionResult<MeshCommandResultDto> AddFirstHex(int sessionId, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] AttachRequest? request = null) =>
-        meshBuilder.AddFirstHex(sessionId, request?.Shape);
+        meshBuilder.AddFirstHex(sessionId, request?.Shape, request?.Cell);
 
     /// <summary>Adds a cube on a face; the optional body <c>{ shape }</c> is a designed cube fitted onto the face (otherwise a plain extrusion).</summary>
     [HttpPost("hexes/{hexId:int}/faces/{face}/attach")]
