@@ -273,6 +273,14 @@ export class SolverViewerComponent implements OnDestroy {
     this.solver.setShowInner(this.sessionId, !this.showInner());
   }
 
+  fixedCount(): number {
+    return this.solver.fixedFaceCount(this.sessionId);
+  }
+
+  loadedCount(): number {
+    return this.solver.loadedFaceCount(this.sessionId);
+  }
+
   showMarks(): boolean {
     return this.solver.viewerMarks(this.sessionId);
   }

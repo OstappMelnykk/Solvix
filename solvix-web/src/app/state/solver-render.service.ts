@@ -5,8 +5,9 @@ import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValu
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
 
-// In the result viewer the supports and loads are a light coat, so the field under them stays readable.
-const VIEWER_MARKS_OPACITY = 0.3;
+// In the result viewer the supports and loads are a strong coat, clear at a glance; they can be switched off to see
+// the field under them.
+const VIEWER_MARKS_OPACITY = 0.85;
 
 interface Cached {
   readonly key: string;

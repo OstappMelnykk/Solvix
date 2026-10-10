@@ -305,3 +305,48 @@ select {
     padding: 3px 9px;
   }
 }
+
+.marks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  text-align: left;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    small {
+      display: block;
+      font-size: 11px;
+      color: $muted;
+    }
+  }
+
+  &__state {
+    font-size: 11px;
+    color: $muted;
+  }
+
+  &--off .marks__row {
+    opacity: 0.4;
+  }
+}
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+
+  &--fix {
+    background: #3388ff;
+  }
+
+  &--load {
+    background: #44ff44;
+  }
+}
