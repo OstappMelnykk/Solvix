@@ -16,7 +16,7 @@ describe('NodeDrag', () => {
     const drag = new NodeDrag(7, new THREE.Vector3(0.5, 0.25, 0.8), camera);
 
     // ndc (0.5, -0.5) on a view spanning [-2,2]^2 is world (1, -1)
-    const position = drag.positionFor(new THREE.Vector2(0.5, -0.5), false);
+    const position = drag.positionFor(new THREE.Vector2(0.5, -0.5));
 
     expect(position.x).toBeCloseTo(1, 9);
     expect(position.y).toBeCloseTo(-1, 9);
@@ -27,7 +27,7 @@ describe('NodeDrag', () => {
     const camera = orthoCamera(new THREE.Vector3(0, 10, 0), new THREE.Vector3(0, 0, -1));
     const drag = new NodeDrag(1, new THREE.Vector3(0.3, 0.7, 0.2), camera);
 
-    const position = drag.positionFor(new THREE.Vector2(-0.5, 0.5), false);
+    const position = drag.positionFor(new THREE.Vector2(-0.5, 0.5));
 
     expect(position.y).toBeCloseTo(0.7, 9);
     expect(position.x).toBeCloseTo(-1, 9);
@@ -40,22 +40,42 @@ describe('NodeDrag', () => {
     const drag = new NodeDrag(1, start, camera);
     const projected = start.clone().project(camera);
 
-    const position = drag.positionFor(new THREE.Vector2(projected.x, projected.y), false);
+    const position = drag.positionFor(new THREE.Vector2(projected.x, projected.y));
 
     expect(position.distanceTo(start)).toBeLessThan(1e-9);
   });
 
-  it('with the axis lock only the larger screen component survives', () => {
+  it('for the constructor\'s views, a free move can keep only the larger screen component', () => {
     const camera = orthoCamera(new THREE.Vector3(0, 0, 10), new THREE.Vector3(0, 1, 0));
     const drag = new NodeDrag(1, new THREE.Vector3(0, 0, 0), camera);
 
     const mostlyAcross = drag.positionFor(new THREE.Vector2(0.5, 0.1), true);
     expect(mostlyAcross.x).toBeCloseTo(1, 9);
     expect(mostlyAcross.y).toBeCloseTo(0, 9);
-
     const mostlyUp = drag.positionFor(new THREE.Vector2(0.1, -0.5), true);
     expect(mostlyUp.x).toBeCloseTo(0, 9);
     expect(mostlyUp.y).toBeCloseTo(-1, 9);
+  });
+
+  it('held to an axis it moves along that axis only, however the pointer strays', () => {
+    const camera = orthoCamera(new THREE.Vector3(0, 0, 10), new THREE.Vector3(0, 1, 0));
+    const along = new NodeDrag(1, new THREE.Vector3(0, 0, 0), camera, new THREE.Vector3(1, 0, 0));
+    const up = new NodeDrag(1, new THREE.Vector3(0, 0, 0), camera, new THREE.Vector3(0, 1, 0));
+
+    const pointer = new THREE.Vector2(0.5, 0.25);              // world (1, 0.5)
+    expect(along.positionFor(pointer).toArray()).toEqual([1, 0, 0]);
+    expect(up.positionFor(pointer).toArray()).toEqual([0, 0.5, 0]);
+  });
+
+  it('held to an axis it goes both ways and keeps the depth coordinate', () => {
+    const camera = orthoCamera(new THREE.Vector3(0, 10, 0), new THREE.Vector3(0, 0, -1));
+    const drag = new NodeDrag(1, new THREE.Vector3(0.3, 0.7, 0.2), camera, new THREE.Vector3(0, 0, 1));
+
+    const position = drag.positionFor(new THREE.Vector2(0.9, 0.5));        // up on screen is -Z for this camera: world z = -1
+
+    expect(position.x).toBeCloseTo(0.3, 9);
+    expect(position.y).toBeCloseTo(0.7, 9);
+    expect(position.z).toBeCloseTo(-1, 9);
   });
 
   it('the drag plane passes through the start and faces the camera', () => {

@@ -36,6 +36,7 @@
     (dblclick)="toggleMain(i)"
   >
     <canvas #canvas></canvas>
+    <canvas #gizmo class="six-view-overlay__gizmo"></canvas>
     <span class="six-view-overlay__label">{{ panelLabel(i) }}</span>
     <button type="button" class="six-view-overlay__recenter" title="Відцентрувати цю панель" (click)="recenter(i)">⟲</button>
     <button
@@ -46,9 +47,6 @@
     >
       {{ isMain(i) ? '⤡' : '⤢' }}
     </button>
-    <div class="six-view-overlay__drag-text" *ngIf="isMain(i) && dragText">{{ dragText }}</div>
-    <div class="six-view-overlay__hint" *ngIf="isMain(i) && canDragNodes() && !dragText">
-      Тягніть точку (вузол) — вона рухається в площині цього виду. Shift — по одній осі.
-    </div>
+    <div class="six-view-overlay__drag-text" *ngIf="dragPanel === i && dragText">{{ dragText }}</div>
   </div>
 </div>

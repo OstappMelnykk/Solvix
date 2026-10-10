@@ -103,6 +103,12 @@
   height: 100%;
 }
 
+.six-view-overlay__panel .six-view-overlay__gizmo {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .six-view-overlay__label {
   position: absolute;
   top: 6px;

@@ -48,9 +48,10 @@ describe('SixViewOverlayComponent (main panel)', () => {
     expect(component.mainPanel).toBe(4);
   });
 
-  it('nodes can be dragged only in a main panel of a World where they are editable', () => {
+  it('nodes can be dragged in any panel of a World where they are editable, with no view enlarged first', () => {
     overlay.open(source(true));
-    expect(component.canDragNodes()).toBeFalse();     // no main panel yet
+    expect(component.mainPanel).toBeNull();
+    expect(component.canDragNodes()).toBeTrue();
 
     component.toggleMain(2);
     expect(component.canDragNodes()).toBeTrue();
@@ -86,13 +87,14 @@ describe('SixViewOverlayComponent (main panel)', () => {
       expect(component.headerHint()).toContain('Real World');
     });
 
-    it('in the Real World first asks to enlarge a view, then explains the drag', () => {
+    it('in the Real World explains the gizmo, needs no enlarged view and no Shift', () => {
       overlay.open(source(true));
-      expect(component.headerHint()).toContain('⤢');
 
-      component.toggleMain(1);
-      expect(component.headerHint()).toContain('Тягніть точку');
-      expect(component.headerHint()).toContain('Shift');
+      expect(component.headerHint()).toContain('Стрілка тягне по осі');
+      expect(component.headerHint()).toContain('центр');
+      expect(component.headerHint()).toContain('будь-якому виді');
+      expect(component.headerHint()).not.toContain('Shift');
+      expect(component.headerHint()).not.toContain('⤢');
     });
   });
 });
