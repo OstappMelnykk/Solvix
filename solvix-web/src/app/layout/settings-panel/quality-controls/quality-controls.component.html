@@ -12,7 +12,7 @@
       <button type="button" class="go" *ngIf="d.canSolve" [class.go--primary]="d.level === 'ok'" (click)="goToSolver()">
         {{ d.level === 'bad' ? 'Все одно рахувати' : 'Перейти до розрахунку' }} →
       </button>
-      <button type="button" class="go" *ngIf="d.level !== 'ok'" [class.go--primary]="d.level !== 'ok' && d.level !== 'caution'" (click)="showWorst()">Показати проблемні елементи</button>
+      <button type="button" class="go" *ngIf="d.level !== 'ok'" [class.go--primary]="d.level !== 'caution'" (click)="showWorst()">Показати проблемні елементи</button>
     </div>
   </section>
 
