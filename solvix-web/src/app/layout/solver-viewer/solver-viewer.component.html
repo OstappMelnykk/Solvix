@@ -1,64 +1,71 @@
-<div class="topbar">
-  <button type="button" class="exit" (click)="exit()" title="Вийти з режиму перегляду (Esc)">✕ Вийти</button>
-  <span class="title">Перегляд результату</span>
-  <label class="field">
-    Поле
-    <select [value]="field()" (change)="onField($event)">
-      <option value="vonMises">Von Mises</option>
-      <option value="displacement">Переміщення</option>
-      <option value="none">Матеріали</option>
-    </select>
-  </label>
-  <label class="field" title="Прозорість тіла">
-    Прозорість
-    <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" />
-    <span>{{ opacityPercent() }}%</span>
-  </label>
-  <label class="check" title="Де тіло закріплене (синє) і де прикладене навантаження (зелене)">
-    <input type="checkbox" [checked]="showMarks()" (change)="toggleMarks()" />
-    <span class="dot dot--fix"></span>Опори <span class="dot dot--load"></span>Навантаження
-  </label>
-  <label class="check"><input type="checkbox" [checked]="showEdges()" (change)="toggleEdges()" />Ребра</label>
-  <label class="check" title="Грані між елементами: видно сітку всередині"><input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />Внутрішні грані</label>
-  <span class="chips">
-    <button *ngFor="let m of materials()" type="button" class="chip" [class.chip--off]="isHidden(m.name)" [title]="'Сховати / показати: ' + m.label" (click)="toggleMaterial(m.name)">
-      <span class="swatch" [style.background]="colorOf(m.name)"></span>{{ m.label }}
-    </button>
-  </span>
+<!-- Ліва колонка: усе, що налаштовує картинку. Праворуч вгорі — кнопки камери (не чіпаємо), внизу — плеєр. -->
+<div class="side">
+  <div class="card card--top">
+    <button type="button" class="exit" (click)="exit()" title="Вийти з режиму перегляду (Esc)">← Вийти</button>
+    <span class="title">Результат розрахунку</span>
+  </div>
+
+  <div class="card">
+    <h5>1. Що показати</h5>
+    <div class="seg">
+      <button *ngFor="let f of fields" type="button" [class.on]="field() === f.field" [title]="f.title" (click)="setField(f.field)">{{ f.label }}</button>
+    </div>
+  </div>
+
+  <div class="card" *ngIf="field() !== 'none'">
+    <h5>2. Кольори <small>{{ unitText() }}</small></h5>
+    <div class="scale">
+      <div class="scale__bar" [style.background]="gradient()"></div>
+      <div class="scale__ticks"><span *ngFor="let t of tick25()">{{ t }}</span></div>
+    </div>
+    <label class="max" title="Це значення стає червоним. Усе, що більше, теж червоне.">
+      Червоне починається з
+      <span class="max__input"><input type="number" class="num" step="any" [value]="maxInput()" (change)="onMaxInput($event)" /> {{ unitText() }}</span>
+    </label>
+    <div class="hint">Піки в кутах псують картину? Відкиньте найвищі точки:</div>
+    <div class="seg seg--small">
+      <button type="button" [class.on]="!isCapped()" (click)="capAt(100)" title="Нічого не відкидати">нічого</button>
+      <button type="button" (click)="capAt(99.9)" title="Відкинути найвищі 0,1% точок">0,1%</button>
+      <button type="button" (click)="capAt(99)" title="Відкинути найвищий 1% точок">1%</button>
+      <button type="button" (click)="capAt(95)" title="Відкинути найвищі 5% точок">5%</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h5>{{ field() === 'none' ? '2.' : '3.' }} Вигляд</h5>
+    <label class="slider">Прозорість <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" /><span>{{ opacityPercent() }}%</span></label>
+    <label class="check"><input type="checkbox" [checked]="showMarks()" (change)="toggleMarks()" />Де закріплено <i class="dot dot--fix"></i> і де тиск <i class="dot dot--load"></i></label>
+    <label class="check"><input type="checkbox" [checked]="showEdges()" (change)="toggleEdges()" />Чорні лінії сітки</label>
+    <label class="check" title="Показати грані між елементами"><input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />Сітка всередині тіла</label>
+    <div class="hint" *ngIf="materials().length > 1">Сховати матеріал, щоб бачити, що за ним:</div>
+    <div class="chips" *ngIf="materials().length > 1">
+      <button *ngFor="let m of materials()" type="button" class="chip" [class.chip--off]="isHidden(m.name)" (click)="toggleMaterial(m.name)">
+        <i class="swatch" [style.background]="colorOf(m.name)"></i>{{ m.label }}
+      </button>
+    </div>
+  </div>
 </div>
 
-<div class="scale" *ngIf="field() !== 'none'">
-  <div class="scale__title">{{ field() === 'vonMises' ? 'Напруження' : 'Переміщення' }}</div>
-  <div class="scale__max" title="Значення, якому відповідає червоний. Усе, що більше, теж червоне. Зменшіть, щоб краще бачити різницю в решті тіла.">
-    <span class="scale__label">Верх шкали</span>
-    <input type="number" class="num" step="any" [value]="maxInput()" (change)="onMaxInput($event)" />
-    <span>{{ unitText() }}</span>
-  </div>
-  <div class="scale__body">
-    <div class="scale__bar" [style.background]="gradient()"></div>
-    <div class="scale__ticks"><span *ngFor="let t of tick25()">{{ t }}</span></div>
-  </div>
-  <div class="scale__label">Відкинути найвищі точки</div>
-  <div class="scale__caps">
-    <button type="button" [class.on]="!isCapped()" (click)="capAt(100)" title="Нічого не відкидати: червоний = справжній максимум">нічого</button>
-    <button type="button" (click)="capAt(99.9)" title="Верх шкали = рівень, нижче якого 99,9% точок">0,1%</button>
-    <button type="button" (click)="capAt(99)" title="Верх шкали = рівень, нижче якого 99% точок (піки в кутах і біля опор не псують картину)">1%</button>
-    <button type="button" (click)="capAt(95)" title="Верх шкали = рівень, нижче якого 95% точок">5%</button>
-  </div>
-</div>
-
+<!-- Унизу: деформація. Зліва направо: програвання, повзунок «скільки деформації», справжній результат. -->
 <div class="player">
-  <button type="button" class="play" (click)="togglePlay()" [title]="playing ? 'Пауза (пробіл)' : 'Відтворити деформацію (пробіл)'">{{ playing ? '❚❚' : '▶' }}</button>
-  <span class="modes">
-    <button *ngFor="let m of modes" type="button" [class.on]="mode === m.mode" [title]="m.title" (click)="mode = m.mode">{{ m.label }}</button>
-  </span>
-  <select class="speed" [value]="speed" (change)="speed = +$any($event.target).value" title="Швидкість програвання">
-    <option *ngFor="let s of speeds" [value]="s" [selected]="s === speed">{{ s }}×</option>
-  </select>
-  <input class="track" type="range" min="0" [max]="steps" step="1" [value]="position()" (input)="onSlider($event)" aria-label="Деформація" />
-  <label class="factor" title="Множник переміщень (понад кінець слайдера теж можна)">
-    ×<input type="number" class="num" min="0" max="500000" step="any" [value]="scale()" (change)="onScaleNumber($event)" />
-  </label>
-  <button type="button" class="real" [class.on]="isReal()" (click)="real()" title="Справжній результат: множник 1, навіть якщо зміни не видно">Реальне ×1</button>
-  <span class="readout">Макс. переміщення: <b>{{ shownText() }}</b> · кінець шкали: {{ topText() }}</span>
+  <div class="player__main">
+    <button type="button" class="play" (click)="togglePlay()" [title]="playing ? 'Пауза (пробіл)' : 'Показати, як тіло деформується (пробіл)'">{{ playing ? '❚❚' : '▶' }}</button>
+    <div class="player__track">
+      <div class="player__ends"><span>без деформації</span><span>максимум: {{ topText() }}</span></div>
+      <input class="track" type="range" min="0" [max]="steps" step="1" [value]="position()" (input)="onSlider($event)" aria-label="Скільки деформації показати" />
+    </div>
+    <button type="button" class="real" [class.on]="isReal()" (click)="real()" title="Справжній зсув без збільшення (множник 1), навіть якщо його не видно">Справжній<br />розмір</button>
+  </div>
+  <div class="player__info">
+    <span>Найбільший зсув зараз: <b>{{ shownText() }}</b></span>
+    <label class="factor" title="У скільки разів збільшено зсув. Можна ввести своє число.">збільшено в <input type="number" class="num" min="0" max="500000" step="any" [value]="scale()" (change)="onScaleNumber($event)" /> разів</label>
+    <span class="modes" title="Що робити, коли дійшли до кінця">
+      <button *ngFor="let m of modes" type="button" [class.on]="mode === m.mode" [title]="m.title" (click)="mode = m.mode">{{ m.label }}</button>
+    </span>
+    <label class="factor" title="Швидкість програвання">швидкість
+      <select class="speed" [value]="speed" (change)="speed = +$any($event.target).value">
+        <option *ngFor="let s of speeds" [value]="s" [selected]="s === speed">{{ s }}×</option>
+      </select>
+    </label>
+  </div>
 </div>

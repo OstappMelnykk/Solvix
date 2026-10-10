@@ -161,8 +161,14 @@ export class SolverViewerComponent implements OnDestroy {
     return this.solver.display(this.sessionId).field;
   }
 
-  onField(event: Event): void {
-    this.solver.setField(this.sessionId, (event.target as HTMLSelectElement).value as ResultField);
+  readonly fields: readonly { field: ResultField; label: string; title: string }[] = [
+    { field: 'vonMises', label: 'Напруження', title: 'Von Mises: де матеріал напружений найбільше' },
+    { field: 'displacement', label: 'Зсув', title: 'На скільки кожна точка зсунулась' },
+    { field: 'none', label: 'Матеріали', title: 'Без карти: кольори матеріалів' }
+  ];
+
+  setField(field: ResultField): void {
+    this.solver.setField(this.sessionId, field);
   }
 
   private values(): number[] | null {

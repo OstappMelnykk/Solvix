@@ -3,6 +3,8 @@ $border: rgba(255, 255, 255, 0.14);
 $text: #e4e6ea;
 $muted: #8b919b;
 $accent: #da680b;
+// the canvas keeps its camera buttons in the top right corner; nothing here goes there
+$player-height: 104px;
 
 :host {
   position: absolute;
@@ -10,14 +12,26 @@ $accent: #da680b;
   pointer-events: none;
   z-index: 5;
   font-family: sans-serif;
-  font-size: 12px;
+  font-size: 13px;
   color: $text;
 }
 
-.topbar,
-.scale,
-.player {
+.side {
   position: absolute;
+  top: 10px;
+  left: 10px;
+  bottom: calc(#{$player-height} + 20px);
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  pointer-events: none;
+}
+
+.card,
+.player {
   background: $surface;
   border: 1px solid $border;
   border-radius: 10px;
@@ -26,34 +40,44 @@ $accent: #da680b;
   pointer-events: auto;
 }
 
-.topbar {
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-  padding: 6px 10px;
+.card {
+  flex: none;
+  padding: 10px 12px;
+
+  &--top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+}
+
+h5 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+
+  small {
+    font-weight: 400;
+    color: $muted;
+  }
 }
 
 .title {
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: $muted;
-  font-size: 11px;
 }
 
-.exit,
 button {
-  padding: 4px 10px;
+  padding: 6px 10px;
   background: #1e1f22;
   border: 1px solid $border;
   border-radius: 6px;
   color: $text;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
 
   &:hover {
@@ -67,27 +91,116 @@ button {
   }
 }
 
-.field,
-.check {
+.seg {
   display: flex;
-  align-items: center;
-  gap: 6px;
+
+  button {
+    flex: 1;
+    padding: 7px 2px;
+    border-radius: 0;
+    border-left-width: 0;
+
+    &:first-child {
+      border-left-width: 1px;
+      border-radius: 6px 0 0 6px;
+    }
+
+    &:last-child {
+      border-radius: 0 6px 6px 0;
+    }
+  }
+
+  &--small button {
+    padding: 4px 2px;
+    font-size: 12px;
+  }
+}
+
+.hint {
+  margin: 8px 0 4px;
+  font-size: 12px;
   color: $muted;
 }
 
-select,
-.num {
+// the colour scale: a tall bar with the numbers next to it
+.scale {
+  display: flex;
+  gap: 8px;
+  height: 150px;
+
+  &__bar {
+    width: 18px;
+    border-radius: 4px;
+  }
+
+  &__ticks {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.max {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: $muted;
+
+  &__input {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 3px;
+    color: $text;
+  }
+}
+
+.num,
+select {
   background: #1e1f22;
   border: 1px solid $border;
   border-radius: 6px;
   color: $text;
   font-family: inherit;
-  font-size: 12px;
-  padding: 3px 6px;
+  font-size: 13px;
+  padding: 4px 6px;
 }
 
 .num {
-  width: 84px;
+  width: 90px;
+}
+
+.slider,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+
+  input[type='range'] {
+    flex: 1;
+    min-width: 0;
+    accent-color: $accent;
+  }
+}
+
+.dot,
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.dot--fix {
+  background: #3388ff;
+}
+
+.dot--load {
+  background: #44ff44;
 }
 
 .chips {
@@ -100,7 +213,8 @@ select,
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 8px;
+  padding: 3px 8px;
+  font-size: 12px;
 
   &--off {
     opacity: 0.4;
@@ -108,130 +222,82 @@ select,
   }
 }
 
-.swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-}
-
-.scale {
-  top: 64px;
+// the player along the bottom
+.player {
+  position: absolute;
+  left: 10px;
   right: 10px;
-  bottom: 84px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  width: 132px;
+  bottom: 10px;
+  min-height: $player-height - 10px;
+  box-sizing: border-box;
+  padding: 10px 14px;
 
-  &__title {
-    font-weight: 700;
+  &__main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
   }
 
-  &__label {
+  &__track {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__ends {
+    display: flex;
+    justify-content: space-between;
     font-size: 11px;
     color: $muted;
   }
 
-  &__max {
+  &__info {
+    display: flex;
     flex-wrap: wrap;
-    display: flex;
     align-items: center;
-    gap: 4px;
-
-    .num {
-      width: 78px;
-    }
-  }
-
-  &__body {
-    flex: 1;
-    display: flex;
-    gap: 6px;
-    min-height: 0;
-  }
-
-  &__bar {
-    width: 14px;
-    border-radius: 3px;
-  }
-
-  &__ticks {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    font-size: 10px;
+    gap: 6px 18px;
+    margin-top: 6px;
+    font-size: 12px;
     color: $muted;
-    font-variant-numeric: tabular-nums;
-  }
 
-  &__caps {
-    display: flex;
-    gap: 3px;
-
-    button {
-      flex: 1;
-      padding: 3px 0;
-      font-size: 10px;
+    b {
+      color: $text;
     }
   }
-}
-
-.player {
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  padding: 8px 12px;
 }
 
 .play {
-  width: 40px;
-  font-size: 14px;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  font-size: 16px;
+  background: $accent;
+  border-color: $accent;
+  color: #fff;
 }
 
-.modes {
-  display: flex;
-  gap: 2px;
+.real {
+  flex: none;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .track {
-  flex: 1 1 280px;
-  min-width: 160px;
+  width: 100%;
   accent-color: $accent;
 }
 
 .factor {
   display: flex;
   align-items: center;
+  gap: 5px;
+}
+
+.modes {
+  display: flex;
   gap: 2px;
-  color: $muted;
-}
 
-.readout {
-  flex: 1 0 100%;
-  font-size: 11px;
-  color: $muted;
-  font-variant-numeric: tabular-nums;
-
-  b {
-    color: $text;
-  }
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-
-  &--fix {
-    background: #3388ff;
-  }
-
-  &--load {
-    background: #44ff44;
+  button {
+    padding: 3px 9px;
   }
 }
