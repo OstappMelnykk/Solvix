@@ -77,7 +77,6 @@ describe('QualityControlsComponent', () => {
 
     expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');
     expect(text(root.querySelector('.decision__stat'))).toContain('1 із 4 елементів (25%)');
-    expect(Array.from(root.querySelectorAll('.decision__who .chip')).map(c => text(c))).toEqual(['Aspect ratio 1']);
   });
 
   it('blocks the way to the solver (disabled, red) while the mesh is not accepted', () => {
@@ -155,14 +154,6 @@ describe('QualityControlsComponent', () => {
     fixture.detectChanges();
 
     (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.picked__head .link')!.click();
-
-    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
-  });
-
-  it('picks the worst element for "show the problem element"', () => {
-    const root = render().nativeElement as HTMLElement;
-
-    link(root, 'Показати проблемний елемент').click();
 
     expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
   });

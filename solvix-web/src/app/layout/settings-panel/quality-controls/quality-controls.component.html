@@ -10,10 +10,6 @@
     <ng-container *ngIf="d.level !== 'ok'">
       <p class="decision__stat" *ngIf="d.level === 'bad'"><b>{{ d.rejected }}</b> із {{ d.total }} елементів ({{ percentOf(d.rejected, d.total) }}) не проходять критерії.</p>
       <p class="decision__stat" *ngIf="d.level === 'blocked'"><b>{{ d.folded }}</b> елементів вивернуті або вироджені.</p>
-      <div class="decision__who" *ngIf="d.failing.length > 0">
-        <span class="chip" *ngFor="let f of d.failing; trackBy: trackLabel"><b>{{ f.tech }}</b> {{ f.count }}</span>
-      </div>
-      <button type="button" class="go" (click)="showWorst()">Показати проблемний елемент</button>
     </ng-container>
   </section>
 

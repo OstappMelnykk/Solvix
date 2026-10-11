@@ -117,18 +117,6 @@ export class QualityControlsComponent implements DoCheck {
     return level === 'ok' ? '✓' : '✗';
   }
 
-  // Picks the element that fails most clearly, so its measures are in front of the user.
-  showWorst(): void {
-    this.solver.setQualityCompare(this.sessionId, null);
-    const solvix = this.solvix();
-    if (!solvix) return;
-    this.solver.setQualityMetric(this.sessionId, 'grade');
-    const worst = solvix.flagged
-      .filter(e => e.grade === 'invalid')
-      .concat(solvix.flagged.filter(e => e.grade !== 'invalid'))[0];
-    if (worst) this.solver.setQualityPick(this.sessionId, { hex: worst.hex, ex: worst.ex, ey: worst.ey, ez: worst.ez });
-  }
-
   // --- 2. the measures of the criterion ---
 
   private measureOf(limit: SolverQualityLimitDto, value: number): Measure {
