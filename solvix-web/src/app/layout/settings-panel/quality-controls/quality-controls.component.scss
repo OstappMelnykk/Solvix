@@ -207,7 +207,7 @@ i {
     position: relative;
     display: flex;
     height: 10px;
-    margin-top: 9px;
+    margin-top: 20px;
     border-radius: 5px;
     gap: 2px;
   }
@@ -265,6 +265,19 @@ i {
     border-radius: 50%;
     box-sizing: border-box;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  }
+
+  &__at {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    margin-bottom: 4px;
+    transform: translateX(-50%);
+    color: $muted;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    white-space: nowrap;
   }
 
   &__sub {

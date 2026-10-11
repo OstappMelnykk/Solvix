@@ -104,7 +104,7 @@
       <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.ok ? '✓' : '✗' }} {{ m.shown }}</span>
     </div>
     <div class="gauge__track">
-      <span class="gauge__marker" [style.left]="markerLeft(m)"></span>
+      <span class="gauge__marker" [style.left]="markerLeft(m)"><span class="gauge__at">{{ m.shown }}</span></span>
       <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__zone" [style.background]="color(z.result)"></span>
     </div>
     <div class="gauge__ticks">
