@@ -564,8 +564,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       box.getCenter(body);
       const bodySize = Math.max(box.getSize(new THREE.Vector3()).length(), 1e-6);
       for (const entry of groups.values()) {
-        // the label is as big as the surface it speaks of: its height is a third of the side of a square of that area
-        const height = Math.min(bodySize * 0.3, Math.max(bodySize * 0.01, Math.sqrt(entry.area) / 3));
+        // the label is as big as the surface it speaks of: its height is a sixth of the side of a square of that area
+        const height = Math.min(bodySize * 0.15, Math.max(bodySize * 0.006, Math.sqrt(entry.area) / 6));
         const centre = entry.points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).divideScalar(entry.points.length);
         const normal = entry.normals.reduce((sum, n) => sum.add(n), new THREE.Vector3()).normalize();
         if (normal.dot(centre.clone().sub(body)) < 0) normal.negate();
