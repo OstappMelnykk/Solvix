@@ -4,29 +4,17 @@
 
   <!-- 1. Чи приймається сітка (критерій Solvix) -->
   <section class="part" *ngIf="decision() as d">
-    <div class="decision" [attr.data-level]="d.level">
-      <div class="decision__banner">
-        <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
-        <span class="decision__title">{{ d.title }}</span>
+    <button type="button" class="go go--wide" [class.go--ok]="d.level === 'ok'" [class.go--no]="d.level !== 'ok'" [disabled]="d.level !== 'ok'" (click)="goToSolver()">
+      {{ d.level === 'ok' ? 'Перейти до розрахунку →' : d.title }}
+    </button>
+    <ng-container *ngIf="d.level !== 'ok'">
+      <p class="decision__stat" *ngIf="d.level === 'bad'"><b>{{ d.rejected }}</b> із {{ d.total }} елементів ({{ percentOf(d.rejected, d.total) }}) не проходять критерії.</p>
+      <p class="decision__stat" *ngIf="d.level === 'blocked'"><b>{{ d.folded }}</b> елементів вивернуті або вироджені.</p>
+      <div class="decision__who" *ngIf="d.failing.length > 0">
+        <span class="chip" *ngFor="let f of d.failing; trackBy: trackLabel"><b>{{ f.tech }}</b> {{ f.count }}</span>
       </div>
-      <div class="decision__body" *ngIf="d.level !== 'ok'">
-        <p class="decision__stat" *ngIf="d.level === 'bad'">
-          <b>{{ d.rejected }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejected, d.total) }})</span> не проходять критерії Solvix.
-        </p>
-        <p class="decision__stat" *ngIf="d.level === 'blocked'">
-          <b>{{ d.folded }}</b> елементів вивернуті або вироджені: у них змінюється знак якобіана.
-        </p>
-        <div class="decision__who" *ngIf="d.failing.length > 0">
-          <span class="decision__label">Не проходять за:</span>
-          <span class="chip" *ngFor="let f of d.failing; trackBy: trackLabel"><b>{{ f.tech }}</b> {{ f.count }}</span>
-        </div>
-        <p class="decision__advice" *ngIf="d.advice">{{ d.advice }}</p>
-      </div>
-    </div>
-    <div class="decision__actions">
-      <button type="button" class="go" [class.go--primary]="d.level === 'ok'" (click)="goToSolver()">{{ goLabel(d.level) }} →</button>
-      <button type="button" class="go go--primary" *ngIf="d.level !== 'ok'" (click)="showWorst()">Показати проблемний елемент</button>
-    </div>
+      <button type="button" class="go" (click)="showWorst()">Показати проблемний елемент</button>
+    </ng-container>
   </section>
 
   <!-- 2. Критерії -->
@@ -50,7 +38,7 @@
         </button>
       </div>
     </div>
-    <div class="legend">
+    <div class="legend" *ngIf="compareId()">
       <span *ngFor="let l of legend(); trackBy: trackResult"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
     </div>
     <div class="marks">

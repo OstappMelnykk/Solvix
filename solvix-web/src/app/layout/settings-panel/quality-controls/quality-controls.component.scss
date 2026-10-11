@@ -459,106 +459,23 @@ i {
   color: $muted;
 }
 
-// the conclusion: can the solver be used
+// the conclusion: one button, green when the mesh is accepted
 .decision {
-  --level: #2fbf4f;
-  overflow: hidden;
-  border: 1px solid var(--level);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-
-  &[data-level='ok'] {
-    --level: #2fbf4f;
-  }
-
-  &[data-level='caution'] {
-    --level: #f0b429;
-  }
-
-  &[data-level='bad'] {
-    --level: #f08a2e;
-  }
-
-  &[data-level='blocked'] {
-    --level: #e8584a;
-  }
-
-  &__banner {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    background: color-mix(in srgb, var(--level) 22%, transparent);
-  }
-
-  &__icon {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--level);
-    color: #1a1c1f;
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  &__title {
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1.2;
-  }
-
-  &__body {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 8px 10px;
-    border-top: 1px solid var(--level);
-  }
-
   &__stat {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.4;
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: $muted;
 
     b {
-      font-size: 17px;
+      color: $text;
     }
-  }
-
-  &__pct {
-    color: $muted;
   }
 
   &__who {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
     gap: 6px;
-  }
-
-  &__label {
-    color: $muted;
-    font-size: 12px;
-  }
-
-  &__advice {
-    margin: 0;
-    padding-top: 10px;
-    border-top: 1px solid $field-border;
-    color: $muted;
-    font-size: 13px;
-    line-height: 1.4;
-  }
-
-  &__actions {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 8px;
+    margin: 8px 0;
   }
 }
 
@@ -586,6 +503,24 @@ i {
 
   &:hover {
     border-color: $accent-toggle;
+  }
+
+  &--wide {
+    width: 100%;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  &--ok {
+    background: #2fbf4f;
+    border-color: #2fbf4f;
+  }
+
+  &--no {
+    background: #c9473b;
+    border-color: #c9473b;
+    cursor: not-allowed;
+    opacity: 0.9;
   }
 
   &--primary {

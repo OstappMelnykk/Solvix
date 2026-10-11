@@ -75,19 +75,18 @@ describe('QualityControlsComponent', () => {
   it('says by Solvix\'s criterion alone whether the mesh is accepted, with how many elements fail and by which measure', () => {
     const root = render().nativeElement as HTMLElement;
 
-    expect(text(root.querySelector('.decision__banner'))).toContain('Сітка не приймається');
+    expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');
     expect(text(root.querySelector('.decision__stat'))).toContain('1 із 4 елементів (25%)');
     expect(Array.from(root.querySelectorAll('.decision__who .chip')).map(c => text(c))).toEqual(['Aspect ratio 1']);
   });
 
-  it('always has the way to the solver, and says what to expect', () => {
+  it('blocks the way to the solver (disabled, red) while the mesh is not accepted', () => {
     const root = render().nativeElement as HTMLElement;
-    const go = root.querySelector<HTMLButtonElement>('.decision__actions .go')!;
+    const go = root.querySelector<HTMLButtonElement>('.go--wide')!;
 
-    expect(text(go)).toContain('Все одно перейти до розрахунку');
-    go.click();
-
-    expect(world.selectCurrentWorld).toHaveBeenCalledWith(SOLVER_WORLD_INDEX);
+    expect(text(go)).toContain('Сітка не приймається');
+    expect(go.disabled).toBeTrue();
+    expect(go.classList).toContain('go--no');
   });
 
   it('shows each measure with its limit, the worst value, pass or fail', () => {
@@ -105,7 +104,7 @@ describe('QualityControlsComponent', () => {
     const root = render().nativeElement as HTMLElement;
 
     expect(root.querySelectorAll('.gauge__zone').length).toBe(2);
-    expect(Array.from(root.querySelectorAll('.legend span')).map(l => text(l))).toEqual(['Приймається (Solvix)', 'Не приймається (Solvix)']);
+    expect(root.querySelector('.legend')).toBeNull();
     expect(root.textContent).not.toMatch(/відмінн|добр|прийнятн|невалідн/i);
   });
 
@@ -197,7 +196,7 @@ describe('QualityControlsComponent', () => {
       root.querySelectorAll<HTMLButtonElement>('.pill')[1].click();
       fixture.detectChanges();
       expect(solver.setQualityCompare).toHaveBeenCalledWith(1, 'cubit');
-      expect(text(root.querySelector('.decision__banner'))).toContain('Сітка не приймається');       // Solvix's own, not Cubit's
+      expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');       // Solvix's own, not Cubit's
       expect(text(root.querySelector('.legend'))).toContain('Cubit (Sandia)');
 
       link(root, 'Закрити й повернути позначки Solvix').click();
