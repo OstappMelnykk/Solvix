@@ -82,6 +82,10 @@
     <input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" />
     Показувати навантаження
   </label>
+  <label class="check" title="Підписи з величиною тиску на навантажених гранях">
+    <input type="checkbox" [checked]="pressureLabels()" (change)="togglePressureLabels()" />
+    Підписи тиску
+  </label>
   <label class="check" title="Малювати грані між елементами: видно сітку всередині тіла">
     <input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />
     Внутрішні грані

@@ -27,6 +27,7 @@ export interface SolverViewInput {
   readonly hiddenMaterials?: ReadonlySet<string>;
   // Also draw the faces between visible elements (the grid inside the body).
   readonly showInner?: boolean;
+  readonly showLabels?: boolean;
   // When given, the small elements are coloured by their quality grade instead of by material.
   readonly quality?: SolverQualityDto | null;
   // What the quality colours show: the overall grade (default) or the grade of one measure.
@@ -534,7 +535,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   };
 
   // the pressure written on the pressed faces: one label per cube side and pressure (when the body is not deformed)
-  if (!displaced && input.showLoads !== false && (input.marksOpacity ?? 1) !== 0) {
+  if (!displaced && input.showLabels !== false && input.showLoads !== false && (input.marksOpacity ?? 1) !== 0) {
     const groups = new Map<string, { text: string; points: THREE.Vector3[]; normals: THREE.Vector3[] }>();
     const everyPoint: THREE.Vector3[] = [];
     for (const faces of drawn.values()) {

@@ -60,6 +60,7 @@ export class SolverRenderService {
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
       showInner: this.solver.showInner(sessionId),
+      showLabels: this.solver.pressureLabels(sessionId),
       quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
     };
     const view = buildSolverView(input);

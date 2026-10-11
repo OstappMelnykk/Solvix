@@ -291,6 +291,9 @@ describe('solver-view', () => {
       const shown = buildSolverView(input({ setup: setup({ loads }) }));
       const hidden = buildSolverView(input({ setup: setup({ loads }), showLoads: false }));
       const none = buildSolverView(input());
+      const off = buildSolverView(input({ setup: setup({ loads }), showLabels: false }));
+      expect(labels(off).length).toBe(0);
+      disposeMeshView(off);
       expect(labels(shown).length).toBe(1);
       expect(labels(hidden).length).toBe(0);
       expect(labels(none).length).toBe(0);

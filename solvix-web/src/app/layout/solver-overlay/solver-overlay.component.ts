@@ -194,6 +194,14 @@ export class SolverOverlayComponent {
     if (Number.isFinite(percent)) this.solver.setOpacity(this.sessionId, percent / 100);
   }
 
+  pressureLabels(): boolean {
+    return this.solver.pressureLabels(this.sessionId);
+  }
+
+  togglePressureLabels(): void {
+    this.solver.setPressureLabels(this.sessionId, !this.pressureLabels());
+  }
+
   showInner(): boolean {
     return this.solver.showInner(this.sessionId);
   }
