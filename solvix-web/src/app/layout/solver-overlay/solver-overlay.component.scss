@@ -122,6 +122,10 @@ $material: #c77dff;
   background: $fix;
 }
 
+.segment--erase.segment--on {
+  background: #d9534f;
+}
+
 .segment--material.segment--on {
   background: $material;
   color: #1b1030;

@@ -88,8 +88,8 @@ describe('SolverOverlayComponent', () => {
   });
 
   describe('the tool', () => {
-    it('offers View, Load, Fix and Material, and switches between them', () => {
-      expect(component.tools.map(t => t.tool)).toEqual(['view', 'load', 'fix', 'material']);
+    it('offers View, Load, Fix, Eraser and Material, and switches between them', () => {
+      expect(component.tools.map(t => t.tool)).toEqual(['view', 'load', 'fix', 'erase', 'material']);
       expect(TOOLS.every(t => t.label.length > 0 && t.title.length > 0)).toBeTrue();
       expect(component.tool()).toBe('view');
 
@@ -166,14 +166,15 @@ describe('SolverOverlayComponent', () => {
   });
 
   it('says what a click does with the chosen tool', () => {
-    const hints = (['view', 'load', 'fix', 'material'] as Tool[]).map(t => {
+    const hints = (['view', 'load', 'fix', 'erase', 'material'] as Tool[]).map(t => {
       tool = t;
       return component.hint();
     });
 
-    expect(new Set(hints).size).toBe(4);
+    expect(new Set(hints).size).toBe(5);
     expect(hints[1]).toContain('навантажити');
-    expect(hints[3]).toContain('пофарбувати');
+    expect(hints[3]).toContain('стерти');
+    expect(hints[4]).toContain('пофарбувати');
   });
 
   it('has a brush for the Pressure, Support and Material tools but not for View, and says how to use it', () => {

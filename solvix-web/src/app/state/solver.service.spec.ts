@@ -199,6 +199,21 @@ describe('SolverService', () => {
         expect(http.expectOne(`${api}/${sessionId}/faces/load`).request.body).toEqual({ faces: [{ hex: 0, face: 'YPlus', p: 0, q: 0 }], pressure: -1e6 });
       });
 
+      it('the eraser takes both the pressure and the support off the faces it reaches', () => {
+        loadSetup({ ...emptySetup, divisions: [2, 1, 1], fixed: [{ hex: 0, face: 'ZPlus', p: 0, q: 0 }], loads: [{ hex: 0, face: 'ZPlus', p: 1, q: 0, pressure: -1e6 }] });
+        solver.setTool(sessionId, 'erase');
+        solver.setBrush(sessionId, true);
+
+        solver.paintStart(sessionId, facePick());
+        solver.paintEnd(sessionId);
+
+        const load = http.expectOne(`${api}/${sessionId}/faces/load`);
+        expect(load.request.body.pressure).toBeNull();
+        load.flush(emptySetup);
+        const fixed = http.expectOne(`${api}/${sessionId}/faces/fixed`);
+        expect(fixed.request.body.fixed).toBeFalse();
+      });
+
       it('erases when the stroke begins on a face that is already marked', () => {
         loadSetup({ ...emptySetup, divisions: [2, 1, 1], fixed: [{ hex: 0, face: 'ZPlus', p: 0, q: 0 }] });
         solver.setTool(sessionId, 'fix');

@@ -750,6 +750,10 @@ export class SolverService {
     }
     const targets = faceTargets(pick, entry.scope, this.editor.getState(sessionId), divisions);
     const small = targets.flatMap(t => smallFacesOf(t, divisions));
+    if (entry.tool === 'erase') {
+      this.eraseFaces(sessionId, targets);
+      return;
+    }
     if (entry.tool === 'load') {
       const marked = small.every(f => this.entry(sessionId).setup?.loads.some(l => sameFace(l, f) && l.pressure === entry.pressure));
       entry.loadSide = null;
@@ -797,6 +801,11 @@ export class SolverService {
     }
     const targets = faceTargets(pick, entry.scope, this.editor.getState(sessionId), this.divisions(sessionId));
     const small = targets.flatMap(t => smallFacesOf(t, this.divisions(sessionId)));
+    if (entry.tool === 'erase') {
+      entry.stroke = { erase: true, faces: new Map(), elements: new Map(), hexes: new Set() };
+      this.paintTo(sessionId, pick);
+      return;
+    }
     const marked = entry.tool === 'load'
       ? small.every(f => entry.setup?.loads.some(l => sameFace(l, f) && l.pressure === entry.pressure))
       : small.every(f => entry.setup?.fixed.some(x => sameFace(x, f)));
@@ -835,6 +844,10 @@ export class SolverService {
       return;
     }
     const targets = [...stroke.faces.values()];
+    if (entry.tool === 'erase') {
+      this.eraseFaces(sessionId, targets);
+      return;
+    }
     if (entry.tool === 'load') {
       entry.loadSide = null;
       this.apply(sessionId, this.api.setLoads(sessionId, targets, stroke.erase ? null : entry.pressure));
@@ -843,6 +856,15 @@ export class SolverService {
       entry.fixedSide = null;
       this.apply(sessionId, this.api.setFixedFaces(sessionId, targets, !stroke.erase));
     }
+  }
+
+  // The eraser: these faces carry neither a pressure nor a support any more.
+  private eraseFaces(sessionId: number, targets: readonly SolverFaceDto[]): void {
+    const entry = this.entry(sessionId);
+    entry.loadSide = null;
+    entry.fixedChosen = true;
+    entry.fixedSide = null;
+    this.apply(sessionId, this.api.setLoads(sessionId, targets, null), () => this.apply(sessionId, this.api.setFixedFaces(sessionId, targets, false)));
   }
 
   // Gives every cube one material (the whole body is made of it again).

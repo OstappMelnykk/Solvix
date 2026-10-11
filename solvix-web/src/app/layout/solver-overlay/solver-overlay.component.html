@@ -10,6 +10,7 @@
       [class.segment--on]="tool() === item.tool"
       [class.segment--load]="item.tool === 'load'"
       [class.segment--fix]="item.tool === 'fix'"
+      [class.segment--erase]="item.tool === 'erase'"
       [class.segment--material]="item.tool === 'material'"
       [title]="item.title"
       (click)="setTool(item.tool)"
