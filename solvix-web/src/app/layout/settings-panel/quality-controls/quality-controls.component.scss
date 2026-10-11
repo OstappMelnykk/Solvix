@@ -207,7 +207,7 @@ i {
     position: relative;
     display: flex;
     height: 10px;
-    margin-top: 4px;
+    margin-top: 9px;
     border-radius: 5px;
     gap: 2px;
   }
@@ -255,13 +255,13 @@ i {
 
   &__marker {
     position: absolute;
-    top: -4px;
-    width: 4px;
-    height: 18px;
-    margin-left: -2px;
+    top: -7px;
+    width: 6px;
+    height: 24px;
+    margin-left: -3px;
     background: #fff;
-    border-radius: 2px;
-    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+    border-radius: 3px;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
   }
 
   &__sub {
