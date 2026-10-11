@@ -56,6 +56,7 @@ function isCornerAngle(limit: SolverQualityLimitDto): boolean {
 
 // How far a measure that is lower-is-better may go on the gauge: twice its limit, but not beyond 180° for degrees.
 function farEnd(limit: SolverQualityLimitDto, t: number): number {
+  if (limit.key === 'equiangleSkew') return 1;
   return limit.unit === '°' ? Math.min(2 * t, 180) : 2 * t;
 }
 

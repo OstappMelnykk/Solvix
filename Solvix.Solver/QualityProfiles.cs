@@ -69,6 +69,10 @@ internal static class QualityProfiles
                 false, 2, new[] { 165.0 }, "°", 0, m => m.Shape.MaxCornerAngle, "plain", 179.9),
             C("minCornerAngle", "Найменший кут", "Мін. кут", "Minimum corner angle", "Найменший кут у кутку грані чи перерізу (кутові вузли). 90° — прямокутник. Гострий кут псує точність. Це не перевірка ANSYS: Solvix додає її сам (межа 15°), бо гострий кут може ховатися за прийнятним найбільшим.",
                 true, 2, new[] { 15.0 }, "°", 0, m => m.Shape.MinCornerAngle),
+            C("scaledJacobian", "Нормований якобіан", "Норм. якобіан", "Scaled Jacobian", "Найменший якобіан у кутових вузлах, поділений на довжини трьох ребер (так рахує Cubit/Verdict). 1 — куб, 0 — виродження, мінус — вивернутий. Це не перевірка ANSYS: Solvix додає її сам (межа 0.2, значно м'якша за 0.5 у Cubit).",
+                true, 2, new[] { 0.2 }, "", 2, m => m.Linear.ScaledJacobian),
+            C("equiangleSkew", "Нерівнокутність", "Skewness", "Equiangle skewness", "Найбільше відхилення кута грані від 90°, поділене на 90°. 0 — усі кути прямі, 1 — виродження. Шкала ANSYS вважає 0.9–1 «голкою», тож Solvix не приймає від 0.9.",
+                false, 2, new[] { 0.9 }, "", 2, m => m.Linear.EquiangleSkew),
             C("warpingFactor", "Викривлення граней", "Викривлення", "Warping factor", "Наскільки грань не лежить в одній площині: різниця висот кутів вздовж ребра, поділена на корінь із площі. 0 — плоска грань.",
                 false, 2, new[] { 0.2 }, "", 2, m => Finite(m.Shape.WarpingFactor), "plain", 0.4),
         });
