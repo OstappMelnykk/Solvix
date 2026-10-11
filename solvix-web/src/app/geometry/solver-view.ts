@@ -536,7 +536,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
 
   // the pressure written on the pressed faces: one label per cube side and pressure (when the body is not deformed)
   if (!displaced && input.showLabels !== false && input.showLoads !== false && (input.marksOpacity ?? 1) !== 0) {
-    const groups = new Map<string, { text: string; points: THREE.Vector3[]; normals: THREE.Vector3[] }>();
+    const groups = new Map<string, { text: string; points: THREE.Vector3[]; normals: THREE.Vector3[]; area: number }>();
     const everyPoint: THREE.Vector3[] = [];
     for (const faces of drawn.values()) {
       for (const face of faces) {
@@ -546,11 +546,14 @@ export function buildSolverView(input: SolverViewInput): MeshView {
         if (pressure === undefined) continue;
         const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
         const centre = facePoint(small, 0, 0);
-        const normal = facePoint(small, 1, 0).sub(facePoint(small, -1, 0)).cross(facePoint(small, 0, 1).sub(facePoint(small, 0, -1))).normalize();
+        const spanned = facePoint(small, 1, 0).sub(facePoint(small, -1, 0)).cross(facePoint(small, 0, 1).sub(facePoint(small, 0, -1)));
+        const area = spanned.length();
+        const normal = spanned.normalize();
         const group = `${face.owner.id}:${face.face}:${pressure}`;
-        const entry = groups.get(group) ?? { text: `${Number((pressure / 1e6).toPrecision(3))} МПа`, points: [], normals: [] };
+        const entry = groups.get(group) ?? { text: `${Number((pressure / 1e6).toPrecision(3))} МПа`, points: [], normals: [], area: 0 };
         entry.points.push(centre);
         entry.normals.push(normal);
+        entry.area += area;
         groups.set(group, entry);
         everyPoint.push(centre);
       }
@@ -559,8 +562,10 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       const box = new THREE.Box3().setFromPoints(everyPoint);
       const body = new THREE.Vector3();
       box.getCenter(body);
-      const height = Math.max(box.getSize(new THREE.Vector3()).length() * 0.05, 1e-6);
+      const bodySize = Math.max(box.getSize(new THREE.Vector3()).length(), 1e-6);
       for (const entry of groups.values()) {
+        // the label is as big as the surface it speaks of: its height is a third of the side of a square of that area
+        const height = Math.min(bodySize * 0.3, Math.max(bodySize * 0.01, Math.sqrt(entry.area) / 3));
         const centre = entry.points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).divideScalar(entry.points.length);
         const normal = entry.normals.reduce((sum, n) => sum.add(n), new THREE.Vector3()).normalize();
         if (normal.dot(centre.clone().sub(body)) < 0) normal.negate();

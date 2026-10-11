@@ -285,6 +285,20 @@ describe('solver-view', () => {
   });
 
   describe('clamped and pressed faces', () => {
+    it('makes the label as big as the surface it speaks of', () => {
+      const labelHeight = (loads: SolverSetupDto['loads']) => {
+        const view = buildSolverView(input({ setup: setup({ divisions: [2, 1, 1], loads }) }));
+        let height = 0;
+        view.root.traverse(c => { if (c.userData['pressureLabel']) height = c.scale.y; });
+        disposeMeshView(view);
+        return height;
+      };
+      const one = labelHeight([{ hex: 0, face: 'ZPlus', pressure: -1e6, p: 0, q: 0 }]);
+      const two = labelHeight([{ hex: 0, face: 'ZPlus', pressure: -1e6, p: 0, q: 0 }, { hex: 0, face: 'ZPlus', pressure: -1e6, p: 1, q: 0 }]);
+      expect(one).toBeGreaterThan(0);
+      expect(two).toBeGreaterThan(one);
+    });
+
     it('writes the pressure on the pressed face, one label per side and pressure, and none when hidden', () => {
       const labels = (view: ReturnType<typeof buildSolverView>) => { const found: THREE.Object3D[] = []; view.root.traverse(c => { if (c.userData['pressureLabel']) found.push(c); }); return found; };
       const loads = [{ hex: 1, face: 'XPlus' as const, pressure: -5e6, p: 0, q: 0 }];
