@@ -653,17 +653,57 @@ i {
   }
 }
 
-// the look at other tools is set apart: dashed, and it says it decides nothing
-.part--look {
-  border-style: dashed;
+// the look at other tools: a plain list, the tool on the left and the share it accepts on the right
+.look-note {
+  margin: 0 0 8px;
+  color: $muted;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
-.look-note {
+.pills {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 10px;
-  padding: 8px 10px;
-  background: rgba(240, 180, 41, 0.12);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  background: $field-bg;
+  border: 1px solid $field-border;
   border-radius: 6px;
-  color: #e8cf8a;
+  color: $text;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &--on {
+    border-color: $accent-toggle;
+    background: color-mix(in srgb, $accent-toggle 18%, transparent);
+  }
+
+  &__percent {
+    flex: none;
+    color: $muted;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &--on &__percent {
+    color: $text;
+  }
+}
+
+.about--note {
   font-size: 12px;
 }
 
