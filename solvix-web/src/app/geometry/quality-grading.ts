@@ -54,10 +54,15 @@ function isCornerAngle(limit: SolverQualityLimitDto): boolean {
   return limit.unit === '°' && limit.kind !== 'angleDeviation' && limit.key !== 'parallelDeviation';
 }
 
-// How far a measure that is lower-is-better may go on the gauge: twice its limit, but not beyond 180° for degrees.
+// A lower-is-better measure with no upper bound (a ratio): its far end is infinity, not an invented number.
+function isUnbounded(limit: SolverQualityLimitDto): boolean {
+  return !limit.higherIsBetter && limit.unit !== '°' && limit.key !== 'equiangleSkew';
+}
+
+// How far a bounded lower-is-better measure goes on the gauge: its real maximum, or 180° for degrees.
 function farEnd(limit: SolverQualityLimitDto, t: number): number {
   if (limit.key === 'equiangleSkew') return 1;
-  return limit.unit === '°' ? Math.min(2 * t, 180) : 2 * t;
+  return Math.min(2 * t, 180);
 }
 
 export function gaugePosition(limit: SolverQualityLimitDto, value: number): number {
@@ -70,7 +75,10 @@ export function gaugePosition(limit: SolverQualityLimitDto, value: number): numb
     return value >= t ? 0.5 + 0.5 * clamp((value - t) / Math.max(1e-9, ideal - t)) : 0.5 - 0.5 * clamp((t - value) / Math.max(1e-9, t));
   }
   if (plainAngle) return value <= t ? 0.5 + 0.5 * clamp((t - value) / Math.max(1e-9, t - 90)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, 180 - t));
-  return value <= t ? 1 - 0.5 * clamp(value / Math.max(1e-9, t)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, farEnd(limit, t) - t));
+  if (value <= t) return 1 - 0.5 * clamp(value / Math.max(1e-9, t));
+  // beyond the limit of a ratio the marker slides towards the far end and reaches it only at infinity
+  if (isUnbounded(limit)) return value >= 1e6 ? 0 : 0.5 * clamp(t / value);
+  return 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, farEnd(limit, t) - t));
 }
 
 export interface GaugeZone {
@@ -109,9 +117,9 @@ export interface GaugeTick {
 export function gaugeTicks(limit: SolverQualityLimitDto): GaugeTick[] {
   const t = passLimit(limit);
   const plainAngle = isCornerAngle(limit);
-  const left = limit.higherIsBetter ? 0 : plainAngle ? 180 : farEnd(limit, t);
+  const left = limit.higherIsBetter ? 0 : plainAngle ? 180 : isUnbounded(limit) ? Infinity : farEnd(limit, t);
   const right = limit.higherIsBetter ? (plainAngle ? 90 : 1) : plainAngle ? 90 : 0;
-  const text = (v: number) => `${Number(v.toFixed(2))}${limit.unit}`;
+  const text = (v: number) => (Number.isFinite(v) ? `${Number(v.toFixed(2))}${limit.unit}` : '∞');
   return [{ at: 0, text: text(left) }, { at: 50, text: text(t) }, { at: 100, text: text(right) }];
 }
 

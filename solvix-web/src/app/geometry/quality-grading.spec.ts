@@ -18,6 +18,7 @@ describe('quality gauge', () => {
     expect(gaugePosition(aspect, 1)).toBeGreaterThan(gaugePosition(aspect, 5));
     expect(gaugePosition(aspect, 40)).toBeLessThan(0.5);
     expect(gaugePosition(aspect, 1e9)).toBe(0);
+    expect(gaugePosition(aspect, 90)).toBeGreaterThan(0);                     // 3x the limit is still short of the far end
   });
 
   it('stays inside the gauge for any value', () => {
@@ -144,7 +145,7 @@ describe('is the mesh accepted', () => {
 describe('numbers on the quality gauge', () => {
   it('writes the far end, the limit and the ideal along the ruler', () => {
     expect(gaugeTicks(jacobian)).toEqual([{ at: 0, text: '0' }, { at: 50, text: '0.15' }, { at: 100, text: '1' }]);
-    expect(gaugeTicks(aspect)).toEqual([{ at: 0, text: '60' }, { at: 50, text: '30' }, { at: 100, text: '0' }]);
+    expect(gaugeTicks(aspect)).toEqual([{ at: 0, text: '∞' }, { at: 50, text: '30' }, { at: 100, text: '0' }]);
     const angle = limit({ higherIsBetter: false, bounds: [20, 30, 45], unit: '°', kind: 'angleDeviation' });
     expect(gaugeTicks(angle).map(t => t.text)).toEqual(['90°', '45°', '0°']);
   });
