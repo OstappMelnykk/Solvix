@@ -303,6 +303,39 @@ export function faceResolution(divisions: readonly number[]): number {
 const trianglesPerFace = (resolution: number) => 2 * resolution * resolution;
 
 // Appends the smooth surface of a small face (its 8 nodes through the face shape functions) to a vertex/index list.
+// A point of a small face at (u, v) in [-1, 1].
+function facePoint(face: SmallFace, u: number, v: number): THREE.Vector3 {
+  const point = new THREE.Vector3();
+  for (let k = 0; k < 8; k++) point.addScaledVector(face.positions[k], faceShape(k, u, v));
+  return point;
+}
+
+// A label with the pressure, drawn on the face: a sprite that always looks at the camera.
+function pressureLabel(text: string, position: THREE.Vector3, height: number): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 96;
+  const context = canvas.getContext('2d');
+  if (context) {
+    context.fillStyle = 'rgba(10, 30, 10, 0.78)';
+    context.fillRect(0, 0, 256, 96);
+    context.strokeStyle = '#44ff44';
+    context.lineWidth = 4;
+    context.strokeRect(2, 2, 252, 92);
+    context.fillStyle = '#d6ffd6';
+    context.font = 'bold 44px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(text, 128, 50);
+  }
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false }));
+  sprite.position.copy(position);
+  sprite.scale.set(height * (256 / 96), height, 1);
+  sprite.renderOrder = 10;
+  sprite.userData['pressureLabel'] = true;
+  return sprite;
+}
+
 function appendSurface(positions: number[], indices: number[], face: SmallFace, resolution: number, onVertex?: (u: number, v: number, value: number) => void): void {
   const base = positions.length / 3;
   const stride = resolution + 1;
@@ -499,6 +532,41 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const pressure = pressureOf.get(`${face.owner.id}:${face.face}:${face.p}:${face.q}`) ?? 0;
     return new THREE.Color(pressureColor(allPressures, pressure));
   };
+
+  // the pressure written on the pressed faces: one label per cube side and pressure (when the body is not deformed)
+  if (!displaced && input.showLoads !== false && (input.marksOpacity ?? 1) !== 0) {
+    const groups = new Map<string, { text: string; points: THREE.Vector3[]; normals: THREE.Vector3[] }>();
+    const everyPoint: THREE.Vector3[] = [];
+    for (const faces of drawn.values()) {
+      for (const face of faces) {
+        if (!face.outer) continue;
+        const key = `${face.owner.id}:${face.face}:${face.p}:${face.q}`;
+        const pressure = pressureOf.get(key);
+        if (pressure === undefined) continue;
+        const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
+        const centre = facePoint(small, 0, 0);
+        const normal = facePoint(small, 1, 0).sub(facePoint(small, -1, 0)).cross(facePoint(small, 0, 1).sub(facePoint(small, 0, -1))).normalize();
+        const group = `${face.owner.id}:${face.face}:${pressure}`;
+        const entry = groups.get(group) ?? { text: `${Number((pressure / 1e6).toPrecision(3))} МПа`, points: [], normals: [] };
+        entry.points.push(centre);
+        entry.normals.push(normal);
+        groups.set(group, entry);
+        everyPoint.push(centre);
+      }
+    }
+    if (everyPoint.length > 0) {
+      const box = new THREE.Box3().setFromPoints(everyPoint);
+      const body = new THREE.Vector3();
+      box.getCenter(body);
+      const height = Math.max(box.getSize(new THREE.Vector3()).length() * 0.05, 1e-6);
+      for (const entry of groups.values()) {
+        const centre = entry.points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).divideScalar(entry.points.length);
+        const normal = entry.normals.reduce((sum, n) => sum.add(n), new THREE.Vector3()).normalize();
+        if (normal.dot(centre.clone().sub(body)) < 0) normal.negate();
+        root.add(pressureLabel(entry.text, centre.add(normal.multiplyScalar(height * 0.6)), height));
+      }
+    }
+  }
 
   // clamped and pressed faces: one translucent set per colour
   for (const color of [FIXED_COLOR, LOAD_COLOR]) {

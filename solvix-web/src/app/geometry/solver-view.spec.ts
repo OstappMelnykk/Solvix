@@ -285,6 +285,18 @@ describe('solver-view', () => {
   });
 
   describe('clamped and pressed faces', () => {
+    it('writes the pressure on the pressed face, one label per side and pressure, and none when hidden', () => {
+      const labels = (view: ReturnType<typeof buildSolverView>) => { const found: THREE.Object3D[] = []; view.root.traverse(c => { if (c.userData['pressureLabel']) found.push(c); }); return found; };
+      const loads = [{ hex: 1, face: 'XPlus' as const, pressure: -5e6, p: 0, q: 0 }];
+      const shown = buildSolverView(input({ setup: setup({ loads }) }));
+      const hidden = buildSolverView(input({ setup: setup({ loads }), showLoads: false }));
+      const none = buildSolverView(input());
+      expect(labels(shown).length).toBe(1);
+      expect(labels(hidden).length).toBe(0);
+      expect(labels(none).length).toBe(0);
+      [shown, hidden, none].forEach(disposeMeshView);
+    });
+
     it('overlays them in blue and green, small face by small face', () => {
       const plain = buildSolverView(input());
       const marked = buildSolverView(input({

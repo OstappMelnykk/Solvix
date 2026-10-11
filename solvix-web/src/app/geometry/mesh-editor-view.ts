@@ -429,7 +429,10 @@ export function disposeMeshView(view: MeshView): void {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   view.root.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments || child instanceof THREE.Points) {
+    if (child instanceof THREE.Sprite) {
+      child.material.map?.dispose();
+      materials.add(child.material);
+    } else if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments || child instanceof THREE.Points) {
       geometries.add(child.geometry);
       (Array.isArray(child.material) ? child.material : [child.material]).forEach(m => materials.add(m));
     }
