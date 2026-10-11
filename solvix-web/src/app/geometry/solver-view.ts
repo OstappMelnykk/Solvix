@@ -48,15 +48,13 @@ const EDGE_SEGMENTS = 8;
 const EDGE_COLOR = 0x1a1d23;
 const FIXED_COLOR = 0x3388ff;
 const LOAD_COLOR = 0x44ff44;
-// with several different pressures each gets a colour of its own, from the weakest (green) to the strongest (pink)
-const PRESSURE_COLORS = [0x44ff44, 0xd8ff2a, 0xffe14a, 0xff9a2e, 0xff4a4a, 0xff5ad8];
-
-// The colour of a pressure among the pressures that are set: one pressure stays green.
+// One colour for the loads, in tones: the weaker the pressure, the paler the green; the strongest is the full one.
 export function pressureColor(all: readonly number[], pressure: number): number {
   const distinct = Array.from(new Set(all.map(Math.abs))).sort((a, b) => a - b);
   if (distinct.length <= 1) return LOAD_COLOR;
   const rank = Math.max(0, distinct.indexOf(Math.abs(pressure)));
-  return PRESSURE_COLORS[Math.min(PRESSURE_COLORS.length - 1, Math.round((rank * (PRESSURE_COLORS.length - 1)) / (distinct.length - 1)))];
+  const tone = 0.3 + 0.7 * (rank / (distinct.length - 1));
+  return new THREE.Color(LOAD_COLOR).multiplyScalar(tone).getHex();
 }
 const HIGHLIGHT_COLOR = 0xffe14d;
 const OVERLAY_OPACITY = 0.62;

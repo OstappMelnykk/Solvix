@@ -676,10 +676,11 @@ describe('colouring by mesh quality', () => {
 });
 
 describe('pressureColor', () => {
-  it('stays green for one pressure and gives different pressures different colours, weakest green', () => {
+  it('stays green for one pressure and gives different pressures tones of green, the strongest the full one', () => {
     expect(pressureColor([-1e6, -1e6], -1e6)).toBe(0x44ff44);
     const colors = [-1e6, -5e6, -20e6].map(p => pressureColor([-1e6, -5e6, -20e6], p));
     expect(new Set(colors).size).toBe(3);
-    expect(colors[0]).toBe(0x44ff44);
+    expect(colors[2]).toBe(0x44ff44);
+    expect(colors[0]).toBeLessThan(colors[1]);
   });
 });
