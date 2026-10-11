@@ -69,6 +69,9 @@ describe('SolverOverlayComponent', () => {
       expect(component.pressureMpa()).toBe(-1);
       component.onPressureMpa({ target: { value: '-2.5' } } as unknown as Event);
       expect(solver.setPressure).toHaveBeenCalledWith(1, -2.5e6);
+      solver.setPressure.calls.reset();
+      component.onPressureMpa({ target: { value: '-1000000' } } as unknown as Event);
+      expect(solver.setPressure).not.toHaveBeenCalled();
       solver.loadedPressures.and.returnValue([{ pressure: -5e6, count: 2 }, { pressure: -1e6, count: 3 }]);
       expect(component.loadedText()).toBe('2 × -5.00 МПа, 3 × -1.00 МПа');
       const key = component.pressureKey();

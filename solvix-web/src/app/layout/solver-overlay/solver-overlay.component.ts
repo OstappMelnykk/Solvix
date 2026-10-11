@@ -4,9 +4,11 @@ import { Scope, Tool } from '../../geometry/solver-targets';
 import { ResultField, SolverService } from '../../state/solver.service';
 import { fieldRange, fieldValues, materialColor, pressureColor, rampColor } from '../../geometry/solver-view';
 import { SolverMaterialDto } from '../../api/solver-api.service';
+import { NotificationService } from '../../state/notification.service';
 
 const SLIDER_STEPS = 1000;
 const MPA = 1e6;
+const MAX_PRESSURE_MPA = 1e4;
 
 export const TOOLS: readonly { tool: Tool; label: string; title: string }[] = [
   { tool: 'view', label: 'Огляд', title: 'Лише дивитися й обертати: клік нічого не змінює' },
@@ -34,6 +36,7 @@ const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
 })
 export class SolverOverlayComponent {
   private readonly solver = inject(SolverService);
+  private readonly notifications = inject(NotificationService);
 
   @Input({ required: true }) sessionId!: number;
 
@@ -150,7 +153,13 @@ export class SolverOverlayComponent {
 
   onPressureMpa(event: Event): void {
     const value = Number((event.target as HTMLInputElement).value);
-    if (Number.isFinite(value)) this.solver.setPressure(this.sessionId, value * MPA);
+    if (!Number.isFinite(value)) return;
+    // steel is some 200 000 MPa: a pressure beyond 10 000 MPa is a slip (Pa typed into the MPa box)
+    if (Math.abs(value) > MAX_PRESSURE_MPA) {
+      this.notifications.warning(`Тиск ${value} МПа нереальний: поле у МПа (1 МПа = 1 000 000 Па). Для 1 МПа введіть 1.`);
+      return;
+    }
+    this.solver.setPressure(this.sessionId, value * MPA);
   }
 
   // --- legend of the marked faces ---
