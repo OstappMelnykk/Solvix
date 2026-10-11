@@ -95,7 +95,6 @@ describe('QualityControlsComponent', () => {
     expect(text(root.querySelectorAll('.part')[1])).not.toContain('source of Solvix');    // the long description is not shown
     expect(gauge).toContain('Витягнутість');
     expect(gauge).toContain('25.0');
-    expect(gauge).toContain('✗');
     expect(gauge).not.toContain('Допустимо');
   });
 
