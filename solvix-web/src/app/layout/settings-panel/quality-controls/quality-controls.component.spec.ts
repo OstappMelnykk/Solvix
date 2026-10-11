@@ -67,7 +67,7 @@ describe('QualityControlsComponent', () => {
     const root = render().nativeElement as HTMLElement;
 
     expect(Array.from(root.querySelectorAll('h5')).map(h => text(h))).toEqual([
-      'Чи приймається сітка', 'Критерії Solvix', 'Фарбувати сцену за', 'Вибраний елемент', 'Як позначили б інші інструменти'
+      'Критерії Solvix', 'Фарбувати сцену за', 'Вибраний елемент', 'Як позначили б інші інструменти'
     ]);
     expect(root.textContent).not.toMatch(/Проблемні елементи|Консенсус|Загальний результат/);
   });
@@ -90,7 +90,7 @@ describe('QualityControlsComponent', () => {
     expect(world.selectCurrentWorld).toHaveBeenCalledWith(SOLVER_WORLD_INDEX);
   });
 
-  it('shows each measure with its limit, the worst value, pass or fail, where it comes from and the error limit', () => {
+  it('shows each measure with its limit, the worst value, pass or fail', () => {
     const root = render().nativeElement as HTMLElement;
     const gauge = text(root.querySelector('.gauge'));
 
@@ -99,7 +99,6 @@ describe('QualityControlsComponent', () => {
     expect(gauge).toContain('25.0');
     expect(gauge).toContain('✗ Не проходить');
     expect(gauge).toContain('Допустимо: не більше 20');
-    expect(gauge).toContain('Межа «помилка» ANSYS: 10⁶');
   });
 
   it('knows only accepted or not: two zones per measure and two colours', () => {

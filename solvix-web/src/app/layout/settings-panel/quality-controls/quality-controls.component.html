@@ -4,14 +4,12 @@
 
   <!-- 1. Чи приймається сітка (критерій Solvix) -->
   <section class="part" *ngIf="decision() as d">
-    <h5>Чи приймається сітка</h5>
     <div class="decision" [attr.data-level]="d.level">
       <div class="decision__banner">
         <span class="decision__icon">{{ decisionIcon(d.level) }}</span>
         <span class="decision__title">{{ d.title }}</span>
       </div>
-      <div class="decision__body">
-        <p class="decision__stat" *ngIf="d.level === 'ok'">Усі <b>{{ d.total }}</b> елементів проходять критерії Solvix.</p>
+      <div class="decision__body" *ngIf="d.level !== 'ok'">
         <p class="decision__stat" *ngIf="d.level === 'bad'">
           <b>{{ d.rejected }}</b> із {{ d.total }} елементів <span class="decision__pct">({{ percentOf(d.rejected, d.total) }})</span> не проходять критерії Solvix.
         </p>
@@ -134,8 +132,6 @@
     <div class="gauge__ticks">
       <span *ngFor="let t of gaugeTicks(m.limit)" class="gauge__tick" [class.gauge__tick--end]="t.at === 100" [class.gauge__tick--mid]="t.at === 50" [style.left.%]="t.at">{{ t.text }}</span>
     </div>
-    <div class="gauge__hint">{{ m.limit.hint }}</div>
-    <div class="gauge__error" *ngIf="errorText(m.limit)">{{ errorText(m.limit) }}</div>
   </div>
 </ng-template>
 <ng-template #loading><div class="empty">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>
