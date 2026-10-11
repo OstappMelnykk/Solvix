@@ -88,6 +88,22 @@ export function gaugeZones(limit: SolverQualityLimitDto): GaugeZone[] {
   ];
 }
 
+export interface GaugeTick {
+  // 0..100: where on the gauge
+  readonly at: number;
+  readonly text: string;
+}
+
+// The numbers written on the gauge: its far end (not passing), the limit in the middle, the ideal at the passing end.
+export function gaugeTicks(limit: SolverQualityLimitDto): GaugeTick[] {
+  const t = passLimit(limit);
+  const plainAngle = limit.unit === '°' && limit.kind !== 'angleDeviation';
+  const left = limit.higherIsBetter ? 0 : plainAngle ? 180 : 2 * t;
+  const right = limit.higherIsBetter ? (plainAngle ? 90 : 1) : plainAngle ? 90 : 0;
+  const text = (v: number) => `${Number(v.toFixed(2))}${limit.unit}`;
+  return [{ at: 0, text: text(left) }, { at: 50, text: text(t) }, { at: 100, text: text(right) }];
+}
+
 // What a value has to be to pass, in words.
 export function ruleText(limit: SolverQualityLimitDto): string {
   if (limit.kind === 'angleDeviation') return `Допустимо: кути від ${90 - limit.bounds[2]}° до ${90 + limit.bounds[2]}°`;

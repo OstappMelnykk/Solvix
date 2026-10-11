@@ -212,6 +212,34 @@ i {
     gap: 2px;
   }
 
+  &__ticks {
+    position: relative;
+    height: 16px;
+    margin-top: 2px;
+    font-size: 11px;
+    color: $muted;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tick {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+
+    &:first-child {
+      transform: none;
+    }
+
+    &--mid {
+      color: $text;
+      font-weight: 700;
+    }
+
+    &--end {
+      transform: translateX(-100%);
+    }
+  }
+
   &__zone {
     flex: 1;
     opacity: 0.85;

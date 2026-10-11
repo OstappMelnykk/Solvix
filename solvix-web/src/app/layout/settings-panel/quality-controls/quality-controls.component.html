@@ -36,24 +36,9 @@
     <h5>Критерії Solvix</h5>
     <p class="about">{{ sx.source }}</p>
     <p class="about about--note" *ngIf="sx.note">{{ sx.note }}</p>
-    <div class="gauge" *ngFor="let m of meshMeasures(); trackBy: trackKey">
-      <div class="gauge__head">
-        <span class="gauge__name" [title]="m.limit.hint">{{ m.limit.label }} <small>{{ m.limit.tech }}</small></span>
-        <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
-      </div>
-      <div class="gauge__verdict" [class.gauge__verdict--bad]="!m.ok">
-        {{ m.ok ? '✓ Проходить' : '✗ Не проходить' }} · {{ limitText(m.limit) }}
-      </div>
-      <div class="gauge__track">
-        <span class="gauge__marker" [style.left]="markerLeft(m)"></span>
-        <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__zone" [style.background]="color(z.result)"></span>
-      </div>
-      <div class="gauge__labels">
-        <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__label"><b>{{ z.label }}</b>{{ z.range }}</span>
-      </div>
-      <div class="gauge__hint">{{ m.limit.hint }}</div>
-      <div class="gauge__error" *ngIf="errorText(m.limit)">{{ errorText(m.limit) }}</div>
-    </div>
+    <ng-container *ngFor="let m of meshMeasures(); trackBy: trackKey">
+      <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
+    </ng-container>
     <p class="about">Значення — найгірше серед усіх елементів сітки.</p>
   </section>
 
@@ -126,10 +111,33 @@
       <ng-container *ngIf="chosenTool() as tool">
         <p class="about">{{ tool.source }}</p>
         <p class="about about--note" *ngIf="tool.note">{{ tool.note }}</p>
+        <ng-container *ngFor="let m of measuresOf(tool); trackBy: trackKey">
+          <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
+        </ng-container>
       </ng-container>
       <p class="about" *ngIf="!chosenTool()">Оберіть інструмент. Відсоток — частка елементів, які він приймає.</p>
       <button type="button" class="go" (click)="closeTools()">Закрити й повернути позначки Solvix</button>
     </ng-template>
   </section>
 </ng-container>
+<ng-template #gaugeTpl let-m>
+  <div class="gauge">
+    <div class="gauge__head">
+      <span class="gauge__name" [title]="m.limit.hint">{{ m.limit.label }} <small>{{ m.limit.tech }}</small></span>
+      <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
+    </div>
+    <div class="gauge__verdict" [class.gauge__verdict--bad]="!m.ok">
+      {{ m.ok ? '✓ Проходить' : '✗ Не проходить' }} · {{ limitText(m.limit) }}
+    </div>
+    <div class="gauge__track">
+      <span class="gauge__marker" [style.left]="markerLeft(m)"></span>
+      <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__zone" [style.background]="color(z.result)"></span>
+    </div>
+    <div class="gauge__ticks">
+      <span *ngFor="let t of gaugeTicks(m.limit)" class="gauge__tick" [class.gauge__tick--end]="t.at === 100" [class.gauge__tick--mid]="t.at === 50" [style.left.%]="t.at">{{ t.text }}</span>
+    </div>
+    <div class="gauge__hint">{{ m.limit.hint }}</div>
+    <div class="gauge__error" *ngIf="errorText(m.limit)">{{ errorText(m.limit) }}</div>
+  </div>
+</ng-template>
 <ng-template #loading><div class="empty">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>

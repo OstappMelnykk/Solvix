@@ -1,10 +1,10 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
-import { DecimalPipe, NgFor, NgIf } from '@angular/common';
+import { DecimalPipe, NgFor, NgIf, NgTemplateOutlet } from '@angular/common';
 import { QualityGradeName, SolverQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
 import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
 import { RESULT_COLORS } from '../../../geometry/solver-view';
 import {
-  DecisionLevel, QualityDecision, QualityMetric, RESULT_NAMES, Result, SOLVIX_ID, decide, gaugePosition, gaugeZones, measuredGrade, metricGrade, passes, rejectedCount, resultOf,
+  DecisionLevel, QualityDecision, QualityMetric, RESULT_NAMES, Result, SOLVIX_ID, decide, gaugePosition, gaugeTicks, gaugeZones, measuredGrade, metricGrade, passes, rejectedCount, resultOf,
   ruleText
 } from '../../../geometry/quality-grading';
 import { ActiveWorldService } from '../../../state/active-world.service';
@@ -24,7 +24,7 @@ interface Measure {
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
-  imports: [NgIf, NgFor, DecimalPipe],
+  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe],
   templateUrl: './quality-controls.component.html',
   styleUrl: './quality-controls.component.scss'
 })
@@ -37,6 +37,7 @@ export class QualityControlsComponent implements DoCheck {
 
   readonly resultNames = RESULT_NAMES;
   readonly gaugeZones = gaugeZones;
+  readonly gaugeTicks = gaugeTicks;
 
   // The tools list of the block of other tools is open (UI only).
   toolsOpen = false;
@@ -137,8 +138,12 @@ export class QualityControlsComponent implements DoCheck {
 
   // The worst value of each measure over the whole mesh.
   meshMeasures(): Measure[] {
-    const solvix = this.solvix();
-    return solvix ? solvix.limits.map(limit => this.measureOf(limit, solvix.worst[limit.key])) : [];
+    return this.measuresOf(this.solvix());
+  }
+
+  // The same for any tool of the report: its own measures with its own limits.
+  measuresOf(quality: SolverQualityDto | null): Measure[] {
+    return quality ? quality.limits.map(limit => this.measureOf(limit, quality.worst[limit.key])) : [];
   }
 
   limitText(limit: SolverQualityLimitDto): string {

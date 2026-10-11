@@ -1,6 +1,6 @@
 import { SolverQualityLimitDto } from '../api/solver-api.service';
 import { SolverQualityDto } from '../api/solver-api.service';
-import { anglesText, decide, gaugePosition, gaugeZones, metricGrade, passes, ruleText, worstAngle } from './quality-grading';
+import { anglesText, decide, gaugePosition, gaugeTicks, gaugeZones, metricGrade, passes, ruleText, worstAngle } from './quality-grading';
 
 const limit = (over: Partial<SolverQualityLimitDto>): SolverQualityLimitDto =>
   ({ key: 'k', label: '', short: '', tech: '', hint: '', higherIsBetter: true, levels: 4, bounds: [], unit: '', decimals: 2, kind: 'plain', errorBound: null, ...over });
@@ -138,5 +138,14 @@ describe('is the mesh accepted', () => {
 
   it('has nothing to judge without elements', () => {
     expect(decide(solvix(0, [])).title).toBe('Сітка порожня');
+  });
+});
+
+describe('numbers on the quality gauge', () => {
+  it('writes the far end, the limit and the ideal along the ruler', () => {
+    expect(gaugeTicks(jacobian)).toEqual([{ at: 0, text: '0' }, { at: 50, text: '0.15' }, { at: 100, text: '1' }]);
+    expect(gaugeTicks(aspect)).toEqual([{ at: 0, text: '60' }, { at: 50, text: '30' }, { at: 100, text: '0' }]);
+    const angle = limit({ higherIsBetter: false, bounds: [20, 30, 45], unit: '°', kind: 'angleDeviation' });
+    expect(gaugeTicks(angle).map(t => t.text)).toEqual(['90°', '45°', '0°']);
   });
 });
