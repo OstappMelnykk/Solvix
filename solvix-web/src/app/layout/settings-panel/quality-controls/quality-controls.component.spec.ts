@@ -136,7 +136,7 @@ describe('QualityControlsComponent', () => {
   it('asks to click on the scene when nothing is picked, and shows the picked element\'s measures by Solvix', () => {
     const fixture = render();
     const root = fixture.nativeElement as HTMLElement;
-    expect(text(root)).toContain('Клікніть на куб на сцені');
+    expect(text(root)).not.toContain('Вибраний елемент');
 
     picked = { hex: 0, ex: 0, ey: 0, ez: 0 };
     fixture.detectChanges();

@@ -44,9 +44,9 @@
   </section>
 
   <!-- 4. Вибраний елемент -->
-  <section class="part">
+  <section class="part" *ngIf="pickedElement() as p">
     <h5>Вибраний елемент</h5>
-    <ng-container *ngIf="pickedElement() as p; else nothingPicked">
+    <ng-container>
       <div class="picked__head">
         <b>{{ placeText(p) }}</b>
         <button type="button" class="link" (click)="clearPick()">Зняти вибір</button>
@@ -68,9 +68,6 @@
       </ng-container>
       <ng-template #waiting><div class="empty">Завантажую показники…</div></ng-template>
     </ng-container>
-    <ng-template #nothingPicked>
-      <div class="empty">Клікніть на куб на сцені — тут з'являться всі показники якості його скінченного елемента.</div>
-    </ng-template>
   </section>
 
   <!-- 5. Інші інструменти: лише подивитись -->
