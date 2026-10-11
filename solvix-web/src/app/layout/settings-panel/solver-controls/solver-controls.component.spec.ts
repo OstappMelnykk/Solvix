@@ -242,28 +242,16 @@ describe('SolverControlsComponent', () => {
         worst: {}, limits: [], flagged: []
       });
 
-      it('asks first, and solves only when the user agrees', () => {
+      it('does not solve, and the button is disabled, while the mesh is not accepted', () => {
         solver.solvixQuality.and.returnValue(solvix(3, 0));
-        const confirm = spyOn(window, 'confirm').and.returnValue(false);
-
         component.solve();
-        expect(confirm).toHaveBeenCalled();
         expect(solver.solve).not.toHaveBeenCalled();
+        expect(component.meshRejected()).toBeTrue();
 
-        confirm.and.returnValue(true);
-        component.solve();
-        expect(solver.solve).toHaveBeenCalledWith(1);
-      });
-
-      it('asks nothing when the mesh is accepted, and leaves an unusable one to the server', () => {
-        const confirm = spyOn(window, 'confirm');
         solver.solvixQuality.and.returnValue(solvix(0, 0));
         component.solve();
-        solver.solvixQuality.and.returnValue(solvix(0, 2));
-        component.solve();
-
-        expect(confirm).not.toHaveBeenCalled();
-        expect(solver.solve).toHaveBeenCalledTimes(2);
+        expect(solver.solve).toHaveBeenCalledWith(1);
+        expect(component.meshRejected()).toBeFalse();
       });
     });
 

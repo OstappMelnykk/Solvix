@@ -172,6 +172,12 @@ export class SolverControlsComponent implements DoCheck {
     return this.decisionOf.value;
   }
 
+  // The solver is not started on a mesh that Solvix does not accept.
+  meshRejected(): boolean {
+    const d = this.decision();
+    return d !== null && d.level !== 'ok';
+  }
+
   openQuality(): void {
     this.activeWorld.selectCurrentWorld(QUALITY_WORLD_INDEX);
   }
@@ -247,8 +253,7 @@ export class SolverControlsComponent implements DoCheck {
 
   // A mesh Solvix does not accept can still be solved, but the user is asked first; an unusable one the server refuses.
   solve(): void {
-    const decision = this.decision();
-    if (decision?.level === 'bad' && !window.confirm(`Сітка не приймається за критеріями Solvix: ${decision.summary}\nРезультат біля цих елементів може бути неточним. Рахувати все одно?`)) return;
+    if (this.meshRejected()) return;
     void this.solver.solve(this.sessionId);
   }
 
