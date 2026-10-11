@@ -149,3 +149,20 @@ describe('numbers on the quality gauge', () => {
     expect(gaugeTicks(angle).map(t => t.text)).toEqual(['90°', '45°', '0°']);
   });
 });
+
+describe('the gauge of a deviation in degrees', () => {
+  const parallel = limit({ key: 'parallelDeviation', higherIsBetter: false, levels: 2, bounds: [100], unit: '°', decimals: 0 });
+
+  it('puts 17° of 100° near the good end but inside the ruler, and ends the ruler at 180°', () => {
+    expect(gaugePosition(parallel, 17)).toBeCloseTo(0.915, 3);
+    expect(gaugePosition(parallel, 0)).toBe(1);
+    expect(gaugePosition(parallel, 180)).toBe(0);
+    expect(gaugeTicks(parallel).map(t => t.text)).toEqual(['180°', '100°', '0°']);
+  });
+
+  it('a corner angle still has its ideal at 90°', () => {
+    const corner = limit({ key: 'maxCornerAngle', higherIsBetter: false, levels: 2, bounds: [165], unit: '°', decimals: 0 });
+    expect(gaugePosition(corner, 90)).toBe(1);
+    expect(gaugeTicks(corner).map(t => t.text)).toEqual(['180°', '165°', '90°']);
+  });
+});

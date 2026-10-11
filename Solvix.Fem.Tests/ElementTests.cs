@@ -534,6 +534,7 @@ public class BrickShapeTests
         Assert.That(s.AspectRatio, Is.EqualTo(1).Within(1e-12));
         Assert.That(s.ParallelDeviation, Is.EqualTo(0).Within(1e-9));
         Assert.That(s.MaxCornerAngle, Is.EqualTo(90).Within(1e-9));
+        Assert.That(s.MinCornerAngle, Is.EqualTo(90).Within(1e-9));
         Assert.That(s.WarpingFactor, Is.EqualTo(0).Within(1e-12));
     }
 
@@ -580,6 +581,7 @@ public class BrickShapeTests
         var s = BrickShape.Of(xyz);
 
         Assert.That(s.MaxCornerAngle, Is.EqualTo(135).Within(1e-6));
+        Assert.That(s.MinCornerAngle, Is.EqualTo(45).Within(1e-6));
         Assert.That(s.ParallelDeviation, Is.EqualTo(0).Within(1e-3));   // opposite edges stay parallel
     }
 

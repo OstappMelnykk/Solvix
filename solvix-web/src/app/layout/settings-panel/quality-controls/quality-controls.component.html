@@ -34,8 +34,6 @@
   <!-- 2. Критерії -->
   <section class="part">
     <h5>Критерії Solvix</h5>
-    <p class="about">{{ sx.source }}</p>
-    <p class="about about--note" *ngIf="sx.note">{{ sx.note }}</p>
     <ng-container *ngFor="let m of meshMeasures(); trackBy: trackKey">
       <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
     </ng-container>

@@ -13,9 +13,11 @@ namespace Solvix.Fem;
 /// <param name="ParallelDeviation">Worst, over the faces and mid-sections, of the angle in degrees between a pair of
 /// opposite edges (the larger of the two pairs; midside nodes ignored). 0 for a rectangle.</param>
 /// <param name="MaxCornerAngle">Largest corner angle in degrees of any face or mid-section (corner nodes only). 90 for a rectangle.</param>
+/// <param name="MinCornerAngle">Smallest corner angle in degrees of any face or mid-section (corner nodes only); not one of
+/// ANSYS's checks, Solvix adds it because a sharp corner can hide behind an acceptable largest angle. 90 for a rectangle.</param>
 /// <param name="WarpingFactor">Largest over the 6 faces of the height difference along an edge (parallel to the mean
 /// normal) divided by the square root of the projected area. 0 for flat faces.</param>
-public readonly record struct BrickShape(double JacobianRatio, double AspectRatio, double ParallelDeviation, double MaxCornerAngle, double WarpingFactor)
+public readonly record struct BrickShape(double JacobianRatio, double AspectRatio, double ParallelDeviation, double MaxCornerAngle, double WarpingFactor, double MinCornerAngle = 90)
 {
     // the 6 faces as cycles of corner nodes
     private static readonly int[][] Faces =
@@ -31,15 +33,16 @@ public readonly record struct BrickShape(double JacobianRatio, double AspectRati
         double[] P(int i) => new[] { xyz[i, 0], xyz[i, 1], xyz[i, 2] };
         var quads = Faces.Concat(Sections).Select(q => q.Select(P).ToArray()).ToList();
 
-        double aspect = 1, parallel = 0, corner = 0;
+        double aspect = 1, parallel = 0, corner = 0, smallest = 90;
         foreach (var q in quads)
         {
             aspect = Math.Max(aspect, QuadAspect(q));
             parallel = Math.Max(parallel, QuadParallelDeviation(q));
             corner = Math.Max(corner, QuadMaxCornerAngle(q));
+            smallest = Math.Min(smallest, QuadMinCornerAngle(q));
         }
         double warping = Faces.Select(f => QuadWarping(f.Select(P).ToArray())).Max();
-        return new BrickShape(JacobianRatioOf(xyz), aspect, parallel, corner, warping);
+        return new BrickShape(JacobianRatioOf(xyz), aspect, parallel, corner, warping, smallest);
     }
 
     // ---- Jacobian ratio ---------------------------------------------------------------------------------------
@@ -98,6 +101,20 @@ public readonly record struct BrickShape(double JacobianRatio, double AspectRati
             return Math.Acos(Math.Clamp(Dot(e1, e2), -1, 1)) * 180 / Math.PI;
         }
         return Math.Max(Pair(0, 1, 2, 3), Pair(1, 2, 3, 0));
+    }
+
+    private static double QuadMinCornerAngle(double[][] p)
+    {
+        double smallest = 180;
+        for (int i = 0; i < 4; i++)
+        {
+            var u = Sub(p[(i + 3) % 4], p[i]);
+            var v = Sub(p[(i + 1) % 4], p[i]);
+            double lu = Norm(u), lv = Norm(v);
+            if (lu <= 0 || lv <= 0) return 0;
+            smallest = Math.Min(smallest, Math.Acos(Math.Clamp(Dot(u, v) / (lu * lv), -1, 1)) * 180 / Math.PI);
+        }
+        return smallest;
     }
 
     private static double QuadMaxCornerAngle(double[][] p)

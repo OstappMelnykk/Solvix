@@ -49,17 +49,27 @@ function passLimit(limit: SolverQualityLimitDto): number {
 
 // Where a value sits on the gauge of its measure, 0..1: not passing on the left half, passing on the right half, the
 // ideal at the right end.
+// A corner angle (ideal 90°), as against a deviation in degrees (ideal 0).
+function isCornerAngle(limit: SolverQualityLimitDto): boolean {
+  return limit.unit === '°' && limit.kind !== 'angleDeviation' && limit.key !== 'parallelDeviation';
+}
+
+// How far a measure that is lower-is-better may go on the gauge: twice its limit, but not beyond 180° for degrees.
+function farEnd(limit: SolverQualityLimitDto, t: number): number {
+  return limit.unit === '°' ? Math.min(2 * t, 180) : 2 * t;
+}
+
 export function gaugePosition(limit: SolverQualityLimitDto, value: number): number {
   const t = passLimit(limit);
   const clamp = (x: number) => Math.min(1, Math.max(0, x));
   if (!Number.isFinite(value)) return limit.higherIsBetter ? 0 : 1;
-  const plainAngle = limit.unit === '°' && limit.kind !== 'angleDeviation';
+  const plainAngle = isCornerAngle(limit);
   if (limit.higherIsBetter) {
     const ideal = plainAngle ? 90 : 1;
     return value >= t ? 0.5 + 0.5 * clamp((value - t) / Math.max(1e-9, ideal - t)) : 0.5 - 0.5 * clamp((t - value) / Math.max(1e-9, t));
   }
   if (plainAngle) return value <= t ? 0.5 + 0.5 * clamp((t - value) / Math.max(1e-9, t - 90)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, 180 - t));
-  return value <= t ? 1 - 0.5 * clamp(value / Math.max(1e-9, t)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, t));
+  return value <= t ? 1 - 0.5 * clamp(value / Math.max(1e-9, t)) : 0.5 - 0.5 * clamp((value - t) / Math.max(1e-9, farEnd(limit, t) - t));
 }
 
 export interface GaugeZone {
@@ -97,8 +107,8 @@ export interface GaugeTick {
 // The numbers written on the gauge: its far end (not passing), the limit in the middle, the ideal at the passing end.
 export function gaugeTicks(limit: SolverQualityLimitDto): GaugeTick[] {
   const t = passLimit(limit);
-  const plainAngle = limit.unit === '°' && limit.kind !== 'angleDeviation';
-  const left = limit.higherIsBetter ? 0 : plainAngle ? 180 : 2 * t;
+  const plainAngle = isCornerAngle(limit);
+  const left = limit.higherIsBetter ? 0 : plainAngle ? 180 : farEnd(limit, t);
   const right = limit.higherIsBetter ? (plainAngle ? 90 : 1) : plainAngle ? 90 : 0;
   const text = (v: number) => `${Number(v.toFixed(2))}${limit.unit}`;
   return [{ at: 0, text: text(left) }, { at: 50, text: text(t) }, { at: 100, text: text(right) }];

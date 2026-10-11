@@ -67,6 +67,8 @@ internal static class QualityProfiles
                 false, 2, new[] { 100.0 }, "°", 0, m => m.Shape.ParallelDeviation, "plain", 170),
             C("maxCornerAngle", "Найбільший кут", "Макс. кут", "Maximum corner angle", "Найбільший кут у кутку грані чи перерізу (кутові вузли). 90° — прямокутник. Тупий кут псує збіжність.",
                 false, 2, new[] { 165.0 }, "°", 0, m => m.Shape.MaxCornerAngle, "plain", 179.9),
+            C("minCornerAngle", "Найменший кут", "Мін. кут", "Minimum corner angle", "Найменший кут у кутку грані чи перерізу (кутові вузли). 90° — прямокутник. Гострий кут псує точність. Це не перевірка ANSYS: Solvix додає її сам (межа 15°), бо гострий кут може ховатися за прийнятним найбільшим.",
+                true, 2, new[] { 15.0 }, "°", 0, m => m.Shape.MinCornerAngle),
             C("warpingFactor", "Викривлення граней", "Викривлення", "Warping factor", "Наскільки грань не лежить в одній площині: різниця висот кутів вздовж ребра, поділена на корінь із площі. 0 — плоска грань.",
                 false, 2, new[] { 0.2 }, "", 2, m => Finite(m.Shape.WarpingFactor), "plain", 0.4),
         });
