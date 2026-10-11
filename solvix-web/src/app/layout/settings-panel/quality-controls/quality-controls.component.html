@@ -5,12 +5,8 @@
   <!-- 1. Чи приймається сітка (критерій Solvix) -->
   <section class="part" *ngIf="decision() as d">
     <button type="button" class="go go--wide" [class.go--ok]="d.level === 'ok'" [class.go--no]="d.level !== 'ok'" [disabled]="d.level !== 'ok'" (click)="goToSolver()">
-      {{ d.level === 'ok' ? 'Перейти до розрахунку →' : d.title }}
+      {{ d.level === 'ok' ? 'Перейти до розрахунку →' : d.title + ' (' + (d.level === 'bad' ? d.rejected + ' із ' + d.total + ', ' + percentOf(d.rejected, d.total) : d.folded + ' вивернуті') + ')' }}
     </button>
-    <ng-container *ngIf="d.level !== 'ok'">
-      <p class="decision__stat" *ngIf="d.level === 'bad'"><b>{{ d.rejected }}</b> із {{ d.total }} елементів ({{ percentOf(d.rejected, d.total) }}) не проходять критерії.</p>
-      <p class="decision__stat" *ngIf="d.level === 'blocked'"><b>{{ d.folded }}</b> елементів вивернуті або вироджені.</p>
-    </ng-container>
   </section>
 
   <!-- 2. Критерії -->

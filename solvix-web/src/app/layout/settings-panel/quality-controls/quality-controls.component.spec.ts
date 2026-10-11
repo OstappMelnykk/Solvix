@@ -76,7 +76,7 @@ describe('QualityControlsComponent', () => {
     const root = render().nativeElement as HTMLElement;
 
     expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');
-    expect(text(root.querySelector('.decision__stat'))).toContain('1 із 4 елементів (25%)');
+    expect(text(root.querySelector('.go--wide'))).toContain('(1 із 4, 25%)');
   });
 
   it('blocks the way to the solver (disabled, red) while the mesh is not accepted', () => {
