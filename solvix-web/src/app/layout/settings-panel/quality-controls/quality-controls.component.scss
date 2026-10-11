@@ -486,10 +486,9 @@ i {
   &__banner {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: 8px;
+    padding: 6px 10px;
     background: color-mix(in srgb, var(--level) 22%, transparent);
-    border-bottom: 1px solid var(--level);
   }
 
   &__icon {
@@ -497,26 +496,27 @@ i {
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--level);
     color: #1a1c1f;
-    font-size: 20px;
+    font-size: 12px;
     font-weight: 800;
   }
 
   &__title {
-    font-size: 18px;
-    font-weight: 700;
+    font-size: 13px;
+    font-weight: 600;
     line-height: 1.2;
   }
 
   &__body {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px 14px 14px;
+    gap: 8px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--level);
   }
 
   &__stat {
@@ -558,7 +558,7 @@ i {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 8px;
   }
 }
 
@@ -575,13 +575,13 @@ i {
 }
 
 .go {
-  padding: 11px 12px;
+  padding: 6px 10px;
   background: $field-bg;
   border: 1px solid $field-border;
   border-radius: 8px;
   color: $text;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
 
   &:hover {
