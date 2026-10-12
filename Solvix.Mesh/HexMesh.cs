@@ -15,7 +15,7 @@ namespace Solvix.Mesh;
 /// share the 8 nodes of the common face, so dragging a shared node deforms
 /// every hex that owns it.
 /// </summary>
-public sealed class HexMesh
+public sealed partial class HexMesh
 {
     private readonly Dictionary<int, MeshNode> _nodes = new();
     private readonly Dictionary<int, Hex20> _hexes = new();

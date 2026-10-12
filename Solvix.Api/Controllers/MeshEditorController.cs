@@ -12,6 +12,8 @@ public record AttachRequest(MeshShapeDto? Shape, MeshCellDto? Cell = null);
 
 public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = false);
 
+public record SmoothRequest(int Iterations = 10, double Relaxation = 0.5);
+
 /// <summary>
 /// Manual hex editor, one mesh per client session. Every editing command
 /// answers 200 with <c>{ ok, error, state }</c> - a refused command is a normal
@@ -68,6 +70,10 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade 
     [HttpPut("nodes/{nodeId:int}")]
     public ActionResult<MeshCommandResultDto> MoveNode(int sessionId, int nodeId, [FromBody] MoveNodeRequest request) =>
         meshBuilder.MoveNode(sessionId, nodeId, new MeshPointDto(request.X, request.Y, request.Z), request.CarryEdgeMidpoints);
+
+    [HttpPost("smooth")]
+    public ActionResult<MeshCommandResultDto> Smooth(int sessionId, [FromBody] SmoothRequest request) =>
+        meshBuilder.Smooth(sessionId, Math.Clamp(request.Iterations, 1, 500), request.Relaxation);
 
     [HttpPost("undo")]
     public ActionResult<MeshCommandResultDto> Undo(int sessionId) => meshBuilder.Undo(sessionId);

@@ -105,6 +105,14 @@ public sealed class HexMeshEditor
         return EditResult.Success;
     });
 
+    /// <summary>Laplacian smoothing of the interior that keeps the local density (see <see cref="HexMesh.Smooth"/>).</summary>
+    public EditResult Smooth(int iterations, double relaxation) => Apply(() =>
+    {
+        if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
+        if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
+        return Mesh.Smooth(iterations, relaxation) > 0 ? EditResult.Success : EditResult.Fail("Nothing to smooth: no interior node can move.");
+    });
+
     public EditResult Reset() => Apply(() =>
     {
         Mesh = new HexMesh();
