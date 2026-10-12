@@ -1,7 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { QUALITY_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
-import { SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
+import { MeshStateDto } from '../api/mesh-editor-api.service';
+import { SectionCut, SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
+import { QualityExploreService, SectionSettings } from './quality-explore.service';
 import { GeometryOpacityService } from './geometry-opacity.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
@@ -19,6 +21,7 @@ export class QualityRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly solver = inject(SolverService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
+  private readonly explore = inject(QualityExploreService);
   private readonly cache = new Map<number, Cached>();
 
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
@@ -30,7 +33,8 @@ export class QualityRenderService {
     }
     const quality = this.solver.quality(sessionId);
     const opacity = this.geometryOpacity.get(sessionId, worldIndex);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${opacity}`;
+    const looking = this.explore.get(sessionId);
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${opacity}:${this.explore.revision(sessionId)}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -44,7 +48,9 @@ export class QualityRenderService {
       quality,
       qualityMetric: this.solver.qualityMetric(sessionId),
       showFixed: this.solver.marks(sessionId, 'quality').fixed,
-      showLoads: this.solver.marks(sessionId, 'quality').loads
+      showLoads: this.solver.marks(sessionId, 'quality').loads,
+      onlyBad: looking.onlyBad,
+      section: looking.section.enabled ? sectionOf(state, looking.section) : undefined
     };
     const view = buildSolverView(input);
     const picked = this.solver.qualityPick(sessionId);
@@ -52,4 +58,12 @@ export class QualityRenderService {
     this.cache.set(sessionId, { key, view });
     return view;
   }
+}
+
+// The plane of a cut in real coordinates: its place is a fraction of the body's extent along the axis.
+export function sectionOf(state: MeshStateDto, section: SectionSettings): SectionCut {
+  const along = (n: { x: number; y: number; z: number }) => (section.axis === 0 ? n.x : section.axis === 1 ? n.y : n.z);
+  const values = state.nodes.map(along);
+  const low = Math.min(...values), high = Math.max(...values);
+  return { axis: section.axis, at: low + (high - low) * section.position, keep: section.keep };
 }

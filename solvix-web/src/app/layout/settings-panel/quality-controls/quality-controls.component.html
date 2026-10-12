@@ -43,6 +43,26 @@
     </div>
   </section>
 
+  <!-- Дослідження всередині -->
+  <section class="part">
+    <h5>Подивитись усередину</h5>
+    <label class="mark"><input type="checkbox" [checked]="looking().onlyBad" (change)="toggleOnlyBad()" />Лише проблемні елементи</label>
+    <label class="mark"><input type="checkbox" [checked]="looking().section.enabled" (change)="toggleSection()" />Розріз тіла площиною</label>
+    <div class="cut" *ngIf="looking().section.enabled">
+      <div class="cut__axes">
+        <button type="button" class="cut__axis" *ngFor="let a of axisNames" [class.on]="looking().section.axis === a.axis" (click)="setSectionAxis(a.axis)">{{ a.name }}</button>
+        <button type="button" class="cut__flip" title="Лишити іншу половину тіла" (click)="flipSection()">⇄ інша половина</button>
+      </div>
+      <input type="range" min="0" max="100" step="1" [value]="looking().section.position * 100" (input)="onSectionPosition($event)" />
+    </div>
+    <div class="walk" *ngIf="badElements().length > 0; else noBad">
+      <button type="button" class="walk__btn" title="Попередній проблемний елемент" (click)="walk(-1)">◀</button>
+      <span class="walk__text">{{ badPosition() > 0 ? 'Елемент ' + badPosition() + ' з ' + badElements().length : 'Проблемних елементів: ' + badElements().length }}</span>
+      <button type="button" class="walk__btn" title="Наступний проблемний елемент (найгірші першими)" (click)="walk(1)">▶</button>
+    </div>
+    <ng-template #noBad><div class="empty">Проблемних елементів немає.</div></ng-template>
+  </section>
+
   <!-- Згладжування -->
   <section class="part">
     <app-smoothing-controls [sessionId]="sessionId"></app-smoothing-controls>

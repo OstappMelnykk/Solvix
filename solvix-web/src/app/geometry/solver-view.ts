@@ -43,6 +43,18 @@ export interface SolverViewInput {
   readonly showLoads?: boolean;
   // Draw the displacement vectors (default yes); the view can show and hide them later without a rebuild.
   readonly vectors?: boolean;
+  // Quality only: draw just the elements the chosen measure does not grade excellent, so the bad ones inside the body
+  // stand free of the good ones around them.
+  readonly onlyBad?: boolean;
+  // A cut through the body: the elements whose centre lies on the other side of the plane (the real coordinate `axis`
+  // equal to `at`) are not drawn, so the cut shows what is inside. `keep` is the side that stays.
+  readonly section?: SectionCut;
+}
+
+export interface SectionCut {
+  readonly axis: 0 | 1 | 2;
+  readonly at: number;
+  readonly keep: 'above' | 'below';
 }
 
 const EDGE_SEGMENTS = 8;
@@ -182,6 +194,12 @@ interface SmallFace {
 }
 
 // Where the grid points of every cube are (undeformed, or deformed by the result) and what the field is there.
+// Where a small element is, for a body cut into `divisions` small elements per cube: its centre in the real world.
+export function elementCentreOf(state: MeshStateDto, divisions: readonly number[], pick: { hex: number; ex: number; ey: number; ez: number }): THREE.Vector3 | null {
+  const hex = state.hexes.find(h => h.id === pick.hex);
+  return hex ? new SolverGeometry(state, divisions, null, 0, 'none').elementCentre(hex, pick.ex, pick.ey, pick.ez) : null;
+}
+
 export class SolverGeometry {
   readonly counts: [number, number, number];
   private readonly points: [number, number, number][];
@@ -208,6 +226,12 @@ export class SolverGeometry {
 
   get hasField(): boolean {
     return this.values !== null;
+  }
+
+  // The centre of a small element in the real world.
+  elementCentre(hex: MeshHexDto, ex: number, ey: number, ez: number): THREE.Vector3 {
+    const [nx, ny, nz] = this.counts;
+    return mapHex(this.slots(hex), (2 * ex + 1) / nx - 1, (2 * ey + 1) / ny - 1, (2 * ez + 1) / nz - 1);
   }
 
   private slots(hex: MeshHexDto): THREE.Vector3[] {
@@ -395,7 +419,24 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const overrides = new Map((setup?.elementMaterials ?? []).map(m => [`${m.hex}:${m.ex}:${m.ey}:${m.ez}`, m.material]));
   const materialOf = (hex: number, ex: number, ey: number, ez: number): string =>
     overrides.get(`${hex}:${ex}:${ey}:${ez}`) ?? setup?.hexMaterials[hex] ?? setup?.defaultMaterial ?? 'default';
-  const visible = (hex: number, ex: number, ey: number, ez: number) => !hidden.has(materialOf(hex, ex, ey, ez));
+  // an element is drawn unless its material is hidden, it is cut away, or only the bad ones are wanted and it is not
+  const shownCache = new Map<string, boolean>();
+  const visible = (hex: number, ex: number, ey: number, ez: number): boolean => {
+    const key = `${hex}:${ex}:${ey}:${ez}`;
+    let shown = shownCache.get(key);
+    if (shown === undefined) {
+      shown = !hidden.has(materialOf(hex, ex, ey, ez));
+      if (shown && input.onlyBad && qualityColors && !isBad(hex, ex, ey, ez)) shown = false;
+      const cut = input.section;
+      if (shown && cut) {
+        const centre = geometry.elementCentre(hexById.get(hex)!, ex, ey, ez);
+        const along = cut.axis === 0 ? centre.x : cut.axis === 1 ? centre.y : centre.z;
+        shown = cut.keep === 'above' ? along >= cut.at - 1e-9 : along <= cut.at + 1e-9;
+      }
+      shownCache.set(key, shown);
+    }
+    return shown;
+  };
 
   const isFixed = new Set((setup?.fixed ?? []).map(f => `${f.hex}:${f.face}:${f.p}:${f.q}`));
   const pressureOf = new Map((setup?.loads ?? []).map(l => [`${l.hex}:${l.face}:${l.p}:${l.q}`, l.pressure]));

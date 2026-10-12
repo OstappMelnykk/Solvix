@@ -69,7 +69,7 @@ describe('QualityControlsComponent', () => {
     const root = render().nativeElement as HTMLElement;
 
     expect(Array.from(root.querySelectorAll('h5')).map(h => text(h))).toEqual([
-      'Критерії Solvix', 'Фарбувати сцену за', 'Як позначили б інші інструменти'
+      'Критерії Solvix', 'Фарбувати сцену за', 'Подивитись усередину', 'Як позначили б інші інструменти'
     ]);
     expect(root.textContent).not.toMatch(/Проблемні елементи|Консенсус|Загальний результат/);
   });
@@ -98,6 +98,43 @@ describe('QualityControlsComponent', () => {
     expect(gauge).toContain('Витягнутість');
     expect(gauge).toContain('25.0');
     expect(gauge).not.toContain('Допустимо');
+  });
+
+  it('walks along the bad elements and, with the cut on, moves the plane to the one it picks', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    const component = fixture.componentInstance;
+    expect(component.badElements().length).toBe(1);
+    expect(text(root.querySelector('.walk'))).toContain('Проблемних елементів: 1');
+
+    component.walk(1);
+    expect(solver.setQualityPick).toHaveBeenCalledWith(1, { hex: 0, ex: 0, ey: 0, ez: 0 });
+
+    solver.setQualityPick.calls.reset();
+    component.toggleSection();
+    component.setSectionAxis(0);
+    component.walk(1);                                           // already on it: it is not picked again (that would unpick it)
+    expect(solver.setQualityPick).not.toHaveBeenCalled();
+    expect(component.looking().section.enabled).toBeTrue();
+    expect(component.looking().section.position).toBeLessThan(0.5);        // the first cube of the pair, on the low side of X
+  });
+
+  it('has switches for only the bad elements and for the cut, and a way to flip the cut', () => {
+    const fixture = render();
+    const component = fixture.componentInstance;
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.cut')).toBeNull();
+
+    component.toggleOnlyBad();
+    component.toggleSection();
+    fixture.detectChanges();
+    expect(component.looking().onlyBad).toBeTrue();
+    expect(root.querySelector('.cut')).not.toBeNull();
+
+    component.flipSection();
+    expect(component.looking().section.keep).toBe('below');
+    component.onSectionPosition({ target: { value: '70' } } as unknown as Event);
+    expect(component.looking().section.position).toBeCloseTo(0.7, 6);
   });
 
   it('has the smoothing on this page, and a slider for how opaque the body is', () => {
@@ -156,7 +193,7 @@ describe('QualityControlsComponent', () => {
 
   it('has a switch for the supports and one for the loads', () => {
     const root = render().nativeElement as HTMLElement;
-    const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('.mark input'));
+    const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('.marks .mark input'));
 
     expect(boxes.map(b => b.checked)).toEqual([false, true]);
     boxes[0].click();

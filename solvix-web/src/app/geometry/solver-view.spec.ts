@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, elementCentreOf, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -705,6 +705,35 @@ describe('colouring by mesh quality', () => {
     const solid = vertices(1, flagged('invalid'));
     expect(vertices(0.4, flagged('invalid'))).toBeGreaterThan(solid);        // the 2 faces of the middle element appear
     expect(vertices(0.4, flagged('excellent'))).toBe(solid);                 // nothing bad: the inside stays empty
+  });
+
+  it('can draw only the bad elements, and cut the body by a plane', () => {
+    const state = singleCubeState();
+    const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', values: { scaledJacobian: 0.1 } }] };
+    const faces = (extra: Partial<SolverViewInput>) => {
+      const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q, ...extra });
+      const count = (view.pickables as THREE.Mesh[])[0]?.geometry.getAttribute('position').count ?? 0;
+      disposeMeshView(view);
+      return count;
+    };
+    const all = faces({});
+    const one = faces({ onlyBad: true });
+
+    expect(one).toBeGreaterThan(0);
+    expect(one).toBeLessThan(all);                                          // the one bad element alone: 6 faces instead of the body's surface
+    // cut at the middle of the cube along its x: the elements of the middle and the near half stay
+    const half = faces({ section: { axis: 0, at: 0, keep: 'above' } });
+    expect(half).toBeGreaterThan(0);
+    expect(half).toBeLessThan(all + 1);
+    expect(faces({ section: { axis: 0, at: 1e6, keep: 'above' } })).toBe(0);   // everything cut away
+  });
+
+  it('knows where an element is', () => {
+    const centre = elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 0, ex: 0, ey: 0, ez: 0 })!;
+    const other = elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 0, ex: 2, ey: 0, ez: 0 })!;
+
+    expect(other.x).toBeGreaterThan(centre.x);
+    expect(elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 99, ex: 0, ey: 0, ez: 0 })).toBeNull();
   });
 
   it('wins over the field of a result while it is shown', () => {

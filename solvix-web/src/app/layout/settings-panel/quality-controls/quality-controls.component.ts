@@ -1,6 +1,6 @@
 import { DoCheck, Component, Input, inject } from '@angular/core';
 import { DecimalPipe, NgFor, NgIf, NgTemplateOutlet } from '@angular/common';
-import { QualityGradeName, SolverQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
+import { QualityGradeName, SolverElementQualityDto, SolverQualityDto, SolverQualityLimitDto } from '../../../api/solver-api.service';
 import { SOLVER_WORLD_INDEX } from '../../../config/app-settings';
 import { RESULT_COLORS } from '../../../geometry/solver-view';
 import {
@@ -9,9 +9,11 @@ import {
 } from '../../../geometry/quality-grading';
 import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { QualityPick, SolverService } from '../../../state/solver.service';
+import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 import { MeasureInfoComponent } from './measure-info/measure-info.component';
 import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-controls.component';
+import { ExploreSettings, QualityExploreService, SectionSettings } from '../../../state/quality-explore.service';
+import { elementCentreOf } from '../../../geometry/solver-view';
 import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
 import { QUALITY_WORLD_INDEX } from '../../../config/app-settings';
 
@@ -39,12 +41,86 @@ export class QualityControlsComponent implements DoCheck {
   private readonly editor = inject(MeshEditorService);
   private readonly activeWorld = inject(ActiveWorldService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
+  private readonly explore = inject(QualityExploreService);
 
   @Input({ required: true }) sessionId!: number;
 
   readonly resultNames = RESULT_NAMES;
   readonly gaugeZones = gaugeZones;
   readonly gaugeTicks = gaugeTicks;
+
+  // --- looking inside: only the bad elements, a cut through the body, and a walk along the bad elements ---
+
+  looking(): ExploreSettings {
+    return this.explore.get(this.sessionId);
+  }
+
+  toggleOnlyBad(): void {
+    this.explore.setOnlyBad(this.sessionId, !this.looking().onlyBad);
+  }
+
+  toggleSection(): void {
+    this.explore.setSection(this.sessionId, { enabled: !this.looking().section.enabled });
+  }
+
+  setSectionAxis(axis: 0 | 1 | 2): void {
+    this.explore.setSection(this.sessionId, { axis });
+  }
+
+  onSectionPosition(event: Event): void {
+    this.explore.setSection(this.sessionId, { position: Number((event.target as HTMLInputElement).value) / 100 });
+  }
+
+  flipSection(): void {
+    this.explore.setSection(this.sessionId, { keep: this.looking().section.keep === 'above' ? 'below' : 'above' });
+  }
+
+  readonly axisNames: readonly { axis: 0 | 1 | 2; name: string }[] = [{ axis: 0, name: 'X' }, { axis: 1, name: 'Y' }, { axis: 2, name: 'Z' }];
+
+  private badOf: { solvix: SolverQualityDto; metric: QualityMetric; list: SolverElementQualityDto[] } | null = null;
+
+  // The elements the chosen measure does not grade excellent, the worst first: the list the walk goes along.
+  badElements(): readonly SolverElementQualityDto[] {
+    const solvix = this.solvix();
+    if (!solvix) return [];
+    const metric = this.metric();
+    if (this.badOf?.solvix !== solvix || this.badOf.metric !== metric) {
+      const rank: Record<QualityGradeName, number> = { invalid: 0, poor: 1, acceptable: 2, good: 3, excellent: 4 };
+      const graded = solvix.flagged
+        .map(e => ({ e, grade: measuredGrade(e, metric, solvix.limits) }))
+        .filter(x => x.grade !== 'excellent')
+        .sort((a, b) => rank[a.grade] - rank[b.grade] || a.e.hex - b.e.hex || a.e.ex - b.e.ex || a.e.ey - b.e.ey || a.e.ez - b.e.ez);
+      this.badOf = { solvix, metric, list: graded.map(x => x.e) };
+    }
+    return this.badOf.list;
+  }
+
+  // The place of the picked element in that list, from 1; 0 when it is not in it.
+  badPosition(): number {
+    const pick = this.pickedElement();
+    return pick ? this.badElements().findIndex(e => sameElement(e, pick)) + 1 : 0;
+  }
+
+  // Picks the next (or previous) bad element; with the cut on, the plane moves to it, so it is cut open.
+  walk(step: 1 | -1): void {
+    const list = this.badElements();
+    if (list.length === 0) return;
+    const at = this.badPosition();
+    const target = list[at === 0 ? (step === 1 ? 0 : list.length - 1) : (at - 1 + step + list.length) % list.length];
+    const current = this.pickedElement();
+    if (!current || !sameElement(current, target)) this.solver.setQualityPick(this.sessionId, { hex: target.hex, ex: target.ex, ey: target.ey, ez: target.ez });
+    const cut = this.looking().section;
+    const state = this.editor.getState(this.sessionId);
+    if (cut.enabled && state) {
+      const centre = elementCentreOf(state, this.solver.divisions(this.sessionId), target);
+      if (centre) {
+        const along = (p: { x: number; y: number; z: number }) => (cut.axis === 0 ? p.x : cut.axis === 1 ? p.y : p.z);
+        const values = state.nodes.map(along);
+        const low = Math.min(...values), high = Math.max(...values);
+        this.explore.setSection(this.sessionId, { position: high > low ? (along(centre) - low) / (high - low) : 0.5 });
+      }
+    }
+  }
 
   // How opaque the body is (percent): lower it to see the bad elements inside.
   opacityPercent(): number {

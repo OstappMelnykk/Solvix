@@ -161,6 +161,67 @@ i {
   }
 }
 
+.cut {
+  margin: 4px 0 8px;
+
+  input {
+    width: 100%;
+  }
+
+  &__axes {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  &__axis,
+  &__flip {
+    padding: 4px 10px;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  &__axis.on {
+    border-color: $accent-toggle;
+    background: color-mix(in srgb, $accent-toggle 20%, transparent);
+  }
+
+  &__flip {
+    margin-left: auto;
+  }
+}
+
+.walk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+
+  &__btn {
+    width: 36px;
+    padding: 5px 0;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $accent-toggle;
+    }
+  }
+
+  &__text {
+    font-size: 13px;
+  }
+}
+
 .opacity {
   display: flex;
   flex-direction: column;
