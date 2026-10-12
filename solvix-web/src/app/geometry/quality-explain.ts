@@ -6,7 +6,7 @@
 export interface MeasureExplain {
   // one or two sentences: what the measure tells
   readonly what: string;
-  // the maths, one line each (monospace)
+  // the maths, one LaTeX formula per line (drawn with KaTeX)
   readonly formula: readonly string[];
   // what the formula's symbols are, if it needs saying
   readonly where?: readonly string[];
@@ -28,10 +28,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   jacobianRatio: {
     what: 'Наскільки нерівномірно елемент «розтягує» простір. Усередині елемента координати x вираховуються з вузлів через функції форми, а якобіан J — це локальний коефіцієнт зміни об’єму: у скільки разів малий об’єм еталонного куба збільшується в реальному елементі.',
     formula: [
-      'x(ξ,η,ζ) = Σᵢ Nᵢ(ξ,η,ζ) · xᵢ          (i = 1…20)',
-      'J = ∂(x,y,z) / ∂(ξ,η,ζ),   Jₘₙ = Σᵢ (∂Nᵢ/∂ξₙ) · xᵢ,ₘ',
-      'det J = J₁₁(J₂₂J₃₃ − J₂₃J₃₂) − J₁₂(J₂₁J₃₃ − J₂₃J₃₁) + J₁₃(J₂₁J₃₂ − J₂₂J₃₁)',
-      'Jacobian ratio = max(det J) / min(det J)'
+      String.raw`x(\xi,\eta,\zeta)=\sum_{i=1}^{20} N_i(\xi,\eta,\zeta)\,x_i`,
+      String.raw`J_{mn}=\frac{\partial x_m}{\partial \xi_n}=\sum_{i=1}^{20}\frac{\partial N_i}{\partial \xi_n}\,x_{i,m}`,
+      String.raw`\det J=\begin{vmatrix}J_{11}&J_{12}&J_{13}\\J_{21}&J_{22}&J_{23}\\J_{31}&J_{32}&J_{33}\end{vmatrix}`,
+      String.raw`\text{Jacobian ratio}=\frac{\max\det J}{\min\det J}`
     ],
     where: ['det J береться в 21 точці: 20 вузлах елемента і в центрі.', 'Якщо det J має різні знаки — елемент вивернутий, і Solvix вважає його зламаним.'],
     effect: 'Жорсткість елемента й напруження рахуються інтегралом по ξ,η,ζ з множником det J. Чим більше det J змінюється всередині елемента, тим гірше цей інтеграл наближається, а похибка напруження росте. Якщо det J ≤ 0 — інтеграл не має сенсу, розрахунок неможливий.',
@@ -43,10 +43,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   'solvix:aspectRatio': {
     what: 'Наскільки грані й перерізи елемента витягнуті. Для кожної грані будується прямокутник на двох бісектрисах (лініях, що з’єднують середини протилежних сторін), і береться відношення його сторін.',
     formula: [
-      'a = M₂₃ − M₀₁,   b = M₃₀ − M₁₂      (M — середина ребра; проєкція на площину грані)',
-      'Прямокутник вздовж a: довжина L = |a|, ширина w = |b − (b·a / a·a) a|',
-      'AR(a) = max(L/w, w/L),   AR(b) аналогічно',
-      'Aspect ratio = max по 9 чотирикутниках від max(AR(a), AR(b))'
+      String.raw`\mathbf a=\mathbf M_{23}-\mathbf M_{01},\qquad \mathbf b=\mathbf M_{30}-\mathbf M_{12}`,
+      String.raw`L=\lVert\mathbf a\rVert,\qquad w=\Bigl\lVert \mathbf b-\frac{\mathbf b\cdot\mathbf a}{\mathbf a\cdot\mathbf a}\,\mathbf a\Bigr\rVert`,
+      String.raw`AR(\mathbf a)=\max\!\Bigl(\frac{L}{w},\frac{w}{L}\Bigr)`,
+      String.raw`\text{Aspect ratio}=\max_{q\in 9}\ \max\bigl(AR(\mathbf a),\,AR(\mathbf b)\bigr)`
     ],
     effect: 'Сам по собі слабо впливає на точність, поки відношення не наближається до сотень. Але у вузькому напрямку градієнти (напруження) змінюються швидко, а елемент малий лише в одному напрямку — це погіршує обумовленість матриці жорсткості й чутливість до помилок округлення.',
     ideal: '1. Квадрат (всі грані й перерізи — квадрати, тобто куб).',
@@ -57,9 +57,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   parallelDeviation: {
     what: 'Наскільки протилежні ребра грані чи перерізу не паралельні. Обидві пари протилежних ребер порівнюються як напрямки в одну сторону; береться кут між ними.',
     formula: [
-      'e₁ = (p₁ − p₀)/|p₁ − p₀|,   e₂ = (p₂ − p₃)/|p₂ − p₃|      (напрямки протилежних ребер)',
-      'θ = arccos(e₁ · e₂)   (у градусах)',
-      'Parallel deviation = max по 9 чотирикутниках від max(θ₀₁₋₃₂, θ₁₂₋₀₃)'
+      String.raw`\mathbf e_1=\frac{\mathbf p_1-\mathbf p_0}{\lVert\mathbf p_1-\mathbf p_0\rVert},\qquad \mathbf e_2=\frac{\mathbf p_2-\mathbf p_3}{\lVert\mathbf p_2-\mathbf p_3\rVert}`,
+      String.raw`\theta=\arccos(\mathbf e_1\cdot\mathbf e_2)`,
+      String.raw`\text{Parallel deviation}=\max_{q\in 9}\ \max\bigl(\theta_{01\parallel 32},\,\theta_{12\parallel 03}\bigr)`
     ],
     where: ['Серединні вузли не враховуються — тільки кутові.'],
     effect: 'Трапецієподібна грань або сильний перекіс змінюють відображення еталонного куба на елемент: якобіан починає мінятися вздовж елемента, а точність напружень падає.',
@@ -71,9 +71,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   maxCornerAngle: {
     what: 'Найбільший кут у куті грані чи серединного перерізу. Тупий кут погіршує точність і збіжність, бо якобіан у цьому куті стає малим.',
     formula: [
-      'u = p₍ᵢ₋₁₎ − pᵢ,   v = p₍ᵢ₊₁₎ − pᵢ',
-      'θᵢ = arccos( u·v / (|u| |v|) )   (у градусах), i = 0…3',
-      'Maximum corner angle = max по 9 чотирикутниках і їхніх 4 кутах від θᵢ'
+      String.raw`\mathbf u=\mathbf p_{i-1}-\mathbf p_i,\qquad \mathbf v=\mathbf p_{i+1}-\mathbf p_i`,
+      String.raw`\theta_i=\arccos\frac{\mathbf u\cdot\mathbf v}{\lVert\mathbf u\rVert\,\lVert\mathbf v\rVert},\qquad i=0,\dots,3`,
+      String.raw`\text{Maximum corner angle}=\max_{q\in 9}\ \max_i\theta_i`
     ],
     effect: 'Біля тупого кута det J мінімальний і інтерполяція поля (переміщень) гірша; на межі 180° елемент вироджується, бо три вузли лежать на одній прямій.',
     ideal: '90°. Прямокутник: усі кути прямі.',
@@ -84,9 +84,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   minCornerAngle: {
     what: 'Найменший кут у куті грані чи серединного перерізу. Гострий кут так само шкодить, як і тупий: сума кутів опуклого чотирикутника — 360°, тож один гострий кут майже завжди дає тупий, але тупий може ще бути в нормі.',
     formula: [
-      'u = p₍ᵢ₋₁₎ − pᵢ,   v = p₍ᵢ₊₁₎ − pᵢ',
-      'θᵢ = arccos( u·v / (|u| |v|) )   (у градусах), i = 0…3',
-      'Minimum corner angle = min по 9 чотирикутниках і їхніх 4 кутах від θᵢ'
+      String.raw`\mathbf u=\mathbf p_{i-1}-\mathbf p_i,\qquad \mathbf v=\mathbf p_{i+1}-\mathbf p_i`,
+      String.raw`\theta_i=\arccos\frac{\mathbf u\cdot\mathbf v}{\lVert\mathbf u\rVert\,\lVert\mathbf v\rVert},\qquad i=0,\dots,3`,
+      String.raw`\text{Minimum corner angle}=\min_{q\in 9}\ \min_i\theta_i`
     ],
     effect: 'Біля гострого кута елемент стає «голкою», det J — малий, ряд збіжності гірший, напруження біля цього кута неточні.',
     ideal: '90°. Прямокутник.',
@@ -97,10 +97,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   warpingFactor: {
     what: 'Наскільки грань не плоска. Чотири вузли грані в просторі зазвичай не лежать у одній площині: два вузли «вгорі», два «внизу» відносно середньої площини.',
     formula: [
-      'N = (p₂ − p₀) × (p₃ − p₁),   n = N/|N|        (нормаль до середньої площини)',
-      'c = (p₀ + p₁ + p₂ + p₃)/4,   hᵢ = (pᵢ − c) · n   (висота вузла над середньою площиною)',
-      'A = |N| / 2                                       (проєкційна площа)',
-      'Warping factor = max по 6 гранях від ( maxᵢ |hᵢ − hᵢ₊₁| ) / √A'
+      String.raw`\mathbf N=(\mathbf p_2-\mathbf p_0)\times(\mathbf p_3-\mathbf p_1),\qquad \mathbf n=\frac{\mathbf N}{\lVert\mathbf N\rVert}`,
+      String.raw`\mathbf c=\frac14\sum_{i=0}^{3}\mathbf p_i,\qquad h_i=(\mathbf p_i-\mathbf c)\cdot\mathbf n,\qquad A=\tfrac12\lVert\mathbf N\rVert`,
+      String.raw`\text{Warping factor}=\max_{6\ \text{faces}}\ \frac{\max_i\,\lvert h_i-h_{i+1}\rvert}{\sqrt{A}}`
     ],
     effect: 'Нормаль до грані перестає бути єдиною, а якобіан змінюється по грані. Це впливає на тиск і контакт на ній (напрямок навантаження) і на точність біля вигнутої грані.',
     ideal: '0. Грань плоска.',
@@ -111,9 +110,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   scaledJacobian: {
     what: 'Показує, наскільки кут між трьома ребрами в кутку далекий від прямого. Це визначник із трьох одиничних ребер: об’єм паралелепіпеда, побудованого на трьох одиничних векторах.',
     formula: [
-      'eₖ = p(сусід по осі k) − p(кут),   k = 1,2,3      (три ребра в кутку, правосторонні)',
-      'SJ(кут) = det[e₁ e₂ e₃] / (|e₁| |e₂| |e₃|) = e₁ · (e₂ × e₃) / (|e₁||e₂||e₃|)',
-      'Scaled Jacobian = min по 8 кутах від SJ'
+      String.raw`\mathbf e_k=\mathbf p_{\text{neighbour}_k}-\mathbf p_{\text{corner}},\qquad k=1,2,3`,
+      String.raw`SJ=\frac{\mathbf e_1\cdot(\mathbf e_2\times\mathbf e_3)}{\lVert\mathbf e_1\rVert\,\lVert\mathbf e_2\rVert\,\lVert\mathbf e_3\rVert}`,
+      String.raw`\text{Scaled Jacobian}=\min_{8\ \text{corners}}SJ`
     ],
     effect: 'Одиниця — ортогональні ребра, 0 — три ребра в одній площині (виродження), від’ємне — вивернутий кут. Чим менше значення, тим сильніше скошений кут і гірша точність.',
     ideal: '1. Усі три ребра в кожному куті взаємно перпендикулярні.',
@@ -124,8 +123,7 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   equiangleSkew: {
     what: 'Найбільше відхилення кута грані від 90°, поділене на 90°. Це шкала ANSYS: від 0 (усі кути прямі) до 1 (виродження).',
     formula: [
-      'θmax, θmin — найбільший і найменший кути серед усіх кутів 6 граней (кутові вузли)',
-      'Skewness = max( (θmax − 90°)/90°,  (90° − θmin)/90° )'
+      String.raw`\text{Skewness}=\max\Bigl(\frac{\theta_{\max}-90^\circ}{90^\circ},\ \frac{90^\circ-\theta_{\min}}{90^\circ}\Bigr)`
     ],
     effect: 'Чим ближче до 1, тим більше елемент схожий на голку чи пластину: гірша інтерполяція й обумовленість. ANSYS вважає 0–0,25 відмінним, 0,25–0,5 добрим, 0,5–0,75 задовільним, 0,9–1 — «голкою».',
     ideal: '0. Усі кути граней прямі.',
@@ -135,7 +133,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   faceMinAngle: {
     what: 'Найменший кут між ребрами в кутку грані.',
-    formula: ['θ = arccos( u·v / (|u||v|) ) для кожного кута 6 граней', 'Smaller face corner angle = min θ'],
+    formula: [
+      String.raw`\theta=\arccos\frac{\mathbf u\cdot\mathbf v}{\lVert\mathbf u\rVert\,\lVert\mathbf v\rVert}`,
+      String.raw`\text{Smaller face corner angle}=\min\theta`
+    ],
     effect: 'Гострі кути погіршують точність; Abaqus попереджає при куті менше 10°.',
     ideal: '90°.',
     extreme: 'Прямує до 0°, коли два ребра зливаються.',
@@ -143,7 +144,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   faceMaxAngle: {
     what: 'Найбільший кут між ребрами в кутку грані.',
-    formula: ['θ = arccos( u·v / (|u||v|) ) для кожного кута 6 граней', 'Larger face corner angle = max θ'],
+    formula: [
+      String.raw`\theta=\arccos\frac{\mathbf u\cdot\mathbf v}{\lVert\mathbf u\rVert\,\lVert\mathbf v\rVert}`,
+      String.raw`\text{Larger face corner angle}=\max\theta`
+    ],
     effect: 'Тупі кути погіршують точність; Abaqus попереджає при куті більше 160°.',
     ideal: '90°.',
     extreme: 'Прямує до 180°, коли три вузли лягають на одну лінію.',
@@ -151,7 +155,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   'abaqus:aspectRatio': {
     what: 'Відношення довжин найдовшого й найкоротшого з 12 ребер елемента (кутові вузли).',
-    formula: ['Lᵢ = |p_b − p_a| для 12 ребер', 'Aspect ratio = max Lᵢ / min Lᵢ'],
+    formula: [
+      String.raw`L_i=\lVert\mathbf p_b-\mathbf p_a\rVert,\qquad i=1,\dots,12`,
+      String.raw`\text{Aspect ratio}=\frac{\max_i L_i}{\min_i L_i}`
+    ],
     effect: 'Витягнутий елемент гірше наближає поле у вузькому напрямку.',
     ideal: '1. Усі ребра однакової довжини (куб).',
     extreme: 'Без верхньої межі: росте до ∞, коли найкоротше ребро стискається в точку.',
@@ -159,7 +166,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   'altair:aspectRatio': {
     what: 'Відношення довжин найдовшого й найкоротшого з 12 ребер елемента (кутові вузли).',
-    formula: ['Lᵢ = |p_b − p_a| для 12 ребер', 'Aspect ratio = max Lᵢ / min Lᵢ'],
+    formula: [
+      String.raw`L_i=\lVert\mathbf p_b-\mathbf p_a\rVert,\qquad i=1,\dots,12`,
+      String.raw`\text{Aspect ratio}=\frac{\max_i L_i}{\min_i L_i}`
+    ],
     effect: 'Витягнутий елемент гірше наближає поле у вузькому напрямку.',
     ideal: '1. Усі ребра однакової довжини (куб).',
     extreme: 'Без верхньої межі: росте до ∞, коли найкоротше ребро стискається в точку.',
@@ -168,9 +178,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   'cubit:aspectRatio': {
     what: 'Відношення довжин найдовшої й найкоротшої з трьох головних осей елемента в центрі.',
     formula: [
-      'X₁ = (p₁−p₀)+(p₂−p₃)+(p₅−p₄)+(p₆−p₇),   X₂, X₃ — аналогічно по двох інших напрямках',
-      'Lₖ = |Xₖ|',
-      'Aspect ratio = max(L₁,L₂,L₃) / min(L₁,L₂,L₃)'
+      String.raw`\mathbf X_1=(\mathbf p_1-\mathbf p_0)+(\mathbf p_2-\mathbf p_3)+(\mathbf p_5-\mathbf p_4)+(\mathbf p_6-\mathbf p_7),\quad \mathbf X_2,\ \mathbf X_3\ \text{analogously}`,
+      String.raw`L_k=\lVert\mathbf X_k\rVert`,
+      String.raw`\text{Aspect ratio}=\frac{\max(L_1,L_2,L_3)}{\min(L_1,L_2,L_3)}`
     ],
     effect: 'Показує загальну витягнутість елемента, а не лише найкоротше ребро.',
     ideal: '1. Усі три осі рівні (куб).',
@@ -179,7 +189,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   skew: {
     what: 'Наскільки головні осі елемента не перпендикулярні: найбільший |cos| кута між двома осями.',
-    formula: ['Skew = max( |cos(X₁,X₂)|, |cos(X₁,X₃)|, |cos(X₂,X₃)| ),   cos(A,B) = A·B / (|A||B|)'],
+    formula: [
+      String.raw`\cos(\mathbf A,\mathbf B)=\frac{\mathbf A\cdot\mathbf B}{\lVert\mathbf A\rVert\,\lVert\mathbf B\rVert}`,
+      String.raw`\text{Skew}=\max\bigl(\lvert\cos(\mathbf X_1,\mathbf X_2)\rvert,\ \lvert\cos(\mathbf X_1,\mathbf X_3)\rvert,\ \lvert\cos(\mathbf X_2,\mathbf X_3)\rvert\bigr)`
+    ],
     effect: 'Скошений елемент гірше наближає напруження: чим більше |cos|, тим ближче дві осі до однієї прямої.',
     ideal: '0. Усі осі взаємно перпендикулярні.',
     extreme: '1. Дві осі паралельні — елемент сплющений.',
@@ -188,8 +201,8 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   taper: {
     what: 'Наскільки протилежні ребра різної довжини (елемент схожий на зрізаний конус).',
     formula: [
-      'X₁₂ = ((p₂−p₃)−(p₁−p₀)) + ((p₆−p₇)−(p₅−p₄)),   X₁₃, X₂₃ — аналогічно',
-      'Taper = max( |X₁₂|/min(|X₁|,|X₂|),  |X₁₃|/min(|X₁|,|X₃|),  |X₂₃|/min(|X₂|,|X₃|) )'
+      String.raw`\mathbf X_{12}=\bigl[(\mathbf p_2-\mathbf p_3)-(\mathbf p_1-\mathbf p_0)\bigr]+\bigl[(\mathbf p_6-\mathbf p_7)-(\mathbf p_5-\mathbf p_4)\bigr],\quad \mathbf X_{13},\ \mathbf X_{23}\ \text{analogously}`,
+      String.raw`\text{Taper}=\max_{i<j}\frac{\lVert\mathbf X_{ij}\rVert}{\min(\lVert\mathbf X_i\rVert,\ \lVert\mathbf X_j\rVert)}`
     ],
     effect: 'Зміна перерізу вздовж осі робить якобіан неоднаковим вздовж елемента.',
     ideal: '0. Протилежні ребра однакові.',
@@ -198,7 +211,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   stretch: {
     what: 'Порівнює найкоротше ребро з найдовшою діагоналлю, нормовано так, що для куба це 1.',
-    formula: ['Stretch = √3 · Lmin / Dmax        (Lmin — найкоротше з 12 ребер, Dmax — найдовша з 4 просторових діагоналей)'],
+    formula: [
+      String.raw`\text{Stretch}=\frac{\sqrt{3}\,L_{\min}}{D_{\max}}`
+    ],
     effect: 'Мале значення — елемент витягнутий або дуже сплющений.',
     ideal: '1. Куб.',
     extreme: '0, коли найкоротше ребро стискається в нуль.',
@@ -206,7 +221,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   diagonal: {
     what: 'Відношення найкоротшої діагоналі до найдовшої серед чотирьох просторових діагоналей.',
-    formula: ['Diagonal ratio = min(D₁..D₄) / max(D₁..D₄)'],
+    formula: [
+      String.raw`\text{Diagonal ratio}=\frac{\min_i D_i}{\max_i D_i}`
+    ],
     effect: 'Показує, наскільки елемент перекошений: у кубі всі діагоналі однакові.',
     ideal: '1. Усі діагоналі рівні.',
     extreme: 'Прямує до 0, коли одна діагональ стискається.',
@@ -214,7 +231,11 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   condition: {
     what: 'Число обумовленості якобіана в куті: наскільки сильно матриця ребер роздуває чи стискає вектори в найгіршому напрямку.',
-    formula: ['A = [e₁ e₂ e₃]  (ребра в кутку, як стовпці)', 'κ(A) = ‖A‖_F · ‖A⁻¹‖_F / 3        (норма Фробеніуса; для куба κ = 1)', 'Condition no. = max по 8 кутах від κ'],
+    formula: [
+      String.raw`A=\begin{bmatrix}\mathbf e_1&\mathbf e_2&\mathbf e_3\end{bmatrix}`,
+      String.raw`\kappa(A)=\frac{\lVert A\rVert_F\,\lVert A^{-1}\rVert_F}{3}`,
+      String.raw`\text{Condition no.}=\max_{8\ \text{corners}}\kappa(A)`
+    ],
     effect: 'Велике число — чутливість до помилок округлення й гірша точність, бо відображення майже вироджене.',
     ideal: '1. Куб.',
     extreme: 'Росте до ∞, коли det A → 0 (кут сплющений).',
@@ -222,7 +243,10 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   shear: {
     what: 'Якість кутів без урахування довжин ребер: якобіан із ребер, нормованих до одиничної довжини.',
-    formula: ['Â = [e₁/|e₁|  e₂/|e₂|  e₃/|e₃|]', 'Shear = min по 8 кутах від ( det Â )^(2/3)'],
+    formula: [
+      String.raw`\hat A=\begin{bmatrix}\dfrac{\mathbf e_1}{\lVert\mathbf e_1\rVert}&\dfrac{\mathbf e_2}{\lVert\mathbf e_2\rVert}&\dfrac{\mathbf e_3}{\lVert\mathbf e_3\rVert}\end{bmatrix}`,
+      String.raw`\text{Shear}=\min_{8\ \text{corners}}\bigl(\det\hat A\bigr)^{2/3}`
+    ],
     effect: 'Менше — кути далекі від прямих, тому елемент скошений.',
     ideal: '1. Усі ребра в кутах перпендикулярні.',
     extreme: '0, коли кут сплющений у площину.',
@@ -230,7 +254,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   shape: {
     what: 'Якість форми з урахуванням і кутів, і довжин ребер.',
-    formula: ['Shape = min по 8 кутах від 3 · (det A)^(2/3) / ‖A‖_F²        (A = [e₁ e₂ e₃])'],
+    formula: [
+      String.raw`\text{Shape}=\min_{8\ \text{corners}}\frac{3\,(\det A)^{2/3}}{\lVert A\rVert_F^{\,2}}`
+    ],
     effect: 'Менше — елемент далекий від куба (скошений чи витягнутий).',
     ideal: '1. Куб.',
     extreme: '0, коли кут сплющений.',
@@ -238,7 +264,9 @@ const EXPLAIN: Readonly<Record<string, MeasureExplain>> = {
   },
   jacobian: {
     what: 'Відношення найменшого якобіана до найбільшого в точках Гауса (там, де рахується інтеграл).',
-    formula: ['det J рахується в точках Гауса (там, де чисельно береться інтеграл)', 'Jacobian = min(det J) / max(det J)'],
+    formula: [
+      String.raw`\text{Jacobian}=\frac{\min\det J}{\max\det J}\quad(\text{in the Gauss points})`
+    ],
     effect: 'Показує, наскільки рівномірно елемент відображається; менше — гірше. Те саме, що у нас «Рівномірність якобіана», тільки перевернуте.',
     ideal: '1. Усі det J однакові.',
     extreme: '0, коли найменший det J прямує до нуля; менше 0 — елемент вивернутий.',

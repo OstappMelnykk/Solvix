@@ -1,4 +1,6 @@
-import { Component, EventEmitter, HostListener, Input, Output } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, Output, inject } from '@angular/core';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import katex from 'katex';
 import { NgFor, NgIf } from '@angular/common';
 import { SolverQualityLimitDto } from '../../../../api/solver-api.service';
 import { MeasureExplain, explainFor } from '../../../../geometry/quality-explain';
@@ -18,10 +20,18 @@ export class MeasureInfoComponent {
   @Input({ required: true }) tool!: string;
   @Input({ required: true }) shown!: string;
   @Input({ required: true }) ok!: boolean;
+  private readonly sanitizer = inject(DomSanitizer);
+
   @Output() closed = new EventEmitter<void>();
 
   get explain(): MeasureExplain | null {
     return explainFor(this.tool, this.limit.key);
+  }
+
+  // One formula drawn by KaTeX. The text is ours (a fixed table), never the user's, so its markup is trusted - the
+  // sanitizer would strip the inline sizes KaTeX relies on.
+  tex(line: string): SafeHtml {
+    return this.sanitizer.bypassSecurityTrustHtml(katex.renderToString(line, { displayMode: true, throwOnError: false, output: 'html' }));
   }
 
   get rule(): string {

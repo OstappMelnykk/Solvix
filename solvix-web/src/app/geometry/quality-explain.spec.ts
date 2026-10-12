@@ -1,3 +1,4 @@
+import katex from 'katex';
 import { explainFor } from './quality-explain';
 
 describe('quality-explain', () => {
@@ -17,6 +18,7 @@ describe('quality-explain', () => {
         expect(e).not.toBeNull();
         expect(e!.what.length).toBeGreaterThan(10);
         expect(e!.formula.length).toBeGreaterThan(0);
+        for (const line of e!.formula) expect(() => katex.renderToString(line, { throwOnError: true })).not.toThrow();      // real LaTeX, not text
         expect(e!.effect.length).toBeGreaterThan(10);
         expect(e!.ideal.length).toBeGreaterThan(1);
         expect(e!.extreme.length).toBeGreaterThan(1);
@@ -26,7 +28,7 @@ describe('quality-explain', () => {
 
   it('defines the aspect ratio per tool, because the tools mean different things by it', () => {
     expect(explainFor('solvix', 'aspectRatio')!.what).not.toEqual(explainFor('cubit', 'aspectRatio')!.what);
-    expect(explainFor('abaqus', 'aspectRatio')!.formula[1]).toContain('max Lᵢ / min Lᵢ');
+    expect(explainFor('abaqus', 'aspectRatio')!.formula[1]).toContain('\\frac{\\max_i L_i}');
   });
 
   it('knows nothing of an unknown measure', () => {

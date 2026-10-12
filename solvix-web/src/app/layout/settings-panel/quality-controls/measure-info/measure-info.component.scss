@@ -1,6 +1,8 @@
-$bg: #25282c;
+$bg: #202327;
+$panel: #2a2e33;
 $line: rgba(255, 255, 255, 0.12);
-$muted: #9aa0a6;
+$muted: #a3a9b0;
+$accent: #f0b429;
 
 :host {
   position: fixed;
@@ -14,51 +16,51 @@ $muted: #9aa0a6;
 .backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
 }
 
 .card {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(560px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+  width: min(820px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
   background: $bg;
   border: 1px solid $line;
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
-  color: #e6e6e6;
-  font-size: 13px;
-  line-height: 1.5;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  color: #ececec;
+  font-size: 15px;
+  line-height: 1.55;
 
   &__head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    padding: 14px 16px 10px;
+    padding: 16px 20px 12px;
     border-bottom: 1px solid $line;
   }
 
   &__title {
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 700;
   }
 
   &__tech {
     color: $muted;
-    font-size: 12px;
+    font-size: 14px;
   }
 
   &__close {
     flex: none;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     background: transparent;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     color: $muted;
-    font-size: 15px;
+    font-size: 17px;
     cursor: pointer;
 
     &:hover {
@@ -68,70 +70,84 @@ $muted: #9aa0a6;
   }
 
   &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
     overflow-y: auto;
-    padding: 12px 16px 16px;
+    padding: 16px 20px 20px;
   }
 }
 
-h6 {
-  margin: 14px 0 4px;
-  color: $muted;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
+.sec {
+  h6 {
+    margin: 0 0 6px;
+    color: $accent;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
 
-p {
-  margin: 0 0 4px;
+  p {
+    margin: 0;
+  }
 }
 
 .now {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
-  padding: 8px 10px;
-  background: rgba(47, 191, 79, 0.12);
-  border-radius: 6px;
+  gap: 4px 12px;
+  padding: 10px 14px;
+  background: rgba(47, 191, 79, 0.14);
+  border-radius: 8px;
 
   &--bad {
-    background: rgba(232, 88, 74, 0.14);
+    background: rgba(232, 88, 74, 0.16);
   }
 
   &__label {
     color: $muted;
-    font-size: 12px;
+    font-size: 13px;
   }
 
   &__value {
-    font-size: 18px;
+    font-size: 22px;
   }
 }
 
+.formulas {
+  padding: 4px 14px;
+  background: $panel;
+  border: 1px solid $line;
+  border-radius: 8px;
+}
+
 .formula {
-  margin: 0;
-  padding: 8px 10px;
   overflow-x: auto;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre;
+  overflow-y: hidden;
+  font-size: 1.1em;
+
+  & + & {
+    border-top: 1px dashed $line;
+  }
+
+  ::ng-deep .katex-display {
+    margin: 0.6em 0;
+  }
 }
 
 .where {
-  margin: 6px 0 0;
-  padding-left: 18px;
+  margin: 8px 0 0;
+  padding-left: 20px;
   color: $muted;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .values {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
+  gap: 8px 16px;
   margin: 0;
 
   dt {
@@ -146,5 +162,5 @@ p {
 .note {
   margin-top: 8px;
   color: $muted;
-  font-size: 12px;
+  font-size: 13px;
 }

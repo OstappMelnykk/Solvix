@@ -16,30 +16,29 @@
     </div>
 
     <ng-container *ngIf="explain as e; else plain">
-      <h6>Що це</h6>
-      <p>{{ e.what }}</p>
+      <div class="sec"><h6>Що це</h6>
+      <p>{{ e.what }}</p></div>
 
-      <h6>Математика</h6>
-      <pre class="formula"><ng-container *ngFor="let line of e.formula">{{ line }}
-</ng-container></pre>
+      <div class="sec"><h6>Математика</h6>
+      <div class="formulas"><div class="formula" *ngFor="let line of e.formula" [innerHTML]="tex(line)"></div></div>
       <ul class="where" *ngIf="e.where">
         <li *ngFor="let w of e.where">{{ w }}</li>
-      </ul>
+      </ul></div>
 
-      <h6>Що це змінює в розрахунку</h6>
-      <p>{{ e.effect }}</p>
+      <div class="sec"><h6>Що це змінює в розрахунку</h6>
+      <p>{{ e.effect }}</p></div>
 
-      <h6>Значення</h6>
+      <div class="sec"><h6>Значення</h6>
       <dl class="values">
         <dt>Найкраще</dt><dd>{{ e.ideal }}</dd>
         <dt>Крайнє</dt><dd>{{ e.extreme }}</dd>
         <dt>Межа Solvix</dt><dd>{{ rule }}</dd>
         <dt *ngIf="error">Межа «помилка» ANSYS</dt><dd *ngIf="error">{{ error }}</dd>
       </dl>
-      <p class="note" *ngIf="e.limitNote">{{ e.limitNote }}</p>
+      <p class="note" *ngIf="e.limitNote">{{ e.limitNote }}</p></div>
 
-      <h6>Як рахується</h6>
-      <p>{{ e.how }}</p>
+      <div class="sec"><h6>Як рахується</h6>
+      <p>{{ e.how }}</p></div>
     </ng-container>
     <ng-template #plain>
       <p>{{ limit.hint }}</p>
