@@ -76,6 +76,10 @@ $accent-toggle: #da680b;
     border-color: $accent-toggle;
   }
 
+  &--back {
+    margin-top: 4px;
+  }
+
   &:disabled {
     opacity: 0.45;
     cursor: not-allowed;

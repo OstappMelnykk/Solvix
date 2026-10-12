@@ -13,7 +13,7 @@ describe('SmoothingControlsComponent', () => {
   beforeEach(() => {
     busy = signal(false);
     cubes = 27;
-    editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState', 'smooth']);
+    editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState', 'smooth', 'undo']);
     editor.getState.and.callFake(() => ({ hexes: new Array(cubes).fill({}) }) as never);
     Object.defineProperty(editor, 'busy', { get: () => busy });
     TestBed.configureTestingModule({ providers: [{ provide: MeshEditorService, useValue: editor }] });
@@ -26,7 +26,7 @@ describe('SmoothingControlsComponent', () => {
 
   it('smooths with the settings the user chose, each kept within its range', () => {
     component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25 });
+    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25 }, jasmine.any(Function));
 
     type('iterations', '25.4');
     type('relaxation', '0.2');
@@ -34,7 +34,7 @@ describe('SmoothingControlsComponent', () => {
     type('angle', '60');
     component.onSurface({ target: { checked: true } } as unknown as Event);
     component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 25, relaxation: 0.2, surface: true, density: 0.4, featureAngle: 60 });
+    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 25, relaxation: 0.2, surface: true, density: 0.4, featureAngle: 60 }, jasmine.any(Function));
 
     type('iterations', '9999');
     type('relaxation', '0');
@@ -52,6 +52,27 @@ describe('SmoothingControlsComponent', () => {
     expect(reach.free).toBe(0);
     expect(reach.badReachable).toBe(0);
     expect(component.reach()).toBe(reach);                       // the same object while nothing changed
+  });
+
+  it('can take the smoothing back, but only while the mesh is as the smoothing left it', () => {
+    let version = 4;
+    let canUndo = true;
+    editor.getState.and.callFake(() => ({ hexes: new Array(cubes).fill({}), version, canUndo }) as never);
+    expect(component.canRevert()).toBeFalse();                    // nothing smoothed yet
+
+    component.smooth();
+    version = 5;
+    editor.smooth.calls.mostRecent().args[2]!();                  // the server answered: the mesh is at version 5
+    expect(component.canRevert()).toBeTrue();
+
+    component.revert();
+    expect(editor.undo).toHaveBeenCalledWith(1);
+
+    version = 6;                                                  // anything done after it (the undo too) ends the offer
+    expect(component.canRevert()).toBeFalse();
+    version = 5;
+    canUndo = false;
+    expect(component.canRevert()).toBeFalse();
   });
 
   it('does nothing while busy or with a single cube', () => {

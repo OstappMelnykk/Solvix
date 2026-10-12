@@ -28,3 +28,4 @@
   <input type="number" min="1" max="90" step="1" [value]="featureAngle" (change)="onNumber('angle', $event)" />
 </label>
 <button class="go" type="button" [disabled]="hexCount() < 2 || busy" (click)="smooth()">Згладити</button>
+<button class="go go--back" type="button" [disabled]="!canRevert()" title="Повертає сітку такою, якою вона була до останнього згладжування. Активна, поки після нього нічого не змінено." (click)="revert()">↶ Повернути назад</button>

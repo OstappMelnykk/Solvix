@@ -125,8 +125,9 @@ export class MeshEditorService {
   }
 
   // Laplacian smoothing with the user's settings (see MeshSmoothOptions).
-  smooth(sessionId: number, options: MeshSmoothOptions): void {
-    this.run(sessionId, this.api.smooth(sessionId, options));
+  // `then` runs after the smoothed mesh has arrived.
+  smooth(sessionId: number, options: MeshSmoothOptions, then?: () => void): void {
+    this.run(sessionId, this.api.smooth(sessionId, options), then);
   }
 
   undo(sessionId: number): void {

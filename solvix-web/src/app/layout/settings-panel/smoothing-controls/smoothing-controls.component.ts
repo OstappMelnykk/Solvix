@@ -63,14 +63,31 @@ export class SmoothingControlsComponent {
     this.surface = (event.target as HTMLInputElement).checked;
   }
 
+  // The version of the mesh the last smoothing produced: while the mesh is still at it, the button can take it back.
+  private smoothedVersion: number | null = null;
+
   smooth(): void {
     if (this.busy || this.hexCount() < 2) return;
-    this.editor.smooth(this.sessionId, {
-      iterations: this.iterations,
-      relaxation: this.relaxation,
-      surface: this.surface,
-      density: this.densityPercent / 100,
-      featureAngle: this.featureAngle
-    });
+    this.editor.smooth(
+      this.sessionId,
+      {
+        iterations: this.iterations,
+        relaxation: this.relaxation,
+        surface: this.surface,
+        density: this.densityPercent / 100,
+        featureAngle: this.featureAngle
+      },
+      () => (this.smoothedVersion = this.editor.getState(this.sessionId)?.version ?? null)
+    );
+  }
+
+  // True only right after a smoothing, while nothing else has been done to the mesh: so it is the smoothing that is undone.
+  canRevert(): boolean {
+    const state = this.editor.getState(this.sessionId);
+    return !this.busy && state !== null && state.canUndo && this.smoothedVersion === state.version;
+  }
+
+  revert(): void {
+    if (this.canRevert()) this.editor.undo(this.sessionId);
   }
 }
