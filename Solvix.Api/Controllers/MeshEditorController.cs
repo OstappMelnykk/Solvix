@@ -12,7 +12,7 @@ public record AttachRequest(MeshShapeDto? Shape, MeshCellDto? Cell = null);
 
 public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoints = false);
 
-public record SmoothRequest(int Iterations = 10, double Relaxation = 0.5);
+public record SmoothRequest(int Iterations = 10, double Relaxation = 0.5, bool Surface = false);
 
 /// <summary>
 /// Manual hex editor, one mesh per client session. Every editing command
@@ -73,7 +73,7 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade 
 
     [HttpPost("smooth")]
     public ActionResult<MeshCommandResultDto> Smooth(int sessionId, [FromBody] SmoothRequest request) =>
-        meshBuilder.Smooth(sessionId, Math.Clamp(request.Iterations, 1, 500), request.Relaxation);
+        meshBuilder.Smooth(sessionId, Math.Clamp(request.Iterations, 1, 500), request.Relaxation, request.Surface);
 
     [HttpPost("undo")]
     public ActionResult<MeshCommandResultDto> Undo(int sessionId) => meshBuilder.Undo(sessionId);

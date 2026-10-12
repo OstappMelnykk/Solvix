@@ -96,7 +96,7 @@ describe('MeshEditorService', () => {
 
     editor.smooth(sessionId, 10);
     const request = http.expectOne(url('smooth'));
-    expect(request.request.body).toEqual({ iterations: 10, relaxation: 0.5 });
+    expect(request.request.body).toEqual({ iterations: 10, relaxation: 0.5, surface: false });
     request.flush({ ok: true, error: null, state: singleCubeState(7) });
 
     expect(editor.getState(sessionId)!.version).toBe(7);

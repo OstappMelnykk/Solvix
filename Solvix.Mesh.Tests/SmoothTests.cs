@@ -6,20 +6,20 @@ namespace Solvix.Mesh.Tests;
 public class SmoothTests
 {
     // a 3 x 3 x 3 body whose real coordinate along each axis is a piecewise-linear function of the lattice one
-    private static HexMeshEditor Body(Func<int, double> along)
+    private static HexMeshEditor Body(Func<int, double> along, int nx = 3, int ny = 3, int nz = 3)
     {
-        double F(double t)
+        double F(double t, int count)
         {
             int i = (int)Math.Floor(t);
-            return i >= 3 ? along(3) : along(i) + (t - i) * (along(i + 1) - along(i));
+            return i >= count ? along(count) : along(i) + (t - i) * (along(i + 1) - along(i));
         }
         var cells = new List<BodyCell>();
-        for (int i = 0; i < 3; i++)
-            for (int j = 0; j < 3; j++)
-                for (int k = 0; k < 3; k++)
+        for (int i = 0; i < nx; i++)
+            for (int j = 0; j < ny; j++)
+                for (int k = 0; k < nz; k++)
                 {
                     var positions = Enumerable.Range(0, Hex20Reference.NodeCount).Select(s =>
-                        new Vec3(F(i + (Hex20Reference.LocalCoords[s, 0] + 1) / 2.0), F(j + (Hex20Reference.LocalCoords[s, 1] + 1) / 2.0), F(k + (Hex20Reference.LocalCoords[s, 2] + 1) / 2.0))).ToList();
+                        new Vec3(F(i + (Hex20Reference.LocalCoords[s, 0] + 1) / 2.0, nx), F(j + (Hex20Reference.LocalCoords[s, 1] + 1) / 2.0, ny), F(k + (Hex20Reference.LocalCoords[s, 2] + 1) / 2.0, nz))).ToList();
                     cells.Add(new BodyCell(i, j, k, positions));
                 }
         var editor = new HexMeshEditor();
@@ -101,6 +101,7 @@ public class SmoothTests
 
         Assert.That(result.Ok, Is.False);
         Assert.That(result.Error, Does.Contain("Nothing to smooth"));
+        Assert.That(result.Error, Does.Contain("too thin"));
     }
 
     [Test]
@@ -137,5 +138,75 @@ public class SmoothTests
         Assert.That(editor.Smooth(0, 0.5).Ok, Is.False);
         Assert.That(editor.Smooth(5, 0).Ok, Is.False);
         Assert.That(editor.Smooth(5, 1.5).Ok, Is.False);
+    }
+
+    // ---- the surface ----
+
+    // the top-face vertex above the middle of the 3 x 3 x 1 slab: the lattice point (1, 1, 1)
+    private static MeshNode SlabVertex(HexMesh mesh) => mesh.Nodes.Single(n => n.Ideal == (2, 2, 2));
+
+    [Test]
+    public void A_thin_slab_has_no_interior_vertices_so_it_needs_the_surface_option()
+    {
+        var editor = Body(t => t, 3, 3, 1);
+        editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(1.3, 0.8, 1.0), true);
+
+        var interiorOnly = editor.Smooth(20, 0.5);
+
+        Assert.That(interiorOnly.Ok, Is.False);
+        Assert.That(interiorOnly.Error, Does.Contain("too thin"));
+        Assert.That(editor.Smooth(60, 0.5, surface: true).Ok, Is.True);
+        var p = SlabVertex(editor.Mesh).Position;
+        Assert.That(p.X, Is.EqualTo(1).Within(1e-3));
+        Assert.That(p.Y, Is.EqualTo(1).Within(1e-3));
+    }
+
+    [Test]
+    public void A_surface_vertex_slides_along_the_surface_and_never_off_it()
+    {
+        var editor = Body(t => t, 3, 3, 1);
+        editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(1.3, 0.8, 1.0), true);       // sideways, in the plane of the top face
+
+        editor.Smooth(60, 0.5, surface: true);
+
+        var p = SlabVertex(editor.Mesh).Position;
+        Assert.That(p.Z, Is.EqualTo(1.0).Within(1e-9));                        // the height above the surface is not touched
+        Assert.That(p.X, Is.EqualTo(1).Within(1e-3));
+    }
+
+    [Test]
+    public void A_bump_in_the_surface_is_not_flattened_by_the_smoothing()
+    {
+        var editor = Body(t => t, 3, 3, 1);
+        editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(1.0, 1.0, 1.1), true);       // a bump straight up
+
+        editor.Smooth(60, 0.5, surface: true);
+
+        // only a slide along the surface, so the height is what the user made it (the surface is not shrunk to a plane)
+        Assert.That(SlabVertex(editor.Mesh).Position.Z, Is.EqualTo(1.1).Within(0.02));
+    }
+
+    [Test]
+    public void Ridges_and_corners_of_the_body_stay_where_they_are_when_the_surface_is_smoothed()
+    {
+        var editor = Body(t => t, 3, 3, 1);
+        var edgeNodes = editor.Mesh.Nodes.Where(n => n.Ideal.X == 0 || n.Ideal.X == 6 || n.Ideal.Y == 0 || n.Ideal.Y == 6).ToDictionary(n => n.Id, n => n.Position);
+        editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(1.3, 0.8, 1.0), true);
+
+        editor.Smooth(60, 0.5, surface: true);
+
+        foreach (var (id, position) in edgeNodes) Assert.That((editor.Mesh.Node(id).Position - position).Length, Is.LessThan(1e-12));
+    }
+
+    [Test]
+    public void Surface_smoothing_of_a_body_with_nothing_free_says_so()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+
+        var result = editor.Smooth(5, 0.5, surface: true);
+
+        Assert.That(result.Ok, Is.False);
+        Assert.That(result.Error, Does.Contain("ridge or a corner"));
     }
 }

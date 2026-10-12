@@ -105,12 +105,18 @@ public sealed class HexMeshEditor
         return EditResult.Success;
     });
 
-    /// <summary>Laplacian smoothing of the interior that keeps the local density (see <see cref="HexMesh.Smooth"/>).</summary>
-    public EditResult Smooth(int iterations, double relaxation) => Apply(() =>
+    /// <summary>Laplacian smoothing that keeps the local density (see <see cref="HexMesh.Smooth"/>); with surface = true the smooth patches of the surface slide too.</summary>
+    public EditResult Smooth(int iterations, double relaxation, bool surface = false) => Apply(() =>
     {
         if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
         if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
-        return Mesh.Smooth(iterations, relaxation) > 0 ? EditResult.Success : EditResult.Fail("Nothing to smooth: no interior node can move.");
+        var report = Mesh.Smooth(iterations, relaxation, surface);
+        if (report.Moved > 0) return EditResult.Success;
+        if (report.Interior + report.Surface == 0)
+            return EditResult.Fail(surface
+                ? "Nothing to smooth: every vertex is on a ridge or a corner of the body."
+                : "Nothing to smooth: every vertex lies on the surface (the body is too thin to have interior vertices). Turn on smoothing of the surface.");
+        return EditResult.Fail("Nothing to smooth: the mesh is already smooth, or each step would fold a cube.");
     });
 
     public EditResult Reset() => Apply(() =>

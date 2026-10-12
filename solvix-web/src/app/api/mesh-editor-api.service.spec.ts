@@ -115,7 +115,7 @@ describe('MeshEditorApiService', () => {
 
   it('POSTs the smoothing settings', () => {
     api.smooth(5, 12, 0.5).subscribe();
-    expectCall('POST', 'smooth', { iterations: 12, relaxation: 0.5 }).flush({});
+    expectCall('POST', 'smooth', { iterations: 12, relaxation: 0.5, surface: false }).flush({});
   });
 
   it('POSTs both mapping probes with the point as the body', () => {

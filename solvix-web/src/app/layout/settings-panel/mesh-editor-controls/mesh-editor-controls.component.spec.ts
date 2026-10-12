@@ -50,7 +50,10 @@ describe('MeshEditorControlsComponent', () => {
   it('smooths the interior with the chosen number of passes, within 1..200, and not while busy', () => {
     component.onSmoothIterations({ target: { value: '25.4' } } as unknown as Event);
     component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, 25);
+    expect(editor.smooth).toHaveBeenCalledWith(1, 25, 0.5, false);
+    component.onSmoothSurface({ target: { checked: true } } as unknown as Event);
+    component.smooth();
+    expect(editor.smooth).toHaveBeenCalledWith(1, 25, 0.5, true);
 
     component.onSmoothIterations({ target: { value: '9999' } } as unknown as Event);
     expect(component.smoothIterations).toBe(200);

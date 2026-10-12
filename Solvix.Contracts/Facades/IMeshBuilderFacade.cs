@@ -28,7 +28,7 @@ public interface IMeshBuilderFacade
     MeshCommandResultDto MoveNode(int sessionId, int nodeId, MeshPointDto position, bool carryEdgeMidpoints);
 
     /// <summary>Laplacian smoothing of the interior nodes; the local density of the mesh is kept.</summary>
-    MeshCommandResultDto Smooth(int sessionId, int iterations, double relaxation);
+    MeshCommandResultDto Smooth(int sessionId, int iterations, double relaxation, bool surface = false);
 
     MeshCommandResultDto Undo(int sessionId);
 

@@ -484,6 +484,12 @@ export class MeshEditorControlsComponent {
 
   // How many smoothing passes the button makes.
   smoothIterations = 10;
+  // Also slide the vertices on the outer surface (along it); off by default, since it moves them off the STL.
+  smoothSurface = false;
+
+  onSmoothSurface(event: Event): void {
+    this.smoothSurface = (event.target as HTMLInputElement).checked;
+  }
 
   onSmoothIterations(event: Event): void {
     const value = Math.round(Number((event.target as HTMLInputElement).value));
@@ -492,7 +498,7 @@ export class MeshEditorControlsComponent {
   }
 
   smooth(): void {
-    if (this.sessionId !== null && !this.busy) this.editor.smooth(this.sessionId, this.smoothIterations);
+    if (this.sessionId !== null && !this.busy) this.editor.smooth(this.sessionId, this.smoothIterations, 0.5, this.smoothSurface);
   }
 
   undo(): void {
