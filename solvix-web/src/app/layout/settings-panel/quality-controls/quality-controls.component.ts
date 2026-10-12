@@ -10,8 +10,11 @@ import {
 import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService } from '../../../state/solver.service';
+import { MeasureInfoComponent } from './measure-info/measure-info.component';
 
 interface Measure {
+  // the tool whose measure it is (aspect ratio means different things in different tools)
+  readonly tool: string;
   readonly limit: SolverQualityLimitDto;
   readonly value: number;
   readonly shown: string;
@@ -24,7 +27,7 @@ interface Measure {
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
-  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe],
+  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent],
   templateUrl: './quality-controls.component.html',
   styleUrl: './quality-controls.component.scss'
 })
@@ -38,6 +41,17 @@ export class QualityControlsComponent implements DoCheck {
   readonly resultNames = RESULT_NAMES;
   readonly gaugeZones = gaugeZones;
   readonly gaugeTicks = gaugeTicks;
+
+  // The measure whose "i" popup is open (UI only).
+  info: Measure | null = null;
+
+  openInfo(m: Measure): void {
+    this.info = m;
+  }
+
+  closeInfo(): void {
+    this.info = null;
+  }
 
   // The tools list of the block of other tools is open (UI only).
   toolsOpen = false;
@@ -119,9 +133,9 @@ export class QualityControlsComponent implements DoCheck {
 
   // --- 2. the measures of the criterion ---
 
-  private measureOf(limit: SolverQualityLimitDto, value: number): Measure {
+  private measureOf(limit: SolverQualityLimitDto, value: number, tool: string = SOLVIX_ID): Measure {
     const shown = value >= 1e6 ? '∞' : `${value.toFixed(limit.decimals)}${limit.unit}`;
-    return { limit, value, shown, ok: passes(limit, value) };
+    return { tool, limit, value, shown, ok: passes(limit, value) };
   }
 
   // The worst value of each measure over the whole mesh.
@@ -131,7 +145,7 @@ export class QualityControlsComponent implements DoCheck {
 
   // The same for any tool of the report: its own measures with its own limits.
   measuresOf(quality: SolverQualityDto | null): Measure[] {
-    return quality ? quality.limits.map(limit => this.measureOf(limit, quality.worst[limit.key])) : [];
+    return quality ? quality.limits.map(limit => this.measureOf(limit, quality.worst[limit.key], quality.id)) : [];
   }
 
   limitText(limit: SolverQualityLimitDto): string {

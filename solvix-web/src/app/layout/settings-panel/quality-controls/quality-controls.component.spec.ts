@@ -98,6 +98,24 @@ describe('QualityControlsComponent', () => {
     expect(gauge).not.toContain('Допустимо');
   });
 
+  it('opens a popup with the maths of a measure from its "i" button, and closes it', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('app-measure-info')).toBeNull();
+
+    root.querySelector<HTMLButtonElement>('.gauge__info')!.click();
+    fixture.detectChanges();
+    const popup = root.querySelector('app-measure-info')!;
+    expect(text(popup)).toContain('Математика');
+    expect(text(popup)).toContain('Найкраще');
+    expect(text(popup)).toContain('Межа Solvix');
+    expect(text(popup)).toContain('Зараз у вашій сітці');
+
+    popup.querySelector<HTMLButtonElement>('.card__close')!.click();
+    fixture.detectChanges();
+    expect(root.querySelector('app-measure-info')).toBeNull();
+  });
+
   it('knows only accepted or not: two zones per measure and two colours', () => {
     const root = render().nativeElement as HTMLElement;
 

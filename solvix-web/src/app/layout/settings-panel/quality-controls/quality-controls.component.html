@@ -96,7 +96,9 @@
 <ng-template #gaugeTpl let-m>
   <div class="gauge">
     <div class="gauge__head">
-      <span class="gauge__name" [title]="m.limit.hint">{{ m.limit.label }} <small>{{ m.limit.tech }}</small></span>
+      <span class="gauge__name">{{ m.limit.label }} <small>{{ m.limit.tech }}</small>
+        <button type="button" class="gauge__info" aria-label="Що це за параметр" title="Що це за параметр" (click)="openInfo(m)">i</button>
+      </span>
       <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
     </div>
     <div class="gauge__track">
@@ -108,4 +110,5 @@
     </div>
   </div>
 </ng-template>
+<app-measure-info *ngIf="info as i" [limit]="i.limit" [tool]="i.tool" [shown]="i.shown" [ok]="i.ok" (closed)="closeInfo()"></app-measure-info>
 <ng-template #loading><div class="empty">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>

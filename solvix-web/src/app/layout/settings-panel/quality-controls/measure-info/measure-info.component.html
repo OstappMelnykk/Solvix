@@ -1,0 +1,49 @@
+<div class="backdrop" (click)="close()"></div>
+<div class="card" role="dialog" aria-modal="true">
+  <div class="card__head">
+    <div>
+      <div class="card__title">{{ limit.label }}</div>
+      <div class="card__tech">{{ limit.tech }}</div>
+    </div>
+    <button type="button" class="card__close" aria-label="Закрити" (click)="close()">✕</button>
+  </div>
+
+  <div class="card__body">
+    <div class="now" [class.now--bad]="!ok">
+      <span class="now__label">Зараз у вашій сітці (найгірше)</span>
+      <b class="now__value">{{ shown }}</b>
+      <span class="now__verdict">{{ ok ? 'проходить' : 'не проходить' }}</span>
+    </div>
+
+    <ng-container *ngIf="explain as e; else plain">
+      <h6>Що це</h6>
+      <p>{{ e.what }}</p>
+
+      <h6>Математика</h6>
+      <pre class="formula"><ng-container *ngFor="let line of e.formula">{{ line }}
+</ng-container></pre>
+      <ul class="where" *ngIf="e.where">
+        <li *ngFor="let w of e.where">{{ w }}</li>
+      </ul>
+
+      <h6>Що це змінює в розрахунку</h6>
+      <p>{{ e.effect }}</p>
+
+      <h6>Значення</h6>
+      <dl class="values">
+        <dt>Найкраще</dt><dd>{{ e.ideal }}</dd>
+        <dt>Крайнє</dt><dd>{{ e.extreme }}</dd>
+        <dt>Межа Solvix</dt><dd>{{ rule }}</dd>
+        <dt *ngIf="error">Межа «помилка» ANSYS</dt><dd *ngIf="error">{{ error }}</dd>
+      </dl>
+      <p class="note" *ngIf="e.limitNote">{{ e.limitNote }}</p>
+
+      <h6>Як рахується</h6>
+      <p>{{ e.how }}</p>
+    </ng-container>
+    <ng-template #plain>
+      <p>{{ limit.hint }}</p>
+      <p class="note">{{ rule }}</p>
+    </ng-template>
+  </div>
+</div>
