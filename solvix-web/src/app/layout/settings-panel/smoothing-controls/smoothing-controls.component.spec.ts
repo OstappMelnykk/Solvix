@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
+import { singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
 import { SmoothingControlsComponent } from './smoothing-controls.component';
 
 describe('SmoothingControlsComponent', () => {
@@ -40,6 +41,17 @@ describe('SmoothingControlsComponent', () => {
     type('density', '500');
     type('angle', '0');
     expect([component.iterations, component.relaxation, component.densityPercent, component.featureAngle]).toEqual([200, 0.05, 100, 1]);
+  });
+
+  it('says how much of the mesh smoothing can reach: here nothing, a single cube has no free vertex', () => {
+    editor.getState.and.returnValue(singleCubeState());
+    component.bad = [{ hex: 0 }];
+
+    const reach = component.reach()!;
+
+    expect(reach.free).toBe(0);
+    expect(reach.badReachable).toBe(0);
+    expect(component.reach()).toBe(reach);                       // the same object while nothing changed
   });
 
   it('does nothing while busy or with a single cube', () => {

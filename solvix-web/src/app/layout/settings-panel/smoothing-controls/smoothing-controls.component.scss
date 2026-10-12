@@ -18,6 +18,28 @@ $accent-toggle: #da680b;
   line-height: 1.4;
 }
 
+.reach {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+
+  &__note {
+    color: #8a8f98;
+  }
+
+  &--none {
+    color: #f0b429;
+  }
+
+  &__warn {
+    margin-top: 4px;
+    color: #f0b429;
+  }
+}
+
 .row {
   display: flex;
   align-items: center;

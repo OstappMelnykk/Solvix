@@ -1,6 +1,8 @@
 import { Component, Input, inject } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
+import { SmoothingReach, smoothingReach } from '../../../geometry/smoothing-reach';
+import { MeshStateDto } from '../../../api/mesh-editor-api.service';
 
 // The smoothing of the mesh, with every setting the user's: passes, step, how strongly the local density is kept, and
 // whether (and how far) the outer surface slides too. It lives on the Quality page, where its effect is seen.
@@ -15,6 +17,18 @@ export class SmoothingControlsComponent {
   private readonly editor = inject(MeshEditorService);
 
   @Input({ required: true }) sessionId!: number;
+  // The bad elements the quality page shows (which cube each lies in): to say whether smoothing can reach them.
+  @Input() bad: readonly { readonly hex: number }[] = [];
+
+  private reachOf: { state: MeshStateDto; bad: readonly { readonly hex: number }[]; value: SmoothingReach } | null = null;
+
+  // What smoothing can reach in this mesh: how many vertices are free, and how many bad elements are near one.
+  reach(): SmoothingReach | null {
+    const state = this.editor.getState(this.sessionId);
+    if (!state || state.hexes.length === 0) return null;
+    if (this.reachOf?.state !== state || this.reachOf.bad !== this.bad) this.reachOf = { state, bad: this.bad, value: smoothingReach(state, this.bad) };
+    return this.reachOf.value;
+  }
 
   iterations = 10;
   relaxation = 0.5;
