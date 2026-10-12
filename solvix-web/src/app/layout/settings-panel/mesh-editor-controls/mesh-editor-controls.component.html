@@ -203,6 +203,16 @@
 </div>
 
 <div class="group">
+  <div class="row">
+    <span title="Скільки разів пройти по всіх внутрішніх вершинах">Згладжування, проходів</span>
+    <input type="number" min="1" max="200" step="1" [value]="smoothIterations" (change)="onSmoothIterations($event)" />
+  </div>
+  <button class="tool" type="button" [disabled]="hexCount() < 2 || busy" title="Лапласівка в 3D: рухає тільки внутрішні вершини, поверхня тіла не змінюється, а густина в кожній ділянці лишається. Можна скасувати." (click)="smooth()">
+    Згладити внутрішні вершини
+  </button>
+</div>
+
+<div class="group">
   <button class="tool" type="button" *ngIf="!isResetConfirming; else confirmBlock" [disabled]="hexCount() === 0 || busy" (click)="requestReset()">
     Очистити сітку (можна скасувати)
   </button>

@@ -91,6 +91,17 @@ describe('MeshEditorService', () => {
     expect(editor.getState(sessionId)!.version).toBe(5);
   });
 
+  it('smooths through the server and takes the new state', () => {
+    loadInitialState(singleCubeState());
+
+    editor.smooth(sessionId, 10);
+    const request = http.expectOne(url('smooth'));
+    expect(request.request.body).toEqual({ iterations: 10, relaxation: 0.5 });
+    request.flush({ ok: true, error: null, state: singleCubeState(7) });
+
+    expect(editor.getState(sessionId)!.version).toBe(7);
+  });
+
   it('reports an unreachable server as an error toast and does not stay busy', () => {
     loadInitialState();
 

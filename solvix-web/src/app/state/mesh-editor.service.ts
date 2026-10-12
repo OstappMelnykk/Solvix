@@ -123,6 +123,11 @@ export class MeshEditorService {
     this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints), then);
   }
 
+  // Laplacian smoothing of the interior; the boundary and the local density stay.
+  smooth(sessionId: number, iterations: number, relaxation = 0.5): void {
+    this.run(sessionId, this.api.smooth(sessionId, iterations, relaxation));
+  }
+
   undo(sessionId: number): void {
     this.run(sessionId, this.api.undo(sessionId));
   }

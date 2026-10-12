@@ -482,6 +482,19 @@ export class MeshEditorControlsComponent {
 
   // --- history / reset -----------------------------------------------------
 
+  // How many smoothing passes the button makes.
+  smoothIterations = 10;
+
+  onSmoothIterations(event: Event): void {
+    const value = Math.round(Number((event.target as HTMLInputElement).value));
+    this.smoothIterations = Number.isFinite(value) ? Math.min(200, Math.max(1, value)) : 10;
+    (event.target as HTMLInputElement).value = String(this.smoothIterations);
+  }
+
+  smooth(): void {
+    if (this.sessionId !== null && !this.busy) this.editor.smooth(this.sessionId, this.smoothIterations);
+  }
+
   undo(): void {
     if (this.sessionId !== null) this.editor.undo(this.sessionId);
   }

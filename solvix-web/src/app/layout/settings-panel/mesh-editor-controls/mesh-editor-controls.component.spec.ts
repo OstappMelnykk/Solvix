@@ -26,7 +26,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'smooth', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
@@ -45,6 +45,22 @@ describe('MeshEditorControlsComponent', () => {
     component = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
     component.sessionId = 1;
     component.worldIndex = REAL_WORLD_INDEX;
+  });
+
+  it('smooths the interior with the chosen number of passes, within 1..200, and not while busy', () => {
+    component.onSmoothIterations({ target: { value: '25.4' } } as unknown as Event);
+    component.smooth();
+    expect(editor.smooth).toHaveBeenCalledWith(1, 25);
+
+    component.onSmoothIterations({ target: { value: '9999' } } as unknown as Event);
+    expect(component.smoothIterations).toBe(200);
+    component.onSmoothIterations({ target: { value: '0' } } as unknown as Event);
+    expect(component.smoothIterations).toBe(1);
+
+    editor.smooth.calls.reset();
+    busy.set(true);
+    component.smooth();
+    expect(editor.smooth).not.toHaveBeenCalled();
   });
 
   it('offers "first cube" only for an empty mesh that has been loaded', () => {

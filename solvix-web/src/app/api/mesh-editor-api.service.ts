@@ -231,6 +231,10 @@ export class MeshEditorApiService {
     return this.http.put<MeshCommandResultDto>(this.url(sessionId, `nodes/${nodeId}`), { ...position, carryEdgeMidpoints });
   }
 
+  smooth(sessionId: number, iterations: number, relaxation: number): Observable<MeshCommandResultDto> {
+    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'smooth'), { iterations, relaxation });
+  }
+
   undo(sessionId: number): Observable<MeshCommandResultDto> {
     return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'undo'), {});
   }

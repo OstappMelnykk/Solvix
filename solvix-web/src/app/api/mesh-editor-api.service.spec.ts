@@ -113,6 +113,11 @@ describe('MeshEditorApiService', () => {
     expectCall('POST', 'reset').flush({});
   });
 
+  it('POSTs the smoothing settings', () => {
+    api.smooth(5, 12, 0.5).subscribe();
+    expectCall('POST', 'smooth', { iterations: 12, relaxation: 0.5 }).flush({});
+  });
+
   it('POSTs both mapping probes with the point as the body', () => {
     api.mapIdealToReal(5, { x: 1, y: 2, z: 3 }).subscribe();
     expectCall('POST', 'map/ideal-to-real', { x: 1, y: 2, z: 3 }).flush({ found: false, point: null });
