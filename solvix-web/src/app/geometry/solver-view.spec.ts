@@ -728,6 +728,22 @@ describe('colouring by mesh quality', () => {
     expect(faces({ section: { axis: 0, at: 1e6, keep: 'above' } })).toBe(0);   // everything cut away
   });
 
+  it('draws the plane of the cut, across the whole body and not pickable', () => {
+    const state = singleCubeState();
+    const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, section: { axis: 0, at: 0.5, keep: 'above' } });
+    const plane = view.root.children.find(c => c.userData['sectionPlane'])!;
+    expect(plane).toBeDefined();
+
+    const sheet = (plane.children[0] as THREE.Mesh).geometry.getAttribute('position');
+    const xs = Array.from({ length: sheet.count }, (_, i) => sheet.getX(i));
+    expect(xs.every(x => Math.abs(x - 0.5) < 1e-6)).toBeTrue();                 // it lies at the cut
+    expect(view.pickables.includes(plane.children[0])).toBeFalse();
+    const noCut = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1 });
+    expect(noCut.root.children.some(c => c.userData['sectionPlane'])).toBeFalse();
+    disposeMeshView(view);
+    disposeMeshView(noCut);
+  });
+
   it('knows where an element is', () => {
     const centre = elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 0, ex: 0, ey: 0, ez: 0 })!;
     const other = elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 0, ex: 2, ey: 0, ez: 0 })!;

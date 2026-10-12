@@ -200,6 +200,39 @@ export function elementCentreOf(state: MeshStateDto, divisions: readonly number[
   return hex ? new SolverGeometry(state, divisions, null, 0, 'none').elementCentre(hex, pick.ex, pick.ey, pick.ez) : null;
 }
 
+const SECTION_COLOR = 0x39c5f2;
+
+// The sheet that shows a cut: a rectangle across the whole body (a little beyond it), with an outline. Not pickable.
+export function sectionPlane(state: MeshStateDto, cut: SectionCut): THREE.Group {
+  const low = [Infinity, Infinity, Infinity], high = [-Infinity, -Infinity, -Infinity];
+  for (const n of state.nodes) {
+    const p = [n.x, n.y, n.z];
+    for (let i = 0; i < 3; i++) {
+      low[i] = Math.min(low[i], p[i]);
+      high[i] = Math.max(high[i], p[i]);
+    }
+  }
+  const [a, b] = [0, 1, 2].filter(i => i !== cut.axis);
+  const pad = (i: number) => Math.max(1e-6, (high[i] - low[i]) * 0.08);
+  const corner = (u: number, v: number): number[] => {
+    const p = [0, 0, 0];
+    p[cut.axis] = cut.at;
+    p[a] = u;
+    p[b] = v;
+    return p;
+  };
+  const [u0, u1, v0, v1] = [low[a] - pad(a), high[a] + pad(a), low[b] - pad(b), high[b] + pad(b)];
+  const c = [corner(u0, v0), corner(u1, v0), corner(u1, v1), corner(u0, v1)];
+  const sheet = new THREE.BufferGeometry();
+  sheet.setAttribute('position', new THREE.Float32BufferAttribute([...c[0], ...c[1], ...c[2], ...c[0], ...c[2], ...c[3]], 3));
+  const outline = new THREE.BufferGeometry();
+  outline.setAttribute('position', new THREE.Float32BufferAttribute([...c[0], ...c[1], ...c[1], ...c[2], ...c[2], ...c[3], ...c[3], ...c[0]], 3));
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(sheet, new THREE.MeshBasicMaterial({ color: SECTION_COLOR, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false })));
+  group.add(new THREE.LineSegments(outline, new THREE.LineBasicMaterial({ color: SECTION_COLOR })));
+  return group;
+}
+
 export class SolverGeometry {
   readonly counts: [number, number, number];
   private readonly points: [number, number, number][];
@@ -651,6 +684,13 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     vectors.userData['vectors'] = true;
     vectors.visible = input.vectors !== false;
     root.add(vectors);
+  }
+
+  // the plane of the cut, drawn as a pale sheet with an outline, so it is plain where it passes through the body
+  if (input.section) {
+    const plane = sectionPlane(state, input.section);
+    plane.userData['sectionPlane'] = true;
+    root.add(plane);
   }
 
   // what a click would act on is drawn into the view without rebuilding it
