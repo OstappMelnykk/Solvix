@@ -49,6 +49,18 @@ describe('mesh-editor-view', () => {
       expect(edges.geometry.getAttribute('position').count).toBe(12 * 10 * 2);
     });
 
+    it('draws the faces as opaque as asked: 0.22 is the usual tint, and the other face states scale with it', () => {
+      const opacities = (faceOpacity?: number) =>
+        picks(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity }).pickables)
+          .map((p, i) => ({ p, i })).filter(x => x.p.kind === 'face')
+          .map(x => ((buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity }).pickables[x.i] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity);
+
+      expect(opacities()[0]).toBeCloseTo(0.16, 6);                // a free face, as it always was
+      expect(opacities(0.22)[0]).toBeCloseTo(0.16, 6);
+      expect(opacities(1)[0]).toBeCloseTo(0.16 / 0.22, 6);        // everything scales by the same factor
+      expect(opacities(0.02)[0]).toBeLessThan(0.02);
+    });
+
     it('draws a linked face once, so two hexes do not z-fight', () => {
       const view = buildMeshView(linkedPairState(), 'real', noSelection);
 

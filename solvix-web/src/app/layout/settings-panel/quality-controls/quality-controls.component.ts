@@ -11,6 +11,9 @@ import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService } from '../../../state/solver.service';
 import { MeasureInfoComponent } from './measure-info/measure-info.component';
+import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-controls.component';
+import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { QUALITY_WORLD_INDEX } from '../../../config/app-settings';
 
 interface Measure {
   // the tool whose measure it is (aspect ratio means different things in different tools)
@@ -27,7 +30,7 @@ interface Measure {
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
-  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent],
+  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent, SmoothingControlsComponent],
   templateUrl: './quality-controls.component.html',
   styleUrl: './quality-controls.component.scss'
 })
@@ -35,12 +38,22 @@ export class QualityControlsComponent implements DoCheck {
   private readonly solver = inject(SolverService);
   private readonly editor = inject(MeshEditorService);
   private readonly activeWorld = inject(ActiveWorldService);
+  private readonly geometryOpacity = inject(GeometryOpacityService);
 
   @Input({ required: true }) sessionId!: number;
 
   readonly resultNames = RESULT_NAMES;
   readonly gaugeZones = gaugeZones;
   readonly gaugeTicks = gaugeTicks;
+
+  // How opaque the body is (percent): lower it to see the bad elements inside.
+  opacityPercent(): number {
+    return Math.round(this.geometryOpacity.get(this.sessionId, QUALITY_WORLD_INDEX) * 100);
+  }
+
+  onOpacity(event: Event): void {
+    this.geometryOpacity.set(this.sessionId, QUALITY_WORLD_INDEX, Number((event.target as HTMLInputElement).value) / 100);
+  }
 
   // The measure whose "i" popup is open (UI only).
   info: Measure | null = null;

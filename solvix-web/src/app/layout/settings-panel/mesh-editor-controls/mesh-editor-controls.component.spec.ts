@@ -26,7 +26,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'smooth', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
@@ -45,33 +45,6 @@ describe('MeshEditorControlsComponent', () => {
     component = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
     component.sessionId = 1;
     component.worldIndex = REAL_WORLD_INDEX;
-  });
-
-  it('smooths with the settings the user chose, each kept within its range, and not while busy', () => {
-    const type = (field: 'iterations' | 'relaxation' | 'density' | 'angle', value: string) =>
-      component.onSmoothNumber(field, { target: { value } } as unknown as Event);
-
-    component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25 });
-
-    type('iterations', '25.4');
-    type('relaxation', '0.2');
-    type('density', '40');
-    type('angle', '60');
-    component.onSmoothSurface({ target: { checked: true } } as unknown as Event);
-    component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 25, relaxation: 0.2, surface: true, density: 0.4, featureAngle: 60 });
-
-    type('iterations', '9999');
-    type('relaxation', '0');
-    type('density', '500');
-    type('angle', '0');
-    expect([component.smoothIterations, component.smoothRelaxation, component.smoothDensityPercent, component.smoothFeatureAngle]).toEqual([200, 0.05, 100, 1]);
-
-    editor.smooth.calls.reset();
-    busy.set(true);
-    component.smooth();
-    expect(editor.smooth).not.toHaveBeenCalled();
   });
 
   it('offers "first cube" only for an empty mesh that has been loaded', () => {

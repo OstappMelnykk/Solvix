@@ -130,6 +130,8 @@ export interface MeshViewOptions {
   // Draw every node over the cubes and let a click on one win over the faces in front of it: the nodes inside the body
   // can be reached. Without it only the nodes of the picked cubes are.
   readonly xrayNodes?: boolean;
+  // How opaque the faces are (0..1): the opacity of a linked face; the other states scale with it. Default 0.22.
+  readonly faceOpacity?: number;
 }
 
 const GRID_LINE_SAMPLES = 12;
@@ -150,6 +152,8 @@ const FACE_COLORS: Record<FaceStatus, number> = {
   Candidate: 0xe08a2e
 };
 const FACE_OPACITY: Record<FaceStatus, number> = { Free: 0.16, Linked: 0.22, Candidate: 0.4 };
+// the opacity of a linked face, which the user's setting is measured against
+const LINKED_FACE_OPACITY = FACE_OPACITY.Linked;
 const BASE_HEX_COLOR = 0x39c5f2;
 const ADAPTING_HEX_COLOR = 0xc77dff;
 const PREVIEW_FACE_COLOR = 0x6ee06e;
@@ -285,6 +289,8 @@ export function buildMeshView(
   // Inside of each cube: lines of constant (alpha, beta, gamma) through the shape
   // functions. The 12 edges are drawn above already, so a line is skipped when
   // both of its fixed coordinates sit on the cube's boundary.
+  const faceOpacity = Math.min(1, Math.max(0, options.faceOpacity ?? LINKED_FACE_OPACITY));
+  const faceScale = faceOpacity / LINKED_FACE_OPACITY;
   const counts = (Array.isArray(options.subdivisions) ? options.subdivisions : [options.subdivisions, options.subdivisions, options.subdivisions]).map(n => Math.max(1, Math.floor(n)));
   if (counts.some(n => n > 1)) {
     const gridVertices: number[] = [];
@@ -368,7 +374,7 @@ export function buildMeshView(
     const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : FACE_COLORS[face.status];
     const material = new THREE.MeshBasicMaterial({
       color,
-      opacity: preview || facePicked ? 0.6 : picked ? 0.42 : FACE_OPACITY[face.status],
+      opacity: preview || facePicked ? Math.max(0.6, faceOpacity) : picked ? Math.max(0.42, faceOpacity) : Math.min(1, FACE_OPACITY[face.status] * faceScale),
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide

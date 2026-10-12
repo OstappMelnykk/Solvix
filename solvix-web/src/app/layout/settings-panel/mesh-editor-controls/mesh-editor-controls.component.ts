@@ -3,6 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
+import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
 import { SessionsService } from '../../../state/sessions.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
@@ -71,6 +72,7 @@ export class MeshEditorControlsComponent {
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
   private readonly attachments = inject(SurfaceAttachmentService);
+  private readonly geometryOpacity = inject(GeometryOpacityService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
@@ -114,6 +116,16 @@ export class MeshEditorControlsComponent {
 
   nodeCount(): number {
     return this.state?.nodes.length ?? 0;
+  }
+
+  // --- how opaque the faces of this World are ---
+
+  opacityPercent(): number {
+    return this.sessionId === null || this.worldIndex === null ? 0 : Math.round(this.geometryOpacity.get(this.sessionId, this.worldIndex) * 100);
+  }
+
+  onOpacity(event: Event): void {
+    if (this.sessionId !== null && this.worldIndex !== null) this.geometryOpacity.set(this.sessionId, this.worldIndex, Number((event.target as HTMLInputElement).value) / 100);
   }
 
   // --- reaching the nodes inside the body ---
@@ -481,42 +493,6 @@ export class MeshEditorControlsComponent {
   }
 
   // --- history / reset -----------------------------------------------------
-
-  // The smoothing settings, all the user's.
-  smoothIterations = 10;
-  smoothRelaxation = 0.5;
-  smoothDensityPercent = 100;
-  smoothFeatureAngle = 25;
-  // Also slide the vertices on the outer surface (along it); off by default, since it moves them off the STL.
-  smoothSurface = false;
-
-  onSmoothNumber(field: 'iterations' | 'relaxation' | 'density' | 'angle', event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const raw = Number(input.value);
-    const limits = { iterations: [1, 200, 10], relaxation: [0.05, 1, 0.5], density: [0, 100, 100], angle: [1, 90, 25] }[field];
-    let value = Number.isFinite(raw) ? Math.min(limits[1], Math.max(limits[0], raw)) : limits[2];
-    if (field === 'iterations') value = Math.round(value);
-    if (field === 'iterations') this.smoothIterations = value;
-    else if (field === 'relaxation') this.smoothRelaxation = value;
-    else if (field === 'density') this.smoothDensityPercent = value;
-    else this.smoothFeatureAngle = value;
-    input.value = String(value);
-  }
-
-  onSmoothSurface(event: Event): void {
-    this.smoothSurface = (event.target as HTMLInputElement).checked;
-  }
-
-  smooth(): void {
-    if (this.sessionId === null || this.busy) return;
-    this.editor.smooth(this.sessionId, {
-      iterations: this.smoothIterations,
-      relaxation: this.smoothRelaxation,
-      surface: this.smoothSurface,
-      density: this.smoothDensityPercent / 100,
-      featureAngle: this.smoothFeatureAngle
-    });
-  }
 
   undo(): void {
     if (this.sessionId !== null) this.editor.undo(this.sessionId);

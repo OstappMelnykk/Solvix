@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { QualityControlsComponent } from './quality-controls.component';
 import { SolverService } from '../../../state/solver.service';
@@ -46,7 +47,8 @@ describe('QualityControlsComponent', () => {
     solver.divisions.and.returnValue([1, 1, 1]);
     solver.setQualityCompare.and.callFake((_s, id) => (compare = id));
     solver.setQualityPick.and.callFake((_s, p) => (picked = p));
-    const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState']);
+    const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState', 'smooth']);
+    Object.defineProperty(editor, 'busy', { get: () => signal(false) });
     editor.getState.and.callFake(() => linkedPairState());
     world = jasmine.createSpyObj<ActiveWorldService>('ActiveWorldService', ['selectCurrentWorld']);
     TestBed.configureTestingModule({
@@ -96,6 +98,20 @@ describe('QualityControlsComponent', () => {
     expect(gauge).toContain('Витягнутість');
     expect(gauge).toContain('25.0');
     expect(gauge).not.toContain('Допустимо');
+  });
+
+  it('has the smoothing on this page, and a slider for how opaque the body is', () => {
+    const fixture = render();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('app-smoothing-controls')).not.toBeNull();
+    const slider = root.querySelector<HTMLInputElement>('.opacity input')!;
+    expect(text(root.querySelector('.opacity'))).toContain('100%');
+
+    slider.value = '40';
+    slider.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(text(root.querySelector('.opacity'))).toContain('40%');
   });
 
   it('opens a popup with the maths of a measure from its "i" button, and closes it', () => {

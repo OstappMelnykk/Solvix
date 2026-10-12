@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { QUALITY_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
 import { SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
+import { GeometryOpacityService } from './geometry-opacity.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
 
@@ -17,6 +18,7 @@ interface Cached {
 export class QualityRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly solver = inject(SolverService);
+  private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly cache = new Map<number, Cached>();
 
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
@@ -27,7 +29,8 @@ export class QualityRenderService {
       return null;
     }
     const quality = this.solver.quality(sessionId);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}`;
+    const opacity = this.geometryOpacity.get(sessionId, worldIndex);
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${opacity}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -37,7 +40,7 @@ export class QualityRenderService {
       result: null,
       field: 'none',
       deformationScale: 0,
-      opacity: 1,
+      opacity,
       quality,
       qualityMetric: this.solver.qualityMetric(sessionId),
       showFixed: this.solver.marks(sessionId, 'quality').fixed,

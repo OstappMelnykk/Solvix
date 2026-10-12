@@ -692,6 +692,21 @@ describe('colouring by mesh quality', () => {
     disposeMeshView(view);
   });
 
+  it('with the body see-through, also draws the faces around a bad element inside it (and only those)', () => {
+    const state = singleCubeState();
+    const flagged = (grade: 'invalid' | 'excellent') => ({ ...quality('excellent', 'excellent'), flagged: grade === 'invalid' ? [{ hex: 0, ex: 1, ey: 0, ez: 0, grade, values: { scaledJacobian: 0.1 } }] : [] });
+    const vertices = (opacity: number, q: SolverQualityDto) => {
+      const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity, quality: q });
+      const count = (view.pickables as THREE.Mesh[])[0].geometry.getAttribute('position').count;
+      disposeMeshView(view);
+      return count;
+    };
+
+    const solid = vertices(1, flagged('invalid'));
+    expect(vertices(0.4, flagged('invalid'))).toBeGreaterThan(solid);        // the 2 faces of the middle element appear
+    expect(vertices(0.4, flagged('excellent'))).toBe(solid);                 // nothing bad: the inside stays empty
+  });
+
   it('wins over the field of a result while it is shown', () => {
     const state = singleCubeState();
     const result = resultFor(state, [1, 1, 1], () => ({ vm: 5e6 }));

@@ -385,6 +385,9 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const qualityColors = input.quality
     ? new Map(input.quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, input.qualityMetric ?? 'grade', input.quality!.limits)]))
     : null;
+  // a flagged element that the chosen measure does not grade excellent
+  const isBad = (hex: number, ex: number, ey: number, ez: number): boolean => (qualityColors?.get(`${hex}:${ex}:${ey}:${ez}`) ?? 'excellent') !== 'excellent';
+  const seeThrough = qualityColors !== null && opacity < 1;
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -434,10 +437,12 @@ export function buildSolverView(input: SolverViewInput): MeshView {
             }
             const lowVisible = low !== null && visible(low.hex.id, ...low.element);
             const highVisible = high !== null && visible(high.hex.id, ...high.element);
-            const keep = lowVisible !== highVisible || (lowVisible && highVisible && input.showInner === true);
+            // with the body see-through, the faces around a bad element are drawn even inside the body, so it can be seen
+            const lowBad = lowVisible && isBad(low!.hex.id, ...low!.element), highBad = highVisible && isBad(high!.hex.id, ...high!.element);
+            const keep = lowVisible !== highVisible || (lowVisible && highVisible && (input.showInner === true || (seeThrough && (lowBad || highBad))));
             if (!keep) continue;
-            const owner = highVisible ? high! : low!;                    // with both visible: the high side
-            const ownerIsHigh = highVisible;
+            const ownerIsHigh = highVisible && !(lowVisible && lowBad && !highBad);   // with both visible: the high side, but the bad one wins
+            const owner = ownerIsHigh ? high! : low!;
             const entry: DrawnFace = {
               drawer: hex,
               axis, t, p, q,
