@@ -159,6 +159,16 @@
   <ng-template #noNode><div class="hint">Клік по вузлу (точці) на сцені. Рухати вузли можна у вкладці Real World.</div></ng-template>
 </div>
 
+<div class="group">
+  <div class="group-label">Згладжування (Лапласівка, 3D)</div>
+  <div class="hint">Вирівнює внутрішні вершини. Поверхня тіла не змінюється, а густина в кожній ділянці лишається. Потрібно хоча б 3×3×3 куби (щоб були внутрішні вершини). Можна скасувати.</div>
+  <label class="row" title="Скільки разів пройти по всіх внутрішніх вершинах">
+    <span>Проходів</span>
+    <input type="number" min="1" max="200" step="1" [value]="smoothIterations" (change)="onSmoothIterations($event)" />
+  </label>
+  <button class="tool" type="button" [disabled]="hexCount() < 2 || busy" (click)="smooth()">Згладити внутрішні вершини</button>
+</div>
+
 <div class="group" *ngIf="isRealWorld">
   <div class="group-label">Прикріплення до STL</div>
   <div class="hint">Перетягніть вершину до STL (на відстань кількох відсотків його розміру) — вона прилипне й надалі їздитиме лише по поверхні. Утримуйте <b>Alt</b> під час перетягування, щоб відірвати.</div>
@@ -200,16 +210,6 @@
   </div>
   <button class="tool" type="button" [disabled]="hexCount() === 0" (click)="probeRealToIdeal()">Real → Ideal</button>
   <div class="result" *ngIf="mappingResult">{{ mappingResult }}</div>
-</div>
-
-<div class="group">
-  <div class="row">
-    <span title="Скільки разів пройти по всіх внутрішніх вершинах">Згладжування, проходів</span>
-    <input type="number" min="1" max="200" step="1" [value]="smoothIterations" (change)="onSmoothIterations($event)" />
-  </div>
-  <button class="tool" type="button" [disabled]="hexCount() < 2 || busy" title="Лапласівка в 3D: рухає тільки внутрішні вершини, поверхня тіла не змінюється, а густина в кожній ділянці лишається. Можна скасувати." (click)="smooth()">
-    Згладити внутрішні вершини
-  </button>
 </div>
 
 <div class="group">
