@@ -11,6 +11,7 @@ import {
   MeshMappingResultDto,
   MeshPointDto,
   MeshShapeDto,
+  MeshSmoothOptions,
   MeshStateDto,
   MeshTemplateRequestDto
 } from '../api/mesh-editor-api.service';
@@ -123,10 +124,9 @@ export class MeshEditorService {
     this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints), then);
   }
 
-  // Laplacian smoothing of the interior (and, with `surface`, of the smooth patches of the surface, sliding along it);
-  // the local density stays.
-  smooth(sessionId: number, iterations: number, relaxation = 0.5, surface = false): void {
-    this.run(sessionId, this.api.smooth(sessionId, iterations, relaxation, surface));
+  // Laplacian smoothing with the user's settings (see MeshSmoothOptions).
+  smooth(sessionId: number, options: MeshSmoothOptions): void {
+    this.run(sessionId, this.api.smooth(sessionId, options));
   }
 
   undo(sessionId: number): void {

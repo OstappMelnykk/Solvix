@@ -66,6 +66,20 @@ export interface MeshCommandResultDto {
   readonly state: MeshStateDto;
 }
 
+// What the user sets for smoothing.
+export interface MeshSmoothOptions {
+  // passes over all the free vertices
+  readonly iterations: number;
+  // how far a vertex goes towards the average of its neighbours in one pass, 0..1
+  readonly relaxation: number;
+  // also slide the vertices on the outer surface (along it)
+  readonly surface: boolean;
+  // how strongly the local density is kept, 0..1 (0 = plain Laplacian)
+  readonly density: number;
+  // degrees: surface vertices where the normals differ by more stay put (ridges, corners)
+  readonly featureAngle: number;
+}
+
 export interface MeshPointDto {
   readonly x: number;
   readonly y: number;
@@ -231,8 +245,8 @@ export class MeshEditorApiService {
     return this.http.put<MeshCommandResultDto>(this.url(sessionId, `nodes/${nodeId}`), { ...position, carryEdgeMidpoints });
   }
 
-  smooth(sessionId: number, iterations: number, relaxation: number, surface = false): Observable<MeshCommandResultDto> {
-    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'smooth'), { iterations, relaxation, surface });
+  smooth(sessionId: number, options: MeshSmoothOptions): Observable<MeshCommandResultDto> {
+    return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'smooth'), options);
   }
 
   undo(sessionId: number): Observable<MeshCommandResultDto> {

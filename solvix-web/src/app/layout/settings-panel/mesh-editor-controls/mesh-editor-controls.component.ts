@@ -482,23 +482,40 @@ export class MeshEditorControlsComponent {
 
   // --- history / reset -----------------------------------------------------
 
-  // How many smoothing passes the button makes.
+  // The smoothing settings, all the user's.
   smoothIterations = 10;
+  smoothRelaxation = 0.5;
+  smoothDensityPercent = 100;
+  smoothFeatureAngle = 25;
   // Also slide the vertices on the outer surface (along it); off by default, since it moves them off the STL.
   smoothSurface = false;
+
+  onSmoothNumber(field: 'iterations' | 'relaxation' | 'density' | 'angle', event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const raw = Number(input.value);
+    const limits = { iterations: [1, 200, 10], relaxation: [0.05, 1, 0.5], density: [0, 100, 100], angle: [1, 90, 25] }[field];
+    let value = Number.isFinite(raw) ? Math.min(limits[1], Math.max(limits[0], raw)) : limits[2];
+    if (field === 'iterations') value = Math.round(value);
+    if (field === 'iterations') this.smoothIterations = value;
+    else if (field === 'relaxation') this.smoothRelaxation = value;
+    else if (field === 'density') this.smoothDensityPercent = value;
+    else this.smoothFeatureAngle = value;
+    input.value = String(value);
+  }
 
   onSmoothSurface(event: Event): void {
     this.smoothSurface = (event.target as HTMLInputElement).checked;
   }
 
-  onSmoothIterations(event: Event): void {
-    const value = Math.round(Number((event.target as HTMLInputElement).value));
-    this.smoothIterations = Number.isFinite(value) ? Math.min(200, Math.max(1, value)) : 10;
-    (event.target as HTMLInputElement).value = String(this.smoothIterations);
-  }
-
   smooth(): void {
-    if (this.sessionId !== null && !this.busy) this.editor.smooth(this.sessionId, this.smoothIterations, 0.5, this.smoothSurface);
+    if (this.sessionId === null || this.busy) return;
+    this.editor.smooth(this.sessionId, {
+      iterations: this.smoothIterations,
+      relaxation: this.smoothRelaxation,
+      surface: this.smoothSurface,
+      density: this.smoothDensityPercent / 100,
+      featureAngle: this.smoothFeatureAngle
+    });
   }
 
   undo(): void {

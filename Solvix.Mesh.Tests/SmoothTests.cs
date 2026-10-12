@@ -261,4 +261,42 @@ public class SmoothTests
         Assert.That(Spread(editor.Mesh), Is.LessThan(before * 0.1));
         Assert.That(editor.Mesh.InvalidHexes(), Is.Empty);
     }
+
+    // ---- the settings the user controls ----
+
+    [Test]
+    public void With_the_density_weight_off_the_smoothing_is_the_plain_Laplacian_and_evens_the_spacing_out()
+    {
+        var editor = Body(t => t * t / 3.0);
+        var before = editor.Mesh.Nodes.ToDictionary(n => n.Id, n => n.Position);
+
+        var result = editor.Smooth(40, 0.5, density: 0);
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        Assert.That(editor.Mesh.Nodes.Max(n => (n.Position - before[n.Id]).Length), Is.GreaterThan(0.05));
+    }
+
+    [Test]
+    public void A_wider_feature_angle_lets_more_of_the_surface_slide()
+    {
+        int Free(double featureAngle)
+        {
+            var editor = Body(t => t, 3, 3, 1);
+            editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(1.0, 1.0, 1.5), true);       // a tall bump: the normals around it tilt
+            return editor.Mesh.Smooth(1, 0.5, surface: true, featureAngle: featureAngle).Surface;
+        }
+
+        Assert.That(Free(5), Is.LessThan(Free(60)));
+    }
+
+    [Test]
+    public void The_command_refuses_a_density_weight_or_a_feature_angle_out_of_range()
+    {
+        var editor = Body(t => t);
+
+        Assert.That(editor.Smooth(5, 0.5, density: 1.5).Ok, Is.False);
+        Assert.That(editor.Smooth(5, 0.5, density: -0.1).Ok, Is.False);
+        Assert.That(editor.Smooth(5, 0.5, featureAngle: 0).Ok, Is.False);
+        Assert.That(editor.Smooth(5, 0.5, featureAngle: 120).Ok, Is.False);
+    }
 }

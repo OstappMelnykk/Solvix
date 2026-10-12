@@ -161,14 +161,30 @@
 
 <div class="group">
   <div class="group-label">Згладжування (Лапласівка, 3D)</div>
-  <div class="hint">Вирівнює внутрішні вершини, а густина в кожній ділянці лишається. Внутрішні вершини є лише в тілі від 3×3×3 кубів; для тонкого тіла вмикайте поверхню. Можна скасувати.</div>
+  <div class="hint">Вирівнює вершини. Усі параметри ваші. Внутрішні вершини є лише в тілі від 3×3×3 кубів; для тонкого тіла вмикайте поверхню. Можна скасувати.</div>
   <label class="row" title="Вершини на поверхні ковзають уздовж неї (не відходять від неї); гребені й кути тіла лишаються на місці. Вершини, прикріплені до STL, можуть зійти з нього.">
     <span>Згладжувати й поверхню</span>
     <input type="checkbox" [checked]="smoothSurface" (change)="onSmoothSurface($event)" />
   </label>
-  <label class="row" title="Скільки разів пройти по всіх внутрішніх вершинах">
+  <label class="row" title="Скільки разів пройти по всіх вільних вершинах. Більше — гладкіше, але довше.">
     <span>Проходів</span>
-    <input type="number" min="1" max="200" step="1" [value]="smoothIterations" (change)="onSmoothIterations($event)" />
+    <input type="number" min="1" max="200" step="1" [value]="smoothIterations" (change)="onSmoothNumber('iterations', $event)" />
+  </label>
+  <label class="row" title="На яку частину шляху до середнього положення сусідів зсувається вершина за один прохід (0.05–1). Менше — обережніше й повільніше, 1 — найрізкіше.">
+    <span>Крок (0.05–1)</span>
+    <input type="number" min="0.05" max="1" step="0.05" [value]="smoothRelaxation" (change)="onSmoothNumber('relaxation', $event)" />
+  </label>
+  <label class="row" title="100% — відстані вздовж ліній вузлів не змінюються, густа ділянка лишається густою, вирівнюються лише скоси. 0% — звичайна Лапласівка: відстані вирівнюються, густа ділянка розріджується.">
+    <span>Збереження густини, %</span>
+    <input type="number" min="0" max="100" step="5" [value]="smoothDensityPercent" (change)="onSmoothNumber('density', $event)" />
+  </label>
+  <label class="row" title="Вершини на поверхні ковзають уздовж неї (не відходять від неї). Вершини, прикріплені до STL, можуть зійти з нього.">
+    <span>Згладжувати й поверхню</span>
+    <input type="checkbox" [checked]="smoothSurface" (change)="onSmoothSurface($event)" />
+  </label>
+  <label class="row" *ngIf="smoothSurface" title="Де нормалі сусідніх граней відрізняються більше, ніж на цей кут, вершина вважається гребенем чи кутом і лишається на місці. Більше — рухається й більше поверхні, але заокруглюються краї.">
+    <span>Кут гребеня, °</span>
+    <input type="number" min="1" max="90" step="1" [value]="smoothFeatureAngle" (change)="onSmoothNumber('angle', $event)" />
   </label>
   <button class="tool" type="button" [disabled]="hexCount() < 2 || busy" (click)="smooth()">Згладити внутрішні вершини</button>
 </div>

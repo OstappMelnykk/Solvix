@@ -106,11 +106,13 @@ public sealed class HexMeshEditor
     });
 
     /// <summary>Laplacian smoothing that keeps the local density (see <see cref="HexMesh.Smooth"/>); with surface = true the smooth patches of the surface slide too.</summary>
-    public EditResult Smooth(int iterations, double relaxation, bool surface = false) => Apply(() =>
+    public EditResult Smooth(int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25) => Apply(() =>
     {
         if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
         if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
-        var report = Mesh.Smooth(iterations, relaxation, surface);
+        if (!(density >= 0 && density <= 1)) return EditResult.Fail("The density weight must be in [0, 1].");
+        if (!(featureAngle > 0 && featureAngle <= 90)) return EditResult.Fail("The feature angle must be in (0, 90] degrees.");
+        var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle);
         if (report.Moved > 0) return EditResult.Success;
         if (report.Interior + report.Surface == 0)
             return EditResult.Fail(surface
