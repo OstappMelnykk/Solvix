@@ -299,4 +299,17 @@ public class SmoothTests
         Assert.That(editor.Smooth(5, 0.5, featureAngle: 0).Ok, Is.False);
         Assert.That(editor.Smooth(5, 0.5, featureAngle: 120).Ok, Is.False);
     }
+
+    [Test]
+    public void The_result_says_how_many_vertices_were_free_and_how_far_they_went()
+    {
+        var editor = Body(t => t);
+        editor.MoveNode(Centre(editor.Mesh).Id, new Vec3(1.3, 0.8, 1.25), true);
+
+        var result = editor.Smooth(20, 0.5);
+
+        Assert.That(result.Info, Does.Contain("вільних вершин"));
+        Assert.That(result.Info, Does.Contain("внутрішніх 8"));       // the 8 inner vertices of a 3 x 3 x 3 body
+        Assert.That(result.Info, Does.Contain("на поверхні 0"));
+    }
 }

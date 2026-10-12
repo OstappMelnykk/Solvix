@@ -137,7 +137,7 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
     private MeshCommandResultDto Command(int sessionId, Func<HexMeshEditor, EditResult> command) => sessions.With(sessionId, e =>
     {
         var result = command(e);
-        return new MeshCommandResultDto(result.Ok, result.Error, MeshStateMapper.ToDto(e));
+        return new MeshCommandResultDto(result.Ok, result.Error, MeshStateMapper.ToDto(e), result.Info);
     });
 
     private MeshCommandResultDto WithFace(int sessionId, string face, Func<HexFace, Func<HexMeshEditor, EditResult>> build)

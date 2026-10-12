@@ -103,6 +103,15 @@ describe('MeshEditorService', () => {
     expect(editor.getState(sessionId)!.version).toBe(7);
   });
 
+  it('tells what a command did when the server has something to say about it', () => {
+    loadInitialState(singleCubeState());
+
+    editor.smooth(sessionId, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25 });
+    http.expectOne(url('smooth')).flush({ ok: true, error: null, info: 'Згладжено: вільних вершин 8 із 64', state: singleCubeState(7) });
+
+    expect(notifications.toasts().map(t => [t.kind, t.message])).toEqual([['info', 'Згладжено: вільних вершин 8 із 64']]);
+  });
+
   it('reports an unreachable server as an error toast and does not stay busy', () => {
     loadInitialState();
 

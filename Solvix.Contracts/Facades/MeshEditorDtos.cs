@@ -27,7 +27,7 @@ public sealed record MeshStateDto(
     IReadOnlyList<int> InvalidHexes);
 
 /// <summary>Result of an editing command; the state is always the current one, also on failure.</summary>
-public sealed record MeshCommandResultDto(bool Ok, string? Error, MeshStateDto State);
+public sealed record MeshCommandResultDto(bool Ok, string? Error, MeshStateDto State, string? Info = null);
 
 public sealed record MeshPointDto(double X, double Y, double Z);
 

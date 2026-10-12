@@ -162,6 +162,7 @@ export class MeshEditorService {
       next: result => {
         this.accept(sessionId, result.state);
         if (!result.ok && result.error) this.notifications.warning(result.error);
+        else if (result.ok && result.info) this.notifications.info(result.info);
         this.busy.set(false);
         if (result.ok) then?.();
       },

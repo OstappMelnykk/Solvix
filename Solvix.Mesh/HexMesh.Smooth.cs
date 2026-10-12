@@ -4,7 +4,10 @@ namespace Solvix.Mesh;
 /// <param name="Interior">Interior corner nodes that were free to move.</param>
 /// <param name="Surface">Surface corner nodes that were free to slide (0 unless surface smoothing was asked for).</param>
 /// <param name="Moved">How many of them moved at least once.</param>
-public readonly record struct SmoothReport(int Interior, int Surface, int Moved);
+/// <param name="Corners">All the corner nodes of the mesh (the others are frozen on the surface, a ridge or a corner).</param>
+/// <param name="MaxMove">The largest distance any corner node ended up from where it started.</param>
+/// <param name="MeanMove">The mean of that distance over the corner nodes that were free.</param>
+public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0);
 
 public sealed partial class HexMesh
 {
@@ -35,6 +38,7 @@ public sealed partial class HexMesh
         int interior = free.Count;
         if (surface)
             foreach (int id in FlatSurfaceCornerNodes(flatCosine)) free.Add((id, CornerNeighbours(id, surfaceOnly: true), true));
+        var start = free.ToDictionary(f => f.Id, f => _nodes[f.Id].Position);
         var moved = new HashSet<int>();
         for (int iteration = 0; iteration < iterations; iteration++)
         {
@@ -64,7 +68,9 @@ public sealed partial class HexMesh
                 if (TryMoveKeepingValid(id, step)) moved.Add(id);
             }
         }
-        return new SmoothReport(interior, free.Count - interior, moved.Count);
+        var travelled = free.Select(f => (_nodes[f.Id].Position - start[f.Id]).Length).ToList();
+        int corners = _owners.Count(o => o.Value.All(x => Hex20Reference.IsCorner(x.Slot)));
+        return new SmoothReport(interior, free.Count - interior, moved.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0);
     }
 
     // moves the corner by `step` (its edge midpoints by half), keeping the hexes around it valid

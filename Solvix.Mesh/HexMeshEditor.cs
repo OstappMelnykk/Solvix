@@ -113,7 +113,11 @@ public sealed class HexMeshEditor
         if (!(density >= 0 && density <= 1)) return EditResult.Fail("The density weight must be in [0, 1].");
         if (!(featureAngle > 0 && featureAngle <= 90)) return EditResult.Fail("The feature angle must be in (0, 90] degrees.");
         var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle);
-        if (report.Moved > 0) return EditResult.Success;
+        if (report.Moved > 0)
+        {
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            return EditResult.Done($"Згладжено: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved}. Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.");
+        }
         if (report.Interior + report.Surface == 0)
             return EditResult.Fail(surface
                 ? "Nothing to smooth: every vertex is on a ridge or a corner of the body."

@@ -64,6 +64,8 @@ export interface MeshCommandResultDto {
   readonly ok: boolean;
   readonly error: string | null;
   readonly state: MeshStateDto;
+  // something worth telling the user about what the command did (smoothing)
+  readonly info?: string | null;
 }
 
 // What the user sets for smoothing.
