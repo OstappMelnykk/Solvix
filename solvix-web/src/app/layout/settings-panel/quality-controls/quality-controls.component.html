@@ -75,6 +75,7 @@
     </ng-container>
     <ng-template #toolList>
       <p class="look-note">Лише перегляд: сцена показує позначки обраного інструмента. Висновок і розрахунок лишаються за Solvix.</p>
+      <p class="look-note"><b>Відсоток</b> — яка частка елементів вашої сітки проходить перевірки цього інструмента (100% — усі елементи прийнятні).</p>
       <div class="pills">
         <button type="button" class="pill" *ngFor="let t of tools(); trackBy: trackById" [class.pill--on]="compareId() === t.id" [title]="t.dto.source" (click)="chooseTool(t.id)">
           <span class="pill__name">{{ t.name }}</span>
@@ -88,7 +89,6 @@
           <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
         </ng-container>
       </ng-container>
-      <p class="look-note" *ngIf="!chosenTool()">Відсоток — частка елементів, які інструмент приймає.</p>
       <button type="button" class="go" (click)="closeTools()">Закрити й повернути позначки Solvix</button>
     </ng-template>
   </section>

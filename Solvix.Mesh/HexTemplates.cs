@@ -209,7 +209,7 @@ public static class HexTemplates
     private static IReadOnlyList<TemplateKind> BuildKinds() => new[]
     {
         Block(), BoxShell(), Cylinder(), Pipe(), Sphere(), HollowSphere(), Hemisphere(), Torus(), PlateWithHole(),
-        LProfile(), TProfile(), UProfile(), Cross(), Stairs(),
+        LProfile(), TProfile(), UProfile(), Cross(), Stairs(), RoughBlock(),
     };
 
     private static TemplateKind Block() => new("block", "Брус", "Прямі", new[]
@@ -221,6 +221,55 @@ public static class HexTemplates
         int nx = v.Int("countX"), ny = v.Int("countY"), nz = v.Int("countZ");
         return Plan(nx, ny, nz, (_, _, _) => true, p => new Vec3(p.X / nx * v["length"], p.Y / ny * v["height"], p.Z / nz * v["depth"]));
     });
+
+    // A block whose inner vertices are shaken about at random: the cubes come out skewed and stretched, so the mesh
+    // quality is poor in many places. It exists to try smoothing (and the quality page) on. The shake is a fixed
+    // function of the vertex and the seed, so the same numbers always give the same body, and the vertices on the
+    // outside of the block stay where they are, so its shape is a plain box. Beyond about a quarter of a cube the shake
+    // starts to fold cubes (tried over 40 seeds: none at 0.25, about half at 0.3), so that is the limit.
+    private static TemplateKind RoughBlock() => new("rough-block", "Нерівна сітка (для згладжування)", "Для випробувань", new[]
+    {
+        P("countX", "Кубів по X", 5, 3, 20, true), P("countY", "Кубів по Y", 5, 3, 20, true), P("countZ", "Кубів по Z", 5, 3, 20, true),
+        P("length", "Довжина (X)", 5, 0.01, 1000), P("height", "Висота (Y)", 5, 0.01, 1000), P("depth", "Ширина (Z)", 5, 0.01, 1000),
+        P("jitter", "Розкид вершин, частка куба (0–0.25)", 0.2, 0, 0.25), P("seed", "Зерно випадковості", 1, 1, 9999, true),
+    }, v =>
+    {
+        int nx = v.Int("countX"), ny = v.Int("countY"), nz = v.Int("countZ"), seed = v.Int("seed");
+        double sx = v["length"] / nx, sy = v["height"] / ny, sz = v["depth"] / nz, amount = v["jitter"];
+        Vec3 Shake(int a, int b, int c)
+        {
+            bool outside = a == 0 || b == 0 || c == 0 || a == nx || b == ny || c == nz;
+            if (outside || amount <= 0) return Vec3.Zero;
+            return new Vec3(Noise(a, b, c, seed, 0) * amount * sx, Noise(a, b, c, seed, 1) * amount * sy, Noise(a, b, c, seed, 2) * amount * sz);
+        }
+        // the shake of a point of the lattice: the vertices' own, and in between (edge midpoints) their average
+        Vec3 Shaken(Vec3 p)
+        {
+            int a = (int)Math.Floor(p.X), b = (int)Math.Floor(p.Y), c = (int)Math.Floor(p.Z);
+            double fa = p.X - a, fb = p.Y - b, fc = p.Z - c;
+            var sum = Vec3.Zero;
+            for (int da = 0; da <= 1; da++)
+                for (int db = 0; db <= 1; db++)
+                    for (int dc = 0; dc <= 1; dc++)
+                    {
+                        double w = (da == 1 ? fa : 1 - fa) * (db == 1 ? fb : 1 - fb) * (dc == 1 ? fc : 1 - fc);
+                        if (w > 0) sum += Shake(a + da, b + db, c + dc) * w;
+                    }
+            return sum;
+        }
+        return Plan(nx, ny, nz, (_, _, _) => true, p => new Vec3(p.X * sx, p.Y * sy, p.Z * sz) + Shaken(p));
+    });
+
+    // a repeatable pseudo-random number in [-1, 1] for a lattice vertex, a seed and an axis
+    private static double Noise(int a, int b, int c, int seed, int axis)
+    {
+        unchecked
+        {
+            uint h = (uint)(a * 73856093) ^ (uint)(b * 19349663) ^ (uint)(c * 83492791) ^ (uint)(seed * 2654435761u) ^ (uint)(axis * 40503);
+            h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15; h *= 0x2c1b3c6d; h ^= h >> 12;
+            return h / (double)uint.MaxValue * 2 - 1;
+        }
+    }
 
     private static TemplateKind BoxShell() => new("box-shell", "Порожня коробка", "Прямі", new[]
     {
@@ -476,5 +525,7 @@ public static class HexTemplates
         Preset("u-profile", "Швелер", "u-profile"),
         Preset("cross", "Хрест", "cross"),
         Preset("stairs", "Сходи", "stairs"),
+        Preset("rough-block", "Нерівна сітка 5×5×5", "rough-block"),
+        Preset("rough-block-strong", "Дуже нерівна сітка 6×6×6", "rough-block", ("countX", 6), ("countY", 6), ("countZ", 6), ("length", 6), ("height", 6), ("depth", 6), ("jitter", 0.25)),
     };
 }

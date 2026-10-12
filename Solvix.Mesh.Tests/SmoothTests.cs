@@ -209,4 +209,56 @@ public class SmoothTests
         Assert.That(result.Ok, Is.False);
         Assert.That(result.Error, Does.Contain("ridge or a corner"));
     }
+
+    // ---- the rough block of the template library ----
+
+    private static HexMeshEditor Rough(params (string, double)[] values) =>
+        Build2("rough-block", values.ToDictionary(v => v.Item1, v => v.Item2));
+
+    private static HexMeshEditor Build2(string kind, Dictionary<string, double> values)
+    {
+        var editor = new HexMeshEditor();
+        Assert.That(editor.AddBody(HexTemplates.Kind(kind).Build(values)).Ok, Is.True);
+        return editor;
+    }
+
+    // how far the nodes are from where a regular 5 x 5 x 5 block would have them
+    private static double Spread(HexMesh mesh) =>
+        mesh.Nodes.Average(n => (n.Position - new Vec3(n.Ideal.X / 2.0, n.Ideal.Y / 2.0, n.Ideal.Z / 2.0)).Length);
+
+    [Test]
+    public void The_rough_block_is_a_valid_box_with_shaken_inner_vertices()
+    {
+        var mesh = Rough().Mesh;
+
+        Assert.That(mesh.InvalidHexes(), Is.Empty);
+        Assert.That(Spread(mesh), Is.GreaterThan(0.03));
+        // the outside is a plain box
+        Assert.That(mesh.Nodes.Where(n => n.Ideal.X == 0).All(n => Math.Abs(n.Position.X) < 1e-12), Is.True);
+        Assert.That(mesh.Nodes.Where(n => n.Ideal.Y == 10).All(n => Math.Abs(n.Position.Y - 5) < 1e-12), Is.True);
+    }
+
+    [Test]
+    public void The_same_seed_gives_the_same_body_and_another_seed_another_one()
+    {
+        var a = Rough(("seed", 7)).Mesh.Nodes.Select(n => n.Position).ToList();
+        var b = Rough(("seed", 7)).Mesh.Nodes.Select(n => n.Position).ToList();
+        var c = Rough(("seed", 8)).Mesh.Nodes.Select(n => n.Position).ToList();
+
+        Assert.That(a, Is.EqualTo(b));
+        Assert.That(a, Is.Not.EqualTo(c));
+        Assert.That(Spread(Rough(("jitter", 0)).Mesh), Is.LessThan(1e-12));
+    }
+
+    [Test]
+    public void Smoothing_straightens_the_rough_block()
+    {
+        var editor = Rough();
+        double before = Spread(editor.Mesh);
+
+        Assert.That(editor.Smooth(100, 0.5).Ok, Is.True);
+
+        Assert.That(Spread(editor.Mesh), Is.LessThan(before * 0.1));
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Empty);
+    }
 }
