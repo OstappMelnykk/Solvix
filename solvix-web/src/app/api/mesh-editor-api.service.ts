@@ -82,6 +82,8 @@ export interface MeshSmoothOptions {
   readonly featureAngle: number;
   // the corners of folded cubes move freely (surface or not) so that the cubes unfold
   readonly untangle: boolean;
+  // the edge midpoints are drawn back towards the middle of their edge (inside the body, and on folded cubes)
+  readonly straighten: boolean;
 }
 
 export interface MeshPointDto {

@@ -362,4 +362,53 @@ public class SmoothTests
         Assert.That(result.Ok, Is.False);                           // the surface is not touched, and the slab has no inside
         Assert.That(editor.Mesh.InvalidHexes(), Is.Not.Empty);
     }
+
+    // ---- bent edges ----
+
+    // the midpoint of the edge from the vertex (1, 1, 1) towards x: doubled ideal coordinates (3, 2, 2)
+    private static MeshNode EdgeMid(HexMesh mesh) => mesh.Nodes.Single(n => n.Ideal == (3, 2, 2));
+
+    [Test]
+    public void A_bent_midpoint_that_folds_cubes_is_pulled_back_to_the_middle_of_its_edge()
+    {
+        var editor = Body(t => t);
+        var mid = EdgeMid(editor.Mesh);
+        var straight = mid.Position;
+        editor.MoveNode(mid.Id, new Vec3(straight.X, straight.Y + 2.2, straight.Z), carryEdgeMidpoints: false);
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Not.Empty);
+
+        var result = editor.Smooth(50, 0.5);
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Empty);
+        Assert.That((EdgeMid(editor.Mesh).Position - straight).Length, Is.LessThan(1e-3));
+        Assert.That(result.Info, Does.Contain("середин ребер"));
+    }
+
+    [Test]
+    public void With_straightening_off_the_midpoints_are_left_where_they_are()
+    {
+        var editor = Body(t => t);
+        var mid = EdgeMid(editor.Mesh);
+        var bent = new Vec3(mid.Position.X, mid.Position.Y + 0.2, mid.Position.Z);
+        editor.MoveNode(mid.Id, bent, carryEdgeMidpoints: false);
+
+        editor.Smooth(30, 0.5, straighten: false);
+
+        Assert.That(EdgeMid(editor.Mesh).Position, Is.EqualTo(bent));
+    }
+
+    [Test]
+    public void A_bent_edge_on_the_surface_of_a_sound_cube_is_a_shape_and_is_kept()
+    {
+        var editor = Body(t => t);
+        var top = editor.Mesh.Nodes.First(n => n.Ideal == (1, 0, 0));           // the midpoint of a surface edge
+        var bent = new Vec3(top.Position.X, top.Position.Y - 0.1, top.Position.Z);
+        editor.MoveNode(top.Id, bent, false);
+        editor.MoveNode(Centre(editor.Mesh).Id, new Vec3(1.2, 1.0, 1.0), true);       // something to smooth
+
+        editor.Smooth(30, 0.5);
+
+        Assert.That(editor.Mesh.Node(top.Id).Position, Is.EqualTo(bent));
+    }
 }

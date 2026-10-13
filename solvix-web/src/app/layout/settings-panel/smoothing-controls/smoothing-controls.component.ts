@@ -38,6 +38,8 @@ export class SmoothingControlsComponent {
   surface = false;
   // Unfold the folded cubes: their corners move freely, even on the surface. On by default - a folded cube cannot be solved.
   untangle = true;
+  // Straighten the edges: pull the midpoints of the edges back to the middle (a bent midpoint is what folds a cube most often).
+  straighten = true;
 
   get busy(): boolean {
     return this.editor.busy();
@@ -61,6 +63,10 @@ export class SmoothingControlsComponent {
     input.value = String(value);
   }
 
+  onStraighten(event: Event): void {
+    this.straighten = (event.target as HTMLInputElement).checked;
+  }
+
   onUntangle(event: Event): void {
     this.untangle = (event.target as HTMLInputElement).checked;
   }
@@ -82,7 +88,8 @@ export class SmoothingControlsComponent {
         surface: this.surface,
         density: this.densityPercent / 100,
         featureAngle: this.featureAngle,
-        untangle: this.untangle
+        untangle: this.untangle,
+        straighten: this.straighten
       },
       () => (this.smoothedVersion = this.editor.getState(this.sessionId)?.version ?? null)
     );

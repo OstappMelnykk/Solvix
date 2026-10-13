@@ -9,7 +9,8 @@ namespace Solvix.Mesh;
 /// <param name="MeanMove">The mean of that distance over the corner nodes that were free.</param>
 /// <param name="FoldedBefore">Cubes that were folded (negative or zero Jacobian) when smoothing began.</param>
 /// <param name="FoldedAfter">... and how many are, when it ended.</param>
-public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0);
+/// <param name="EdgesStraightened">Edge midpoints that were brought back towards the middle of their edge.</param>
+public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0, int EdgesStraightened = 0);
 
 public sealed partial class HexMesh
 {
@@ -32,10 +33,13 @@ public sealed partial class HexMesh
     /// <param name="density">How strongly the local density is kept, 0..1: the neighbour weight is 1 / length^density, so 1 keeps
     /// the spacing as it is (the default) and 0 is the plain Laplacian that evens the spacing out.</param>
     /// <param name="featureAngle">Degrees: the surface normals at a node may differ by this much and the node still slides.</param>
+    /// <param name="straighten">The midpoints of the edges are drawn back towards the middle of their edge (a straight edge): those
+    /// of edges inside the body always, those on the surface only where a cube is folded (the surface is not reshaped). A
+    /// bent midpoint is what folds a cube most often when the corners are in place.</param>
     /// <param name="untangle">The corner nodes of a folded cube are free to move in every direction, surface or not, and a step
     /// is taken when it makes the worst Jacobian around the node better even if the cubes there are still folded: that is
     /// what unfolds them. A folded cube cannot be solved, so this is what is wanted unless the surface must not change.</param>
-    public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true)
+    public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true)
     {
         int foldedBefore = _hexes.Values.Count(h => !h.IsValid());
         double flatCosine = Math.Cos(featureAngle * Math.PI / 180);
@@ -44,6 +48,7 @@ public sealed partial class HexMesh
         int interior = free.Count;
         if (surface)
             foreach (int id in FlatSurfaceCornerNodes(flatCosine)) free.Add((id, CornerNeighbours(id, surfaceOnly: true), true));
+        var interiorSet = free.Take(interior).Select(f => f.Id).ToHashSet();
         var tangled = new HashSet<int>();
         if (untangle)
         {
@@ -60,11 +65,26 @@ public sealed partial class HexMesh
                 }
         }
         var start = free.ToDictionary(f => f.Id, f => _nodes[f.Id].Position);
+        var foldedHexes = _hexes.Values.Where(h => !h.IsValid()).Select(h => h.Id).ToHashSet();
+        var midpoints = straighten ? EdgeMidpoints(untangle ? foldedHexes : new HashSet<int>()) : new List<(int Id, int A, int B)>();
+        var midStart = midpoints.ToDictionary(m => m.Id, m => _nodes[m.Id].Position);
+        var movedMid = new HashSet<int>();
         var moved = new HashSet<int>();
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            // first the edges are straightened (a bent midpoint is what folds a cube most often), then the corners
+            foreach (var (id, a, b) in midpoints)
+            {
+                var node = _nodes[id];
+                var target = (_nodes[a].Position + _nodes[b].Position) * 0.5;
+                var pull = (target - node.Position) * relaxation;
+                if (pull.Length <= 1e-12) continue;
+                if (TryMoveMidpoint(id, pull, untangle)) movedMid.Add(id);
+            }
             foreach (var (id, neighbours, onSurface) in free)
             {
+                // a corner that is only free because its cube was folded moves only while a cube around it still is
+                if (tangled.Contains(id) && !interiorSet.Contains(id) && _owners[id].All(o => _hexes[o.Hex].IsValid())) continue;
                 var node = _nodes[id];
                 double weight = 0;
                 Vec3 sum = Vec3.Zero;
@@ -91,7 +111,7 @@ public sealed partial class HexMesh
         }
         var travelled = free.Select(f => (_nodes[f.Id].Position - start[f.Id]).Length).ToList();
         int corners = _owners.Count(o => o.Value.All(x => Hex20Reference.IsCorner(x.Slot)));
-        return new SmoothReport(interior, free.Count - interior, moved.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0, foldedBefore, _hexes.Values.Count(h => !h.IsValid()));
+        return new SmoothReport(interior, free.Count - interior, moved.Count + movedMid.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0, foldedBefore, _hexes.Values.Count(h => !h.IsValid()), movedMid.Count);
     }
 
     // moves the corner by `step` (its edge midpoints by half), keeping the hexes around it valid; around a folded cube
@@ -113,6 +133,40 @@ public sealed partial class HexMesh
             foreach (var (id, p) in snapshot) _nodes[id].Position = p;
         }
         return false;
+    }
+
+    // moves one edge midpoint by `pull`, as for a corner: kept when the cubes around stay valid, or (untangling) get better
+    private bool TryMoveMidpoint(int nodeId, Vec3 pull, bool untangling)
+    {
+        var start = _nodes[nodeId].Position;
+        double Worst() => _owners[nodeId].Min(o => _hexes[o.Hex].MinDeterminant());
+        double before = Worst();
+        for (int attempt = 0; attempt < 5; attempt++, pull *= 0.5)
+        {
+            _nodes[nodeId].Position = start + pull;
+            if (_owners[nodeId].All(o => _hexes[o.Hex].IsValid())) return true;
+            if (untangling && before <= 1e-9 && Worst() > before + 1e-12) return true;
+        }
+        _nodes[nodeId].Position = start;
+        return false;
+    }
+
+    // The midpoint nodes that may be straightened with the corner nodes of their edge: those of edges inside the body, and
+    // those of any edge of a cube in `folded` (its surface edges too: it cannot be unfolded otherwise)
+    private List<(int Id, int A, int B)> EdgeMidpoints(HashSet<int> folded)
+    {
+        var edges = new Dictionary<int, (int Id, int A, int B)>();
+        var onSurface = new HashSet<int>();
+        foreach (var hex in _hexes.Values)
+            for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
+            {
+                var (a, b) = Hex20Reference.EdgeCorners[k];
+                int mid = hex.NodeIds[8 + k];
+                edges[mid] = (mid, hex.NodeIds[a], hex.NodeIds[b]);
+                if (EdgeOnSurface(hex.Id, a, b)) onSurface.Add(mid);
+            }
+        var freed = folded.SelectMany(hexId => Enumerable.Range(8, 12).Select(slot => _hexes[hexId].NodeIds[slot])).ToHashSet();
+        return edges.Values.Where(m => !onSurface.Contains(m.Id) || freed.Contains(m.Id)).OrderBy(m => m.Id).ToList();
     }
 
     // the faces of a hex that contain a corner slot
