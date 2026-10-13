@@ -3,9 +3,10 @@ namespace Refinement3D.Core;
 /// <summary>
 /// Settings of the smoothing, the same as in Solvix: how many passes, the step of one pass, how much the density of the nodes is kept (0: plain averaging,
 /// 1: the weights 1/L, along a straight line any spacing is left as it is), whether the nodes on the outer surface may slide in the plane of their face,
-/// and how many passes of the optimization smoothing follow the Laplacian ones (each node is moved to where the cells round it are best, see Smoothing).
+/// how many passes of the optimization smoothing follow the Laplacian ones (each node is moved to where the cells round it are best, see Smoothing), and the
+/// number of threads (-1: as many as there are processors; the result is the same for any number).
 /// </summary>
-public sealed record SmoothingOptions(int Iterations = 20, double Relaxation = 0.5, double Density = 0.0, bool SlideOnSurface = false, int OptimizationPasses = 0);
+public sealed record SmoothingOptions(int Iterations = 20, double Relaxation = 0.5, double Density = 0.0, bool SlideOnSurface = false, int OptimizationPasses = 0, int MaxThreads = -1);
 
 /// <summary>
 /// The quality of the cells. Q of a cell (Solvix's measure) is the smallest Jacobian over the largest one at 27 points (1: a parallelepiped, 0 or less:
@@ -92,8 +93,8 @@ public static class Smoothing
         {
             foreach (var members in classes)
             {
-                if (members.Length < 256) foreach (int n in members) work(n);
-                else Parallel.ForEach(members, n => work(n));
+                if (members.Length < 64 || options.MaxThreads == 1) foreach (int n in members) work(n);
+                else Parallel.ForEach(members, new ParallelOptions { MaxDegreeOfParallelism = options.MaxThreads }, n => work(n));
             }
         }
 

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" font-family="system-ui, sans-serif" font-size="12">
+<rect width="960" height="440" fill="#ffffff"/>
+<text x="480" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#222">Час на великих сітках (випадкові 4% кубів, n = 2)</text>
+<line x1="80" x2="936" y1="350" y2="350" stroke="#e3e3e3"/>
+<text x="72" y="354" text-anchor="end" fill="#555">0</text>
+<line x1="80" x2="936" y1="291.2" y2="291.2" stroke="#e3e3e3"/>
+<text x="72" y="295.2" text-anchor="end" fill="#555">1302</text>
+<line x1="80" x2="936" y1="232.4" y2="232.4" stroke="#e3e3e3"/>
+<text x="72" y="236.4" text-anchor="end" fill="#555">2603</text>
+<line x1="80" x2="936" y1="173.6" y2="173.6" stroke="#e3e3e3"/>
+<text x="72" y="177.6" text-anchor="end" fill="#555">3905</text>
+<line x1="80" x2="936" y1="114.8" y2="114.8" stroke="#e3e3e3"/>
+<text x="72" y="118.8" text-anchor="end" fill="#555">5207</text>
+<line x1="80" x2="936" y1="56" y2="56" stroke="#e3e3e3"/>
+<text x="72" y="60" text-anchor="end" fill="#555">6509</text>
+<text transform="translate(16 203) rotate(-90)" text-anchor="middle" fill="#555">мілісекунд</text>
+<text x="508" y="396" text-anchor="middle" fill="#555">клітинок у результаті</text>
+<text x="187" y="368" text-anchor="middle" fill="#333">2572</text>
+<text x="401" y="368" text-anchor="middle" fill="#333">9132</text>
+<text x="615" y="368" text-anchor="middle" fill="#333">25715</text>
+<text x="829" y="368" text-anchor="middle" fill="#333">48843</text>
+<polyline points="187,349.64 401,348.37 615,343.45 829,339.57" fill="none" stroke="#3aa860" stroke-width="2.5"/>
+<circle cx="187" cy="349.64" r="4" fill="#3aa860"/>
+<circle cx="401" cy="348.37" r="4" fill="#3aa860"/>
+<circle cx="615" cy="343.45" r="4" fill="#3aa860"/>
+<circle cx="829" cy="339.57" r="4" fill="#3aa860"/>
+<polyline points="187,349.19 401,347.43 615,341.78 829,335.55" fill="none" stroke="#4c8be0" stroke-width="2.5"/>
+<circle cx="187" cy="349.19" r="4" fill="#4c8be0"/>
+<circle cx="401" cy="347.43" r="4" fill="#4c8be0"/>
+<circle cx="615" cy="341.78" r="4" fill="#4c8be0"/>
+<circle cx="829" cy="335.55" r="4" fill="#4c8be0"/>
+<polyline points="187,331.62 401,314.5 615,271.09 829,211.37" fill="none" stroke="#f0a030" stroke-width="2.5"/>
+<circle cx="187" cy="331.62" r="4" fill="#f0a030"/>
+<circle cx="401" cy="314.5" r="4" fill="#f0a030"/>
+<circle cx="615" cy="271.09" r="4" fill="#f0a030"/>
+<circle cx="829" cy="211.37" r="4" fill="#f0a030"/>
+<polyline points="187,311.97 401,293 615,217.02 829,82.73" fill="none" stroke="#d0504a" stroke-width="2.5"/>
+<circle cx="187" cy="311.97" r="4" fill="#d0504a"/>
+<circle cx="401" cy="293" r="4" fill="#d0504a"/>
+<circle cx="615" cy="217.02" r="4" fill="#d0504a"/>
+<circle cx="829" cy="82.73" r="4" fill="#d0504a"/>
+<rect x="80" y="412" width="12" height="12" fill="#3aa860"/>
+<text x="98" y="422" fill="#333">згущення</text>
+<rect x="160.8" y="412" width="12" height="12" fill="#4c8be0"/>
+<text x="178.8" y="422" fill="#333">перевірка конформності</text>
+<rect x="334" y="412" width="12" height="12" fill="#f0a030"/>
+<text x="352" y="422" fill="#333">Лапласівка, 10 проходів</text>
+<rect x="513.8" y="412" width="12" height="12" fill="#d0504a"/>
+<text x="531.8" y="422" fill="#333">оптимізація, 5 проходів</text>
+</svg>

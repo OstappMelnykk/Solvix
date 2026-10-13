@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" font-family="system-ui, sans-serif" font-size="12">
+<rect width="960" height="500" fill="#ffffff"/>
+<text x="480" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#222">Кількість поганих клітинок (скал. якобіан &lt; 0,3) після згладжування (менше — краще)</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#e3e3e3"/>
+<text x="62" y="368" text-anchor="end" fill="#555">1</text>
+<line x1="70" x2="940" y1="302.4" y2="302.4" stroke="#e3e3e3"/>
+<text x="62" y="306.4" text-anchor="end" fill="#555">3</text>
+<line x1="70" x2="940" y1="240.8" y2="240.8" stroke="#e3e3e3"/>
+<text x="62" y="244.8" text-anchor="end" fill="#555">11</text>
+<line x1="70" x2="940" y1="179.2" y2="179.2" stroke="#e3e3e3"/>
+<text x="62" y="183.2" text-anchor="end" fill="#555">36</text>
+<line x1="70" x2="940" y1="117.6" y2="117.6" stroke="#e3e3e3"/>
+<text x="62" y="121.6" text-anchor="end" fill="#555">121</text>
+<line x1="70" x2="940" y1="56" y2="56" stroke="#e3e3e3"/>
+<text x="62" y="60" text-anchor="end" fill="#555">400</text>
+<text transform="translate(16 210) rotate(-90)" text-anchor="middle" fill="#555">поганих клітинок (логарифмічна шкала)</text>
+<rect x="82.43" y="200.63" width="14.57" height="163.37" fill="#b0b0b0"/>
+<text x="89.71" y="196.63" text-anchor="middle" font-size="10" fill="#333">24</text>
+<rect x="99" y="251.05" width="14.57" height="112.95" fill="#e0a0a0"/>
+<text x="106.29" y="247.05" text-anchor="middle" font-size="10" fill="#333">9</text>
+<rect x="115.57" y="215.42" width="14.57" height="148.58" fill="#8cb8e8"/>
+<text x="122.86" y="211.42" text-anchor="middle" font-size="10" fill="#333">18</text>
+<rect x="132.14" y="218.35" width="14.57" height="145.65" fill="#4c8be0"/>
+<text x="139.43" y="214.35" text-anchor="middle" font-size="10" fill="#333">17</text>
+<rect x="148.71" y="364" width="14.57" height="0" fill="#3aa860"/>
+<text x="156" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<rect x="165.29" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="172.57" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="132.14" y="382" text-anchor="middle" fill="#333">S1</text>
+<rect x="206.71" y="136.23" width="14.57" height="227.77" fill="#b0b0b0"/>
+<text x="214" y="132.23" text-anchor="middle" font-size="10" fill="#333">84</text>
+<rect x="223.29" y="218.35" width="14.57" height="145.65" fill="#e0a0a0"/>
+<text x="230.57" y="214.35" text-anchor="middle" font-size="10" fill="#333">17</text>
+<rect x="239.86" y="182.72" width="14.57" height="181.28" fill="#8cb8e8"/>
+<text x="247.14" y="178.72" text-anchor="middle" font-size="10" fill="#333">34</text>
+<rect x="256.43" y="179.78" width="14.57" height="184.22" fill="#4c8be0"/>
+<text x="263.71" y="175.78" text-anchor="middle" font-size="10" fill="#333">36</text>
+<rect x="273" y="281.26" width="14.57" height="82.74" fill="#3aa860"/>
+<text x="280.29" y="277.26" text-anchor="middle" font-size="10" fill="#333">5</text>
+<rect x="289.57" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="296.86" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="256.43" y="382" text-anchor="middle" fill="#333">S2</text>
+<rect x="331" y="221.47" width="14.57" height="142.53" fill="#b0b0b0"/>
+<text x="338.29" y="217.47" text-anchor="middle" font-size="10" fill="#333">16</text>
+<rect x="347.57" y="257.1" width="14.57" height="106.9" fill="#e0a0a0"/>
+<text x="354.86" y="253.1" text-anchor="middle" font-size="10" fill="#333">8</text>
+<rect x="364.14" y="364" width="14.57" height="0" fill="#8cb8e8"/>
+<text x="371.43" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<rect x="380.71" y="271.89" width="14.57" height="92.11" fill="#4c8be0"/>
+<text x="388" y="267.89" text-anchor="middle" font-size="10" fill="#333">6</text>
+<rect x="397.29" y="364" width="14.57" height="0" fill="#3aa860"/>
+<text x="404.57" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<rect x="413.86" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="421.14" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="380.71" y="382" text-anchor="middle" fill="#333">S3</text>
+<rect x="455.29" y="215.42" width="14.57" height="148.58" fill="#b0b0b0"/>
+<text x="462.57" y="211.42" text-anchor="middle" font-size="10" fill="#333">18</text>
+<rect x="471.86" y="181.23" width="14.57" height="182.77" fill="#e0a0a0"/>
+<text x="479.14" y="177.23" text-anchor="middle" font-size="10" fill="#333">35</text>
+<rect x="488.43" y="218.35" width="14.57" height="145.65" fill="#8cb8e8"/>
+<text x="495.71" y="214.35" text-anchor="middle" font-size="10" fill="#333">17</text>
+<rect x="505" y="218.35" width="14.57" height="145.65" fill="#4c8be0"/>
+<text x="512.29" y="214.35" text-anchor="middle" font-size="10" fill="#333">17</text>
+<rect x="521.57" y="328.37" width="14.57" height="35.63" fill="#3aa860"/>
+<text x="528.86" y="324.37" text-anchor="middle" font-size="10" fill="#333">2</text>
+<rect x="538.14" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="545.43" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="505" y="382" text-anchor="middle" fill="#333">S4</text>
+<rect x="579.57" y="171.86" width="14.57" height="192.14" fill="#b0b0b0"/>
+<text x="586.86" y="167.86" text-anchor="middle" font-size="10" fill="#333">42</text>
+<rect x="596.14" y="202.82" width="14.57" height="161.18" fill="#e0a0a0"/>
+<text x="603.43" y="198.82" text-anchor="middle" font-size="10" fill="#333">23</text>
+<rect x="612.71" y="205.1" width="14.57" height="158.9" fill="#8cb8e8"/>
+<text x="620" y="201.1" text-anchor="middle" font-size="10" fill="#333">22</text>
+<rect x="629.29" y="224.79" width="14.57" height="139.21" fill="#4c8be0"/>
+<text x="636.57" y="220.79" text-anchor="middle" font-size="10" fill="#333">15</text>
+<rect x="645.86" y="364" width="14.57" height="0" fill="#3aa860"/>
+<text x="653.14" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<rect x="662.43" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="669.71" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="629.29" y="382" text-anchor="middle" fill="#333">S5</text>
+<rect x="703.86" y="132.68" width="14.57" height="231.32" fill="#b0b0b0"/>
+<text x="711.14" y="128.68" text-anchor="middle" font-size="10" fill="#333">90</text>
+<rect x="720.43" y="161.88" width="14.57" height="202.12" fill="#e0a0a0"/>
+<text x="727.71" y="157.88" text-anchor="middle" font-size="10" fill="#333">51</text>
+<rect x="737" y="159.9" width="14.57" height="204.1" fill="#8cb8e8"/>
+<text x="744.29" y="155.9" text-anchor="middle" font-size="10" fill="#333">53</text>
+<rect x="753.57" y="169.47" width="14.57" height="194.53" fill="#4c8be0"/>
+<text x="760.86" y="165.47" text-anchor="middle" font-size="10" fill="#333">44</text>
+<rect x="770.14" y="364" width="14.57" height="0" fill="#3aa860"/>
+<text x="777.43" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<rect x="786.71" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="794" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="753.57" y="382" text-anchor="middle" fill="#333">S6</text>
+<rect x="828.14" y="63.46" width="14.57" height="300.54" fill="#b0b0b0"/>
+<text x="835.43" y="59.46" text-anchor="middle" font-size="10" fill="#333">346</text>
+<rect x="844.71" y="87.2" width="14.57" height="276.8" fill="#e0a0a0"/>
+<text x="852" y="83.2" text-anchor="middle" font-size="10" fill="#333">218</text>
+<rect x="861.29" y="83.56" width="14.57" height="280.44" fill="#8cb8e8"/>
+<text x="868.57" y="79.56" text-anchor="middle" font-size="10" fill="#333">234</text>
+<rect x="877.86" y="84.45" width="14.57" height="279.55" fill="#4c8be0"/>
+<text x="885.14" y="80.45" text-anchor="middle" font-size="10" fill="#333">230</text>
+<rect x="894.43" y="364" width="14.57" height="0" fill="#3aa860"/>
+<text x="901.71" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<rect x="911" y="364" width="14.57" height="0" fill="#1f7a40"/>
+<text x="918.29" y="360" text-anchor="middle" font-size="10" fill="#333">0</text>
+<text x="877.86" y="382" text-anchor="middle" fill="#333">S7</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#888"/>
+<rect x="70" y="466" width="12" height="12" fill="#b0b0b0"/>
+<text x="88" y="476" fill="#333">без згладжування</text>
+<rect x="203.6" y="466" width="12" height="12" fill="#e0a0a0"/>
+<text x="221.6" y="476" fill="#333">звичайне (без перевірок)</text>
+<rect x="390" y="466" width="12" height="12" fill="#8cb8e8"/>
+<text x="408" y="476" fill="#333">Лапласівка (з перевіркою)</text>
+<rect x="583" y="466" width="12" height="12" fill="#4c8be0"/>
+<text x="601" y="476" fill="#333">Лапласівка + ковзання</text>
+<rect x="749.6" y="466" width="12" height="12" fill="#3aa860"/>
+<text x="767.6" y="476" fill="#333">оптимізація</text>
+<rect x="70" y="484" width="12" height="12" fill="#1f7a40"/>
+<text x="88" y="494" fill="#333">Лапласівка + оптимізація</text>
+</svg>

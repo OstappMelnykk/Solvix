@@ -60,24 +60,19 @@ public class OptimizationTests
     }
 
     [Test]
-    public void The_result_is_the_same_every_time_whatever_the_number_of_processors()
+    public void The_result_is_the_same_every_time_whatever_the_number_of_threads()
     {
-        var mesh = Middle(depth: 2);
-        var options = new SmoothingOptions(10, 0.5, 0.5, true, OptimizationPasses: 5);
-        var first = Smoothing.Smooth(mesh, options);
-        var second = Smoothing.Smooth(mesh, options);
-        Assert.That(second.Positions, Is.EqualTo(first.Positions), "two runs must agree exactly");
+        var random = new System.Random(3);
+        var mesh = HexMesh.Grid(8, 8, 8);
+        Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.06).SelectMany(r => r.Leaves).ToList(), 2, 2, 2);
+        Assert.That(mesh.Cells.Count, Is.GreaterThan(2000), "a mesh big enough for the parallel path");
 
-        var previous = ThreadPool.SetMinThreads(1, 1);
-        var constrained = Task.Factory.StartNew(() => Smoothing.Smooth(mesh, options), CancellationToken.None, TaskCreationOptions.None, new SingleThreadScheduler()).Result;
-        Assert.That(constrained.Positions, Is.EqualTo(first.Positions), "a single thread must give the same positions");
-    }
+        var single = Smoothing.Smooth(mesh, new SmoothingOptions(6, 0.5, 0.5, true, OptimizationPasses: 4, MaxThreads: 1));
+        var many = Smoothing.Smooth(mesh, new SmoothingOptions(6, 0.5, 0.5, true, OptimizationPasses: 4, MaxThreads: 8));
+        var again = Smoothing.Smooth(mesh, new SmoothingOptions(6, 0.5, 0.5, true, OptimizationPasses: 4));
 
-    private sealed class SingleThreadScheduler : TaskScheduler
-    {
-        protected override IEnumerable<Task>? GetScheduledTasks() => null;
-        protected override void QueueTask(Task task) => TryExecuteTask(task);
-        protected override bool TryExecuteTaskInline(Task task, bool taskWasPreviouslyQueued) => TryExecuteTask(task);
+        Assert.That(many.Positions, Is.EqualTo(single.Positions), "one thread and eight threads must give exactly the same positions");
+        Assert.That(again.Positions, Is.EqualTo(single.Positions), "and so must the default");
     }
 
     [Test]

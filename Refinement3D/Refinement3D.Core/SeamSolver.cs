@@ -14,6 +14,9 @@ namespace Refinement3D.Core;
 /// </summary>
 internal static class SeamSolver
 {
+    /// <summary>Only for the study that compares the search with the greedy choice: switches the search off.</summary>
+    internal static bool SearchEnabled = true;
+
     private const int SearchLimit = 200000;                            // the biggest group searched with going back (the number of steps is limited as well)
 
     public static void Solve(HexMesh mesh, ISet<int> required, int axis, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, Action<SeamTry>? log)
@@ -36,7 +39,7 @@ internal static class SeamSolver
         var chosen = new Dictionary<int, int>();
         foreach (var group in Groups(mesh, need, cellsOf))
         {
-            var found = group.Count <= SearchLimit ? Search(mesh, required, group, first, marks, decided, axis, cellsOf) : null;
+            var found = SearchEnabled && group.Count <= SearchLimit ? Search(mesh, required, group, first, marks, decided, axis, cellsOf) : null;
             if (found != null) { foreach (var (id, side) in found) chosen[id] = side; continue; }
             foreach (var (id, side) in Greedy(mesh, required, group, first, marks, decided, axis, cellsOf)) chosen[id] = side;
         }
