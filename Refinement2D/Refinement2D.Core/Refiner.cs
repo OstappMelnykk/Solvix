@@ -1,11 +1,13 @@
 namespace Refinement2D.Core;
 
 /// <summary>What one pass did, for showing and for checking.</summary>
+/// <param name="Unreached">The cells the user chose (or what they became) that this pass could not cut across the axis: neighbours that are cut the other way, or are cut across themselves, leave no seam for them.</param>
 public sealed record PassTrace(
     int Axis, int N,
     IReadOnlyList<int> MarkedNodes,
     IReadOnlyList<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Applied,
-    IReadOnlyList<int> MarkedAfter);
+    IReadOnlyList<int> MarkedAfter,
+    IReadOnlyList<int> Unreached);
 
 public sealed record RefineResult(IReadOnlyList<PassTrace> Passes);
 
@@ -21,17 +23,25 @@ public static class Refiner
     {
         if (nI < 2 || nJ < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
         var marked = markedCells.ToHashSet();
+        var required = marked.ToHashSet();                            // the cells the user chose, and what they become: these must be cut in full
         foreach (int id in marked) if (!mesh.Cells.ContainsKey(id)) throw new ArgumentException($"Unknown cell {id}.");
         var passes = new List<PassTrace>();
-        for (int axis = 0; axis < 2; axis++)
-        {
-            int n = axis == 0 ? nI : nJ;
-            mesh.Rescale(n);
-            var nodes = MarkNodes(mesh, marked, axis);
-            var applied = Apply(mesh, nodes, n, marked);
-            passes.Add(new PassTrace(axis, n, nodes.OrderBy(x => x).ToList(), applied, marked.OrderBy(x => x).ToList()));
-        }
+        for (int axis = 0; axis < 2; axis++) passes.Add(Pass(mesh, marked, required, axis, axis == 0 ? nI : nJ));
         return new RefineResult(passes);
+    }
+
+    /// <summary>One pass along an axis: rescale by n, mark, complete, give the cells of M a seam of their own where the layers gave none, apply the templates, expand M.</summary>
+    public static PassTrace Pass(QuadMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n)
+    {
+        mesh.Rescale(n);
+        var nodes = MarkNodes(mesh, marked, axis);
+        Complete(mesh, nodes);
+        ExtendForMarkedCells(mesh, marked, required, axis, nodes);
+        var unreached = required.Where(id => !IsCutAcross(mesh.Cells[id], nodes, axis)).OrderBy(x => x).ToList();
+        var applied = Apply(mesh, nodes, n, marked);
+        foreach (var a in applied)
+            if (required.Remove(a.Cell)) required.UnionWith(a.Children);
+        return new PassTrace(axis, n, nodes.OrderBy(x => x).ToList(), applied, marked.OrderBy(x => x).ToList(), unreached);
     }
 
     // ---- marking -------------------------------------------------------------------------------------------------------
@@ -63,6 +73,90 @@ public static class Refiner
             }
         }
         return marks;
+    }
+
+    // ---- patterns, completion, and the cells of M that the seams did not reach ----------------------------------------------
+
+    // The marked slots of a cell, in increasing order.
+    private static List<int> MarkedSlots(Cell cell, ISet<int> marks) => Enumerable.Range(0, 4).Where(s => marks.Contains(cell.Nodes[s])).ToList();
+
+    /// <summary>
+    /// A cell can be refined by a template only when its marked nodes make no marks, one corner, one edge (two adjacent nodes), or all four.
+    /// A template cuts exactly the edges that have one marked end, so neighbours that agree on the marks agree on the cuts: any marked node
+    /// set whose patterns are all of these four kinds gives a conforming mesh. Three marks, or two on a diagonal, are completed by marking
+    /// the missing nodes (the book's rules of section 4.9 are special cases); that can change the pattern of the cells round those nodes,
+    /// so it is repeated until nothing changes.
+    /// </summary>
+    public static void Complete(QuadMesh mesh, HashSet<int> marks) => Complete(mesh, marks, CellsByNode(mesh));
+
+    private static void Complete(QuadMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf)
+    {
+        var queue = new Queue<int>(marks.SelectMany(n => cellsOf.GetValueOrDefault(n) ?? new List<int>()).Distinct());
+        while (queue.Count > 0)
+        {
+            var cell = mesh.Cells[queue.Dequeue()];
+            var slots = MarkedSlots(cell, marks);
+            bool diagonal = slots.Count == 2 && (slots[1] - slots[0]) == 2;
+            if (slots.Count != 3 && !diagonal) continue;
+            foreach (int node in cell.Nodes)
+                if (marks.Add(node))
+                    foreach (int other in cellsOf.GetValueOrDefault(node) ?? new List<int>()) queue.Enqueue(other);
+        }
+    }
+
+    private static Dictionary<int, List<int>> CellsByNode(QuadMesh mesh)
+    {
+        var map = new Dictionary<int, List<int>>();
+        foreach (var cell in mesh.Cells.Values)
+            foreach (int node in cell.Nodes)
+            {
+                if (!map.TryGetValue(node, out var list)) map[node] = list = new List<int>();
+                list.Add(cell.Id);
+            }
+        return map;
+    }
+
+    // Is the cell cut into strips across the axis: marked edge on the left or right (axis 0), at the bottom or the top (axis 1)?
+    private static bool IsCutAcross(Cell cell, ISet<int> marks, int axis)
+    {
+        var slots = MarkedSlots(cell, marks);
+        return slots.Count == 2 && (axis == 0 ? slots.SequenceEqual(new[] { 1, 2 }) || slots.SequenceEqual(new[] { 0, 3 })
+                                              : slots.SequenceEqual(new[] { 0, 1 }) || slots.SequenceEqual(new[] { 2, 3 }));
+    }
+
+    /// <summary>
+    /// A cell of M has to be cut in n along this axis, which needs a marked edge across it. The seams of the coarse layers reach most of them;
+    /// those that they do not (a cell deeper in its coarse cell than the seam, one that got a corner or the wrong edge) get a seam of their
+    /// own: one of their two edges across the axis. Which, is decided by the parity of the cell's place in the lattice of its own size along
+    /// the axis (even: the far edge, odd: the near one), the same pairing as the coarse layers use; the other edge is tried if the first
+    /// would break a pattern. A cell that cannot be reached either way is left, and reported by the check of M.
+    /// </summary>
+    private static void ExtendForMarkedCells(QuadMesh mesh, ISet<int> marked, ISet<int> required, int axis, HashSet<int> marks)
+    {
+        var cellsOf = CellsByNode(mesh);
+        foreach (int id in required.OrderBy(x => x).ToList())
+        {
+            var cell = mesh.Cells[id];
+            if (IsCutAcross(cell, marks, axis)) continue;
+            var far = axis == 0 ? new[] { 1, 2 } : new[] { 2, 3 };
+            var near = axis == 0 ? new[] { 0, 3 } : new[] { 0, 1 };
+            var points = cell.Nodes.Select(mesh.PointOf).ToArray();
+            long low = points.Min(p => axis == 0 ? p.X : p.Y), high = points.Max(p => axis == 0 ? p.X : p.Y);
+            long width = high - low;
+            bool even = width > 0 && (((low / width) % 2) + 2) % 2 == 0;
+            foreach (var edge in even ? new[] { far, near } : new[] { near, far })
+            {
+                var trial = new HashSet<int>(marks);
+                foreach (int slot in edge) trial.Add(cell.Nodes[slot]);
+                Complete(mesh, trial, cellsOf);
+                var others = required.Where(m => m != id && IsCutAcross(mesh.Cells[m], marks, axis)).ToList();
+                if (!IsCutAcross(cell, trial, axis)) continue;
+                if (others.Any(m => !IsCutAcross(mesh.Cells[m], trial, axis))) continue;           // it must not spoil another cell of the user's that was fine
+                marks.Clear();
+                marks.UnionWith(trial);
+                break;
+            }
+        }
     }
 
     // ---- templates -----------------------------------------------------------------------------------------------------

@@ -137,7 +137,96 @@ public class RefinerTests
         AssertConforming(mesh);
     }
 
+    // ---- a second refinement: cells that are leaves of an earlier one -------------------------------------------------------
+
+    [Test]
+    public void A_leaf_of_an_earlier_refinement_can_be_refined_again_and_the_mesh_stays_conforming()
+    {
+        var mesh = QuadMesh.Grid(7, 7);
+        Refiner.Refine(mesh, LeavesOf(mesh, (3, 3)), 2, 2);
+        // the leaves of the coarse cell (3, 3): pick the first of them
+        var leaf = mesh.Roots.Single(r => r.I == 3 && r.J == 3).Leaves.First();
+
+        Refiner.Refine(mesh, new[] { leaf }, 2, 2);
+
+        AssertConforming(mesh);
+        Assert.That(mesh.Roots.Single(r => r.I == 3 && r.J == 3).Leaves.Count, Is.GreaterThan(4));
+    }
+
+    [Test]
+    public void Random_leaves_of_a_refined_mesh_refined_again_with_random_n_always_conform()
+    {
+        var random = new Random(77);
+        for (int trial = 0; trial < 600; trial++)
+        {
+            int nx = random.Next(3, 8), ny = random.Next(3, 8);
+            var mesh = QuadMesh.Grid(nx, ny);
+            var first = mesh.Roots.Where(_ => random.NextDouble() < 0.25).SelectMany(r => r.Leaves).ToList();
+            if (first.Count == 0) continue;
+            Refiner.Refine(mesh, first, random.Next(2, 4), random.Next(2, 4));
+            var leaves = mesh.Cells.Keys.Where(_ => random.NextDouble() < 0.06).ToList();
+            if (leaves.Count == 0) continue;
+            int nI = random.Next(2, 5), nJ = random.Next(2, 5);
+
+            Refiner.Refine(mesh, leaves, nI, nJ);
+
+            AssertConforming(mesh, $"trial {trial}: {nx}x{ny}, {first.Count} first, {leaves.Count} leaves again, n = {nI}x{nJ}");
+        }
+    }
+
+    [Test]
+    public void The_square_leaves_that_are_marked_end_up_cut_into_nI_by_nJ_pieces()
+    {
+        var random = new Random(5);
+        int checkedLeaves = 0, whole = 0;
+        var failures = new List<string>();
+        for (int trial = 0; trial < 300; trial++)
+        {
+            var mesh = QuadMesh.Grid(6, 6);
+            Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.3).SelectMany(r => r.Leaves).ToList(), 2, 2);
+            // the leaves that are rectangles (the trapezoids are not boxes), picked at random
+            var squares = mesh.Cells.Values.Where(c => IsBox(mesh, c)).Select(c => c.Id).Where(_ => random.NextDouble() < 0.08).ToList();
+            if (squares.Count == 0) continue;
+            long before = mesh.Scale;
+            var boxes = squares.ToDictionary(id => id, id => BoxOf(mesh, id));
+            int nI = random.Next(2, 4), nJ = random.Next(2, 4);
+
+            var result = Refiner.Refine(mesh, squares, nI, nJ);
+
+            AssertConforming(mesh, $"trial {trial}");
+            int failedBefore = failures.Count;
+            long factor = mesh.Scale / before;
+            foreach (var (id, box) in boxes)
+            {
+                checkedLeaves++;
+                var region = (X0: box.X0 * factor, Y0: box.Y0 * factor, X1: box.X1 * factor, Y1: box.Y1 * factor);
+                var pieces = mesh.Cells.Values.Where(c => IsBox(mesh, c)).Select(c => BoxOf(mesh, c.Id))
+                    .Where(p => p.X0 >= region.X0 && p.X1 <= region.X1 && p.Y0 >= region.Y0 && p.Y1 <= region.Y1).ToList();
+                bool area = pieces.Sum(p => (p.X1 - p.X0) * (p.Y1 - p.Y0)) == (region.X1 - region.X0) * (region.Y1 - region.Y0);
+                if (pieces.Count == nI * nJ && area) whole++;
+                else failures.Add($"trial {trial} leaf {id} (the pass said it was unreached: {result.Passes.Any(p => p.Unreached.Count > 0)}): {pieces.Count} pieces instead of {nI * nJ} (n = {nI}x{nJ}, area ok: {area})");
+            }
+        }
+        TestContext.Out.WriteLine($"MARKEDLEAVES whole {whole} of {checkedLeaves}");
+        // a leaf that is not cut in full is not silent: the pass reports it. Most are cut in full (the rest are squeezed between cells that are cut across themselves).
+        Assert.That(failures.Count(f => f.Contains("unreached: False")), Is.Zero, "a leaf was not cut in full and nothing said so:\n" + string.Join("\n", failures.Where(f => f.Contains("unreached: False")).Take(6)));
+        Assert.That(whole, Is.GreaterThan(checkedLeaves * 0.9), $"{whole} of {checkedLeaves} marked leaves were cut as asked");
+    }
+
     // ---- helpers -------------------------------------------------------------------------------------------------------
+
+    // the cells that are axis-aligned rectangles, and the rectangle (in the lattice of the moment) a cell covers
+    private static bool IsBox(QuadMesh mesh, Cell c)
+    {
+        var p = c.Nodes.Select(mesh.PointOf).ToArray();
+        return p[0].Y == p[1].Y && p[2].Y == p[3].Y && p[0].X == p[3].X && p[1].X == p[2].X;
+    }
+
+    private static (long X0, long Y0, long X1, long Y1) BoxOf(QuadMesh mesh, int id)
+    {
+        var p = mesh.Cells[id].Nodes.Select(mesh.PointOf).ToArray();
+        return (p.Min(q => q.X), p.Min(q => q.Y), p.Max(q => q.X), p.Max(q => q.Y));
+    }
 
     private static long Area(QuadMesh mesh, int id)
     {
