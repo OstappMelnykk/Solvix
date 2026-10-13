@@ -74,6 +74,19 @@
     </label>
     <div class="hint">Хорда — ланцюжок клітинок через протилежні ребра. Кожна свого кольору, число — номер у хорді, синя лінія — шов пари (0,1), (2,3), … Клік по клітинці показує лише її хорду (повторний — усі).</div>
 
+    <div id="chordAnim" hidden>
+      <button id="animToggle">▶ Алгоритм нумерації</button>
+      <div id="animPanel" hidden>
+        <div><button id="animReset">⏮</button><button id="animBack">◀</button><button id="animPlay" class="go">▶</button><button id="animStep">▶|</button></div>
+        <label>Швидкість <input id="animSpeed" type="range" min="1" max="30" value="8" /></label>
+        <div id="animText" class="hint"></div>
+        <div class="legend">
+          <span><i style="background:#ffb347"></i>зараз тут</span>
+          <span><i style="background:#bcd8ff"></i>іду назад до початку</span>
+        </div>
+      </div>
+    </div>
+
     <h2>Перевірка</h2>
     <div id="status"></div>
     <div id="problems" class="problems"></div>

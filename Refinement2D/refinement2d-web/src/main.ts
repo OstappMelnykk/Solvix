@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { setupDrawing } from './draw';
-import { chordsOf, label } from './chords';
+import { chordsOf, frameAt, label } from './chords';
 import { MeshDto, StateDto, StepDto, getState, post, preview } from './api';
 
 // A page to look at the 2D refinement: an orthographic camera you can pan and zoom, the cells filled and outlined, the cells you pick
@@ -23,6 +23,9 @@ let state: StateDto | null = null;
 // the wizard: the stages of a refinement, one at a time (null when it is closed)
 let steps: StepDto[] | null = null;
 let stepIndex = 0;
+let animStep = 0;                                           // events of the numbering shown so far (null: animation off)
+let animOn = false;
+let animTimer: number | null = null;
 let pickedChordCell: number | null = null;                 // the cell whose chord is shown alone (chord view)
 let shown = new THREE.Group();
 scene.add(shown);
@@ -105,9 +108,17 @@ function build(): void {
   view = data.mesh;
 
   const axisOfChords = Number($<HTMLSelectElement>('chords').value);
-  const chords = axisOfChords >= 0 ? chordsOf(data.mesh, axisOfChords) : null;
+  let chords = axisOfChords >= 0 ? chordsOf(data.mesh, axisOfChords) : null;
+  let trail = new Set<number>(), current: number | null = null;
+  if (chords && animOn) {
+    const frame = frameAt(chords.events, animStep);
+    chords = { ...chords, info: frame.info, seams: animStep >= chords.events.length ? chords.seams : [] };
+    trail = frame.trail;
+    current = frame.current;
+  }
+  $('chordAnim').hidden = axisOfChords < 0;
   const only = chords && pickedChordCell !== null ? data.mesh.cells.findIndex(c => c.id === pickedChordCell) : -1;
-  const alone = only >= 0 ? chords!.members[chords!.info.get(only)!.chord] : null;      // the chord of the clicked cell
+  const alone = only >= 0 && !animOn ? chords!.members[chords!.info.get(only)!.chord] : null;      // the chord of the clicked cell
   const positions: number[] = [], colors: number[] = [], lines: number[] = [];
   const colour = new THREE.Color();
   for (const [index, cell] of data.mesh.cells.entries()) {
@@ -116,6 +127,8 @@ function build(): void {
     const template = data.made.get(cell.id);
     if (template) colour.set(template === 'T1' ? 0xffd8a8 : 0xfbf6b4);
     const inChord = chords?.info.get(index);
+    if (chords && animOn) colour.set(0xf2f2f2);
+    if (trail.has(index)) colour.set(0xbcd8ff);
     if (inChord) colour.setHSL(((inChord.chord * 0.618) % 1), 0.55, inChord.position % 2 === 0 ? 0.62 : 0.8);
     if (alone) {
       const at = alone.get(index);
@@ -123,6 +136,7 @@ function build(): void {
     }
     if (data.m.has(cell.id)) colour.set(0xe8e04a);
     if (data.unreached.has(cell.id)) colour.set(0xff6b6b);
+    if (current === index) colour.set(0xffb347);
     for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) { positions.push(p[k].x, p[k].y, 0); colors.push(colour.r, colour.g, colour.b); }
     for (let k = 0; k < 4; k++) lines.push(p[k].x, p[k].y, 0.1, p[(k + 1) % 4].x, p[(k + 1) % 4].y, 0.1);
   }
@@ -149,7 +163,7 @@ function build(): void {
     shown.add(blue);
     if (data.mesh.cells.length <= 400) {
       for (const [index, cell] of data.mesh.cells.entries()) {
-        const at = alone ? (alone.has(index) ? { position: alone.get(index)! } : null) : chords.info.get(index)!;
+        const at = alone ? (alone.has(index) ? { position: alone.get(index)! } : null) : chords.info.get(index);
         if (!at) continue;
         const c = cell.nodes.map(n => world(data.mesh.nodes[n]));
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: label(at.position), depthTest: false }));
@@ -203,10 +217,52 @@ canvas.addEventListener('pointerup', e => {
   const w = new THREE.Vector3(x, y, 0).unproject(camera);
   const id = cellAt(w.x, w.y);
   if (id === null) return;
-  if (Number($<HTMLSelectElement>('chords').value) >= 0) { pickedChordCell = pickedChordCell === id ? null : id; build(); return; }
+  if (Number($<HTMLSelectElement>('chords').value) >= 0 && !animOn) { pickedChordCell = pickedChordCell === id ? null : id; build(); return; }
   if (selected.has(id)) selected.delete(id); else selected.add(id);
   build();
 });
+
+// ---- the animation of the numbering -----------------------------------------------------------------------------------
+
+function animText(): string {
+  const chords = chordsOf(view!, Number($<HTMLSelectElement>('chords').value));
+  const total = chords.events.length;
+  if (animStep === 0) return `Подій: ${total}. Натисніть ▶ або «крок».`;
+  const e = chords.events[animStep - 1];
+  const at = `Подія ${animStep} з ${total}. `;
+  switch (e.kind) {
+    case 'begin': return at + `Беру клітинку, яка ще не в жодній хорді: це нова хорда №${e.chord}. Іду від неї назад, шукаю початок.`;
+    case 'back': return at + 'Крок назад через протилежне ребро до сусіда.';
+    case 'turned': return at + (e.cycle ? 'Прийшов назад у вихідну клітинку: хорда замкнена, початок довільний — тут.' : 'Далі сусіда нема (край сітки чи дірка): це початок хорди.') + ' Тепер іду вперед і нумерую.';
+    case 'number': return at + `Клітинці даю номер ${e.position}.` + (e.natural ? '' : ' Хорда йде тут боком, номер лише для цієї хорди.');
+    default: return at + `Хорда №${e.chord} закінчена: ${e.position} клітинок${e.cycle ? ', замкнена' : ''}. Шви — між парами (0,1), (2,3), … Далі беру наступну ще не пронумеровану клітинку.`;
+  }
+}
+
+function animRender(): void {
+  const total = animOn ? chordsOf(view!, Number($<HTMLSelectElement>('chords').value)).events.length : 0;
+  animStep = Math.max(0, Math.min(animStep, total));
+  build();
+  if (animOn) $('animText').textContent = animText();
+}
+function animStop(): void { if (animTimer !== null) { clearInterval(animTimer); animTimer = null; } $('animPlay').textContent = '▶'; }
+function animPlay(): void {
+  if (animTimer !== null) { animStop(); return; }
+  $('animPlay').textContent = '⏸';
+  const speed = Number($<HTMLInputElement>('animSpeed').value);
+  animTimer = window.setInterval(() => {
+    const total = chordsOf(view!, Number($<HTMLSelectElement>('chords').value)).events.length;
+    if (animStep >= total) { animStop(); return; }
+    animStep++;
+    animRender();
+  }, 1000 / speed);
+}
+$('animToggle').onclick = () => { animOn = !animOn; animStop(); animStep = 0; $('animPanel').hidden = !animOn; $('animToggle').textContent = animOn ? '■ Закрити алгоритм' : '▶ Алгоритм нумерації'; animRender(); };
+$('animReset').onclick = () => { animStop(); animStep = 0; animRender(); };
+$('animBack').onclick = () => { animStop(); animStep--; animRender(); };
+$('animStep').onclick = () => { animStop(); animStep++; animRender(); };
+$('animPlay').onclick = animPlay;
+$('animSpeed').oninput = () => { if (animTimer !== null) { animStop(); animPlay(); } };
 
 // ---- the wizard ---------------------------------------------------------------------------------------------------
 
