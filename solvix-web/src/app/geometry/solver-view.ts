@@ -204,6 +204,10 @@ export function elementCentreOf(state: MeshStateDto, divisions: readonly number[
 
 const alongOf = (axis: 0 | 1 | 2, x: number, y: number, z: number): number => (axis === 0 ? x : axis === 1 ? y : z);
 
+// A face that lies exactly in the plane of a cut belongs to the kept side, however the float32 rounding of its coordinates
+// falls: the plane is moved this far out to the removed side.
+const planeSlack = (cut: SectionCut): number => 2e-6 * (1 + Math.abs(cut.at));
+
 // Cuts the triangles of a mesh by the plane of a section, keeping what is on the side that stays; a triangle the plane
 // runs through is cut (the kept part of it is one or two triangles, the colours interpolated). Also returns, for each
 // triangle that is left, the face it came from (so a click can still be traced back).
@@ -212,13 +216,14 @@ export function clipMeshToPlane(source: THREE.BufferGeometry, trianglesPerFace: 
   const color = source.getAttribute('color');
   const index = source.getIndex()!;
   const sign = cut.keep === 'above' ? 1 : -1;
+  const slack = planeSlack(cut);
   const outPositions: number[] = [];
   const outColors: number[] = [];
   const faceOfTriangle: number[] = [];
   const vertex = (i: number) => ({
     p: [position.getX(i), position.getY(i), position.getZ(i)] as const,
     c: [color.getX(i), color.getY(i), color.getZ(i)] as const,
-    d: sign * (alongOf(cut.axis, position.getX(i), position.getY(i), position.getZ(i)) - cut.at)
+    d: sign * (alongOf(cut.axis, position.getX(i), position.getY(i), position.getZ(i)) - cut.at) + slack
   });
   type Vertex = ReturnType<typeof vertex>;
   const between = (a: Vertex, b: Vertex): Vertex => {
@@ -258,10 +263,11 @@ export function clipMeshToPlane(source: THREE.BufferGeometry, trianglesPerFace: 
 // The line segments (pairs of points, 6 numbers each) cut by the plane: the part on the kept side only.
 export function clipSegmentsToPlane(segments: readonly number[], cut: SectionCut): number[] {
   const sign = cut.keep === 'above' ? 1 : -1;
+  const slack = planeSlack(cut);
   const out: number[] = [];
   for (let i = 0; i + 5 < segments.length; i += 6) {
     const a = [segments[i], segments[i + 1], segments[i + 2]], b = [segments[i + 3], segments[i + 4], segments[i + 5]];
-    const da = sign * (alongOf(cut.axis, a[0], a[1], a[2]) - cut.at), db = sign * (alongOf(cut.axis, b[0], b[1], b[2]) - cut.at);
+    const da = sign * (alongOf(cut.axis, a[0], a[1], a[2]) - cut.at) + slack, db = sign * (alongOf(cut.axis, b[0], b[1], b[2]) - cut.at) + slack;
     if (da < 0 && db < 0) continue;
     if (da >= 0 && db >= 0) { out.push(...a, ...b); continue; }
     const t = da / (da - db);
@@ -581,7 +587,9 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       if (shown && cut) {
         // an element stays while any part of it is on the kept side: the ones the plane runs through are cut by it
         const { min, max } = geometry.elementExtent(hexById.get(hex)!, ex, ey, ez, cut.axis);
-        shown = cut.keep === 'above' ? max >= cut.at - 1e-9 : min <= cut.at + 1e-9;
+        const slack = planeSlack(cut);
+        // one that only touches the plane from the far side is gone: its faces at the plane are then the cut itself
+        shown = cut.keep === 'above' ? max > cut.at + slack : min < cut.at - slack;
       }
       shownCache.set(key, shown);
     }
@@ -830,7 +838,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
             if (!visible(hex.id, ex, ey, ez)) continue;
             const { min, max } = geometry.elementExtent(hex, ex, ey, ez, cut.axis);
             if (wantInterior) interior.push(...clipSegmentsToPlane(geometry.elementEdges(hex, ex, ey, ez, 3), cut));
-            if (!(min < cut.at && max > cut.at)) continue;
+            const slack = planeSlack(cut);
+            if (!(min < cut.at - slack && max > cut.at + slack)) continue;
             const e = [ex, ey, ez];
             const sixFaces: { positions: number[]; indices: number[] }[] = [];
             for (let axis = 0; axis < 3; axis++) {
@@ -882,7 +891,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     }
     const kept = (n: { x: number; y: number; z: number }) => {
       const d = alongOf(cut.axis, n.x, n.y, n.z) - cut.at;
-      return cut.keep === 'above' ? d >= -1e-9 : d <= 1e-9;
+      return cut.keep === 'above' ? d >= -planeSlack(cut) : d <= planeSlack(cut);
     };
     const cornerNodes = new Set(state.hexes.flatMap(h => h.nodeIds.slice(0, 8)));
     for (const [wanted, colour, size] of [[true, 0xffffff, 7], [false, 0xf0b429, 5]] as const) {
