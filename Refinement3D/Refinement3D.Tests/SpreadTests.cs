@@ -162,3 +162,42 @@ public class TransitionDepthTests
         Assert.That(mesh.Cells, Has.Count.EqualTo(8));
     }
 }
+
+/// <summary>A big selection must not overflow the stack of a thread (the search for the seams once did) and must stay conforming.</summary>
+public class BigSelectionTests
+{
+    [Test]
+    public void A_block_of_125_coarse_cells_cut_in_3_by_3_by_3_conforms_and_needs_no_deep_recursion()
+    {
+        var mesh = HexMesh.Grid(9, 9, 9);
+        var block = mesh.Roots.Where(r => r.I is >= 2 and < 7 && r.J is >= 2 and < 7 && r.K is >= 2 and < 7).SelectMany(r => r.Leaves).ToList();
+        Assert.That(block, Has.Count.EqualTo(125));
+
+        // run on a thread with a small stack: a recursion thousands of levels deep would not survive here
+        Refinement3D.Core.RefineResult? result = null;
+        var thread = new Thread(() => result = Refiner.Refine(mesh, block, 3, 3, 3), 256 * 1024);
+        thread.Start();
+        thread.Join();
+
+        Assert.That(result, Is.Not.Null);
+        var problems = Conformity.Check(mesh);
+        Assert.That(problems, Is.Empty, string.Join("\n", problems.Take(5)));
+        Assert.That(result!.Passes.SelectMany(p => p.Unreached), Is.Empty);
+        foreach (var root in mesh.Roots.Where(r => r.I is >= 2 and < 7 && r.J is >= 2 and < 7 && r.K is >= 2 and < 7)) Assert.That(root.Leaves, Has.Count.EqualTo(27));
+    }
+
+    [Test]
+    public void A_second_refinement_of_a_whole_block_of_leaves_conforms_on_a_small_stack_too()
+    {
+        var mesh = HexMesh.Grid(6, 6, 6);
+        Refiner.Refine(mesh, mesh.Roots.Where(r => r.I is >= 1 and < 5 && r.J is >= 1 and < 5 && r.K is >= 1 and < 5).SelectMany(r => r.Leaves).ToList(), 2, 2, 2);
+        var inside = mesh.Cells.Values.Where(c => mesh.CornersOf(c).All(p => p.X >= 2 * mesh.Scale / 6 * 2 && p.X <= 4 * mesh.Scale && p.Y >= 2 * mesh.Scale / 6 * 2 && p.Y <= 4 * mesh.Scale && p.Z >= 2 * mesh.Scale / 6 * 2 && p.Z <= 4 * mesh.Scale)).Select(c => c.Id).ToList();
+        Assert.That(inside, Is.Not.Empty);
+
+        var thread = new Thread(() => Refiner.Refine(mesh, inside, 2, 2, 2), 256 * 1024);
+        thread.Start();
+        thread.Join();
+
+        Assert.That(Conformity.Check(mesh), Is.Empty);
+    }
+}
