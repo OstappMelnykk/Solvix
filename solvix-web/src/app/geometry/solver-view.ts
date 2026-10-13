@@ -204,6 +204,16 @@ export function elementCentreOf(state: MeshStateDto, divisions: readonly number[
 
 const alongOf = (axis: 0 | 1 | 2, x: number, y: number, z: number): number => (axis === 0 ? x : axis === 1 ? y : z);
 
+// Everything that lies in the plane of a cut (the cut faces, the caps, the lines and dots on them, the sheet of the plane) is at
+// the same depth, and with the logarithmic depth buffer the canvas uses (which ignores the polygon offset) such things fight
+// for the pixel. So the lines, the dots and the sheet are moved a hair towards the viewer (towards the side that was cut away)
+// and the caps a hair into the body: each layer has a depth of its own. `by` is in the units of the body.
+export function shiftAlong(values: readonly number[], axis: 0 | 1 | 2, by: number): number[] {
+  const out = values.slice();
+  for (let i = axis; i < out.length; i += 3) out[i] += by;
+  return out;
+}
+
 // A face that lies exactly in the plane of a cut belongs to the kept side, however the float32 rounding of its coordinates
 // falls: the plane is moved this far out to the removed side.
 const planeSlack = (cut: SectionCut): number => 2e-6 * (1 + Math.abs(cut.at));
@@ -282,7 +292,7 @@ export function clipSegmentsToPlane(segments: readonly number[], cut: SectionCut
 // faces, chained end to end into closed loops (a loop is a list of points). Usually one loop; none if the plane misses the
 // element. (Ordering the points by their angle round the centre, as this used to, gives a star of thin spikes as soon as the
 // cut is not convex - which a bent or folded element's is.)
-export function elementSectionLoops(faces: readonly { positions: number[]; indices: number[] }[], cut: SectionCut): THREE.Vector3[][] {
+export function elementSectionLoops(faces: readonly { positions: number[]; indices: number[] }[], cut: SectionCut, report?: { open: number }): THREE.Vector3[][] {
   const key = (p: THREE.Vector3) => `${Math.round(p.x * 1e6)},${Math.round(p.y * 1e6)},${Math.round(p.z * 1e6)}`;
   const segments: [THREE.Vector3, THREE.Vector3][] = [];
   const seen = new Set<string>();
@@ -323,6 +333,7 @@ export function elementSectionLoops(faces: readonly { positions: number[]; indic
     if (used.has(start)) continue;
     used.add(start);
     const loop = [segments[start][0], segments[start][1]];
+    let closed = false;
     for (;;) {
       const last = loop[loop.length - 1];
       const next = (ends.get(key(last)) ?? []).find(i => !used.has(i));
@@ -330,9 +341,10 @@ export function elementSectionLoops(faces: readonly { positions: number[]; indic
       used.add(next);
       const [p, q] = segments[next];
       loop.push(key(p) === key(last) ? q : p);
-      if (key(loop[loop.length - 1]) === key(loop[0])) { loop.pop(); break; }
+      if (key(loop[loop.length - 1]) === key(loop[0])) { loop.pop(); closed = true; break; }
     }
-    if (loop.length >= 3) loops.push(loop);
+    if (closed && loop.length >= 3) loops.push(loop);
+    else if (report) report.open++;                   // a chain that does not close: the cut has a gap here
   }
   return loops;
 }
@@ -598,6 +610,13 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const hidden = input.hiddenMaterials ?? new Set<string>();
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
+  // the depth layers of a cut (see shiftAlong): one step is a thousandth of the body's size
+  const layer = (() => {
+    if (!input.section) return 0;
+    let low = Infinity, high = -Infinity;
+    for (const n of state.nodes) for (const c of [n.x, n.y, n.z]) { low = Math.min(low, c); high = Math.max(high, c); }
+    return Math.max(1e-9, (high - low) * 1e-3) * (input.section.keep === 'above' ? -1 : 1);       // towards the viewer, on the removed side
+  })();
 
   const values = result && !input.quality ? fieldValues(result, field) : null;
   const range: FieldRange = values ? { min: 0, max: input.colorMax && input.colorMax > 0 ? input.colorMax : fieldRange(values).max } : { min: 0, max: 0 };
@@ -844,7 +863,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   if (lines.length > 0) {
     const buffer = new THREE.BufferGeometry();
     const shownLines = input.section ? clipSegmentsToPlane(lines, input.section) : lines;
-    buffer.setAttribute('position', new THREE.Float32BufferAttribute(shownLines, 3));
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(input.section ? shiftAlong(shownLines, input.section.axis, layer) : shownLines, 3));
     if (displaced) deformables.push(deformable(buffer, lines, movedLines));
     const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
     edges.userData['edges'] = true;
@@ -869,6 +888,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const cut = input.section;
     const capPositions: number[] = [];
     const capColors: number[] = [];
+    const stats = { straddlers: 0, withoutOutline: 0, openChains: 0 };       // for checking the cut, not for drawing
     const outline: number[] = [];                  // the edge of every cap, drawn dark over it
     const interior: number[] = [];                 // the edges of the elements inside the body, so its structure shows
     const wantInterior = state.hexes.length * counts[0] * counts[1] * counts[2] <= 8000;
@@ -893,8 +913,11 @@ export function buildSolverView(input: SolverViewInput): MeshView {
                 sixFaces.push({ positions, indices });
               }
             }
-            const loops = elementSectionLoops(sixFaces, cut);
-            if (loops.length === 0) continue;
+            const report = { open: 0 };
+            const loops = elementSectionLoops(sixFaces, cut, report);
+            stats.straddlers++;
+            stats.openChains += report.open;
+            if (loops.length === 0) { stats.withoutOutline++; continue; }
             const rgb = new THREE.Color(
               qualityColors
                 ? RESULT_COLORS[resultOf(qualityColors.get(`${hex.id}:${ex}:${ey}:${ez}`) ?? 'excellent')]
@@ -914,9 +937,10 @@ export function buildSolverView(input: SolverViewInput): MeshView {
             }
           }
     }
+    root.userData['sectionStats'] = stats;
     if (capPositions.length > 0) {
       const capGeometry = new THREE.BufferGeometry();
-      capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(capPositions, 3));
+      capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(capPositions, cut.axis, -layer), 3));
       capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
       const capMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
       markForWeightedOit(capMaterial);
@@ -931,7 +955,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const structure = [...interior, ...outline];
     if (structure.length > 0) {
       const lineGeometry = new THREE.BufferGeometry();
-      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(structure, 3));
+      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(structure, cut.axis, layer), 3));
       const inside = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
       inside.userData['sectionStructure'] = true;
       root.add(inside);
@@ -945,7 +969,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       const points = state.nodes.filter(n => cornerNodes.has(n.id) === wanted && kept(n));
       if (points.length === 0) continue;
       const pointGeometry = new THREE.BufferGeometry();
-      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(n => [n.x, n.y, n.z]), 3));
+      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(points.flatMap(n => [n.x, n.y, n.z]), cut.axis, 2 * layer), 3));
       const dots = new THREE.Points(pointGeometry, new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false, depthTest: true }));
       dots.userData['sectionNodes'] = wanted ? 'corners' : 'midpoints';
       root.add(dots);
@@ -954,7 +978,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
 
   // the plane of the cut, drawn as a pale sheet with an outline, so it is plain where it passes through the body
   if (input.section) {
-    const plane = sectionPlane(state, input.section);
+    const plane = sectionPlane(state, { ...input.section, at: input.section.at + 3 * layer });
     plane.userData['sectionPlane'] = true;
     root.add(plane);
   }

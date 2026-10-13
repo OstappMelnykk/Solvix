@@ -734,7 +734,7 @@ describe('colouring by mesh quality', () => {
 
     const sheet = (plane.children[0] as THREE.Mesh).geometry.getAttribute('position');
     const xs = Array.from({ length: sheet.count }, (_, i) => sheet.getX(i));
-    expect(xs.every(x => Math.abs(x - 0.5) < 1e-6)).toBeTrue();                 // it lies at the cut
+    expect(xs.every(x => Math.abs(x - 0.5) < 0.02)).toBeTrue();                 // it lies at the cut (a hair off it, so that it does not fight the cap for the pixel)
     expect(view.pickables.includes(plane.children[0])).toBeFalse();
     const noCut = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1 });
     expect(noCut.root.children.some(c => c.userData['sectionPlane'])).toBeFalse();
@@ -773,7 +773,7 @@ describe('colouring by mesh quality', () => {
     const cap = view.root.children.find(c => c.userData['sectionCap']) as THREE.Mesh;
     expect(cap).toBeDefined();
     const capX = cap.geometry.getAttribute('position');
-    expect(Array.from({ length: capX.count }, (_, i) => capX.getX(i)).every(x => Math.abs(x - 0.5) < 1e-6)).toBeTrue();   // the cap lies in the plane
+    expect(Array.from({ length: capX.count }, (_, i) => capX.getX(i)).every(x => Math.abs(x - 0.5) < 0.02)).toBeTrue();   // the cap lies in the plane (a hair inside the body)
     // the middle element (x from 1/3 to 2/3) is cut at 0.5 and is the invalid one: its cap is red
     const colour = cap.geometry.getAttribute('color');
     expect(colour.getX(0)).toBeGreaterThan(colour.getY(0) * 2);
@@ -784,7 +784,7 @@ describe('colouring by mesh quality', () => {
     const kept = (p: THREE.Points) => Array.from({ length: p.geometry.getAttribute('position').count }, (_, i) => p.geometry.getAttribute('position').getX(i));
     expect(kept(corners).length).toBe(4);                              // the unit cube's 8 corners: the 4 with x = 1 are on the kept side
     expect(kept(midpoints).length).toBeGreaterThan(0);
-    expect([...kept(corners), ...kept(midpoints)].every(x => x >= 0.5 - 1e-9)).toBeTrue();
+    expect([...kept(corners), ...kept(midpoints)].every(x => x >= 0.5 - 0.02)).toBeTrue();
     // the body itself does not reach to the other side of the plane
     const body = (view.pickables as THREE.Mesh[])[0].geometry.getAttribute('position');
     expect(Math.min(...Array.from({ length: body.count }, (_, i) => body.getX(i)))).toBeGreaterThan(0.5 - 1e-4);
