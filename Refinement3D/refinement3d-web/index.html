@@ -75,7 +75,9 @@
     <label title="Яку частину шляху до середнього сусідів проходить вузол за прохід">Крок <input id="sRelax" type="number" min="0.05" max="1" step="0.05" value="0.5" /></label>
     <label title="0: звичайне усереднення; 100: ваги 1/L, густина вузлів не розмивається">Збереження густини, % <input id="sDens" type="number" min="0" max="100" step="10" value="50" /></label>
     <label title="Вузол на плоскій грані тіла ковзає в площині цієї грані, на ребрі тіла — вздовж ребра, у куті тіла стоїть. Форма тіла не змінюється. Без галочки всі вузли поверхні нерухомі.">Ковзати по поверхні <input id="sSlide" type="checkbox" checked /></label>
-    <div><button id="smooth" class="go">Згладити</button><button id="unsmooth">Скасувати згладжування</button></div>
+    <div><button id="smooth" class="go">Згладити</button><button id="sStop" hidden>Зупинити</button><button id="unsmooth">Скасувати згладжування</button></div>
+    <progress id="sProgress" value="0" max="1" hidden style="width:100%"></progress>
+    <div id="sProgressText" class="hint"></div>
     <div id="qText" class="hint"></div>
 
     <h2>Шаблони</h2>

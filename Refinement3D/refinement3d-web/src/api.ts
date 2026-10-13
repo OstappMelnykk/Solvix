@@ -70,3 +70,29 @@ export async function templateOf(kind: string, n: number): Promise<{ mesh: MeshD
   const data = await response.json();
   return response.ok ? data : { error: String(data.error ?? response.status) };
 }
+
+// The smoothing runs in the background of the API: start it, then ask how far it is; while it runs, the answer carries the positions as they are now.
+export interface ProgressDto {
+  running: boolean;
+  pass: number;
+  passes: number;
+  version: number;
+  error: string | null;
+  positions: number[] | null;
+  quality: QualityDto | null;
+  qualityBefore: QualityDto | null;
+}
+
+export async function startSmoothing(options: { iterations: number; relaxation: number; density: number; slide: boolean }): Promise<ProgressDto | { failed: string }> {
+  const response = await fetch('/api/smooth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options) });
+  const data = await response.json();
+  return response.ok ? (data as ProgressDto) : { failed: String(data.error ?? response.status) };
+}
+
+export async function smoothingProgress(since: number): Promise<ProgressDto> {
+  return (await fetch(`/api/smooth/progress?since=${since}`)).json();
+}
+
+export async function cancelSmoothing(): Promise<void> {
+  await fetch('/api/smooth/cancel', { method: 'POST' });
+}

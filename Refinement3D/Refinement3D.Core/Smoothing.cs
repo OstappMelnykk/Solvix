@@ -58,7 +58,9 @@ public static class Smoothing
         return mask;
     }
 
-    public static SmoothingResult Smooth(HexMesh mesh, SmoothingOptions options)
+    /// <param name="onPass">Called after every pass with the number of the pass and the positions as they are then (the array is the one being worked on: copy it to keep it).</param>
+    /// <param name="cancel">When it is set the smoothing stops after the pass it is in, and what has been done is returned.</param>
+    public static SmoothingResult Smooth(HexMesh mesh, SmoothingOptions options, Action<int, double[]>? onPass = null, CancellationToken cancel = default)
     {
         if (options.Iterations < 0 || options.Relaxation <= 0 || options.Relaxation > 1 || options.Density < 0 || options.Density > 1)
             throw new ArgumentOutOfRangeException(nameof(options), "iterations >= 0, 0 < relaxation <= 1, 0 <= density <= 1.");
@@ -115,7 +117,8 @@ public static class Smoothing
                 if (accepted) any = true;
                 else { pos[i * 3] = x0; pos[i * 3 + 1] = y0; pos[i * 3 + 2] = z0; }
             }
-            if (!any) break;
+            onPass?.Invoke(it + 1, pos);
+            if (!any || cancel.IsCancellationRequested) break;
         }
 
         int moved = 0;

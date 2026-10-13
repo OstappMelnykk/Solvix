@@ -121,6 +121,24 @@ public class SmoothingTests
     }
 
     [Test]
+    public void The_smoothing_reports_every_pass_and_can_be_stopped_with_what_is_done_kept()
+    {
+        var mesh = Refined(4);
+        var passes = new List<int>();
+        var snapshots = new List<double[]>();
+        var full = Smoothing.Smooth(mesh, new SmoothingOptions(Iterations: 30, Relaxation: 0.3, SlideOnSurface: true), (pass, pos) => { passes.Add(pass); snapshots.Add((double[])pos.Clone()); });
+        Assert.That(passes, Is.EqualTo(Enumerable.Range(1, passes.Count)), "the passes are reported one after another");
+        Assert.That(passes.Count, Is.InRange(1, 30));
+
+        using var stop = new CancellationTokenSource();
+        var seen = 0;
+        var partial = Smoothing.Smooth(mesh, new SmoothingOptions(Iterations: 30, Relaxation: 0.3, SlideOnSurface: true), (pass, _) => { seen = pass; if (pass == 3) stop.Cancel(); }, stop.Token);
+        Assert.That(seen, Is.EqualTo(Math.Min(3, passes.Count)), "it stops after the pass it was in when the stop came");
+        Assert.That(partial.Positions, Is.EqualTo(snapshots[Math.Min(3, passes.Count) - 1]), "what is returned is the state after that pass");
+        Assert.That(partial.After.Inverted, Is.Zero);
+    }
+
+    [Test]
     public void Bad_settings_are_refused()
     {
         var mesh = HexMesh.Grid(2, 2, 2);

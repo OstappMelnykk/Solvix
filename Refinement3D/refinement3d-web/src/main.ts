@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { MeshDto, StateDto, StepDto, getState, post, preview, templateOf } from './api';
+import { MeshDto, StateDto, StepDto, cancelSmoothing, getState, post, preview, smoothingProgress, startSmoothing, templateOf } from './api';
 import { setupDrawing } from './draw';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -398,9 +398,43 @@ function showQuality(): void {
   $<HTMLButtonElement>('unsmooth').disabled = !state.smoothed;
 }
 
+let smoothing = false;                                        // the smoothing runs in the API; the page shows its positions as they come
+
+// shows how far the smoothing is (the bar and the text) and the buttons that are allowed meanwhile
+function showProgress(pass: number, passes: number): void {
+  const bar = $<HTMLProgressElement>('sProgress');
+  bar.hidden = !smoothing;
+  bar.max = Math.max(passes, 1);
+  bar.value = pass;
+  $('sProgressText').textContent = smoothing ? `Прохід ${pass} з ${passes}` : '';
+  $<HTMLButtonElement>('smooth').disabled = smoothing;
+  $<HTMLButtonElement>('sStop').hidden = !smoothing;
+  for (const id of ['refine', 'refineNow', 'undo', 'redo', 'grid', 'unsmooth']) if (smoothing) $<HTMLButtonElement>(id).disabled = true;
+}
+
 $('smooth').onclick = async () => {
-  await send('/api/smooth', { iterations: value('sIter'), relaxation: value('sRelax'), density: value('sDens') / 100, slide: $<HTMLInputElement>('sSlide').checked });
+  const started = await startSmoothing({ iterations: value('sIter'), relaxation: value('sRelax'), density: value('sDens') / 100, slide: $<HTMLInputElement>('sSlide').checked });
+  if ('failed' in started) { $('problems').textContent = 'Помилка: ' + started.failed; return; }
+  smoothing = true;
+  let seen = -1;
+  showProgress(0, started.passes);
+  while (smoothing) {
+    await new Promise(r => setTimeout(r, 100));
+    const p = await smoothingProgress(seen);
+    seen = p.version;
+    if (p.error) $('problems').textContent = 'Помилка: ' + p.error;
+    if (p.positions && state) {                                // the newest positions: the mesh is drawn as it is now, the quality is the quality of that
+      state = { ...state, positions: p.positions, quality: p.quality ?? state.quality, qualityBefore: p.qualityBefore ?? state.qualityBefore, smoothed: { moved: 0 } };
+      build();
+    }
+    if (!p.running) smoothing = false;
+    showProgress(p.pass, p.passes);
+  }
+  state = await getState();                                    // the settled answer (with the right buttons)
+  showProgress(0, 0);
+  build();
 };
+$('sStop').onclick = () => void cancelSmoothing();
 $('unsmooth').onclick = () => void send('/api/unsmooth', {});
 
 // ---- the buttons ----------------------------------------------------------------------------------------------------

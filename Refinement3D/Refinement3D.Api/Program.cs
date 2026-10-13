@@ -14,7 +14,7 @@ app.MapGet("/api/state", () => session.State());
 app.MapPost("/api/grid", (GridRequest r) =>
 {
     try { session.Reset(HexMesh.Grid(r.Nx, r.Ny, r.Nz, r.Holes?.Select(h => (h[0], h[1], h[2])))); }
-    catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
+    catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message }); }
     return Results.Ok(session.State());
 });
 app.MapPost("/api/refine", (RefineRequest r) =>
@@ -52,13 +52,24 @@ app.MapGet("/api/template", (string kind, int n) =>
 });
 app.MapPost("/api/smooth", (SmoothRequest r) =>
 {
-    try { session.Smooth(new SmoothingOptions(r.Iterations, r.Relaxation, r.Density, r.Slide)); }
-    catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
-    return Results.Ok(session.State());
+    try { if (!session.StartSmoothing(new SmoothingOptions(r.Iterations, r.Relaxation, r.Density, r.Slide))) return Results.Conflict(new { error = "Smoothing is already running." }); }
+    catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
+    return Results.Ok(session.Progress(-1));
 });
-app.MapPost("/api/unsmooth", () => { session.Unsmooth(); return session.State(); });
-app.MapPost("/api/undo", () => { session.Undo(); return session.State(); });
-app.MapPost("/api/redo", () => { session.Redo(); return session.State(); });
+// what the smoothing has done so far (it runs in the background): the pass it is at, and, when there is something newer than version `since`, the positions and the quality
+app.MapGet("/api/smooth/progress", (int since) => session.Progress(since));
+app.MapPost("/api/smooth/cancel", () => { session.CancelSmoothing(); return session.Progress(-1); });
+app.MapPost("/api/unsmooth", () => Busy(() => session.Unsmooth()));
+app.MapPost("/api/undo", () => Busy(() => session.Undo()));
+app.MapPost("/api/redo", () => Busy(() => session.Redo()));
+
+// an action that changes the mesh is refused while the smoothing runs (the answer says so)
+IResult Busy(Action action)
+{
+    try { action(); }
+    catch (InvalidOperationException e) { return Results.Conflict(new { error = e.Message, state = session.State() }); }
+    return Results.Ok(session.State());
+}
 
 app.Run();
 
@@ -73,14 +84,93 @@ sealed class Session
     private RefineResult? _last;
     private SmoothingResult? _smoothed;                     // the positions after smoothing (the lattice stays as it was); dropped by anything that changes the mesh
 
-    public void Reset(HexMesh mesh) { _mesh = mesh; _undo.Clear(); _redo.Clear(); _last = null; _smoothed = null; }
+    public void Reset(HexMesh mesh) { EnsureNotSmoothing(); _mesh = mesh; _undo.Clear(); _redo.Clear(); _last = null; _smoothed = null; }
 
-    public void Smooth(SmoothingOptions options) => _smoothed = Smoothing.Smooth(_mesh, options);
+    // ---- smoothing in the background -------------------------------------------------------------------------------------
 
-    public void Unsmooth() => _smoothed = null;
+    private readonly object _lock = new();
+    private CancellationTokenSource? _cancel;
+    private bool _running;
+    private int _pass, _passes, _version;
+    private double[]? _snapshot;
+    private Quality? _snapshotQuality, _qualityBefore;
+    private string? _smoothError;
+
+    private void EnsureNotSmoothing() { lock (_lock) if (_running) throw new InvalidOperationException("Smoothing is running: wait for it or stop it."); }
+
+    public bool StartSmoothing(SmoothingOptions options)
+    {
+        lock (_lock)
+        {
+            if (_running) return false;
+            if (options.Iterations < 0 || options.Relaxation <= 0 || options.Relaxation > 1 || options.Density < 0 || options.Density > 1) throw new ArgumentException("iterations >= 0, 0 < relaxation <= 1, 0 <= density <= 1.");
+            _running = true;
+            _pass = 0;
+            _passes = options.Iterations;
+            _snapshot = null;
+            _snapshotQuality = null;
+            _smoothError = null;
+            _version++;
+            _cancel = new CancellationTokenSource();
+        }
+        var mesh = _mesh;
+        var token = _cancel.Token;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Task.Run(() =>
+        {
+            try
+            {
+                var before = Smoothing.QualityOf(mesh, Smoothing.Lattice(mesh));
+                lock (_lock) _qualityBefore = before;
+                var result = Smoothing.Smooth(mesh, options, (pass, pos) =>
+                {
+                    bool show = clock.ElapsedMilliseconds >= 80 || pass == options.Iterations;
+                    var copy = show ? (double[])pos.Clone() : null;
+                    var q = show ? Smoothing.QualityOf(mesh, pos) : null;
+                    lock (_lock)
+                    {
+                        _pass = pass;
+                        if (copy == null) return;
+                        _snapshot = copy;
+                        _snapshotQuality = q;
+                        _version++;
+                    }
+                    clock.Restart();
+                }, token);
+                lock (_lock) { _smoothed = result; _snapshot = result.Positions; _snapshotQuality = result.After; _version++; }
+            }
+            catch (Exception e) { lock (_lock) _smoothError = e.Message; }
+            finally { lock (_lock) { _running = false; _version++; } }
+        });
+        return true;
+    }
+
+    public void CancelSmoothing() { lock (_lock) _cancel?.Cancel(); }
+
+    public object Progress(int since)
+    {
+        lock (_lock)
+        {
+            bool news = _snapshot != null && _version > since;
+            return new
+            {
+                running = _running,
+                pass = _pass,
+                passes = _passes,
+                version = _version,
+                error = _smoothError,
+                positions = news ? _snapshot : null,
+                quality = news && _snapshotQuality != null ? QualityDto(_snapshotQuality) : null,
+                qualityBefore = _qualityBefore == null ? null : QualityDto(_qualityBefore)
+            };
+        }
+    }
+
+    public void Unsmooth() { EnsureNotSmoothing(); _smoothed = null; }
 
     public void Refine(int[] cells, int nI, int nJ, int nK, bool expandTransitions)
     {
+        EnsureNotSmoothing();
         var next = _mesh.Clone();
         var result = Refiner.Refine(next, cells, nI, nJ, nK, expandTransitions);
         _undo.Add(_mesh);
@@ -92,6 +182,7 @@ sealed class Session
 
     public void Undo()
     {
+        EnsureNotSmoothing();
         if (_undo.Count == 0) return;
         _redo.Add(_mesh);
         _mesh = _undo[^1];
@@ -102,6 +193,7 @@ sealed class Session
 
     public void Redo()
     {
+        EnsureNotSmoothing();
         if (_redo.Count == 0) return;
         _undo.Add(_mesh);
         _mesh = _redo[^1];
