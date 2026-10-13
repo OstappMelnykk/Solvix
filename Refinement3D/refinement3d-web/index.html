@@ -70,6 +70,14 @@
       <div><button id="stepApply" class="go" hidden>Застосувати результат</button><button id="stepClose">Закрити</button></div>
     </div>
 
+    <h2>Згладжування</h2>
+    <label title="Скільки разів пройти по всіх вузлах">Проходів <input id="sIter" type="number" min="1" max="500" value="40" /></label>
+    <label title="Яку частину шляху до середнього сусідів проходить вузол за прохід">Крок <input id="sRelax" type="number" min="0.05" max="1" step="0.05" value="0.5" /></label>
+    <label title="0: звичайне усереднення; 100: ваги 1/L, густина вузлів не розмивається">Збереження густини, % <input id="sDens" type="number" min="0" max="100" step="10" value="50" /></label>
+    <label title="Вузол на плоскій грані тіла ковзає в площині цієї грані, на ребрі тіла — вздовж ребра, у куті тіла стоїть. Форма тіла не змінюється. Без галочки всі вузли поверхні нерухомі.">Ковзати по поверхні <input id="sSlide" type="checkbox" checked /></label>
+    <div><button id="smooth" class="go">Згладити</button><button id="unsmooth">Скасувати згладжування</button></div>
+    <div id="qText" class="hint"></div>
+
     <h2>Шаблони</h2>
     <label>Шаблон
       <select id="tKind"><option value="T1">T1: позначений кут</option><option value="T2">T2: позначене ребро</option><option value="T4">T4: позначена грань</option></select>

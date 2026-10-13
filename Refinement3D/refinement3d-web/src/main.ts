@@ -61,6 +61,9 @@ let triangleCell: number[] = [];                              // the cell each d
 let faceMesh: THREE.Mesh | null = null;
 
 const world = (p: [number, number, number]): THREE.Vector3 => new THREE.Vector3(p[0] / view!.scale, p[1] / view!.scale, p[2] / view!.scale);
+// where a node is drawn: at its smoothed position when the mesh has been smoothed, else at its lattice point
+const nodeWorld = (mesh: MeshDto, id: number): THREE.Vector3 =>
+  mesh.positions ? new THREE.Vector3(mesh.positions[id * 3], mesh.positions[id * 3 + 1], mesh.positions[id * 3 + 2]) : world(mesh.nodes[id]);
 
 // What to draw: the mesh, the marked nodes, the cells in M, the cells the last refinement made (by template), the cells not cut in full.
 interface Scene3D {
@@ -165,11 +168,11 @@ function build(): void {
   // the cells moved apart from the middle of the mesh (and a little smaller), so that the inside can be seen; every face is then drawn
   const explode = value('explode') / 100;
   const box = new THREE.Box3();
-  for (const p of mesh.nodes) box.expandByPoint(world(p));
+  for (let i = 0; i < mesh.nodes.length; i++) box.expandByPoint(nodeWorld(mesh, i));
   const middle = box.getCenter(new THREE.Vector3());
   const corners = new Map<number, THREE.Vector3[]>();
   for (const cell of cells) {
-    const p = cell.nodes.map(n => world(mesh.nodes[n]));
+    const p = cell.nodes.map(n => nodeWorld(mesh, n));
     if (explode > 0) {
       const centre = p.reduce((sum, q) => sum.add(q), new THREE.Vector3()).multiplyScalar(1 / 8);
       const shift = new THREE.Vector3().subVectors(centre, middle).multiplyScalar(explode * 0.8);
@@ -241,6 +244,7 @@ function build(): void {
     shown.add(new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation: false, depthTest: false })));
   }
 
+  showQuality();
   $<HTMLButtonElement>('undo').disabled = !!steps || !!template || !state?.canUndo;
   $<HTMLButtonElement>('redo').disabled = !!steps || !!template || !state?.canRedo;
   $<HTMLButtonElement>('refine').disabled = !!steps || !!template || selected.size === 0;
@@ -377,6 +381,27 @@ $('tShow').onclick = () => void showTemplate();
 $('tClose').onclick = closeTemplate;
 $('tKind').onchange = () => { if (template) void showTemplate(); };
 $('tN').oninput = () => { if (template) void showTemplate(); };
+
+// ---- smoothing --------------------------------------------------------------------------------------------------------
+
+function showQuality(): void {
+  const text = $('qText');
+  if (!state) { text.textContent = ''; return; }
+  const q = state.quality, b = state.qualityBefore;
+  const line = (label: string, v: number, before?: number): string => `${label}: <b>${v.toFixed(3)}</b>${before === undefined ? '' : ` <span class="hint">(було ${before.toFixed(3)})</span>`}`;
+  text.innerHTML = [
+    line('Найгірша клітинка (скал. якобіан)', q.minScaled, b?.minScaled),
+    line('Середня (скал. якобіан)', q.meanScaled, b?.meanScaled),
+    `Погані (< 0,3): <b>${q.poor}</b>${b ? ` <span class="hint">(було ${b.poor})</span>` : ''} з ${q.cells}`,
+    q.inverted ? `<span style="color:#ff8b7a">Вивернутих: ${q.inverted}</span>` : ''
+  ].filter(Boolean).join('<br>');
+  $<HTMLButtonElement>('unsmooth').disabled = !state.smoothed;
+}
+
+$('smooth').onclick = async () => {
+  await send('/api/smooth', { iterations: value('sIter'), relaxation: value('sRelax'), density: value('sDens') / 100, slide: $<HTMLInputElement>('sSlide').checked });
+};
+$('unsmooth').onclick = () => void send('/api/unsmooth', {});
 
 // ---- the buttons ----------------------------------------------------------------------------------------------------
 

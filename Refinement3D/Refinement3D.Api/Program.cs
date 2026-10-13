@@ -50,12 +50,20 @@ app.MapGet("/api/template", (string kind, int n) =>
     foreach (var c in children) mesh.AddToRoot(mesh.AddCell(0, c));
     return Results.Ok(new { mesh = Session.MeshOf(mesh), marked, children = children.Count });
 });
+app.MapPost("/api/smooth", (SmoothRequest r) =>
+{
+    try { session.Smooth(new SmoothingOptions(r.Iterations, r.Relaxation, r.Density, r.Slide)); }
+    catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
+    return Results.Ok(session.State());
+});
+app.MapPost("/api/unsmooth", () => { session.Unsmooth(); return session.State(); });
 app.MapPost("/api/undo", () => { session.Undo(); return session.State(); });
 app.MapPost("/api/redo", () => { session.Redo(); return session.State(); });
 
 app.Run();
 
 record GridRequest(int Nx, int Ny, int Nz, int[][]? Holes);
+record SmoothRequest(int Iterations = 20, double Relaxation = 0.5, double Density = 0.5, bool Slide = true);
 record RefineRequest(int[] Cells, int NI, int NJ, int NK, bool ExpandTransitions = false);
 
 sealed class Session
@@ -63,8 +71,13 @@ sealed class Session
     private HexMesh _mesh = HexMesh.Grid(4, 4, 4);
     private readonly List<HexMesh> _undo = new(), _redo = new();
     private RefineResult? _last;
+    private SmoothingResult? _smoothed;                     // the positions after smoothing (the lattice stays as it was); dropped by anything that changes the mesh
 
-    public void Reset(HexMesh mesh) { _mesh = mesh; _undo.Clear(); _redo.Clear(); _last = null; }
+    public void Reset(HexMesh mesh) { _mesh = mesh; _undo.Clear(); _redo.Clear(); _last = null; _smoothed = null; }
+
+    public void Smooth(SmoothingOptions options) => _smoothed = Smoothing.Smooth(_mesh, options);
+
+    public void Unsmooth() => _smoothed = null;
 
     public void Refine(int[] cells, int nI, int nJ, int nK, bool expandTransitions)
     {
@@ -74,6 +87,7 @@ sealed class Session
         _redo.Clear();
         _mesh = next;
         _last = result;
+        _smoothed = null;
     }
 
     public void Undo()
@@ -83,6 +97,7 @@ sealed class Session
         _mesh = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
         _last = null;
+        _smoothed = null;
     }
 
     public void Redo()
@@ -92,6 +107,7 @@ sealed class Session
         _mesh = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         _last = null;
+        _smoothed = null;
     }
 
     // the refinement of the current mesh, stage by stage, without changing it: what the page's wizard steps through
@@ -118,6 +134,8 @@ sealed class Session
         problems = Conformity.Check(mesh)
     };
 
+    private static object QualityDto(Quality q) => new { min = q.Min, mean = q.Mean, poor = q.Poor, inverted = q.Inverted, cells = q.Cells, minScaled = q.MinScaled, meanScaled = q.MeanScaled };
+
     public object State() => new
     {
         scale = _mesh.Scale,
@@ -125,6 +143,10 @@ sealed class Session
         cells = _mesh.Cells.Values.OrderBy(c => c.Id).Select(c => new { id = c.Id, nodes = c.Nodes, root = c.Root }),
         roots = _mesh.Roots.Select(r => new { id = r.Id, i = r.I, j = r.J, k = r.K }),
         problems = Conformity.Check(_mesh),
+        positions = _smoothed?.Positions,
+        quality = QualityDto(_smoothed?.After ?? Smoothing.QualityOf(_mesh, Smoothing.Lattice(_mesh))),
+        qualityBefore = _smoothed is null ? null : QualityDto(_smoothed.Before),
+        smoothed = _smoothed is null ? null : new { moved = _smoothed.Moved },
         canUndo = _undo.Count > 0,
         canRedo = _redo.Count > 0,
         passes = _last?.Passes.Select(p => new

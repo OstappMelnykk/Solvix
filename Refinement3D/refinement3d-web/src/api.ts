@@ -6,13 +6,19 @@ export interface PassDto { axis: number; n: number; marked: number[]; unreached:
 
 export interface MeshDto {
   scale: number;
+  positions?: number[] | null;                           // x, y, z of every node in units of the coarse grid, when the mesh has been smoothed
   nodes: [number, number, number][];
   cells: CellDto[];
   roots: RootDto[];
   problems: string[];
 }
 
+export interface QualityDto { min: number; mean: number; poor: number; inverted: number; cells: number; minScaled: number; meanScaled: number }
+
 export interface StateDto extends MeshDto {
+  quality: QualityDto;
+  qualityBefore: QualityDto | null;
+  smoothed: { moved: number } | null;
   canUndo: boolean;
   canRedo: boolean;
   passes: PassDto[] | null;
