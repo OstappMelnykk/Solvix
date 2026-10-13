@@ -253,6 +253,48 @@ i {
 .gauge {
   margin-bottom: 7px;
 
+  // the same ruler in a smaller size: for the measures of one picked element
+  &--compact {
+    margin-bottom: 4px;
+    font-size: 12px;
+
+    .gauge__value {
+      font-size: 13px;
+    }
+
+    .gauge__name small {
+      font-size: 10px;
+    }
+
+    .gauge__info {
+      width: 14px;
+      height: 14px;
+      margin-left: 4px;
+      font-size: 9px;
+    }
+
+    .gauge__track {
+      height: 6px;
+      margin-top: 5px;
+    }
+
+    .gauge__marker {
+      width: 11px;
+      height: 11px;
+      margin: -5.5px 0 0 -5.5px;
+      border-width: 2px;
+    }
+
+    .gauge__at {
+      display: none;
+    }
+
+    .gauge__ticks {
+      height: 12px;
+      font-size: 9px;
+    }
+  }
+
   &__head {
     display: flex;
     justify-content: space-between;

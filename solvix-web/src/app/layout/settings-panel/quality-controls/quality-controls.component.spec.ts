@@ -214,8 +214,11 @@ describe('QualityControlsComponent', () => {
     expect(text(root.querySelector('.picked__head'))).toContain('Куб 0');
     expect(text(root.querySelector('.detail__head'))).toContain('Solvix');
     expect(text(root.querySelector('.detail__head'))).toContain('Не приймається');
-    expect(root.querySelector('.measure--bad')).not.toBeNull();
-    expect(text(root.querySelector('.measure'))).toContain('Допустимо: не більше 20');
+    expect(root.querySelectorAll('.gauge--compact').length).toBe(1);
+    const compact = root.querySelector('.gauge--compact')!;
+    expect(text(compact)).toContain('Витягнутість');
+    expect(compact.querySelector('.gauge__marker')).not.toBeNull();         // a ruler with a marker, the small one
+    expect(text(compact.querySelector('.gauge__ticks'))).toContain('20');   // and the limit on it
   });
 
   it('clears the pick with the same element picked again', () => {
