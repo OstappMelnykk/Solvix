@@ -7,9 +7,9 @@
   </div>
   <div class="reach__warn" *ngIf="r.bad > 0 && r.badReachable === 0 && !surface">Усі погані елементи в кубах без вільних вершин: без поверхні згладжування їх не змінить. Увімкніть «Згладжувати й поверхню» і піднімайте кут гребеня.</div>
 </div>
-<label class="row" title="Скільки разів пройти по всіх вільних вершинах. Більше — гладкіше, але довше.">
+<label class="row" title="Найбільше проходів по всіх вільних вершинах. Сітка зупиняється сама, коли перестає змінюватись, тож 100 — це стеля, а не обов'язок.">
   <span>Проходів</span>
-  <input type="number" min="1" max="200" step="1" [value]="iterations" (change)="onNumber('iterations', $event)" />
+  <input type="number" min="1" max="500" step="1" [value]="iterations" (change)="onNumber('iterations', $event)" />
 </label>
 <label class="row" title="На яку частину шляху до середнього положення сусідів зсувається вершина за один прохід (0.05–1). Менше — обережніше й повільніше, 1 — найрізкіше.">
   <span>Крок (0.05–1)</span>

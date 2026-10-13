@@ -26,7 +26,7 @@ describe('SmoothingControlsComponent', () => {
 
   it('smooths with the settings the user chose, each kept within its range', () => {
     component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true }, jasmine.any(Function));
+    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 100, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true }, jasmine.any(Function));
 
     type('iterations', '25.4');
     type('relaxation', '0.2');
@@ -42,7 +42,7 @@ describe('SmoothingControlsComponent', () => {
     type('relaxation', '0');
     type('density', '500');
     type('angle', '0');
-    expect([component.iterations, component.relaxation, component.densityPercent, component.featureAngle]).toEqual([200, 0.05, 100, 1]);
+    expect([component.iterations, component.relaxation, component.densityPercent, component.featureAngle]).toEqual([500, 0.05, 100, 1]);
   });
 
   it('says how much of the mesh smoothing can reach: here nothing, a single cube has no free vertex', () => {

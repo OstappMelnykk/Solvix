@@ -30,7 +30,8 @@ export class SmoothingControlsComponent {
     return this.reachOf.value;
   }
 
-  iterations = 10;
+  // 100 is a ceiling, not a duty: the run stops by itself when the mesh has settled (see docs/research/mesh-smoothing)
+  iterations = 100;
   relaxation = 0.5;
   densityPercent = 100;
   featureAngle = 25;
@@ -53,7 +54,7 @@ export class SmoothingControlsComponent {
   onNumber(field: 'iterations' | 'relaxation' | 'density' | 'angle', event: Event): void {
     const input = event.target as HTMLInputElement;
     const raw = Number(input.value);
-    const limits = { iterations: [1, 200, 10], relaxation: [0.05, 1, 0.5], density: [0, 100, 100], angle: [1, 90, 25] }[field];
+    const limits = { iterations: [1, 500, 100], relaxation: [0.05, 1, 0.5], density: [0, 100, 100], angle: [1, 90, 25] }[field];
     let value = Number.isFinite(raw) ? Math.min(limits[1], Math.max(limits[0], raw)) : limits[2];
     if (field === 'iterations') value = Math.round(value);
     if (field === 'iterations') this.iterations = value;

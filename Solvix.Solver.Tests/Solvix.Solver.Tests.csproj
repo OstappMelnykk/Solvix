@@ -22,6 +22,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Fixtures\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Solvix.Solver\Solvix.Solver.csproj" />
     <ProjectReference Include="..\Solvix.Mesh\Solvix.Mesh.csproj" />
   </ItemGroup>
