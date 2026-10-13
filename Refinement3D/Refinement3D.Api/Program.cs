@@ -9,6 +9,7 @@ var app = builder.Build();
 
 var session = new Session();
 
+app.MapGet("/", () => Results.Text("Refinement3D.Api: this is the API (/api/...). The page is the Vite project refinement3d-web: http://localhost:5174"));
 app.MapGet("/api/state", () => session.State());
 app.MapPost("/api/grid", (GridRequest r) =>
 {
