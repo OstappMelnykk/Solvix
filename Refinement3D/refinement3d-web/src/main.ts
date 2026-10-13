@@ -325,7 +325,7 @@ function closeWizard(): void {
 }
 
 $('refine').onclick = async () => {
-  const answer = await preview([...selected], value('ni'), value('nj'), value('nk'), $<HTMLInputElement>('book').checked);
+  const answer = await preview([...selected], value('ni'), value('nj'), value('nk'), value('depth'));
   if ('error' in answer) { $('problems').textContent = 'Помилка: ' + answer.error; return; }
   steps = answer.steps;
   stepIndex = 0;
@@ -338,7 +338,7 @@ $('stepApply').onclick = async () => {
   const cells = [...selected];
   selected.clear();
   closeWizard();
-  await send('/api/refine', { cells, nI: value('ni'), nJ: value('nj'), nK: value('nk'), expandTransitions: $<HTMLInputElement>('book').checked });
+  await send('/api/refine', { cells, nI: value('ni'), nJ: value('nj'), nK: value('nk'), transitionDepth: value('depth') });
 };
 window.addEventListener('keydown', e => {
   if (!steps || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
@@ -453,7 +453,7 @@ $('grid').onclick = async () => {
   const ok = await send('/api/grid', { nx: value('nx'), ny: value('ny'), nz: value('nz'), holes }, true);
   if (ok) { $<HTMLSelectElement>('cutAxis').value = '-1'; build(); }
 };
-$('refineNow').onclick = async () => { const cells = [...selected]; selected.clear(); await send('/api/refine', { cells, nI: value('ni'), nJ: value('nj'), nK: value('nk'), expandTransitions: $<HTMLInputElement>('book').checked }); };
+$('refineNow').onclick = async () => { const cells = [...selected]; selected.clear(); await send('/api/refine', { cells, nI: value('ni'), nJ: value('nj'), nK: value('nk'), transitionDepth: value('depth') }); };
 $('clear').onclick = () => { selected.clear(); build(); };
 $('undo').onclick = () => { selected.clear(); void send('/api/undo', {}); };
 $('redo').onclick = () => { selected.clear(); void send('/api/redo', {}); };

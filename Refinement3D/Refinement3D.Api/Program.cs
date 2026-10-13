@@ -19,13 +19,13 @@ app.MapPost("/api/grid", (GridRequest r) =>
 });
 app.MapPost("/api/refine", (RefineRequest r) =>
 {
-    try { session.Refine(r.Cells, r.NI, r.NJ, r.NK, r.ExpandTransitions); }
+    try { session.Refine(r.Cells, r.NI, r.NJ, r.NK, r.TransitionDepth); }
     catch (Exception e) when (e is ArgumentException or InvalidOperationException or ArithmeticException) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
     return Results.Ok(session.State());
 });
 app.MapPost("/api/preview", (RefineRequest r) =>
 {
-    try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ, r.NK, r.ExpandTransitions) }); }
+    try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ, r.NK, r.TransitionDepth) }); }
     catch (Exception e) when (e is ArgumentException or InvalidOperationException or ArithmeticException) { return Results.BadRequest(new { error = e.Message }); }
 });
 // one cube divided by one template, for looking at what the template does inside: kind T1 (a corner marked), T2 (an edge), T4 (a face)
@@ -75,7 +75,7 @@ app.Run();
 
 record GridRequest(int Nx, int Ny, int Nz, int[][]? Holes);
 record SmoothRequest(int Iterations = 20, double Relaxation = 0.5, double Density = 0.5, bool Slide = true);
-record RefineRequest(int[] Cells, int NI, int NJ, int NK, bool ExpandTransitions = false);
+record RefineRequest(int[] Cells, int NI, int NJ, int NK, int TransitionDepth = 0);
 
 sealed class Session
 {
@@ -168,11 +168,11 @@ sealed class Session
 
     public void Unsmooth() { EnsureNotSmoothing(); _smoothed = null; }
 
-    public void Refine(int[] cells, int nI, int nJ, int nK, bool expandTransitions)
+    public void Refine(int[] cells, int nI, int nJ, int nK, int transitionDepth)
     {
         EnsureNotSmoothing();
         var next = _mesh.Clone();
-        var result = Refiner.Refine(next, cells, nI, nJ, nK, expandTransitions);
+        var result = Refiner.Refine(next, cells, nI, nJ, nK, transitionDepth);
         _undo.Add(_mesh);
         _redo.Clear();
         _mesh = next;
@@ -203,8 +203,8 @@ sealed class Session
     }
 
     // the refinement of the current mesh, stage by stage, without changing it: what the page's wizard steps through
-    public object[] Preview(int[] cells, int nI, int nJ, int nK, bool expandTransitions) =>
-        Refiner.Preview(_mesh, cells, nI, nJ, nK, expandTransitions).Select(step => (object)new
+    public object[] Preview(int[] cells, int nI, int nJ, int nK, int transitionDepth) =>
+        Refiner.Preview(_mesh, cells, nI, nJ, nK, transitionDepth).Select(step => (object)new
         {
             kind = step.Kind,
             axis = step.Axis,

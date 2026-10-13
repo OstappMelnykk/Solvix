@@ -37,8 +37,9 @@ public sealed record RefineStep(
 /// <summary>
 /// Local three-dimensional refinement with transition templates. For each axis in turn (I, J, K): mark the nodes on the seams between even-odd
 /// pairs of coarse layers that hold a cell of M, complete the marks to patterns that have a template, split every cell with marked nodes by its
-/// template, and add the cells just split to M (all of them, as the book does, or only those that come from the cells the user chose: then the
-/// transition layers are not refined again in the next passes and the refinement spreads less). A cell of M ends up cut into nI x nJ x nK; the cells round it get templates so that no node of a
+/// template, and add the cells just split to M. The book adds all of them after every pass, so the transition layers are refined again in the next
+/// passes and the refinement spreads over several layers; here that is the depth of the transition zone: 2 is the book (after the passes I and J), 0 adds
+/// only what comes from the cells the user chose (the refinement stays in the cells round them), 1 does it after the pass I only. A cell of M ends up cut into nI x nJ x nK; the cells round it get templates so that no node of a
 /// finer cell hangs on the face of a coarser one.
 /// </summary>
 public static class Refiner
@@ -55,23 +56,25 @@ public static class Refiner
             throw new InvalidOperationException($"The lattice is too fine for another refinement ({nI}x{nJ}x{nK} would make it {after} units across a cell of the coarse grid's size {mesh.Scale}); undo some refinements or use a smaller n.");
     }
 
-    public static RefineResult Refine(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, bool expandTransitions = false)
+    public static RefineResult Refine(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
     {
         if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        if (transitionDepth < 0 || transitionDepth > 2) throw new ArgumentOutOfRangeException(nameof(transitionDepth), "the depth of the transition zone is 0, 1 or 2.");
         EnsureFine(mesh, nI, nJ, nK);
         var marked = markedCells.ToHashSet();
         foreach (int id in marked) if (!mesh.Cells.ContainsKey(id)) throw new ArgumentException($"Unknown cell {id}.");
         var required = marked.ToHashSet();                            // the cells the user chose, and what they become: these must be cut in full
         var passes = new List<PassTrace>();
         var ns = new[] { nI, nJ, nK };
-        for (int axis = 0; axis < 3; axis++) passes.Add(Pass(mesh, marked, required, axis, ns[axis], null, expandTransitions));
+        for (int axis = 0; axis < 3; axis++) passes.Add(Pass(mesh, marked, required, axis, ns[axis], null, axis < transitionDepth));
         return new RefineResult(passes);
     }
 
     /// <summary>The refinement of a copy of the mesh, recorded stage by stage; the mesh itself is not changed. The last stage is the result.</summary>
-    public static List<RefineStep> Preview(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, bool expandTransitions = false)
+    public static List<RefineStep> Preview(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
     {
         if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        if (transitionDepth < 0 || transitionDepth > 2) throw new ArgumentOutOfRangeException(nameof(transitionDepth), "the depth of the transition zone is 0, 1 or 2.");
         EnsureFine(mesh, nI, nJ, nK);
         var copy = mesh.Clone();
         var marked = markedCells.ToHashSet();
@@ -80,7 +83,7 @@ public static class Refiner
         var none = Array.Empty<(int, string, int, IReadOnlyList<int>)>();
         var steps = new List<RefineStep> { new("start", -1, 0, copy.Clone(), Array.Empty<int>(), marked.OrderBy(x => x).ToList(), none, Array.Empty<int>()) };
         var ns = new[] { nI, nJ, nK };
-        for (int axis = 0; axis < 3; axis++) Pass(copy, marked, required, axis, ns[axis], steps, expandTransitions);
+        for (int axis = 0; axis < 3; axis++) Pass(copy, marked, required, axis, ns[axis], steps, axis < transitionDepth);
         steps.Add(new RefineStep("final", -1, 0, copy.Clone(), Array.Empty<int>(), Array.Empty<int>(), none, Array.Empty<int>()));
         return steps;
     }

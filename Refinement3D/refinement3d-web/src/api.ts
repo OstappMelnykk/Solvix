@@ -58,8 +58,8 @@ export interface StepDto {
   seam: SeamDto | null;
 }
 
-export async function preview(cells: number[], nI: number, nJ: number, nK: number, expandTransitions: boolean): Promise<{ steps: StepDto[] } | { error: string }> {
-  const response = await fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cells, nI, nJ, nK, expandTransitions }) });
+export async function preview(cells: number[], nI: number, nJ: number, nK: number, transitionDepth: number): Promise<{ steps: StepDto[] } | { error: string }> {
+  const response = await fetch('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cells, nI, nJ, nK, transitionDepth }) });
   const data = await response.json();
   return response.ok ? (data as { steps: StepDto[] }) : { error: String(data.error ?? response.status) };
 }

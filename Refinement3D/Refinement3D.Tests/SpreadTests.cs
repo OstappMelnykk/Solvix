@@ -36,7 +36,7 @@ public class SpreadTests
     public void The_book_variant_spreads_further_and_is_still_conforming()
     {
         var mesh = HexMesh.Grid(7, 7, 7);
-        var result = Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, expandTransitions: true);
+        var result = Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, transitionDepth: 2);
         Assert.That(Conformity.Check(mesh), Is.Empty);
         Assert.That(Refined(mesh).Count, Is.GreaterThan(8));
         Assert.That(result.Passes.SelectMany(p => p.Unreached), Is.Empty);
@@ -45,9 +45,9 @@ public class SpreadTests
     [Test]
     public void Both_variants_conform_and_cut_every_chosen_root_exactly_on_random_grids()
     {
-        foreach (bool all in new[] { false, true })
+        foreach (int depth in new[] { 0, 1, 2 })
         {
-            var random = new Random(all ? 101 : 100);
+            var random = new Random(100 + depth);
             for (int trial = 0; trial < 60; trial++)
             {
                 int nx = random.Next(1, 5), ny = random.Next(1, 5), nz = random.Next(1, 5);
@@ -59,12 +59,12 @@ public class SpreadTests
                 if (chosen.Count == 0) continue;
                 int nI = random.Next(2, 5), nJ = random.Next(2, 5), nK = random.Next(2, 5);
 
-                var result = Refiner.Refine(mesh, chosen.SelectMany(id => mesh.Roots[id].Leaves).ToList(), nI, nJ, nK, all);
+                var result = Refiner.Refine(mesh, chosen.SelectMany(id => mesh.Roots[id].Leaves).ToList(), nI, nJ, nK, depth);
 
                 var problems = Conformity.Check(mesh);
-                Assert.That(problems, Is.Empty, $"all={all}, trial {trial}\n" + string.Join("\n", problems.Take(5)));
-                Assert.That(result.Passes.SelectMany(p => p.Unreached), Is.Empty, $"all={all}, trial {trial}");
-                foreach (int id in chosen) Assert.That(mesh.Roots[id].Leaves, Has.Count.EqualTo(nI * nJ * nK), $"all={all}, trial {trial}, root {id}");
+                Assert.That(problems, Is.Empty, $"depth={depth}, trial {trial}\n" + string.Join("\n", problems.Take(5)));
+                Assert.That(result.Passes.SelectMany(p => p.Unreached), Is.Empty, $"depth={depth}, trial {trial}");
+                foreach (int id in chosen) Assert.That(mesh.Roots[id].Leaves, Has.Count.EqualTo(nI * nJ * nK), $"depth={depth}, trial {trial}, root {id}");
             }
         }
     }
@@ -72,20 +72,20 @@ public class SpreadTests
     [Test]
     public void Both_variants_conform_when_leaves_of_an_earlier_refinement_are_refined_again()
     {
-        foreach (bool all in new[] { false, true })
+        foreach (int depth in new[] { 0, 1, 2 })
         {
-            var random = new Random(all ? 201 : 200);
+            var random = new Random(200 + depth);
             for (int trial = 0; trial < 40; trial++)
             {
                 var mesh = HexMesh.Grid(3, 3, 3);
-                Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.3).SelectMany(r => r.Leaves).ToList(), 2, 2, 2, all);
+                Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.3).SelectMany(r => r.Leaves).ToList(), 2, 2, 2, depth);
                 var leaves = mesh.Cells.Keys.Where(_ => random.NextDouble() < 0.03).ToList();
                 if (leaves.Count == 0) continue;
 
-                Refiner.Refine(mesh, leaves, random.Next(2, 4), random.Next(2, 4), random.Next(2, 4), all);
+                Refiner.Refine(mesh, leaves, random.Next(2, 4), random.Next(2, 4), random.Next(2, 4), depth);
 
                 var problems = Conformity.Check(mesh);
-                Assert.That(problems, Is.Empty, $"all={all}, trial {trial}\n" + string.Join("\n", problems.Take(5)));
+                Assert.That(problems, Is.Empty, $"depth={depth}, trial {trial}\n" + string.Join("\n", problems.Take(5)));
             }
         }
     }
@@ -128,5 +128,37 @@ public class DepthTests
             catch (InvalidOperationException) { break; }
             Assert.That(mesh.Nodes.Max(p => Math.Max(p.X, Math.Max(p.Y, p.Z))), Is.LessThanOrEqualTo(1L << 40));
         }
+    }
+}
+
+public class TransitionDepthTests
+{
+    private static int Touched(int depth, (int, int, int) at)
+    {
+        var mesh = HexMesh.Grid(9, 9, 9);
+        Refiner.Refine(mesh, mesh.Roots.Single(r => (r.I, r.J, r.K) == at).Leaves.ToList(), 2, 2, 2, depth);
+        Assert.That(Conformity.Check(mesh), Is.Empty, $"depth {depth}");
+        return mesh.Roots.Count(r => r.Leaves.Count > 1);
+    }
+
+    [Test]
+    public void A_deeper_transition_zone_touches_more_coarse_cells_one_step_at_a_time()
+    {
+        foreach (var at in new[] { (0, 0, 0), (4, 4, 4), (3, 5, 4) })
+        {
+            int d0 = Touched(0, at), d1 = Touched(1, at), d2 = Touched(2, at);
+            TestContext.Out.WriteLine($"DEPTH {at}: depth 0 touches {d0} coarse cells, depth 1 {d1}, depth 2 {d2}");
+            Assert.That(d0, Is.LessThan(d1), $"{at}");
+            Assert.That(d1, Is.LessThan(d2), $"{at}");
+        }
+    }
+
+    [Test]
+    public void A_depth_outside_0_to_2_is_refused_and_the_mesh_is_untouched()
+    {
+        var mesh = HexMesh.Grid(2, 2, 2);
+        Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, 3));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, -1));
+        Assert.That(mesh.Cells, Has.Count.EqualTo(8));
     }
 }
