@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { setupDrawing } from './draw';
 import { MeshDto, StateDto, StepDto, getState, post, preview } from './api';
 
 // A page to look at the 2D refinement: an orthographic camera you can pan and zoom, the cells filled and outlined, the cells you pick
@@ -264,3 +265,5 @@ getState().then(s => {
   build();
   loop();
 });
+
+setupDrawing();
