@@ -11,6 +11,27 @@ public sealed record PassTrace(
 public sealed record RefineResult(IReadOnlyList<PassTrace> Passes);
 
 /// <summary>
+/// One attempt to give a cell of M a seam of its own: the face tried (its side on the axis), its nodes, the nodes the completion had to add, whether the
+/// cell is now cut across the axis, which other cells of M that were fine it would spoil, and whether the attempt was kept.
+/// </summary>
+public sealed record SeamTry(int Cell, int Side, IReadOnlyList<int> FaceNodes, IReadOnlyList<int> Added, bool CutAcross, IReadOnlyList<int> Spoiled, bool Accepted);
+
+/// <summary>
+/// One stage of a refinement, for showing it step by step: the mesh as it was then, the nodes marked, the cells in M, and what the templates did.
+/// Kinds: "start" (the cells chosen), "layers" (the seams of the coarse layers are marked and completed; the unreached cells are those they did not
+/// reach), "seam" (one attempt at a seam of a cell's own; the mesh is that of the last "layers" stage), "marks" (all marks of the pass are final),
+/// "templates" (applied), "expand" (what was just refined has joined M), "final".
+/// </summary>
+public sealed record RefineStep(
+    string Kind, int Axis, int N,
+    HexMesh? Mesh,
+    IReadOnlyList<int> Marked,
+    IReadOnlyList<int> M,
+    IReadOnlyList<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Applied,
+    IReadOnlyList<int> Unreached,
+    SeamTry? Try = null);
+
+/// <summary>
 /// Local three-dimensional refinement with transition templates. For each axis in turn (I, J, K): mark the nodes on the seams between even-odd
 /// pairs of coarse layers that hold a cell of M, complete the marks to patterns that have a template, split every cell with marked nodes by its
 /// template, and add the cells just split to M. A cell of M ends up cut into nI x nJ x nK; the cells round it get templates so that no node of a
@@ -30,23 +51,50 @@ public static class Refiner
         return new RefineResult(passes);
     }
 
+    /// <summary>The refinement of a copy of the mesh, recorded stage by stage; the mesh itself is not changed. The last stage is the result.</summary>
+    public static List<RefineStep> Preview(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK)
+    {
+        if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        var copy = mesh.Clone();
+        var marked = markedCells.ToHashSet();
+        foreach (int id in marked) if (!copy.Cells.ContainsKey(id)) throw new ArgumentException($"Unknown cell {id}.");
+        var required = marked.ToHashSet();
+        var none = Array.Empty<(int, string, int, IReadOnlyList<int>)>();
+        var steps = new List<RefineStep> { new("start", -1, 0, copy.Clone(), Array.Empty<int>(), marked.OrderBy(x => x).ToList(), none, Array.Empty<int>()) };
+        var ns = new[] { nI, nJ, nK };
+        for (int axis = 0; axis < 3; axis++) Pass(copy, marked, required, axis, ns[axis], steps);
+        steps.Add(new RefineStep("final", -1, 0, copy.Clone(), Array.Empty<int>(), Array.Empty<int>(), none, Array.Empty<int>()));
+        return steps;
+    }
+
     /// <summary>One pass along an axis: rescale by n, mark, complete, give the cells of M a seam of their own where the layers gave none, apply the templates, expand M.</summary>
-    public static PassTrace Pass(HexMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n)
+    public static PassTrace Pass(HexMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n, List<RefineStep>? steps = null)
     {
         mesh.Rescale(n);
         var cellsOf = CellsByNode(mesh);
         var nodes = MarkNodes(mesh, marked, axis);
         Complete(mesh, nodes, cellsOf);
-        ExtendForMarkedCells(mesh, required, axis, nodes, cellsOf);
+        var none = Array.Empty<(int, string, int, IReadOnlyList<int>)>();
+        Action<SeamTry>? log = null;
+        if (steps != null)
+        {
+            var reached = required.Where(id => !IsCutAcross(mesh.Cells[id], nodes, axis)).OrderBy(x => x).ToList();
+            steps.Add(new RefineStep("layers", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), none, reached));
+            log = t => steps.Add(new RefineStep("seam", axis, n, null, nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), none, reached, t));
+        }
+        ExtendForMarkedCells(mesh, required, axis, nodes, cellsOf, log);
         EnsureValid(mesh, nodes, cellsOf, n);
         var unreached = required.Where(id => !IsCutAcross(mesh.Cells[id], nodes, axis)).OrderBy(x => x).ToList();
+        steps?.Add(new RefineStep("marks", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), none, unreached));
         var applied = Apply(mesh, nodes, n);
+        steps?.Add(new RefineStep("templates", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.Where(mesh.Cells.ContainsKey).OrderBy(x => x).ToList(), applied, unreached));
         foreach (var a in applied)
         {
             marked.Remove(a.Cell);
             marked.UnionWith(a.Children);
             if (required.Remove(a.Cell)) required.UnionWith(a.Children);
         }
+        steps?.Add(new RefineStep("expand", axis, n, mesh.Clone(), Array.Empty<int>(), marked.OrderBy(x => x).ToList(), applied, unreached));
         return new PassTrace(axis, n, nodes.OrderBy(x => x).ToList(), applied, unreached);
     }
 
@@ -163,7 +211,7 @@ public static class Refiner
     /// face, odd: the near one), the same pairing as the coarse layers use; the other face is tried if the first would break a pattern or spoil another
     /// cell of M. A cell that cannot be reached either way is left, and reported.
     /// </summary>
-    private static void ExtendForMarkedCells(HexMesh mesh, ISet<int> required, int axis, HashSet<int> marks, Dictionary<int, List<int>> cellsOf)
+    private static void ExtendForMarkedCells(HexMesh mesh, ISet<int> required, int axis, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, Action<SeamTry>? log = null)
     {
         foreach (int id in required.OrderBy(x => x).ToList())
         {
@@ -175,11 +223,15 @@ public static class Refiner
             foreach (int side in even ? new[] { 1, 0 } : new[] { 0, 1 })
             {
                 var trial = new HashSet<int>(marks);
-                foreach (int slot in Hex.FaceSlots(axis, side)) trial.Add(cell.Nodes[slot]);
+                var faceNodes = Hex.FaceSlots(axis, side).Select(slot => cell.Nodes[slot]).ToList();
+                trial.UnionWith(faceNodes);
                 Complete(mesh, trial, cellsOf);
-                if (!IsCutAcross(cell, trial, axis)) continue;
+                bool cut = IsCutAcross(cell, trial, axis);
                 // it must not spoil another cell of the user's that was fine
-                if (required.Any(m => m != id && IsCutAcross(mesh.Cells[m], marks, axis) && !IsCutAcross(mesh.Cells[m], trial, axis))) continue;
+                var spoiled = required.Where(m => m != id && IsCutAcross(mesh.Cells[m], marks, axis) && !IsCutAcross(mesh.Cells[m], trial, axis)).OrderBy(x => x).ToList();
+                bool accepted = cut && spoiled.Count == 0;
+                log?.Invoke(new SeamTry(id, side, faceNodes, trial.Where(x => !marks.Contains(x) && !faceNodes.Contains(x)).OrderBy(x => x).ToList(), cut, spoiled, accepted));
+                if (!accepted) continue;
                 marks.Clear();
                 marks.UnionWith(trial);
                 break;
