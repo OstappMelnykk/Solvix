@@ -84,6 +84,8 @@ export interface MeshSmoothOptions {
   readonly untangle: boolean;
   // the edge midpoints are drawn back towards the middle of their edge (inside the body, and on folded cubes)
   readonly straighten: boolean;
+  // a share of the local edge length (0 = off): the vertices of bad cubes (ridges and the surface too) may move in any direction by up to this much, when it makes the cubes better
+  readonly shapeTolerance: number;
 }
 
 export interface MeshPointDto {

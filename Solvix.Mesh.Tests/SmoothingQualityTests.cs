@@ -163,4 +163,28 @@ public class SmoothingQualityTests
         Assert.That(result.Moved, Is.GreaterThan(0));
         Assert.That(clock.Elapsed.TotalSeconds, Is.LessThan(20), $"took {clock.Elapsed.TotalSeconds:0.0} s, {result.Passes} passes");
     }
+
+    [Test]
+    public void The_shape_tolerance_lets_the_frozen_ridge_vertices_of_a_round_body_improve_but_only_by_that_much()
+    {
+        var p = HexTemplates.Presets.First(x => x.Name == "rod");
+        HexMeshEditor Fresh() { var e = new HexMeshEditor(); e.AddBody(HexTemplates.Kind(p.Kind).Build(p.Values)); return e; }
+        var plain = Fresh();
+        plain.Mesh.Smooth(30, 0.5);
+        double worstPlain = Worst(plain.Mesh);                               // the ridges stay as they were: about 0.004
+
+        var loose = Fresh();
+        var start = loose.Mesh.Nodes.ToDictionary(n => n.Id, n => n.Position);
+        var report = loose.Mesh.Smooth(30, 0.5, shapeTolerance: 0.3);
+        double longest = loose.Mesh.Hexes.Max(h => Enumerable.Range(0, 12).Max(k => (loose.Mesh.Node(h.NodeIds[Hex20Reference.EdgeCorners[k].A]).Position - loose.Mesh.Node(h.NodeIds[Hex20Reference.EdgeCorners[k].B]).Position).Length));
+
+        Assert.That(worstPlain, Is.LessThan(0.01));
+        Assert.That(report.Reshaped, Is.GreaterThan(0));
+        Assert.That(Worst(loose.Mesh), Is.GreaterThan(0.3));                 // 0.004 -> 0.43
+        Assert.That(loose.Mesh.Hexes.Count(h => CubeQuality(h) < 0.5), Is.LessThan(plain.Mesh.Hexes.Count(h => CubeQuality(h) < 0.5)));
+        // no corner went farther from its place than 0.3 of the longest edge (the corners of the surface move only in this stage)
+        foreach (int id in SurfaceNodeIds(loose.Mesh))
+            Assert.That((loose.Mesh.Node(id).Position - start[id]).Length, Is.LessThan(0.3 * longest + 0.02), $"node {id}");
+        Assert.That(loose.Mesh.InvalidHexes(), Is.Empty);
+    }
 }

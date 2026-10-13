@@ -11,7 +11,8 @@ namespace Solvix.Mesh;
 /// <param name="FoldedAfter">... and how many are, when it ended.</param>
 /// <param name="EdgesStraightened">Edge midpoints that were brought back towards the middle of their edge.</param>
 /// <param name="Passes">The passes made: fewer than asked when the mesh stopped changing.</param>
-public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0, int EdgesStraightened = 0, int Passes = 0);
+/// <param name="Reshaped">Corner nodes of bad cubes that were moved in any direction within the shape tolerance (0 when it is off).</param>
+public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0, int EdgesStraightened = 0, int Passes = 0, int Reshaped = 0);
 
 public sealed partial class HexMesh
 {
@@ -34,13 +35,17 @@ public sealed partial class HexMesh
     /// <param name="density">How strongly the local density is kept, 0..1: the neighbour weight is 1 / length^density, so 1 keeps
     /// the spacing as it is (the default) and 0 is the plain Laplacian that evens the spacing out.</param>
     /// <param name="featureAngle">Degrees: the surface normals at a node may differ by this much and the node still slides.</param>
+    /// <param name="shapeTolerance">A share of the local edge length (0 = off). The vertices of the cubes that are still bad when the passes are
+    /// done - on ridges, corners and the surface included - are then moved in any direction, but never farther than this from
+    /// where they were, as long as every step makes the cubes around them better. It reshapes the surface by that much: what the
+    /// frozen ridge vertices of a round body need.</param>
     /// <param name="straighten">The midpoints of the edges are drawn back towards the middle of their edge (a straight edge): those
     /// of edges inside the body always, those on the surface only where a cube is folded (the surface is not reshaped). A
     /// bent midpoint is what folds a cube most often when the corners are in place.</param>
     /// <param name="untangle">The corner nodes of a folded cube are free to move in every direction, surface or not, and a step
     /// is taken when it makes the worst Jacobian around the node better even if the cubes there are still folded: that is
     /// what unfolds them. A folded cube cannot be solved, so this is what is wanted unless the surface must not change.</param>
-    public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true)
+    public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true, double shapeTolerance = 0)
     {
         var quality = new CubeQuality(this);
         int foldedBefore = _hexes.Values.Count(h => !quality.Valid(h.Id));
@@ -135,10 +140,85 @@ public sealed partial class HexMesh
             if (folded) folded = _hexes.Values.Any(h => !quality.Valid(h.Id));
             else if (largest < settled) break;
         }
+        int reshaped = shapeTolerance > 0 ? Reshape(quality, shapeTolerance, 40) : 0;
         var travelled = free.Select(f => (_nodes[f.Id].Position - start[f.Id]).Length).ToList();
         int corners = _owners.Count(o => o.Value.All(x => Hex20Reference.IsCorner(x.Slot)));
         return new SmoothReport(interior, free.Count - interior, moved.Count + movedMid.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0,
-            foldedBefore, _hexes.Values.Count(h => !quality.Valid(h.Id)), movedMid.Count, passes);
+            foldedBefore, _hexes.Values.Count(h => !quality.Valid(h.Id)), movedMid.Count, passes, reshaped);
+    }
+
+    /// <summary>
+    /// The last stage, for what the Laplacian cannot do: the corner nodes of the cubes that are still bad are tried in a few
+    /// directions (the axes, towards the average of their neighbours, along the surface normal) and a few step lengths, and the
+    /// best step that keeps every cube around valid and lowers the cost of the neighbourhood is taken. No node goes farther
+    /// than tolerance x its local edge length from where it was when this stage began. It is a plain greedy search, run for
+    /// at most `sweeps` rounds.
+    /// </summary>
+    private int Reshape(CubeQuality quality, double tolerance, int sweeps)
+    {
+        var origin = new Dictionary<int, Vec3>();
+        var radius = new Dictionary<int, double>();
+        var moved = new HashSet<int>();
+        for (int sweep = 0; sweep < sweeps; sweep++)
+        {
+            var candidates = _owners.Where(o => o.Value.All(x => Hex20Reference.IsCorner(x.Slot)) && o.Value.Any(x => quality.IsBad(x.Hex))).Select(o => o.Key).OrderBy(id => id).ToList();
+            bool improved = false;
+            foreach (int id in candidates)
+            {
+                var node = _nodes[id];
+                if (!origin.ContainsKey(id))
+                {
+                    origin[id] = node.Position;
+                    var neighbours = CornerNeighbours(id, surfaceOnly: false);
+                    radius[id] = tolerance * (neighbours.Count > 0 ? neighbours.Average(n => (_nodes[n].Position - node.Position).Length) : 0);
+                }
+                if (radius[id] <= 1e-12) continue;
+                if (TryReshape(quality, id, origin[id], radius[id])) { moved.Add(id); improved = true; }
+            }
+            if (!improved) break;
+        }
+        return moved.Count;
+    }
+
+    private bool TryReshape(CubeQuality quality, int nodeId, Vec3 origin, double radius)
+    {
+        var start = _nodes[nodeId].Position;
+        var snapshot = new Dictionary<int, Vec3>();
+        foreach (var (hexId, _) in _owners[nodeId])
+            foreach (int id in _hexes[hexId].NodeIds) snapshot[id] = _nodes[id].Position;
+        double costBefore = quality.Cost(nodeId), worstBefore = quality.Worst(nodeId);
+        var neighbours = CornerNeighbours(nodeId, surfaceOnly: false);
+        var directions = new List<Vec3> { new(1, 0, 0), new(-1, 0, 0), new(0, 1, 0), new(0, -1, 0), new(0, 0, 1), new(0, 0, -1) };
+        if (neighbours.Count > 0)
+        {
+            var toAverage = neighbours.Aggregate(Vec3.Zero, (a, n) => a + _nodes[n].Position) * (1.0 / neighbours.Count) - start;
+            if (toAverage.Length > 1e-12) directions.Add(toAverage * (1 / toAverage.Length));
+        }
+        var normal = SurfaceNormal(nodeId);
+        if (normal is not null) { directions.Add(normal.Value); directions.Add(normal.Value * -1); }
+
+        Vec3? best = null;
+        double bestScore = double.MaxValue;
+        foreach (var direction in directions)
+            foreach (double fraction in new[] { 0.5, 0.25, 0.1 })
+            {
+                var target = start + direction * (radius * fraction);
+                if ((target - origin).Length > radius * (1 + 1e-9)) continue;
+                DragNode(nodeId, target);
+                quality.Changed(nodeId);
+                bool valid = quality.ValidAround(nodeId);
+                double score = valid ? quality.Cost(nodeId) : double.PositiveInfinity;
+                // a folded cube around: the step counts when the worst cube gets better (then the score is the worst's negative)
+                if (!valid && worstBefore <= 1e-9 && quality.Worst(nodeId) > worstBefore + 1e-12) score = 1e30 - quality.Worst(nodeId);
+                bool better = valid ? score < costBefore * (1 - 1e-6) : score < 1e30 + 1;
+                if (better && score < bestScore) (best, bestScore) = (target, score);
+                foreach (var (id, p) in snapshot) _nodes[id].Position = p;
+                quality.Changed(nodeId);
+            }
+        if (best is null) return false;
+        DragNode(nodeId, best.Value);
+        quality.Changed(nodeId);
+        return true;
     }
 
     // A cube is "good enough" when its smallest Jacobian determinant is at least this fraction of its largest (1 is a
@@ -227,6 +307,9 @@ public sealed partial class HexMesh
         }
 
         public bool Valid(int hexId) => Range(hexId).Min > 1e-9;
+
+        // below GoodEnough (or folded)
+        public bool IsBad(int hexId) => Of(hexId) < GoodEnough;
 
         public double Worst(int nodeId) => mesh._owners[nodeId].Min(o => Of(o.Hex));
 

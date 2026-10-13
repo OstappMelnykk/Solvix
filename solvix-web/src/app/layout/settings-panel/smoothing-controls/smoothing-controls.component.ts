@@ -35,6 +35,8 @@ export class SmoothingControlsComponent {
   relaxation = 0.5;
   densityPercent = 100;
   featureAngle = 25;
+  // How far the vertices of the cubes that are still bad may be moved off the surface (percent of the local edge); 0 keeps the surface exactly.
+  shapeTolerancePercent = 0;
   // Also slide the vertices on the outer surface (along it); off by default, since it moves them off the STL.
   surface = false;
   // Unfold the folded cubes: their corners move freely, even on the surface. On by default - a folded cube cannot be solved.
@@ -51,15 +53,16 @@ export class SmoothingControlsComponent {
     return this.editor.getState(this.sessionId)?.hexes.length ?? 0;
   }
 
-  onNumber(field: 'iterations' | 'relaxation' | 'density' | 'angle', event: Event): void {
+  onNumber(field: 'iterations' | 'relaxation' | 'density' | 'angle' | 'shape', event: Event): void {
     const input = event.target as HTMLInputElement;
     const raw = Number(input.value);
-    const limits = { iterations: [1, 500, 100], relaxation: [0.05, 1, 0.5], density: [0, 100, 100], angle: [1, 90, 25] }[field];
+    const limits = { iterations: [1, 500, 100], relaxation: [0.05, 1, 0.5], density: [0, 100, 100], angle: [1, 90, 25], shape: [0, 50, 0] }[field];
     let value = Number.isFinite(raw) ? Math.min(limits[1], Math.max(limits[0], raw)) : limits[2];
     if (field === 'iterations') value = Math.round(value);
     if (field === 'iterations') this.iterations = value;
     else if (field === 'relaxation') this.relaxation = value;
     else if (field === 'density') this.densityPercent = value;
+    else if (field === 'shape') this.shapeTolerancePercent = value;
     else this.featureAngle = value;
     input.value = String(value);
   }
@@ -90,7 +93,8 @@ export class SmoothingControlsComponent {
         density: this.densityPercent / 100,
         featureAngle: this.featureAngle,
         untangle: this.untangle,
-        straighten: this.straighten
+        straighten: this.straighten,
+        shapeTolerance: this.shapeTolerancePercent / 100
       },
       () => (this.smoothedVersion = this.editor.getState(this.sessionId)?.version ?? null)
     );

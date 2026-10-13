@@ -114,7 +114,7 @@ describe('MeshEditorApiService', () => {
   });
 
   it('POSTs the smoothing settings', () => {
-    const options = { iterations: 12, relaxation: 0.5, surface: true, density: 1, featureAngle: 25, untangle: true, straighten: true };
+    const options = { iterations: 12, relaxation: 0.5, surface: true, density: 1, featureAngle: 25, untangle: true, straighten: true, shapeTolerance: 0 };
     api.smooth(5, options).subscribe();
     expectCall('POST', 'smooth', options).flush({});
   });

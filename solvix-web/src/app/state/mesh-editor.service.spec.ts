@@ -94,7 +94,7 @@ describe('MeshEditorService', () => {
   it('smooths through the server and takes the new state', () => {
     loadInitialState(singleCubeState());
 
-    const options = { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true };
+    const options = { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true, shapeTolerance: 0 };
     editor.smooth(sessionId, options);
     const request = http.expectOne(url('smooth'));
     expect(request.request.body).toEqual(options);
@@ -106,7 +106,7 @@ describe('MeshEditorService', () => {
   it('tells what a command did when the server has something to say about it', () => {
     loadInitialState(singleCubeState());
 
-    editor.smooth(sessionId, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true });
+    editor.smooth(sessionId, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true, shapeTolerance: 0 });
     http.expectOne(url('smooth')).flush({ ok: true, error: null, info: 'Згладжено: вільних вершин 8 із 64', state: singleCubeState(7) });
 
     expect(notifications.toasts().map(t => [t.kind, t.message])).toEqual([['info', 'Згладжено: вільних вершин 8 із 64']]);
