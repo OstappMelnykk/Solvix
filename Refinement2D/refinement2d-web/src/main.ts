@@ -23,6 +23,7 @@ let state: StateDto | null = null;
 // the wizard: the stages of a refinement, one at a time (null when it is closed)
 let steps: StepDto[] | null = null;
 let stepIndex = 0;
+let pickedChordCell: number | null = null;                 // the cell whose chord is shown alone (chord view)
 let shown = new THREE.Group();
 scene.add(shown);
 const selected = new Set<number>();
@@ -105,6 +106,8 @@ function build(): void {
 
   const axisOfChords = Number($<HTMLSelectElement>('chords').value);
   const chords = axisOfChords >= 0 ? chordsOf(data.mesh, axisOfChords) : null;
+  const only = chords && pickedChordCell !== null ? data.mesh.cells.findIndex(c => c.id === pickedChordCell) : -1;
+  const alone = only >= 0 ? chords!.members[chords!.info.get(only)!.chord] : null;      // the chord of the clicked cell
   const positions: number[] = [], colors: number[] = [], lines: number[] = [];
   const colour = new THREE.Color();
   for (const [index, cell] of data.mesh.cells.entries()) {
@@ -114,6 +117,10 @@ function build(): void {
     if (template) colour.set(template === 'T1' ? 0xffd8a8 : 0xfbf6b4);
     const inChord = chords?.info.get(index);
     if (inChord) colour.setHSL(((inChord.chord * 0.618) % 1), 0.55, inChord.position % 2 === 0 ? 0.62 : 0.8);
+    if (alone) {
+      const at = alone.get(index);
+      if (at === undefined) colour.set(0xeeeeee); else colour.setHSL(0.58, 0.6, at % 2 === 0 ? 0.62 : 0.82);
+    }
     if (data.m.has(cell.id)) colour.set(0xe8e04a);
     if (data.unreached.has(cell.id)) colour.set(0xff6b6b);
     for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) { positions.push(p[k].x, p[k].y, 0); colors.push(colour.r, colour.g, colour.b); }
@@ -136,13 +143,14 @@ function build(): void {
 
   if (chords) {
     const seam: number[] = [];
-    for (const [a, b] of chords.seams) { const u = world(data.mesh.nodes[a]), v = world(data.mesh.nodes[b]); seam.push(u.x, u.y, 0.4, v.x, v.y, 0.4); }
+    if (!alone) for (const [a, b] of chords.seams) { const u = world(data.mesh.nodes[a]), v = world(data.mesh.nodes[b]); seam.push(u.x, u.y, 0.4, v.x, v.y, 0.4); }
     const blue = lineSegments(seam, 0x1f6fe5);
     (blue.material as THREE.LineBasicMaterial).linewidth = 3;
     shown.add(blue);
     if (data.mesh.cells.length <= 400) {
       for (const [index, cell] of data.mesh.cells.entries()) {
-        const at = chords.info.get(index)!;
+        const at = alone ? (alone.has(index) ? { position: alone.get(index)! } : null) : chords.info.get(index)!;
+        if (!at) continue;
         const c = cell.nodes.map(n => world(data.mesh.nodes[n]));
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: label(at.position), depthTest: false }));
         sprite.position.set((c[0].x + c[1].x + c[2].x + c[3].x) / 4, (c[0].y + c[1].y + c[2].y + c[3].y) / 4, 0.5);
@@ -195,6 +203,7 @@ canvas.addEventListener('pointerup', e => {
   const w = new THREE.Vector3(x, y, 0).unproject(camera);
   const id = cellAt(w.x, w.y);
   if (id === null) return;
+  if (Number($<HTMLSelectElement>('chords').value) >= 0) { pickedChordCell = pickedChordCell === id ? null : id; build(); return; }
   if (selected.has(id)) selected.delete(id); else selected.add(id);
   build();
 });

@@ -5,7 +5,7 @@ import { MeshDto } from './api';
 // bottom (slots 0-1) and top (2-3) for Y, left (3-0) and right (1-2) for X. Cells are numbered 0, 1, 2, ... from the start of the chain;
 // the numbers (0,1), (2,3), ... are the pairs, and the edge a pair shares is its seam.
 export interface ChordInfo { chord: number; position: number; }
-export interface Chords { info: Map<number, ChordInfo>; seams: [number, number][]; count: number; }
+export interface Chords { members: Map<number, number>[]; info: Map<number, ChordInfo>; seams: [number, number][]; count: number; }
 
 export function chordsOf(mesh: MeshDto, axis: number): Chords {
   const edgeNodes = (cell: { nodes: number[] }, e: number): [number, number] => [cell.nodes[e], cell.nodes[(e + 1) % 4]];
@@ -29,6 +29,7 @@ export function chordsOf(mesh: MeshDto, axis: number): Chords {
 
   const info = new Map<number, ChordInfo>();
   const seams: [number, number][] = [];
+  const members: Map<number, number>[] = [];                      // per chord: every cell it passes (also sideways) and its number
   const visited = new Set<string>();                              // (cell, pair of edges the chord crosses it through)
   const natural = axis === 1 ? 0 : 1;                             // the pair of edges of a cell that lie across the axis
   let count = 0;
@@ -41,10 +42,13 @@ export function chordsOf(mesh: MeshDto, axis: number): Chords {
       if (!step || step[0] === start) break;
       [first, back] = step;
     }
+    const mine = new Map<number, number>();
+    members.push(mine);
     let cell = first, leave = (back + 2) % 4, position = 0;
     const chain: [number, number][] = [];
     while (!visited.has(`${cell}:${leave % 2}`)) {
       visited.add(`${cell}:${leave % 2}`);
+      mine.set(cell, position);
       // a chord can also run through a cell sideways (a corner piece of a template); that cell keeps the chord of its own pair of edges
       if (leave % 2 === natural || !info.has(cell)) info.set(cell, { chord: count, position });
       chain.push([cell, leave]);
@@ -59,7 +63,7 @@ export function chordsOf(mesh: MeshDto, axis: number): Chords {
     }
     count++;
   }
-  return { info, seams, count };
+  return { members, info, seams, count };
 }
 
 const labels = new Map<number, THREE.CanvasTexture>();
