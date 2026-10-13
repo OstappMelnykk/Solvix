@@ -413,7 +413,7 @@ function showProgress(pass: number, passes: number): void {
 }
 
 $('smooth').onclick = async () => {
-  const started = await startSmoothing({ iterations: value('sIter'), relaxation: value('sRelax'), density: value('sDens') / 100, slide: $<HTMLInputElement>('sSlide').checked });
+  const started = await startSmoothing({ iterations: value('sIter'), relaxation: value('sRelax'), density: value('sDens') / 100, slide: $<HTMLInputElement>('sSlide').checked, optimizationPasses: value('sOpt'), continue: $<HTMLInputElement>('sContinue').checked });
   if ('failed' in started) { $('problems').textContent = 'Помилка: ' + started.failed; return; }
   smoothing = true;
   let seen = -1;

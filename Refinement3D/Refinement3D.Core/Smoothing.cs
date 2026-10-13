@@ -2,9 +2,10 @@ namespace Refinement3D.Core;
 
 /// <summary>
 /// Settings of the smoothing, the same as in Solvix: how many passes, the step of one pass, how much the density of the nodes is kept (0: plain averaging,
-/// 1: the weights 1/L, along a straight line any spacing is left as it is), and whether the nodes on the outer surface may slide in the plane of their face.
+/// 1: the weights 1/L, along a straight line any spacing is left as it is), whether the nodes on the outer surface may slide in the plane of their face,
+/// and how many passes of the optimization smoothing follow the Laplacian ones (each node is moved to where the cells round it are best, see Smoothing).
 /// </summary>
-public sealed record SmoothingOptions(int Iterations = 20, double Relaxation = 0.5, double Density = 0.0, bool SlideOnSurface = false);
+public sealed record SmoothingOptions(int Iterations = 20, double Relaxation = 0.5, double Density = 0.0, bool SlideOnSurface = false, int OptimizationPasses = 0);
 
 /// <summary>
 /// The quality of the cells. Q of a cell (Solvix's measure) is the smallest Jacobian over the largest one at 27 points (1: a parallelepiped, 0 or less:
@@ -59,13 +60,16 @@ public static class Smoothing
     }
 
     /// <param name="onPass">Called after every pass with the number of the pass and the positions as they are then (the array is the one being worked on: copy it to keep it).</param>
+    /// <param name="start">The positions to go on from (the result of an earlier smoothing); by default the nodes of the lattice, i.e. the mesh as it came out of the refinement. "Before" in the result is always the lattice.</param>
     /// <param name="cancel">When it is set the smoothing stops after the pass it is in, and what has been done is returned.</param>
-    public static SmoothingResult Smooth(HexMesh mesh, SmoothingOptions options, Action<int, double[]>? onPass = null, CancellationToken cancel = default)
+    public static SmoothingResult Smooth(HexMesh mesh, SmoothingOptions options, Action<int, double[]>? onPass = null, CancellationToken cancel = default, double[]? start = null)
     {
-        if (options.Iterations < 0 || options.Relaxation <= 0 || options.Relaxation > 1 || options.Density < 0 || options.Density > 1)
-            throw new ArgumentOutOfRangeException(nameof(options), "iterations >= 0, 0 < relaxation <= 1, 0 <= density <= 1.");
-        var pos = Lattice(mesh);
-        var before = QualityOf(mesh, pos);
+        if (options.Iterations < 0 || options.OptimizationPasses < 0 || options.Relaxation <= 0 || options.Relaxation > 1 || options.Density < 0 || options.Density > 1)
+            throw new ArgumentOutOfRangeException(nameof(options), "iterations >= 0, optimization passes >= 0, 0 < relaxation <= 1, 0 <= density <= 1.");
+        var lattice = Lattice(mesh);
+        var before = QualityOf(mesh, lattice);
+        if (start != null && start.Length != lattice.Length) throw new ArgumentException("The starting positions do not belong to this mesh.", nameof(start));
+        var pos = start == null ? (double[])lattice.Clone() : (double[])start.Clone();
         var constraint = SurfaceConstraints(mesh);
         var neighbours = Neighbours(mesh);
         var cells = mesh.Cells.Values.OrderBy(c => c.Id).Select(c => c.Nodes).ToArray();
@@ -81,16 +85,27 @@ public static class Smoothing
             return 7 & ~constraint[node];
         }
 
+        // The nodes are grouped in classes of nodes that share no cell, so that the nodes of a class can be moved at the same time (each one sees the
+        // moves of the classes before it, and nothing of its own class: the result does not depend on the number of processors).
+        var classes = Classes(mesh.Nodes.Count, cells, cellsOf, node => Free(node) != 0 && neighbours[node].Length > 0);
+        void Sweep(Func<int, bool> work)
+        {
+            foreach (var members in classes)
+            {
+                if (members.Length < 256) foreach (int n in members) work(n);
+                else Parallel.ForEach(members, n => work(n));
+            }
+        }
+
         // A node moves to the weighted mean of its neighbours only if the worst of the cells round it (by the scaled Jacobian) does not get worse and the
         // cells round it get better together (their scaled Jacobians add up to more); when not, the step is halved, up to five times, and then the node
-        // stays (the "smart" Laplacian). So no cell is turned inside out, the worst cell of the mesh never gets worse, and neither does the mean. The nodes are taken one after another, each seeing the moves of the nodes before it.
+        // stays (the "smart" Laplacian). So no cell is turned inside out, the worst cell of the mesh never gets worse, and neither does the mean.
         for (int it = 0; it < options.Iterations; it++)
         {
-            bool any = false;
-            for (int i = 0; i < mesh.Nodes.Count; i++)
+            int moves = 0;
+            Sweep(i =>
             {
                 int free = Free(i);
-                if (free == 0 || neighbours[i].Length == 0) continue;
                 double sw = 0, sx = 0, sy = 0, sz = 0;
                 foreach (int j in neighbours[i])
                 {
@@ -99,11 +114,11 @@ public static class Smoothing
                     double w = options.Density == 0 || length < 1e-12 ? 1.0 : Math.Pow(length, -options.Density);
                     sw += w; sx += w * pos[j * 3]; sy += w * pos[j * 3 + 1]; sz += w * pos[j * 3 + 2];
                 }
-                if (sw == 0) continue;
+                if (sw == 0) return false;
                 double mx = (free & 1) != 0 ? options.Relaxation * (sx / sw - pos[i * 3]) : 0;
                 double my = (free & 2) != 0 ? options.Relaxation * (sy / sw - pos[i * 3 + 1]) : 0;
                 double mz = (free & 4) != 0 ? options.Relaxation * (sz / sw - pos[i * 3 + 2]) : 0;
-                if (Math.Abs(mx) + Math.Abs(my) + Math.Abs(mz) < 1e-14) continue;
+                if (Math.Abs(mx) + Math.Abs(my) + Math.Abs(mz) < 1e-14) return false;
                 var (worst, total) = Local(cellsOf[i], cells, pos);
                 double x0 = pos[i * 3], y0 = pos[i * 3 + 1], z0 = pos[i * 3 + 2];
                 double f = 1;
@@ -114,18 +129,175 @@ public static class Smoothing
                     var (w2, t2) = Local(cellsOf[i], cells, pos);
                     accepted = w2 >= worst - 1e-12 && t2 > total + 1e-12;                    // the worst cell round the node is not worse, and the cells round it are better together
                 }
-                if (accepted) any = true;
-                else { pos[i * 3] = x0; pos[i * 3 + 1] = y0; pos[i * 3 + 2] = z0; }
-            }
+                if (!accepted) { pos[i * 3] = x0; pos[i * 3 + 1] = y0; pos[i * 3 + 2] = z0; return false; }
+                Interlocked.Increment(ref moves);
+                return true;
+            });
             onPass?.Invoke(it + 1, pos);
-            if (!any || cancel.IsCancellationRequested) break;
+            if (moves == 0 || cancel.IsCancellationRequested) break;
+        }
+
+        // The optimization passes. The Laplacian smoothing is blind to shape: it only averages, so a cell that is bad because of its corners (a sheared plate,
+        // a corner of a template) stays bad when its neighbours are on average where they should be. Here every node is moved to where the cells round it are
+        // best: the sum over their corners of (1/s - 1)^2, s the scaled Jacobian at the corner, is made smaller by steepest descent (the gradient taken
+        // numerically, the step halved until it helps). That sum grows without bound as a corner flattens, so no cell can be inverted, and a step is taken only
+        // if the worst corner round the node does not get worse - so the worst cell of the mesh never gets worse and the sum (BarrierSum) only goes down; the mean scaled Jacobian is not guaranteed, and may fall a little while the worst cells rise.
+        for (int pass = 0; pass < options.OptimizationPasses; pass++)
+        {
+            long biggest = 0;                                                              // the biggest move of the pass, in millionths of a coarse cell
+            Sweep(i =>
+            {
+                if (Worst(cellsOf[i], cells, pos) >= GoodEnough) return false;           // all the cells round it are fine already: leave it
+                double d = OptimizeNode(i, Free(i), cellsOf[i], cells, neighbours[i], pos);
+                long micro = (long)(d * 1e6);
+                long seen;
+                while (micro > (seen = Interlocked.Read(ref biggest)) && Interlocked.CompareExchange(ref biggest, micro, seen) != seen) { }
+                return d > 0;
+            });
+            onPass?.Invoke(options.Iterations + pass + 1, pos);
+            if (biggest < 100 || cancel.IsCancellationRequested) break;                  // nothing moves by more than a ten-thousandth of a coarse cell any more
         }
 
         int moved = 0;
-        var start = Lattice(mesh);
         for (int i = 0; i < mesh.Nodes.Count; i++)
-            if (Math.Abs(pos[i * 3] - start[i * 3]) + Math.Abs(pos[i * 3 + 1] - start[i * 3 + 1]) + Math.Abs(pos[i * 3 + 2] - start[i * 3 + 2]) > 1e-12) moved++;
+            if (Math.Abs(pos[i * 3] - lattice[i * 3]) + Math.Abs(pos[i * 3 + 1] - lattice[i * 3 + 1]) + Math.Abs(pos[i * 3 + 2] - lattice[i * 3 + 2]) > 1e-12) moved++;
         return new SmoothingResult(pos, before, QualityOf(mesh, pos), moved);
+    }
+
+    // groups the nodes that can move together: no two nodes of a group lie in the same cell (greedy colouring in the order of the nodes, so it is the same every time)
+    private static int[][] Classes(int count, int[][] cells, List<int>[] cellsOf, Func<int, bool> take)
+    {
+        var color = new int[count];
+        Array.Fill(color, -1);
+        var groups = new List<List<int>>();
+        var used = new HashSet<int>();
+        for (int i = 0; i < count; i++)
+        {
+            if (!take(i)) continue;
+            used.Clear();
+            foreach (int c in cellsOf[i]) foreach (int n in cells[c]) if (color[n] >= 0) used.Add(color[n]);
+            int k = 0;
+            while (used.Contains(k)) k++;
+            color[i] = k;
+            if (k == groups.Count) groups.Add(new List<int>());
+            groups[k].Add(i);
+        }
+        return groups.Select(g => g.ToArray()).ToArray();
+    }
+
+    /// <summary>The quantity the optimization smooths down: over all the corners of all the cells, the sum of (1/s - 1)^2 with s the scaled Jacobian (0 for a mesh of boxes).</summary>
+    public static double BarrierSum(HexMesh mesh, double[] pos)
+    {
+        double sum = 0;
+        Span<double> corners = stackalloc double[8];
+        foreach (var cell in mesh.Cells.Values)
+        {
+            CornerValues(cell.Nodes, pos, corners);
+            for (int k = 0; k < 8; k++) sum += Barrier(corners[k]);
+        }
+        return sum;
+    }
+
+    // the barrier of a corner: 0 for a box, growing without bound as the corner flattens, infinite when it is inverted
+    private static double Barrier(double s) => s <= 1e-9 ? double.PositiveInfinity : (1 / s - 1) * (1 / s - 1);
+
+    // the sum of the barriers over the corners that depend on the node (its own corner in every cell and the three corners next to it), and the smallest
+    // scaled Jacobian among them; the other four corners of each cell do not change when the node moves
+    private static (double Sum, double Worst) Objective(int node, List<int> cellIds, int[][] cells, double[] pos)
+    {
+        double sum = 0, worst = double.MaxValue;
+        foreach (int c in cellIds)
+        {
+            int slot = Array.IndexOf(cells[c], node);
+            for (int k = 0; k < 4; k++)
+            {
+                double s = CornerValue(cells[c], pos, k == 0 ? slot : slot ^ (1 << (k - 1)));
+                sum += Barrier(s);
+                worst = Math.Min(worst, s);
+            }
+        }
+        return (sum, worst);
+    }
+
+    // a node whose worst cell is better than this is not moved by the optimization
+    private const double GoodEnough = 0.9;
+
+    private static double Worst(List<int> cellIds, int[][] cells, double[] pos) => Local(cellIds, cells, pos).Worst;
+
+    // moves one node to a place where the cells round it are better; returns how far it moved (in coarse cells), 0 if it stayed
+    private static double OptimizeNode(int node, int free, List<int> cellIds, int[][] cells, int[] neighbours, double[] pos)
+    {
+        double scale = 0;
+        foreach (int j in neighbours)
+            scale += Math.Sqrt(Math.Pow(pos[j * 3] - pos[node * 3], 2) + Math.Pow(pos[j * 3 + 1] - pos[node * 3 + 1], 2) + Math.Pow(pos[j * 3 + 2] - pos[node * 3 + 2], 2));
+        scale /= neighbours.Length;
+        if (scale < 1e-12) return 0;
+        double x00 = pos[node * 3], y00 = pos[node * 3 + 1], z00 = pos[node * 3 + 2];
+        double Moved() => Math.Abs(pos[node * 3] - x00) + Math.Abs(pos[node * 3 + 1] - y00) + Math.Abs(pos[node * 3 + 2] - z00);
+        Span<double> grad = stackalloc double[3];
+        for (int step = 0; step < 12; step++)
+        {
+            var (f0, worst0) = Objective(node, cellIds, cells, pos);
+            if (double.IsInfinity(f0) || f0 < 1e-9) return Moved();
+            double h = 1e-5 * scale, norm = 0;
+            for (int a = 0; a < 3; a++)
+            {
+                grad[a] = 0;
+                if ((free >> a & 1) == 0) continue;
+                double x = pos[node * 3 + a];
+                pos[node * 3 + a] = x + h; double fp = Objective(node, cellIds, cells, pos).Sum;
+                pos[node * 3 + a] = x - h; double fm = Objective(node, cellIds, cells, pos).Sum;
+                pos[node * 3 + a] = x;
+                grad[a] = double.IsInfinity(fp) || double.IsInfinity(fm) ? 0 : (fp - fm) / (2 * h);
+                norm += grad[a] * grad[a];
+            }
+            norm = Math.Sqrt(norm);
+            if (norm < 1e-12) return Moved();
+            double x0 = pos[node * 3], y0 = pos[node * 3 + 1], z0 = pos[node * 3 + 2];
+            double t = 0.3 * scale;
+            bool accepted = false;
+            for (int attempt = 0; attempt < 10 && !accepted; attempt++, t *= 0.5)
+            {
+                pos[node * 3] = x0 - t * grad[0] / norm; pos[node * 3 + 1] = y0 - t * grad[1] / norm; pos[node * 3 + 2] = z0 - t * grad[2] / norm;
+                var (f1, worst1) = Objective(node, cellIds, cells, pos);
+                accepted = f1 < f0 - 1e-12 * Math.Max(1, f0) && worst1 >= worst0 - 1e-12;
+            }
+            if (!accepted) { pos[node * 3] = x0; pos[node * 3 + 1] = y0; pos[node * 3 + 2] = z0; return Moved(); }
+        }
+        return Moved();
+    }
+
+    // the scaled Jacobian at one corner of a cell
+    private static double CornerValue(int[] nodes, double[] pos, int s)
+    {
+        Span<double> e = stackalloc double[9];
+        for (int axis = 0; axis < 3; axis++)
+        {
+            int a = nodes[s], b = nodes[s ^ (1 << axis)];
+            double sign = Hex.Bit(s, axis) == 0 ? 1 : -1;
+            for (int k = 0; k < 3; k++) e[axis * 3 + k] = sign * (pos[b * 3 + k] - pos[a * 3 + k]);
+        }
+        double det = e[0] * (e[4] * e[8] - e[5] * e[7]) - e[1] * (e[3] * e[8] - e[5] * e[6]) + e[2] * (e[3] * e[7] - e[4] * e[6]);
+        double n = Math.Sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]) * Math.Sqrt(e[3] * e[3] + e[4] * e[4] + e[5] * e[5]) * Math.Sqrt(e[6] * e[6] + e[7] * e[7] + e[8] * e[8]);
+        return n < 1e-300 ? -1 : det / n;
+    }
+
+    // the scaled Jacobian at each of the eight corners of a cell (in the order of the slots)
+    private static void CornerValues(int[] nodes, double[] pos, Span<double> result)
+    {
+        Span<double> e = stackalloc double[9];
+        for (int s = 0; s < 8; s++)
+        {
+            for (int axis = 0; axis < 3; axis++)
+            {
+                int a = nodes[s], b = nodes[s ^ (1 << axis)];
+                double sign = Hex.Bit(s, axis) == 0 ? 1 : -1;
+                for (int k = 0; k < 3; k++) e[axis * 3 + k] = sign * (pos[b * 3 + k] - pos[a * 3 + k]);
+            }
+            double det = e[0] * (e[4] * e[8] - e[5] * e[7]) - e[1] * (e[3] * e[8] - e[5] * e[6]) + e[2] * (e[3] * e[7] - e[4] * e[6]);
+            double n = Math.Sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]) * Math.Sqrt(e[3] * e[3] + e[4] * e[4] + e[5] * e[5]) * Math.Sqrt(e[6] * e[6] + e[7] * e[7] + e[8] * e[8]);
+            result[s] = n < 1e-300 ? -1 : det / n;
+        }
     }
 
     // the worst scaled Jacobian of the given cells, and the sum of them

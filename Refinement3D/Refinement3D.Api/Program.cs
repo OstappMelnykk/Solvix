@@ -52,7 +52,7 @@ app.MapGet("/api/template", (string kind, int n) =>
 });
 app.MapPost("/api/smooth", (SmoothRequest r) =>
 {
-    try { if (!session.StartSmoothing(new SmoothingOptions(r.Iterations, r.Relaxation, r.Density, r.Slide))) return Results.Conflict(new { error = "Smoothing is already running." }); }
+    try { if (!session.StartSmoothing(new SmoothingOptions(r.Iterations, r.Relaxation, r.Density, r.Slide, r.OptimizationPasses), r.Continue)) return Results.Conflict(new { error = "Smoothing is already running." }); }
     catch (ArgumentException e) { return Results.BadRequest(new { error = e.Message }); }
     return Results.Ok(session.Progress(-1));
 });
@@ -74,12 +74,12 @@ IResult Busy(Action action)
 app.Run();
 
 record GridRequest(int Nx, int Ny, int Nz, int[][]? Holes);
-record SmoothRequest(int Iterations = 20, double Relaxation = 0.5, double Density = 0.5, bool Slide = true);
+record SmoothRequest(int Iterations = 20, double Relaxation = 0.5, double Density = 0.5, bool Slide = true, int OptimizationPasses = 0, bool Continue = false);
 record RefineRequest(int[] Cells, int NI, int NJ, int NK, int TransitionDepth = 0);
 
 sealed class Session
 {
-    private HexMesh _mesh = HexMesh.Grid(4, 4, 4);
+    private HexMesh _mesh = HexMesh.Grid(5, 5, 5);
     private readonly List<HexMesh> _undo = new(), _redo = new();
     private RefineResult? _last;
     private SmoothingResult? _smoothed;                     // the positions after smoothing (the lattice stays as it was); dropped by anything that changes the mesh
@@ -98,15 +98,15 @@ sealed class Session
 
     private void EnsureNotSmoothing() { lock (_lock) if (_running) throw new InvalidOperationException("Smoothing is running: wait for it or stop it."); }
 
-    public bool StartSmoothing(SmoothingOptions options)
+    public bool StartSmoothing(SmoothingOptions options, bool continueFromCurrent)
     {
         lock (_lock)
         {
             if (_running) return false;
-            if (options.Iterations < 0 || options.Relaxation <= 0 || options.Relaxation > 1 || options.Density < 0 || options.Density > 1) throw new ArgumentException("iterations >= 0, 0 < relaxation <= 1, 0 <= density <= 1.");
+            if (options.Iterations < 0 || options.OptimizationPasses < 0 || options.Relaxation <= 0 || options.Relaxation > 1 || options.Density < 0 || options.Density > 1) throw new ArgumentException("iterations >= 0, 0 < relaxation <= 1, 0 <= density <= 1.");
             _running = true;
             _pass = 0;
-            _passes = options.Iterations;
+            _passes = options.Iterations + options.OptimizationPasses;
             _snapshot = null;
             _snapshotQuality = null;
             _smoothError = null;
@@ -114,6 +114,7 @@ sealed class Session
             _cancel = new CancellationTokenSource();
         }
         var mesh = _mesh;
+        var from = continueFromCurrent ? _smoothed?.Positions : null;                // the result of the last smoothing, or the lattice
         var token = _cancel.Token;
         var clock = System.Diagnostics.Stopwatch.StartNew();
         Task.Run(() =>
@@ -124,7 +125,7 @@ sealed class Session
                 lock (_lock) _qualityBefore = before;
                 var result = Smoothing.Smooth(mesh, options, (pass, pos) =>
                 {
-                    bool show = clock.ElapsedMilliseconds >= 80 || pass == options.Iterations;
+                    bool show = clock.ElapsedMilliseconds >= 80 || pass == options.Iterations + options.OptimizationPasses;
                     var copy = show ? (double[])pos.Clone() : null;
                     var q = show ? Smoothing.QualityOf(mesh, pos) : null;
                     lock (_lock)
@@ -136,7 +137,7 @@ sealed class Session
                         _version++;
                     }
                     clock.Restart();
-                }, token);
+                }, token, from);
                 lock (_lock) { _smoothed = result; _snapshot = result.Positions; _snapshotQuality = result.After; _version++; }
             }
             catch (Exception e) { lock (_lock) _smoothError = e.Message; }

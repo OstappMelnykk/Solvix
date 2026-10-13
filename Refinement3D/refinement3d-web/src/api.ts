@@ -83,7 +83,7 @@ export interface ProgressDto {
   qualityBefore: QualityDto | null;
 }
 
-export async function startSmoothing(options: { iterations: number; relaxation: number; density: number; slide: boolean }): Promise<ProgressDto | { failed: string }> {
+export async function startSmoothing(options: { iterations: number; relaxation: number; density: number; slide: boolean; optimizationPasses: number; continue: boolean }): Promise<ProgressDto | { failed: string }> {
   const response = await fetch('/api/smooth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options) });
   const data = await response.json();
   return response.ok ? (data as ProgressDto) : { failed: String(data.error ?? response.status) };

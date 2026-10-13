@@ -31,9 +31,9 @@
   <aside>
     <h1>Локальне згущення 3D</h1>
     <h2>Сітка</h2>
-    <label>Клітинок по X <input id="nx" type="number" min="1" max="12" value="4" /></label>
-    <label>Клітинок по Y <input id="ny" type="number" min="1" max="12" value="4" /></label>
-    <label>Клітинок по Z <input id="nz" type="number" min="1" max="12" value="4" /></label>
+    <label>Клітинок по X <input id="nx" type="number" min="1" max="12" value="5" /></label>
+    <label>Клітинок по Y <input id="ny" type="number" min="1" max="12" value="5" /></label>
+    <label>Клітинок по Z <input id="nz" type="number" min="1" max="12" value="5" /></label>
     <label>Дірки (i,j,k; …) <input id="holes" type="text" placeholder="1,1,1; 2,0,3" /></label>
     <button id="grid">Нова сітка</button>
 
@@ -43,6 +43,7 @@
     <label>nK (по Z) <input id="nk" type="number" min="2" max="8" value="2" /></label>
     <div class="hint">Клік по клітинці додає її в M (жовті), повторний знімає. Shift+клік — усі клітинки кореня. Ліва кнопка — обертання, права — зсув, коліщатко — масштаб. Червоні клітинки — ті, яких цей прохід не зміг розрізати.</div>
     <label title="Скільки проходів після кожного ділення додає перехідні шари в M. 0: згущення лишається в клітинках навколо вибраних (кутовий куб зачепить 8 кубів). 1: ширше. 2: як у книзі (кутовий куб зачепить 48 кубів): сітка змінюється плавніше, але чіпає багато кубів.">Ширина перехідної зони <select id="depth"><option value="0">0 — мінімальна</option><option value="1">1</option><option value="2">2 — як у книзі</option></select></label>
+    <div class="hint">Як далеко від вибраних кубів поширюється згущення. 0: лише вибрані й сусіди, що їм потрібні (кутовий куб зачепить 8 кубів). 2: як у книзі (48 кубів), перехід плавніший, і згладжування дає кращу якість.</div>
     <button id="refine" class="go">Згустити по кроках</button>
     <button id="refineNow">Згустити одразу</button>
     <button id="clear">Зняти виділення</button>
@@ -75,6 +76,9 @@
     <label title="Яку частину шляху до середнього сусідів проходить вузол за прохід">Крок <input id="sRelax" type="number" min="0.05" max="1" step="0.05" value="0.5" /></label>
     <label title="0: звичайне усереднення; 100: ваги 1/L, густина вузлів не розмивається">Збереження густини, % <input id="sDens" type="number" min="0" max="100" step="10" value="50" /></label>
     <label title="Вузол на плоскій грані тіла ковзає в площині цієї грані, на ребрі тіла — вздовж ребра, у куті тіла стоїть. Форма тіла не змінюється. Без галочки всі вузли поверхні нерухомі.">Ковзати по поверхні <input id="sSlide" type="checkbox" checked /></label>
+    <div class="hint">Вузли на поверхні тіла (на зовнішніх гранях і стінках дірок) можна або не чіпати зовсім, або дозволити їм їздити <i>по самій поверхні</i>: вузол на плоскій грані зсувається в площині цієї грані, на ребрі тіла — уздовж ребра, у куті тіла стоїть. Форма тіла при цьому не змінюється, а сітка біля поверхні вирівнюється краще.</div>
+    <label title="Після Лапласівки кожен вузол ставиться туди, де клітинки навколо нього найкращі (мінімізується штраф за скошені кути). Значно сильніше за Лапласівку на найгірших клітинках, але повільніше. 0 — вимкнено.">Проходів оптимізації <input id="sOpt" type="number" min="0" max="200" value="20" /></label>
+    <label title="Без галочки згладжування починається з сітки, як вона вийшла після згущення (попередній результат згладжування замінюється). З галочкою воно продовжується з поточного результату.">Продовжити з поточного <input id="sContinue" type="checkbox" /></label>
     <div><button id="smooth" class="go">Згладити</button><button id="sStop" hidden>Зупинити</button><button id="unsmooth">Скасувати згладжування</button></div>
     <progress id="sProgress" value="0" max="1" hidden style="width:100%"></progress>
     <div id="sProgressText" class="hint"></div>
@@ -101,7 +105,7 @@
 
     <h2>Показати</h2>
     <label>Кореневі клітинки <input id="showRoots" type="checkbox" checked /></label>
-    <label>Позначені вузли <input id="showMarks" type="checkbox" checked /></label>
+    <label>Позначені вузли <input id="showMarks" type="checkbox" /></label>
     <label>Прохід
       <select id="pass"><option value="-1">останній стан</option><option value="0">I (по X)</option><option value="1">J (по Y)</option><option value="2">K (по Z)</option></select>
     </label>
