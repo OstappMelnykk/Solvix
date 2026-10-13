@@ -73,16 +73,17 @@ sealed class Session
 
     // the refinement of the current mesh, stage by stage, without changing it: what the page's wizard steps through
     public object[] Preview(int[] cells, int nI, int nJ) =>
-        Refiner.Preview(_mesh, cells, nI, nJ).Select(step => (object)new
+        Refiner.Preview(_mesh, cells, nI, nJ, detailed: true).Select(step => (object)new
         {
             kind = step.Kind,
             axis = step.Axis,
             n = step.N,
-            mesh = MeshOf(step.Mesh),
+            mesh = step.Mesh is null ? null : MeshOf(step.Mesh),
             marked = step.Marked,
             m = step.M,
             applied = step.Applied.Select(a => new { cell = a.Cell, template = a.Template, index = a.Index, children = a.Children }),
-            unreached = step.Unreached
+            unreached = step.Unreached,
+            seam = step.Try is null ? null : new { cell = step.Try.Cell, edge = step.Try.Edge, edgeNodes = step.Try.EdgeNodes, added = step.Try.Added, cutAcross = step.Try.CutAcross, spoiled = step.Try.Spoiled, accepted = step.Try.Accepted }
         }).ToArray();
 
     private static object MeshOf(QuadMesh mesh) => new

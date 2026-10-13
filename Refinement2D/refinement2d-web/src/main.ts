@@ -73,15 +73,24 @@ interface Scene2D {
   m: Set<number>;
   made: Map<number, string>;
   unreached: Set<number>;
+  focus: number | null;                       // the cell a seam of its own is being found for
+  spoiled: Set<number>;                       // the cells of M that the attempt would spoil
+  trial: number[];                            // the nodes of the edge tried
+  added: number[];                            // the nodes the completion had to add
 }
 
 function currentScene(): Scene2D | null {
   if (steps) {
     const step = steps[stepIndex];
+    const mesh = step.mesh ?? steps.slice(0, stepIndex).reverse().find(x => x.kind === 'layers')!.mesh!;
     const made = new Map<number, string>();
     // the cells that came out of the templates (shown on the stage of the templates and on the stage after it)
     if (step.kind === 'templates' || step.kind === 'expand') for (const a of step.applied) for (const c of a.children) made.set(c, a.template);
-    return { mesh: step.mesh, marked: step.kind === 'marks' || step.kind === 'templates' ? step.marked : [], m: new Set(step.m), made, unreached: new Set(step.unreached) };
+    const seam = step.seam;
+    return {
+      mesh, marked: ['layers', 'seam', 'marks', 'templates'].includes(step.kind) ? step.marked : [], m: new Set(step.m), made, unreached: new Set(step.unreached),
+      focus: seam ? seam.cell : null, spoiled: new Set(seam?.spoiled ?? []), trial: seam?.edgeNodes ?? [], added: seam?.added ?? []
+    };
   }
   if (!state) return null;
   const made = new Map<number, string>(), unreached = new Set<number>(), marked: number[] = [];
@@ -91,7 +100,7 @@ function currentScene(): Scene2D | null {
     for (const u of p.unreached ?? []) unreached.add(u);
     if ($<HTMLInputElement>('showMarks').checked && (pass < 0 || p.axis === pass)) marked.push(...p.marked);
   }
-  return { mesh: state, marked, m: selected, made, unreached };
+  return { mesh: state, marked, m: selected, made, unreached, focus: null, spoiled: new Set(), trial: [], added: [] };
 }
 
 function build(): void {
@@ -136,6 +145,8 @@ function build(): void {
     }
     if (data.m.has(cell.id)) colour.set(0xe8e04a);
     if (data.unreached.has(cell.id)) colour.set(0xff6b6b);
+    if (data.spoiled.has(cell.id)) colour.set(0xb03a2e);
+    if (data.focus === cell.id) colour.set(0xffb347);
     if (current === index) colour.set(0xffb347);
     for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) { positions.push(p[k].x, p[k].y, 0); colors.push(colour.r, colour.g, colour.b); }
     for (let k = 0; k < 4; k++) lines.push(p[k].x, p[k].y, 0.1, p[(k + 1) % 4].x, p[(k + 1) % 4].y, 0.1);
@@ -182,6 +193,14 @@ function build(): void {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     shown.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xd61f1f, size: 7, sizeAttenuation: false })));
+  }
+  for (const [ids, color, size] of [[data.added, 0x8e44ad, 9], [data.trial, 0xff8c00, 11]] as [number[], number, number][]) {
+    if (ids.length === 0) continue;
+    const pts: number[] = [];
+    for (const id of ids) { const w = world(data.mesh.nodes[id]); pts.push(w.x, w.y, 0.35); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    shown.add(new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation: false })));
   }
 
   $<HTMLButtonElement>('undo').disabled = !!steps || !state?.canUndo;
@@ -273,6 +292,14 @@ function describe(step: StepDto): [string, string] {
   switch (step.kind) {
     case 'start':
       return ['Вибрані клітинки M', 'Жовті клітинки — M, їх треба згустити. Далі алгоритм іде по осі X, потім по Y: на кожній осі позначає вузли, ділить клітинки шаблонами й розширює M.'];
+    case 'layers':
+      return [`Прохід ${axisName(step.axis)}: шви шарів`, `Позначено вузли на швах пар шарів вихідної сітки (червоні) і дописано вузли, яких не вистачало для дозволених візерунків. Червоні клітинки — клітинки з M, яких ці шви не дісталися: їм треба власний шов (${step.unreached.length}).`];
+    case 'seam': {
+      const t = step.seam!;
+      const edge = t.edge === 'far' ? 'далеке' : 'ближнє';
+      const verdict = t.accepted ? 'Підходить: залишаю ці мітки.' : !t.cutAcross ? 'Не підходить: після цього клітинка все одно не розрізається впоперек.' : `Не підходить: це зіпсувало б ${t.spoiled.length} інших клітинок M (темно-червоні).`;
+      return [`Прохід ${axisName(step.axis)}: власний шов клітинки`, `Оранжева клітинка не дістає до шва. Пробую її ${edge} ребро (оранжеві вузли)${t.added.length ? ', замикання дописало вузли (фіолетові): ' + t.added.length : ''}. ${verdict}`];
+    }
     case 'marks':
       return [`Прохід ${axisName(step.axis)}: позначені вузли`, `Шари вздовж осі йдуть парами (парний + непарний). Червоні вузли лежать на шві пари, в якій є клітинка з M, і на власному шві кожної клітинки з M, до якої шов не дотягся (${step.marked.length} вузлів). Клітинка з одним позначеним вузлом (кут) отримає T1, з двома на ребрі — T2.`];
     case 'templates':

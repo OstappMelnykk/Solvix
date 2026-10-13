@@ -31,14 +31,25 @@ export async function post(path: string, body: unknown): Promise<{ state: StateD
 
 // One stage of a refinement (Refiner.Preview): the mesh then, the marked nodes, the cells in M, what the templates did.
 export interface StepDto {
-  kind: 'start' | 'marks' | 'templates' | 'expand' | 'final';
+  kind: 'start' | 'layers' | 'seam' | 'marks' | 'templates' | 'expand' | 'final';
   axis: number;
   n: number;
-  mesh: MeshDto;
+  mesh: MeshDto | null;                                   // null in a 'seam' stage: the mesh is that of the 'layers' stage before it
   marked: number[];
   m: number[];
   applied: AppliedDto[];
   unreached: number[];
+  seam: SeamDto | null;
+}
+
+export interface SeamDto {
+  cell: number;
+  edge: 'far' | 'near';
+  edgeNodes: number[];
+  added: number[];
+  cutAcross: boolean;
+  spoiled: number[];
+  accepted: boolean;
 }
 
 export async function preview(cells: number[], nI: number, nJ: number): Promise<{ steps: StepDto[] } | { error: string }> {
