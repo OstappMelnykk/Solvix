@@ -278,32 +278,74 @@ export function clipSegmentsToPlane(segments: readonly number[], cut: SectionCut
   return out;
 }
 
-// The polygon in which the plane cuts a small element: the points where the triangles of its six faces cross the plane,
-// ordered round their centre. Empty if the plane misses the element.
-export function elementSectionPolygon(faces: readonly { positions: number[]; indices: number[] }[], cut: SectionCut): THREE.Vector3[] {
-  const points: THREE.Vector3[] = [];
-  const add = (p: THREE.Vector3) => {
-    if (!points.some(q => q.distanceToSquared(p) < 1e-14)) points.push(p);
-  };
+// The outlines in which the plane cuts a small element: the segments in which it crosses the triangles of the element's six
+// faces, chained end to end into closed loops (a loop is a list of points). Usually one loop; none if the plane misses the
+// element. (Ordering the points by their angle round the centre, as this used to, gives a star of thin spikes as soon as the
+// cut is not convex - which a bent or folded element's is.)
+export function elementSectionLoops(faces: readonly { positions: number[]; indices: number[] }[], cut: SectionCut): THREE.Vector3[][] {
+  const key = (p: THREE.Vector3) => `${Math.round(p.x * 1e6)},${Math.round(p.y * 1e6)},${Math.round(p.z * 1e6)}`;
+  const segments: [THREE.Vector3, THREE.Vector3][] = [];
+  const seen = new Set<string>();
   for (const { positions, indices } of faces) {
     for (let t = 0; t + 2 < indices.length; t += 3) {
       const v = [0, 1, 2].map(k => new THREE.Vector3(positions[3 * indices[t + k]], positions[3 * indices[t + k] + 1], positions[3 * indices[t + k] + 2]));
       const d = v.map(p => alongOf(cut.axis, p.x, p.y, p.z) - cut.at);
+      const crossings: THREE.Vector3[] = [];
+      const add = (p: THREE.Vector3) => {
+        if (!crossings.some(q => key(q) === key(p))) crossings.push(p);
+      };
       for (let k = 0; k < 3; k++) {
         const a = k, b = (k + 1) % 3;
         if (d[a] === 0) add(v[a].clone());
         else if ((d[a] < 0) !== (d[b] < 0) && d[b] !== 0) add(v[a].clone().lerp(v[b], d[a] / (d[a] - d[b])));
       }
+      if (crossings.length === 2) {
+        // (a triangle lying in the plane gives none; an edge lying in it is met from both of its triangles: kept once)
+        const name = [key(crossings[0]), key(crossings[1])].sort().join('|');
+        if (!seen.has(name)) {
+          seen.add(name);
+          segments.push([crossings[0], crossings[1]]);
+        }
+      }
     }
   }
-  if (points.length < 3) return [];
-  const [u, w] = [0, 1, 2].filter(i => i !== cut.axis);
-  const centre = points.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / points.length);
+  // chain: each point joins the segments that end in it
+  const ends = new Map<string, number[]>();
+  segments.forEach(([p, q], i) => {
+    for (const point of [p, q]) {
+      const k = key(point);
+      ends.set(k, [...(ends.get(k) ?? []), i]);
+    }
+  });
+  const used = new Set<number>();
+  const loops: THREE.Vector3[][] = [];
+  for (let start = 0; start < segments.length; start++) {
+    if (used.has(start)) continue;
+    used.add(start);
+    const loop = [segments[start][0], segments[start][1]];
+    for (;;) {
+      const last = loop[loop.length - 1];
+      const next = (ends.get(key(last)) ?? []).find(i => !used.has(i));
+      if (next === undefined) break;
+      used.add(next);
+      const [p, q] = segments[next];
+      loop.push(key(p) === key(last) ? q : p);
+      if (key(loop[loop.length - 1]) === key(loop[0])) { loop.pop(); break; }
+    }
+    if (loop.length >= 3) loops.push(loop);
+  }
+  return loops;
+}
+
+// A loop cut into triangles (indices into the loop). Ear clipping, which also handles a loop that is not convex; if the
+// loop is degenerate (zero area) a fan from its first point is used instead.
+export function triangulateLoop(loop: readonly THREE.Vector3[], axis: 0 | 1 | 2): number[][] {
+  const [u, w] = [0, 1, 2].filter(i => i !== axis);
   const at = (p: THREE.Vector3, i: number) => (i === 0 ? p.x : i === 1 ? p.y : p.z);
-  return points
-    .map(p => ({ p, angle: Math.atan2(at(p, w) - at(centre, w), at(p, u) - at(centre, u)) }))
-    .sort((a, b) => a.angle - b.angle)
-    .map(x => x.p);
+  const contour = loop.map(p => new THREE.Vector2(at(p, u), at(p, w)));
+  const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
+  if (triangles.length > 0) return triangles;
+  return Array.from({ length: loop.length - 2 }, (_, i) => [0, i + 1, i + 2]);
 }
 
 const SECTION_COLOR = 0x39c5f2;
@@ -851,19 +893,24 @@ export function buildSolverView(input: SolverViewInput): MeshView {
                 sixFaces.push({ positions, indices });
               }
             }
-            const polygon = elementSectionPolygon(sixFaces, cut);
-            if (polygon.length < 3) continue;
+            const loops = elementSectionLoops(sixFaces, cut);
+            if (loops.length === 0) continue;
             const rgb = new THREE.Color(
               qualityColors
                 ? RESULT_COLORS[resultOf(qualityColors.get(`${hex.id}:${ex}:${ey}:${ez}`) ?? 'excellent')]
                 : materialColor(materialOf(hex.id, ex, ey, ez))
             );
-            const centre = polygon.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / polygon.length);
-            for (let i = 0; i < polygon.length; i++) {
-              const a = polygon[i], b = polygon[(i + 1) % polygon.length];
-              capPositions.push(centre.x, centre.y, centre.z, a.x, a.y, a.z, b.x, b.y, b.z);
-              outline.push(a.x, a.y, a.z, b.x, b.y, b.z);
-              for (let k = 0; k < 3; k++) capColors.push(rgb.r, rgb.g, rgb.b);
+            for (const loop of loops) {
+              for (const [i, j, k] of triangulateLoop(loop, cut.axis)) {
+                for (const p of [loop[i], loop[j], loop[k]]) {
+                  capPositions.push(p.x, p.y, p.z);
+                  capColors.push(rgb.r, rgb.g, rgb.b);
+                }
+              }
+              for (let i = 0; i < loop.length; i++) {
+                const a = loop[i], b = loop[(i + 1) % loop.length];
+                outline.push(a.x, a.y, a.z, b.x, b.y, b.z);
+              }
             }
           }
     }

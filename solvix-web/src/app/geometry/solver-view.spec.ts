@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, clipMeshToPlane, clipSegmentsToPlane, elementCentreOf, elementSectionPolygon, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, clipMeshToPlane, clipSegmentsToPlane, elementCentreOf, elementSectionLoops, triangulateLoop, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -791,13 +791,36 @@ describe('colouring by mesh quality', () => {
     disposeMeshView(view);
   });
 
-  it('finds the polygon in which a plane cuts a unit square face set', () => {
-    // the six faces of a unit cube as two triangles each is too much here: a single vertical wall crossed by the plane
-    const wall = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], indices: [0, 1, 2, 1, 3, 2] };
-    const polygon = elementSectionPolygon([wall], { axis: 0, at: 0.5, keep: 'above' });
+  // the six faces of the unit cube, each as two triangles
+  const cubeFaces = () => {
+    const corner = (x: number, y: number, z: number) => [x, y, z];
+    const quad = (a: number[], b: number[], c: number[], d: number[]) => ({ positions: [...a, ...b, ...c, ...d], indices: [0, 1, 2, 0, 2, 3] });
+    return [
+      quad(corner(0, 0, 0), corner(1, 0, 0), corner(1, 1, 0), corner(0, 1, 0)), quad(corner(0, 0, 1), corner(1, 0, 1), corner(1, 1, 1), corner(0, 1, 1)),
+      quad(corner(0, 0, 0), corner(1, 0, 0), corner(1, 0, 1), corner(0, 0, 1)), quad(corner(0, 1, 0), corner(1, 1, 0), corner(1, 1, 1), corner(0, 1, 1)),
+      quad(corner(0, 0, 0), corner(0, 1, 0), corner(0, 1, 1), corner(0, 0, 1)), quad(corner(1, 0, 0), corner(1, 1, 0), corner(1, 1, 1), corner(1, 0, 1))
+    ];
+  };
+  const loopArea = (loop: THREE.Vector3[], axis: 0 | 1 | 2) => {
+    let area = 0;
+    for (const [i, j, k] of triangulateLoop(loop, axis)) area += new THREE.Vector3().subVectors(loop[j], loop[i]).cross(new THREE.Vector3().subVectors(loop[k], loop[i])).length() / 2;
+    return area;
+  };
 
-    expect(polygon.length).toBe(3);        // the two ends of the segment in which it meets the wall, and where it crosses the wall's diagonal
-    expect(polygon.every(p => Math.abs(p.x - 0.5) < 1e-9)).toBeTrue();
+  it('finds the one closed outline in which a plane cuts a cube, and fills it exactly', () => {
+    const loops = elementSectionLoops(cubeFaces(), { axis: 0, at: 0.5, keep: 'above' });
+
+    expect(loops.length).toBe(1);
+    expect(loops[0].every(p => Math.abs(p.x - 0.5) < 1e-9)).toBeTrue();
+    expect(loopArea(loops[0], 0)).toBeCloseTo(1, 6);
+    expect(elementSectionLoops(cubeFaces(), { axis: 0, at: 3, keep: 'above' })).toEqual([]);
+  });
+
+  it('fills a cut that is not convex without the spikes a fan from the centre makes', () => {
+    // an L-shaped outline (area 3 of a 2 x 2 square)
+    const l = [[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]].map(([y, z]) => new THREE.Vector3(0.5, y, z));
+
+    expect(loopArea(l, 0)).toBeCloseTo(3, 6);
   });
 
   it('knows where an element is', () => {
