@@ -32,10 +32,10 @@ public class PreviewTests
     }
 
     [Test]
-    public void Every_attempt_at_a_seam_of_its_own_says_truthfully_whether_it_was_kept()
+    public void Every_step_in_choosing_the_seams_of_a_cells_own_describes_the_choice_truthfully()
     {
         var random = new Random(71);
-        int tries = 0, kept = 0, refused = 0;
+        int guesses = 0, changes = 0;
         for (int trial = 0; trial < 40; trial++)
         {
             var mesh = HexMesh.Grid(random.Next(2, 4), random.Next(2, 4), random.Next(2, 4));
@@ -49,15 +49,17 @@ public class PreviewTests
             {
                 if (steps[k].Kind != "seam") continue;
                 var t = steps[k].Try!;
-                tries++;
                 Assert.That(steps[k].Mesh, Is.Null);
-                Assert.That(t.FaceNodes, Has.Count.EqualTo(4));
+                Assert.That(t.Kind, Is.AnyOf("guess", "refused", "change"));
+                Assert.That(t.Side, Is.InRange(-1, 1));
+                Assert.That(t.FaceNodes, Has.Count.EqualTo(t.Side >= 0 ? 4 : 0));
                 Assert.That(t.Added.Intersect(t.FaceNodes), Is.Empty);
-                if (t.Accepted) { kept++; Assert.That(t.CutAcross && t.Spoiled.Count == 0, $"trial {trial}"); }
-                else { refused++; Assert.That(!t.CutAcross || t.Spoiled.Count > 0, $"trial {trial}"); }
+                Assert.That(t.CutAcross, Is.EqualTo(!t.Uncut.Contains(t.Cell)), "CutAcross must agree with the list of the cells still not cut");
+                if (t.Kind != "change") guesses++;
+                else changes++;
             }
         }
-        TestContext.Out.WriteLine($"SEAMTRIES3D {tries}: kept {kept}, refused {refused}");
-        Assert.That(tries, Is.GreaterThan(0));
+        TestContext.Out.WriteLine($"SEAMS3D guesses {guesses}, changes {changes}");
+        Assert.That(guesses, Is.GreaterThan(0));
     }
 }

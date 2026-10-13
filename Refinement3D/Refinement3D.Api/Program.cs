@@ -83,7 +83,7 @@ sealed class Session
             m = step.M,
             applied = step.Applied.Select(a => new { cell = a.Cell, template = a.Template, index = a.Index, children = a.Children }),
             unreached = step.Unreached,
-            seam = step.Try is null ? null : new { cell = step.Try.Cell, side = step.Try.Side, faceNodes = step.Try.FaceNodes, added = step.Try.Added, cutAcross = step.Try.CutAcross, spoiled = step.Try.Spoiled, accepted = step.Try.Accepted }
+            seam = step.Try is null ? null : new { cell = step.Try.Cell, side = step.Try.Side, kind = step.Try.Kind, faceNodes = step.Try.FaceNodes, added = step.Try.Added, cutAcross = step.Try.CutAcross, uncut = step.Try.Uncut }
         }).ToArray();
 
     private static object MeshOf(HexMesh mesh) => new

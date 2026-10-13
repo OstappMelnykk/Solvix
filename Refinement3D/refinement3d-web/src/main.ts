@@ -14,8 +14,15 @@ renderer.setClearColor(0xf4f4ef);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf4f4ef);
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
+camera.up.set(0, 0, 1);                                       // z is up; the controls read `up` when they are made, so it is set first
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
+controls.dampingFactor = 0.12;
+controls.rotateSpeed = 0.7;
+controls.zoomSpeed = 0.9;
+controls.screenSpacePanning = true;
+controls.minPolarAngle = 0.02;
+controls.maxPolarAngle = Math.PI - 0.02;
 let shown = new THREE.Group();
 scene.add(shown);
 
@@ -36,7 +43,6 @@ function fit(mesh: MeshDto): void {
   const centre = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
   controls.target.copy(centre);
   camera.position.copy(centre).add(new THREE.Vector3(0.9, -1.3, 1.0).normalize().multiplyScalar(size * 1.6));
-  camera.up.set(0, 0, 1);
   camera.near = size / 200;
   camera.far = size * 20;
   camera.updateProjectionMatrix();
@@ -76,8 +82,9 @@ function currentScene(): Scene3D | null {
     if (step.kind === 'templates' || step.kind === 'expand') for (const a of step.applied) for (const c of a.children) made.set(c, a.template);
     const seam = step.seam;
     return {
-      mesh, marked: ['layers', 'seam', 'marks', 'templates'].includes(step.kind) ? step.marked : [], m: new Set(step.m), made, unreached: new Set(step.unreached),
-      focus: seam ? seam.cell : null, spoiled: new Set(seam?.spoiled ?? []), trial: seam?.faceNodes ?? [], added: seam?.added ?? []
+      mesh, marked: ['layers', 'seam', 'marks', 'templates'].includes(step.kind) ? step.marked : [], m: new Set(step.m), made,
+      unreached: new Set(seam ? seam.uncut : step.unreached),
+      focus: seam ? seam.cell : null, spoiled: new Set(), trial: seam?.faceNodes ?? [], added: seam?.added ?? []
     };
   }
   if (!state) return null;
@@ -259,8 +266,10 @@ function describe(step: StepDto): [string, string] {
       return [`Прохід ${axisName(step.axis)}: шви шарів`, `Позначено вузли на швах пар шарів вихідної сітки (червоні) і дописано вузли, яких не вистачало для дозволених візерунків. Червоні клітинки — клітинки з M, яких ці шви не дісталися: їм треба власний шов (${step.unreached.length}).`];
     case 'seam': {
       const t = step.seam!;
-      const verdict = t.accepted ? 'Підходить: залишаю ці мітки.' : !t.cutAcross ? 'Не підходить: після цього клітинка все одно не розрізається впоперек.' : `Не підходить: це зіпсувало б ${t.spoiled.length} інших клітинок M (темно-червоні).`;
-      return [`Прохід ${axisName(step.axis)}: власний шов клітинки`, `Оранжева клітинка не дістає до шва. Пробую її ${t.side === 1 ? 'далеку' : 'ближню'} грань (оранжеві вузли)${t.added.length ? ', замикання дописало вузли (фіолетові): ' + t.added.length : ''}. ${verdict}`];
+      const face = t.side === 1 ? 'далеку' : 'ближню';
+      const what = t.kind === 'guess' ? `Беру ${face} грань за парністю (оранжеві вузли)` : t.kind === 'change' ? `Пошук змінив вибір: тепер ${face} грань (оранжеві вузли)` : `Жодна грань не підійшла, клітинка лишається без розрізу (пробна: ${face})`;
+      const added = t.added.length ? `; замикання дописало вузли (фіолетові): ${t.added.length}` : '';
+      return [`Прохід ${axisName(step.axis)}: власний шов клітинки`, `Оранжева клітинка не дістає до шва. ${what}${added}. Червоних клітинок M ще не розрізано: ${t.uncut.length}.`];
     }
     case 'marks':
       return [`Прохід ${axisName(step.axis)}: усі позначені вузли`, `Остаточні мітки проходу (${step.marked.length} вузлів). Клітинка з одним позначеним вузлом (кут) отримає T1, з двома на ребрі — T2, з чотирма на грані — T4.`];

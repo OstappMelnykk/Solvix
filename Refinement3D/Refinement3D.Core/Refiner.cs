@@ -11,10 +11,13 @@ public sealed record PassTrace(
 public sealed record RefineResult(IReadOnlyList<PassTrace> Passes);
 
 /// <summary>
-/// One attempt to give a cell of M a seam of its own: the face tried (its side on the axis), its nodes, the nodes the completion had to add, whether the
-/// cell is now cut across the axis, which other cells of M that were fine it would spoil, and whether the attempt was kept.
+/// A step in choosing the seams of the cells of M that the coarse layers did not reach. Kind "guess": the first choice for the cell by the parity of its
+/// place (side 0 or 1: the face on that side of the axis is marked; it is kept only if it cuts the cell and spoils no cell that was cut), kind "refused": a
+/// first choice that did not cut the cell or spoiled another. Kind "change": the search found that choosing otherwise for this cell cuts more cells
+/// of M (side -1: the cell gets no seam of its own and is cut by the marks of its neighbours). Added: the nodes the completion had to add because of the
+/// choice; Uncut: the cells of M that are still not cut across the axis once the choice is made.
 /// </summary>
-public sealed record SeamTry(int Cell, int Side, IReadOnlyList<int> FaceNodes, IReadOnlyList<int> Added, bool CutAcross, IReadOnlyList<int> Spoiled, bool Accepted);
+public sealed record SeamTry(int Cell, int Side, string Kind, IReadOnlyList<int> FaceNodes, IReadOnlyList<int> Added, bool CutAcross, IReadOnlyList<int> Uncut);
 
 /// <summary>
 /// One stage of a refinement, for showing it step by step: the mesh as it was then, the nodes marked, the cells in M, and what the templates did.
@@ -72,17 +75,22 @@ public static class Refiner
     {
         mesh.Rescale(n);
         var cellsOf = CellsByNode(mesh);
-        var nodes = MarkNodes(mesh, marked, axis);
+        // what the coarse layers mark for every cell of M (shown to the user), and what stays fixed: the seams of the cells of M that the user did not choose
+        // (the transition cells of an earlier pass); the chosen cells themselves take their faces from the search below
+        var layered = MarkNodes(mesh, marked, axis);
+        Complete(mesh, layered, cellsOf);
+        var nodes = MarkNodes(mesh, marked.Where(id => !required.Contains(id)).ToHashSet(), axis);
         Complete(mesh, nodes, cellsOf);
         var none = Array.Empty<(int, string, int, IReadOnlyList<int>)>();
         Action<SeamTry>? log = null;
         if (steps != null)
         {
-            var reached = required.Where(id => !IsCutAcross(mesh.Cells[id], nodes, axis)).OrderBy(x => x).ToList();
-            steps.Add(new RefineStep("layers", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), none, reached));
-            log = t => steps.Add(new RefineStep("seam", axis, n, null, nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), none, reached, t));
+            var reached = required.Where(id => !IsCutAcross(mesh.Cells[id], layered, axis)).OrderBy(x => x).ToList();
+            var shownMarks = layered.OrderBy(x => x).ToList();
+            steps.Add(new RefineStep("layers", axis, n, mesh.Clone(), shownMarks, marked.OrderBy(x => x).ToList(), none, reached));
+            log = t => steps.Add(new RefineStep("seam", axis, n, null, shownMarks, marked.OrderBy(x => x).ToList(), none, reached, t));
         }
-        ExtendForMarkedCells(mesh, required, axis, nodes, cellsOf, log);
+        SeamSolver.Solve(mesh, required, axis, nodes, cellsOf, log);
         EnsureValid(mesh, nodes, cellsOf, n);
         var unreached = required.Where(id => !IsCutAcross(mesh.Cells[id], nodes, axis)).OrderBy(x => x).ToList();
         steps?.Add(new RefineStep("marks", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), none, unreached));
@@ -126,7 +134,7 @@ public static class Refiner
 
     // ---- patterns, completion, and the cells of M that the seams did not reach ----------------------------------------------
 
-    private static int MaskOf(Cell cell, ISet<int> marks)
+    internal static int MaskOf(Cell cell, ISet<int> marks)
     {
         int mask = 0;
         for (int s = 0; s < 8; s++) if (marks.Contains(cell.Nodes[s])) mask |= 1 << s;
@@ -140,9 +148,10 @@ public static class Refiner
     /// </summary>
     public static void Complete(HexMesh mesh, HashSet<int> marks) => Complete(mesh, marks, CellsByNode(mesh));
 
-    private static void Complete(HexMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf)
+    // seeds: the nodes just marked, when the marks before them already had patterns with templates everywhere (then only the cells round the seeds can be wrong)
+    internal static void Complete(HexMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, IEnumerable<int>? seeds = null, List<int>? added = null)
     {
-        var queue = new Queue<int>(marks.SelectMany(n => cellsOf.GetValueOrDefault(n) ?? new List<int>()).Distinct());
+        var queue = new Queue<int>((seeds ?? marks).SelectMany(n => cellsOf.GetValueOrDefault(n) ?? new List<int>()).Distinct());
         while (queue.Count > 0)
         {
             var cell = mesh.Cells[queue.Dequeue()];
@@ -153,6 +162,7 @@ public static class Refiner
             {
                 if ((closed >> s & 1) == 0 || marks.Contains(cell.Nodes[s])) continue;
                 marks.Add(cell.Nodes[s]);
+                added?.Add(cell.Nodes[s]);
                 foreach (int other in cellsOf.GetValueOrDefault(cell.Nodes[s]) ?? new List<int>()) queue.Enqueue(other);
             }
         }
@@ -185,7 +195,7 @@ public static class Refiner
         }
     }
 
-    private static Dictionary<int, List<int>> CellsByNode(HexMesh mesh)
+    internal static Dictionary<int, List<int>> CellsByNode(HexMesh mesh)
     {
         var map = new Dictionary<int, List<int>>();
         foreach (var cell in mesh.Cells.Values)
@@ -198,45 +208,10 @@ public static class Refiner
     }
 
     // Is the cell cut into slabs across the axis: exactly the face on one side of the axis marked?
-    private static bool IsCutAcross(Cell cell, ISet<int> marks, int axis)
+    internal static bool IsCutAcross(Cell cell, ISet<int> marks, int axis)
     {
         int mask = MaskOf(cell, marks);
         return mask == Hex.FaceMask(axis, 0) || mask == Hex.FaceMask(axis, 1);
-    }
-
-    /// <summary>
-    /// A cell of M has to be cut in n along this axis, which needs exactly one of its two faces across the axis marked. The seams of the coarse layers reach
-    /// most of them; those they do not (a cell deeper in its coarse cell than the seam, one that got a corner or an edge) get a seam of their own: one of
-    /// their two faces across the axis. Which, is decided by the parity of the cell's place in the lattice of its own size along the axis (even: the far
-    /// face, odd: the near one), the same pairing as the coarse layers use; the other face is tried if the first would break a pattern or spoil another
-    /// cell of M. A cell that cannot be reached either way is left, and reported.
-    /// </summary>
-    private static void ExtendForMarkedCells(HexMesh mesh, ISet<int> required, int axis, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, Action<SeamTry>? log = null)
-    {
-        foreach (int id in required.OrderBy(x => x).ToList())
-        {
-            var cell = mesh.Cells[id];
-            if (IsCutAcross(cell, marks, axis)) continue;
-            var coords = cell.Nodes.Select(n => mesh.PointOf(n)[axis]).ToArray();
-            long low = coords.Min(), width = coords.Max() - low;
-            bool even = width > 0 && (((low / width) % 2) + 2) % 2 == 0;
-            foreach (int side in even ? new[] { 1, 0 } : new[] { 0, 1 })
-            {
-                var trial = new HashSet<int>(marks);
-                var faceNodes = Hex.FaceSlots(axis, side).Select(slot => cell.Nodes[slot]).ToList();
-                trial.UnionWith(faceNodes);
-                Complete(mesh, trial, cellsOf);
-                bool cut = IsCutAcross(cell, trial, axis);
-                // it must not spoil another cell of the user's that was fine
-                var spoiled = required.Where(m => m != id && IsCutAcross(mesh.Cells[m], marks, axis) && !IsCutAcross(mesh.Cells[m], trial, axis)).OrderBy(x => x).ToList();
-                bool accepted = cut && spoiled.Count == 0;
-                log?.Invoke(new SeamTry(id, side, faceNodes, trial.Where(x => !marks.Contains(x) && !faceNodes.Contains(x)).OrderBy(x => x).ToList(), cut, spoiled, accepted));
-                if (!accepted) continue;
-                marks.Clear();
-                marks.UnionWith(trial);
-                break;
-            }
-        }
     }
 
     // ---- templates -----------------------------------------------------------------------------------------------------

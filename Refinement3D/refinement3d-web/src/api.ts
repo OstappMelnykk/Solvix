@@ -31,12 +31,12 @@ export async function post(path: string, body: unknown): Promise<{ state: StateD
 
 export interface SeamDto {
   cell: number;
-  side: number;
+  side: number;                                           // the face tried (0 or 1 of the axis of the pass)
+  kind: 'guess' | 'change' | 'refused';
   faceNodes: number[];
   added: number[];
   cutAcross: boolean;
-  spoiled: number[];
-  accepted: boolean;
+  uncut: number[];                                        // the cells of M still not cut across once this choice is made
 }
 
 // One stage of a refinement (Refiner.Preview): the mesh then, the marked nodes, the cells in M, what the templates did.
