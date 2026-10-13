@@ -70,6 +70,18 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         return s.Setup.ToDto();
     });
 
+    public SolverSetupDto UndoSetup(int sessionId) => sessions.With(sessionId, s =>
+    {
+        s.Setup.Undo();
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto RedoSetup(int sessionId) => sessions.With(sessionId, s =>
+    {
+        s.Setup.Redo();
+        return s.Setup.ToDto();
+    });
+
     public SolverSetupDto ClearSetup(int sessionId) => sessions.With(sessionId, s =>
     {
         s.Setup.Clear();

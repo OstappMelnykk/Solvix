@@ -19,6 +19,12 @@
     </button>
   </div>
 
+  <div class="row" *ngIf="open('tools')">
+    <span class="caption">Дія</span>
+    <button type="button" class="brush" [disabled]="!canUndo()" (click)="undo()" title="Скасувати останню дію (Cmd/Ctrl+Z)">↶ Скасувати</button>
+    <button type="button" class="brush" [disabled]="!canRedo()" (click)="redo()" title="Повернути скасовану дію (Cmd/Ctrl+Shift+Z)">↷ Повернути</button>
+  </div>
+
   <div class="row" *ngIf="open('tools') && isFaceTool()">
     <span class="caption">Пензель</span>
     <button type="button" class="brush" [class.brush--on]="brush()" (click)="toggleBrush()" title="Малювати по поверхні: тримайте кнопку миші й проводьте — те, чого торкнеться пензель, стане навантаженим, закріпленим або матиме обраний матеріал">

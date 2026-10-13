@@ -60,6 +60,13 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     public ActionResult<SolverSetupDto> SetLoads(int sessionId, [FromBody] LoadFacesRequest request) =>
         request.Replace && request.Pressure is double p ? solver.ReplaceLoads(sessionId, request.Faces, p) : solver.SetLoads(sessionId, request.Faces, request.Pressure);
 
+    /// <summary>Takes back the last change of the set-up (the supports, pressures, materials, division).</summary>
+    [HttpPost("setup/undo")]
+    public ActionResult<SolverSetupDto> UndoSetup(int sessionId) => solver.UndoSetup(sessionId);
+
+    [HttpPost("setup/redo")]
+    public ActionResult<SolverSetupDto> RedoSetup(int sessionId) => solver.RedoSetup(sessionId);
+
     [HttpDelete("setup")]
     public ActionResult<SolverSetupDto> ClearSetup(int sessionId) => solver.ClearSetup(sessionId);
 

@@ -39,7 +39,9 @@ public sealed record SolverSetupDto(
     IReadOnlyDictionary<int, string> HexMaterials,
     IReadOnlyList<SolverElementMaterialDto> ElementMaterials,
     IReadOnlyList<SolverFaceDto> Fixed,
-    IReadOnlyList<SolverLoadDto> Loads);
+    IReadOnlyList<SolverLoadDto> Loads,
+    bool CanUndo = false,
+    bool CanRedo = false);
 
 /// <param name="Severity">"error" blocks the solve; "warning" does not.</param>
 public sealed record SolverIssueDto(string Severity, string Message);

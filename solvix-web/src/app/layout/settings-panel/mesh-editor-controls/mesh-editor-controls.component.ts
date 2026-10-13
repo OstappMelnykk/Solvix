@@ -590,7 +590,7 @@ export class MeshEditorControlsComponent {
   // Shortcuts act on the same commands as the buttons, and only when the button
   // would be enabled. Ignored while typing in a field. Listed for the user in the
   // template (and in docs): A add, Del delete, L link, U unlink, S swap, N first
-  // cube, Esc clear, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo, arrows and
+  // cube, Esc clear, arrows and
   // PageUp/PageDown move the selected node (Shift = x10).
   @HostListener('window:keydown', ['$event'])
   onKeyDown(event: KeyboardEvent): void {
@@ -617,11 +617,7 @@ export class MeshEditorControlsComponent {
       return;
     }
 
-    if (mod && key === 'z') {
-      if (event.shiftKey ? this.canRedo() : this.canUndo()) (event.shiftKey ? this.redo() : this.undo());
-    } else if (mod && key === 'y') {
-      if (this.canRedo()) this.redo();
-    } else if (mod || event.altKey) {
+    if (mod || event.altKey) {                  // (Cmd/Ctrl+Z and +Shift+Z are the whole app's: GlobalShortcutsComponent)
       handled = false;
     } else if (key === 'a') {
       if (this.canAttachActiveFace()) this.attachActiveFace();

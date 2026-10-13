@@ -37,6 +37,11 @@ public interface ISolverFacade
     /// <summary>Forgets everything set so far (supports, loads, per-cube materials).</summary>
     SolverSetupDto ClearSetup(int sessionId);
 
+    /// <summary>Takes back the last change of the set-up (supports, pressures, materials, division); does nothing when there is none.</summary>
+    SolverSetupDto UndoSetup(int sessionId);
+
+    SolverSetupDto RedoSetup(int sessionId);
+
     /// <summary>Drops the supports, loads and materials of cubes that no longer exist.</summary>
     SolverSetupDto Prune(int sessionId, IReadOnlyCollection<int> existingHexes);
 

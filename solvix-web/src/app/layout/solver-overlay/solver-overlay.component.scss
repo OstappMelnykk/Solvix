@@ -213,8 +213,13 @@ $material: #c77dff;
   font-family: inherit;
   cursor: pointer;
 
-  &:hover {
+  &:hover:not(:disabled) {
     border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 

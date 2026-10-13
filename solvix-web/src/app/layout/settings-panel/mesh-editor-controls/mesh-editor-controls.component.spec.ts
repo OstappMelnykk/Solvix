@@ -508,24 +508,14 @@ describe('MeshEditorControlsComponent', () => {
       expect(selection.face(1)).toBeNull();
     });
 
-    it('Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z and Ctrl+Y redo', () => {
+    it('leaves Ctrl/Cmd+Z to the whole app (the global shortcuts), and does not undo twice', () => {
       state = { ...singleCubeState(), canUndo: true, canRedo: true };
 
       press('z', { ctrlKey: true });
-      press('z', { metaKey: true });
-      expect(editor.undo).toHaveBeenCalledTimes(2);
-
-      press('z', { ctrlKey: true, shiftKey: true });
-      press('y', { ctrlKey: true });
-      expect(editor.redo).toHaveBeenCalledTimes(2);
-    });
-
-    it('does not undo when there is nothing to undo', () => {
-      state = { ...singleCubeState(), canUndo: false };
-
-      press('z', { ctrlKey: true });
+      press('z', { metaKey: true, shiftKey: true });
 
       expect(editor.undo).not.toHaveBeenCalled();
+      expect(editor.redo).not.toHaveBeenCalled();
     });
 
     it('arrow keys and PageUp/PageDown move the selected node, Shift multiplies by ten', () => {

@@ -4,6 +4,7 @@ import { Scope, Tool } from '../../geometry/solver-targets';
 import { ResultField, SolverService } from '../../state/solver.service';
 import { fieldRange, fieldValues, materialColor, pressureColor, rampColor } from '../../geometry/solver-view';
 import { SolverMaterialDto } from '../../api/solver-api.service';
+import { UndoRedoService } from '../../state/undo-redo.service';
 import { NotificationService } from '../../state/notification.service';
 
 const SLIDER_STEPS = 1000;
@@ -38,6 +39,7 @@ const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
 export class SolverOverlayComponent {
   private readonly solver = inject(SolverService);
   private readonly notifications = inject(NotificationService);
+  private readonly undoRedo = inject(UndoRedoService);
 
   @Input({ required: true }) sessionId!: number;
 
@@ -203,6 +205,23 @@ export class SolverOverlayComponent {
 
   togglePressureLabels(): void {
     this.solver.setPressureLabels(this.sessionId, !this.pressureLabels());
+  }
+
+  // Taking back the last action of the set-up, whatever it was (also Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z everywhere in the app).
+  canUndo(): boolean {
+    return this.undoRedo.canUndo();
+  }
+
+  canRedo(): boolean {
+    return this.undoRedo.canRedo();
+  }
+
+  undo(): void {
+    this.undoRedo.undo();
+  }
+
+  redo(): void {
+    this.undoRedo.redo();
   }
 
   showInner(): boolean {

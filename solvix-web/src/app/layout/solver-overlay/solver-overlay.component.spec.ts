@@ -1,11 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { SolverOverlayComponent, TOOLS } from './solver-overlay.component';
 import { SolverService } from '../../state/solver.service';
+import { UndoRedoService } from '../../state/undo-redo.service';
 import { Scope, Tool } from '../../geometry/solver-targets';
 import { SolverMaterialDto, SolverResultDto, SolverSetupDto } from '../../api/solver-api.service';
 
 describe('SolverOverlayComponent', () => {
   let solver: jasmine.SpyObj<SolverService>;
+  let undoRedo: jasmine.SpyObj<UndoRedoService>;
   let component: SolverOverlayComponent;
   let brush = false;
   let tool: Tool;
@@ -47,9 +49,25 @@ describe('SolverOverlayComponent', () => {
     solver.showInner.and.returnValue(false);
     solver.pressure.and.returnValue(-1e6);
     solver.loadedPressures.and.returnValue([]);
-    TestBed.configureTestingModule({ providers: [{ provide: SolverService, useValue: solver }] });
+    undoRedo = jasmine.createSpyObj<UndoRedoService>('UndoRedoService', ['canUndo', 'canRedo', 'undo', 'redo']);
+    undoRedo.canUndo.and.returnValue(true);
+    undoRedo.canRedo.and.returnValue(false);
+    TestBed.configureTestingModule({ providers: [{ provide: SolverService, useValue: solver }, { provide: UndoRedoService, useValue: undoRedo }] });
     component = TestBed.runInInjectionContext(() => new SolverOverlayComponent());
     component.sessionId = 1;
+  });
+
+  describe('undo', () => {
+    it('has undo and redo for the last action of the set-up, enabled as the app says, and they act through the app-wide service', () => {
+      expect(component.canUndo()).toBeTrue();
+      expect(component.canRedo()).toBeFalse();
+
+      component.undo();
+      component.redo();
+
+      expect(undoRedo.undo).toHaveBeenCalled();
+      expect(undoRedo.redo).toHaveBeenCalled();
+    });
   });
 
   describe('folding the windows', () => {

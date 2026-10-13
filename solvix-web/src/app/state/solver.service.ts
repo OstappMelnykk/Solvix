@@ -889,6 +889,23 @@ export class SolverService {
     this.apply(sessionId, this.api.clearSetup(sessionId));
   }
 
+  // Taking back the last change of the set-up, whatever it was (a support, a pressure, a material, the division, an eraser stroke).
+  canUndoSetup(sessionId: number): boolean {
+    return this.entry(sessionId).setup?.canUndo === true;
+  }
+
+  canRedoSetup(sessionId: number): boolean {
+    return this.entry(sessionId).setup?.canRedo === true;
+  }
+
+  undoSetup(sessionId: number): void {
+    if (this.canUndoSetup(sessionId)) this.apply(sessionId, this.api.undoSetup(sessionId));
+  }
+
+  redoSetup(sessionId: number): void {
+    if (this.canRedoSetup(sessionId)) this.apply(sessionId, this.api.redoSetup(sessionId));
+  }
+
   // --- solving ---
 
   validate(sessionId: number): void {

@@ -44,6 +44,9 @@ export interface SolverLoadDto extends SolverFaceDto {
 
 export interface SolverSetupDto {
   readonly version: number;
+  // whether the last change of the set-up can be taken back, or a taken-back one put back
+  readonly canUndo?: boolean;
+  readonly canRedo?: boolean;
   // Small elements each cube is cut into along its three axes (the solver's Nx, Ny, Nz).
   readonly divisions: readonly number[];
   readonly materials: readonly SolverMaterialDto[];
@@ -217,6 +220,15 @@ export class SolverApiService {
   // A null pressure removes the load.
   setLoads(sessionId: number, faces: readonly SolverFaceDto[], pressure: number | null): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'faces/load'), { faces, pressure });
+  }
+
+  // Takes back (and puts back) the last change of the set-up: the supports, pressures, materials, division.
+  undoSetup(sessionId: number): Observable<SolverSetupDto> {
+    return this.http.post<SolverSetupDto>(this.url(sessionId, 'setup/undo'), {});
+  }
+
+  redoSetup(sessionId: number): Observable<SolverSetupDto> {
+    return this.http.post<SolverSetupDto>(this.url(sessionId, 'setup/redo'), {});
   }
 
   clearSetup(sessionId: number): Observable<SolverSetupDto> {
