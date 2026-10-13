@@ -12,6 +12,7 @@ import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 import { MeasureInfoComponent } from './measure-info/measure-info.component';
 import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-controls.component';
+import { sectionOf } from '../../../state/quality-render.service';
 import { ExploreSettings, QualityExploreService, SectionSettings } from '../../../state/quality-explore.service';
 import { elementCentreOf } from '../../../geometry/solver-view';
 import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
@@ -71,8 +72,25 @@ export class QualityControlsComponent implements DoCheck {
     this.explore.setSection(this.sessionId, { position: Number((event.target as HTMLInputElement).value) / 100 });
   }
 
+  // Which side of the plane stays: the bigger values of the axis ('above') or the smaller ones ('below').
+  setSectionSide(keep: 'above' | 'below'): void {
+    this.explore.setSection(this.sessionId, { keep });
+  }
+
   flipSection(): void {
-    this.explore.setSection(this.sessionId, { keep: this.looking().section.keep === 'above' ? 'below' : 'above' });
+    this.setSectionSide(this.looking().section.keep === 'above' ? 'below' : 'above');
+  }
+
+  // Where the plane is, in the units of the body: "X = 1.35".
+  sectionText(): string {
+    const state = this.editor.getState(this.sessionId);
+    const cut = this.looking().section;
+    if (!state || state.nodes.length === 0) return '';
+    return `${this.axisNames[cut.axis].name} = ${sectionOf(state, cut).at.toFixed(2)}`;
+  }
+
+  sectionAxisName(): string {
+    return this.axisNames[this.looking().section.axis].name;
   }
 
   readonly axisNames: readonly { axis: 0 | 1 | 2; name: string }[] = [{ axis: 0, name: 'X' }, { axis: 1, name: 'Y' }, { axis: 2, name: 'Z' }];

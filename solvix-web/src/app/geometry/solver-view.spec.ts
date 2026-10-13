@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, elementCentreOf, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, clipMeshToPlane, clipSegmentsToPlane, elementCentreOf, elementSectionPolygon, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -721,10 +721,8 @@ describe('colouring by mesh quality', () => {
 
     expect(one).toBeGreaterThan(0);
     expect(one).toBeLessThan(all);                                          // the one bad element alone: 6 faces instead of the body's surface
-    // cut at the middle of the cube along its x: the elements of the middle and the near half stay
     const half = faces({ section: { axis: 0, at: 0, keep: 'above' } });
     expect(half).toBeGreaterThan(0);
-    expect(half).toBeLessThan(all + 1);
     expect(faces({ section: { axis: 0, at: 1e6, keep: 'above' } })).toBe(0);   // everything cut away
   });
 
@@ -742,6 +740,55 @@ describe('colouring by mesh quality', () => {
     expect(noCut.root.children.some(c => c.userData['sectionPlane'])).toBeFalse();
     disposeMeshView(view);
     disposeMeshView(noCut);
+  });
+
+  it('cuts the triangles, the lines and the elements exactly at the plane of a section', () => {
+    // one triangle from x = 0 to x = 2, the plane at x = 1: the kept half is a trapezoid (two triangles)
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 2, 0, 0, 0, 2, 0], 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1], 3));
+    geometry.setIndex([0, 1, 2]);
+
+    const above = clipMeshToPlane(geometry, 1, { axis: 0, at: 1, keep: 'above' });
+    const below = clipMeshToPlane(geometry, 1, { axis: 0, at: 1, keep: 'below' });
+
+    const xs = (g: THREE.BufferGeometry) => Array.from({ length: g.getAttribute('position').count }, (_, i) => g.getAttribute('position').getX(i));
+    expect(Math.min(...xs(above.geometry))).toBeCloseTo(1, 6);                     // nothing beyond the plane is left
+    expect(Math.max(...xs(below.geometry))).toBeCloseTo(1, 6);
+    expect(above.faceOfTriangle.every(f => f === 0)).toBeTrue();                   // and each piece knows its face
+    expect(clipMeshToPlane(geometry, 1, { axis: 0, at: 5, keep: 'above' }).geometry.getAttribute('position').count).toBe(0);
+    expect(clipMeshToPlane(geometry, 1, { axis: 0, at: -5, keep: 'above' }).geometry.getAttribute('position').count).toBe(3);   // untouched
+
+    expect(clipSegmentsToPlane([0, 0, 0, 2, 0, 0], { axis: 0, at: 1, keep: 'above' })).toEqual([1, 0, 0, 2, 0, 0]);
+    expect(clipSegmentsToPlane([0, 0, 0, 2, 0, 0], { axis: 0, at: 1, keep: 'below' })).toEqual([0, 0, 0, 1, 0, 0]);
+    expect(clipSegmentsToPlane([0, 0, 0, 2, 0, 0], { axis: 0, at: 3, keep: 'above' })).toEqual([]);
+  });
+
+  it('with a section through a cube, draws a cap in the colour of each element the plane runs through, and the body ends at the plane', () => {
+    const state = singleCubeState();           // the unit cube
+    const q = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid' as const, values: { scaledJacobian: 0.1 } }] };
+    const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q, section: { axis: 0, at: 0.5, keep: 'above' } });
+
+    const cap = view.root.children.find(c => c.userData['sectionCap']) as THREE.Mesh;
+    expect(cap).toBeDefined();
+    const capX = cap.geometry.getAttribute('position');
+    expect(Array.from({ length: capX.count }, (_, i) => capX.getX(i)).every(x => Math.abs(x - 0.5) < 1e-6)).toBeTrue();   // the cap lies in the plane
+    // the middle element (x from 1/3 to 2/3) is cut at 0.5 and is the invalid one: its cap is red
+    const colour = cap.geometry.getAttribute('color');
+    expect(colour.getX(0)).toBeGreaterThan(colour.getY(0) * 2);
+    // the body itself does not reach to the other side of the plane
+    const body = (view.pickables as THREE.Mesh[])[0].geometry.getAttribute('position');
+    expect(Math.min(...Array.from({ length: body.count }, (_, i) => body.getX(i)))).toBeGreaterThan(0.5 - 1e-6);
+    disposeMeshView(view);
+  });
+
+  it('finds the polygon in which a plane cuts a unit square face set', () => {
+    // the six faces of a unit cube as two triangles each is too much here: a single vertical wall crossed by the plane
+    const wall = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], indices: [0, 1, 2, 1, 3, 2] };
+    const polygon = elementSectionPolygon([wall], { axis: 0, at: 0.5, keep: 'above' });
+
+    expect(polygon.length).toBe(3);        // the two ends of the segment in which it meets the wall, and where it crosses the wall's diagonal
+    expect(polygon.every(p => Math.abs(p.x - 0.5) < 1e-9)).toBeTrue();
   });
 
   it('knows where an element is', () => {

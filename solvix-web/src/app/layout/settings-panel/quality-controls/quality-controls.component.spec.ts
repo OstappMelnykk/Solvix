@@ -131,8 +131,12 @@ describe('QualityControlsComponent', () => {
     expect(component.looking().onlyBad).toBeTrue();
     expect(root.querySelector('.cut')).not.toBeNull();
 
-    component.flipSection();
+    component.setSectionSide('below');
     expect(component.looking().section.keep).toBe('below');
+    expect(text(root.querySelector('.cut'))).toContain('лишити менші');
+    component.flipSection();
+    expect(component.looking().section.keep).toBe('above');
+    expect(component.sectionText()).toMatch(/^Y = /);
     component.onSectionPosition({ target: { value: '70' } } as unknown as Event);
     expect(component.looking().section.position).toBeCloseTo(0.7, 6);
   });

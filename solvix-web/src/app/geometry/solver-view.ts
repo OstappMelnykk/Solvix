@@ -200,6 +200,106 @@ export function elementCentreOf(state: MeshStateDto, divisions: readonly number[
   return hex ? new SolverGeometry(state, divisions, null, 0, 'none').elementCentre(hex, pick.ex, pick.ey, pick.ez) : null;
 }
 
+// ---- cutting by the plane of a section ----------------------------------------------------------------------------------
+
+const alongOf = (axis: 0 | 1 | 2, x: number, y: number, z: number): number => (axis === 0 ? x : axis === 1 ? y : z);
+
+// Cuts the triangles of a mesh by the plane of a section, keeping what is on the side that stays; a triangle the plane
+// runs through is cut (the kept part of it is one or two triangles, the colours interpolated). Also returns, for each
+// triangle that is left, the face it came from (so a click can still be traced back).
+export function clipMeshToPlane(source: THREE.BufferGeometry, trianglesPerFace: number, cut: SectionCut): { geometry: THREE.BufferGeometry; faceOfTriangle: number[] } {
+  const position = source.getAttribute('position');
+  const color = source.getAttribute('color');
+  const index = source.getIndex()!;
+  const sign = cut.keep === 'above' ? 1 : -1;
+  const outPositions: number[] = [];
+  const outColors: number[] = [];
+  const faceOfTriangle: number[] = [];
+  const vertex = (i: number) => ({
+    p: [position.getX(i), position.getY(i), position.getZ(i)] as const,
+    c: [color.getX(i), color.getY(i), color.getZ(i)] as const,
+    d: sign * (alongOf(cut.axis, position.getX(i), position.getY(i), position.getZ(i)) - cut.at)
+  });
+  type Vertex = ReturnType<typeof vertex>;
+  const between = (a: Vertex, b: Vertex): Vertex => {
+    const t = a.d / (a.d - b.d);
+    return {
+      p: [a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, a.p[2] + (b.p[2] - a.p[2]) * t] as const,
+      c: [a.c[0] + (b.c[0] - a.c[0]) * t, a.c[1] + (b.c[1] - a.c[1]) * t, a.c[2] + (b.c[2] - a.c[2]) * t] as const,
+      d: 0
+    };
+  };
+  const emit = (face: number, ...corners: Vertex[]) => {
+    for (const v of corners) {
+      outPositions.push(...v.p);
+      outColors.push(...v.c);
+    }
+    faceOfTriangle.push(face);
+  };
+  for (let t = 0; t < index.count / 3; t++) {
+    const face = Math.floor(t / trianglesPerFace);
+    const corners = [vertex(index.getX(3 * t)), vertex(index.getX(3 * t + 1)), vertex(index.getX(3 * t + 2))];
+    // the polygon that stays: walk the three sides and keep what is on the right side of the plane
+    const polygon: Vertex[] = [];
+    for (let i = 0; i < 3; i++) {
+      const a = corners[i], b = corners[(i + 1) % 3];
+      if (a.d >= 0) polygon.push(a);
+      if ((a.d >= 0) !== (b.d >= 0)) polygon.push(between(a, b));
+    }
+    for (let i = 1; i + 1 < polygon.length; i++) emit(face, polygon[0], polygon[i], polygon[i + 1]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(outPositions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(outColors, 3));
+  geometry.setIndex(Array.from({ length: outPositions.length / 3 }, (_, i) => i));
+  return { geometry, faceOfTriangle };
+}
+
+// The line segments (pairs of points, 6 numbers each) cut by the plane: the part on the kept side only.
+export function clipSegmentsToPlane(segments: readonly number[], cut: SectionCut): number[] {
+  const sign = cut.keep === 'above' ? 1 : -1;
+  const out: number[] = [];
+  for (let i = 0; i + 5 < segments.length; i += 6) {
+    const a = [segments[i], segments[i + 1], segments[i + 2]], b = [segments[i + 3], segments[i + 4], segments[i + 5]];
+    const da = sign * (alongOf(cut.axis, a[0], a[1], a[2]) - cut.at), db = sign * (alongOf(cut.axis, b[0], b[1], b[2]) - cut.at);
+    if (da < 0 && db < 0) continue;
+    if (da >= 0 && db >= 0) { out.push(...a, ...b); continue; }
+    const t = da / (da - db);
+    const cutPoint = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    if (da >= 0) out.push(...a, ...cutPoint);
+    else out.push(...cutPoint, ...b);
+  }
+  return out;
+}
+
+// The polygon in which the plane cuts a small element: the points where the triangles of its six faces cross the plane,
+// ordered round their centre. Empty if the plane misses the element.
+export function elementSectionPolygon(faces: readonly { positions: number[]; indices: number[] }[], cut: SectionCut): THREE.Vector3[] {
+  const points: THREE.Vector3[] = [];
+  const add = (p: THREE.Vector3) => {
+    if (!points.some(q => q.distanceToSquared(p) < 1e-14)) points.push(p);
+  };
+  for (const { positions, indices } of faces) {
+    for (let t = 0; t + 2 < indices.length; t += 3) {
+      const v = [0, 1, 2].map(k => new THREE.Vector3(positions[3 * indices[t + k]], positions[3 * indices[t + k] + 1], positions[3 * indices[t + k] + 2]));
+      const d = v.map(p => alongOf(cut.axis, p.x, p.y, p.z) - cut.at);
+      for (let k = 0; k < 3; k++) {
+        const a = k, b = (k + 1) % 3;
+        if (d[a] === 0) add(v[a].clone());
+        else if ((d[a] < 0) !== (d[b] < 0) && d[b] !== 0) add(v[a].clone().lerp(v[b], d[a] / (d[a] - d[b])));
+      }
+    }
+  }
+  if (points.length < 3) return [];
+  const [u, w] = [0, 1, 2].filter(i => i !== cut.axis);
+  const centre = points.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / points.length);
+  const at = (p: THREE.Vector3, i: number) => (i === 0 ? p.x : i === 1 ? p.y : p.z);
+  return points
+    .map(p => ({ p, angle: Math.atan2(at(p, w) - at(centre, w), at(p, u) - at(centre, u)) }))
+    .sort((a, b) => a.angle - b.angle)
+    .map(x => x.p);
+}
+
 const SECTION_COLOR = 0x39c5f2;
 
 // The sheet that shows a cut: a rectangle across the whole body (a little beyond it), with an outline. Not pickable.
@@ -259,6 +359,23 @@ export class SolverGeometry {
 
   get hasField(): boolean {
     return this.values !== null;
+  }
+
+  // How far a small element reaches along an axis (its corners and centre; a curved edge may bulge a hair past them).
+  elementExtent(hex: MeshHexDto, ex: number, ey: number, ez: number, axis: 0 | 1 | 2): { min: number; max: number } {
+    const [nx, ny, nz] = this.counts;
+    const slots = this.slots(hex);
+    let min = Infinity, max = -Infinity;
+    for (const cx of [2 * ex, 2 * ex + 1, 2 * ex + 2])
+      for (const cy of [2 * ey, 2 * ey + 1, 2 * ey + 2])
+        for (const cz of [2 * ez, 2 * ez + 1, 2 * ez + 2]) {
+          if ((cx === 2 * ex + 1 ? 1 : 0) + (cy === 2 * ey + 1 ? 1 : 0) + (cz === 2 * ez + 1 ? 1 : 0) === 2) continue;      // face centres: not needed
+          const p = mapHex(slots, cx / nx - 1, cy / ny - 1, cz / nz - 1);
+          const along = axis === 0 ? p.x : axis === 1 ? p.y : p.z;
+          min = Math.min(min, along);
+          max = Math.max(max, along);
+        }
+    return { min, max };
   }
 
   // The centre of a small element in the real world.
@@ -462,9 +579,9 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       if (shown && input.onlyBad && qualityColors && !isBad(hex, ex, ey, ez)) shown = false;
       const cut = input.section;
       if (shown && cut) {
-        const centre = geometry.elementCentre(hexById.get(hex)!, ex, ey, ez);
-        const along = cut.axis === 0 ? centre.x : cut.axis === 1 ? centre.y : centre.z;
-        shown = cut.keep === 'above' ? along >= cut.at - 1e-9 : along <= cut.at + 1e-9;
+        // an element stays while any part of it is on the kept side: the ones the plane runs through are cut by it
+        const { min, max } = geometry.elementExtent(hexById.get(hex)!, ex, ey, ez, cut.axis);
+        shown = cut.keep === 'above' ? max >= cut.at - 1e-9 : min <= cut.at + 1e-9;
       }
       shownCache.set(key, shown);
     }
@@ -588,10 +705,20 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);
-    const mesh = new THREE.Mesh(faceGeometry(faces, colorOf, true, values !== null), material);
+    let bodyGeometry = faceGeometry(faces, colorOf, true, values !== null);
+    let faceOfTriangle: number[] | null = null;
+    if (input.section) {
+      // the plane of a section cuts the faces it runs through: what is on the kept side stays, to the very plane
+      const clipped = clipMeshToPlane(bodyGeometry, triangles, input.section);
+      bodyGeometry.dispose();
+      bodyGeometry = clipped.geometry;
+      faceOfTriangle = clipped.faceOfTriangle;
+    }
+    const mesh = new THREE.Mesh(bodyGeometry, material);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
+    // (after a cut, the face each triangle came from was kept)
     mesh.userData['resolvePick'] = (triangle: number): PickedFace | null => {
-      const face = faces[Math.floor(triangle / triangles)];
+      const face = faces[faceOfTriangle ? (faceOfTriangle[triangle] ?? -1) : Math.floor(triangle / triangles)];
       return face
         ? { kind: 'face', hex: face.owner.id, face: face.face, p: face.p, q: face.q, element: face.element, inner: !face.outer }
         : null;
@@ -666,7 +793,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
 
   if (lines.length > 0) {
     const buffer = new THREE.BufferGeometry();
-    buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    const shownLines = input.section ? clipSegmentsToPlane(lines, input.section) : lines;
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(shownLines, 3));
     if (displaced) deformables.push(deformable(buffer, lines, movedLines));
     const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
     edges.userData['edges'] = true;
@@ -684,6 +812,57 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     vectors.userData['vectors'] = true;
     vectors.visible = input.vectors !== false;
     root.add(vectors);
+  }
+
+  // the cut itself: for every element the plane runs through, the polygon in which it cuts it, in the colour of the element
+  if (input.section) {
+    const cut = input.section;
+    const capPositions: number[] = [];
+    const capColors: number[] = [];
+    const resolutionCap = faceResolution(counts);
+    for (const hex of state.hexes) {
+      for (let ex = 0; ex < counts[0]; ex++)
+        for (let ey = 0; ey < counts[1]; ey++)
+          for (let ez = 0; ez < counts[2]; ez++) {
+            if (!visible(hex.id, ex, ey, ez)) continue;
+            const { min, max } = geometry.elementExtent(hex, ex, ey, ez, cut.axis);
+            if (!(min < cut.at && max > cut.at)) continue;
+            const e = [ex, ey, ez];
+            const sixFaces: { positions: number[]; indices: number[] }[] = [];
+            for (let axis = 0; axis < 3; axis++) {
+              const [t0, t1] = [0, 1, 2].filter(d => d !== axis);
+              for (const t of [e[axis], e[axis] + 1]) {
+                const positions: number[] = [];
+                const indices: number[] = [];
+                appendSurface(positions, indices, geometry.smallFace(hex, axis, t, e[t0], e[t1]), resolutionCap);
+                sixFaces.push({ positions, indices });
+              }
+            }
+            const polygon = elementSectionPolygon(sixFaces, cut);
+            if (polygon.length < 3) continue;
+            const rgb = new THREE.Color(
+              qualityColors
+                ? RESULT_COLORS[resultOf(qualityColors.get(`${hex.id}:${ex}:${ey}:${ez}`) ?? 'excellent')]
+                : materialColor(materialOf(hex.id, ex, ey, ez))
+            );
+            const centre = polygon.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / polygon.length);
+            for (let i = 0; i < polygon.length; i++) {
+              const a = polygon[i], b = polygon[(i + 1) % polygon.length];
+              capPositions.push(centre.x, centre.y, centre.z, a.x, a.y, a.z, b.x, b.y, b.z);
+              for (let k = 0; k < 3; k++) capColors.push(rgb.r, rgb.g, rgb.b);
+            }
+          }
+    }
+    if (capPositions.length > 0) {
+      const capGeometry = new THREE.BufferGeometry();
+      capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(capPositions, 3));
+      capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
+      const capMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
+      markForWeightedOit(capMaterial);
+      const cap = new THREE.Mesh(capGeometry, capMaterial);
+      cap.userData['sectionCap'] = true;
+      root.add(cap);
+    }
   }
 
   // the plane of the cut, drawn as a pale sheet with an outline, so it is plain where it passes through the body

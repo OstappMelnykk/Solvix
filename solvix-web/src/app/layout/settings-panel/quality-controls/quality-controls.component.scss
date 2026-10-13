@@ -174,8 +174,7 @@ i {
     margin-bottom: 6px;
   }
 
-  &__axis,
-  &__flip {
+  &__axis {
     padding: 4px 10px;
     background: $field-bg;
     border: 1px solid $field-border;
@@ -191,8 +190,34 @@ i {
     background: color-mix(in srgb, $accent-toggle 20%, transparent);
   }
 
-  &__flip {
+  &__value {
     margin-left: auto;
+    color: $muted;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sides {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  &__side {
+    flex: 1;
+    padding: 4px 6px;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+
+    &.on {
+      border-color: $accent-toggle;
+      background: color-mix(in srgb, $accent-toggle 20%, transparent);
+    }
   }
 }
 
