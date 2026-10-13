@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" font-family="system-ui, sans-serif" font-size="12">
+<rect width="960" height="500" fill="#ffffff"/>
+<text x="480" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#222">Скільки кубів зачіпає згущення одного куба (n = 2, сітка 9×9×9)</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#e3e3e3"/>
+<text x="62" y="368" text-anchor="end" fill="#555">0</text>
+<line x1="70" x2="940" y1="302.4" y2="302.4" stroke="#e3e3e3"/>
+<text x="62" y="306.4" text-anchor="end" fill="#555">48.38</text>
+<line x1="70" x2="940" y1="240.8" y2="240.8" stroke="#e3e3e3"/>
+<text x="62" y="244.8" text-anchor="end" fill="#555">96.77</text>
+<line x1="70" x2="940" y1="179.2" y2="179.2" stroke="#e3e3e3"/>
+<text x="62" y="183.2" text-anchor="end" fill="#555">145.15</text>
+<line x1="70" x2="940" y1="117.6" y2="117.6" stroke="#e3e3e3"/>
+<text x="62" y="121.6" text-anchor="end" fill="#555">193.54</text>
+<line x1="70" x2="940" y1="56" y2="56" stroke="#e3e3e3"/>
+<text x="62" y="60" text-anchor="end" fill="#555">241.92</text>
+<text transform="translate(16 210) rotate(-90)" text-anchor="middle" fill="#555">кубів зачеплено</text>
+<rect x="127.75" y="353.81" width="32" height="10.19" fill="#4c9be8"/>
+<text x="143.75" y="349.81" text-anchor="middle" font-size="10" fill="#333">8</text>
+<rect x="161.75" y="333.44" width="32" height="30.56" fill="#f0a030"/>
+<text x="177.75" y="329.44" text-anchor="middle" font-size="10" fill="#333">24</text>
+<rect x="195.75" y="302.89" width="32" height="61.11" fill="#d0504a"/>
+<text x="211.75" y="298.89" text-anchor="middle" font-size="10" fill="#333">48</text>
+<text x="178.75" y="382" text-anchor="middle" fill="#333">кутовий</text>
+<rect x="345.25" y="348.72" width="32" height="15.28" fill="#4c9be8"/>
+<text x="361.25" y="344.72" text-anchor="middle" font-size="10" fill="#333">12</text>
+<rect x="379.25" y="323.26" width="32" height="40.74" fill="#f0a030"/>
+<text x="395.25" y="319.26" text-anchor="middle" font-size="10" fill="#333">32</text>
+<rect x="413.25" y="272.33" width="32" height="91.67" fill="#d0504a"/>
+<text x="429.25" y="268.33" text-anchor="middle" font-size="10" fill="#333">72</text>
+<text x="396.25" y="382" text-anchor="middle" fill="#333">на ребрі</text>
+<text x="396.25" y="396" text-anchor="middle" fill="#333">сітки</text>
+<rect x="562.75" y="341.08" width="32" height="22.92" fill="#4c9be8"/>
+<text x="578.75" y="337.08" text-anchor="middle" font-size="10" fill="#333">18</text>
+<rect x="596.75" y="292.7" width="32" height="71.3" fill="#f0a030"/>
+<text x="612.75" y="288.7" text-anchor="middle" font-size="10" fill="#333">56</text>
+<rect x="630.75" y="180.67" width="32" height="183.33" fill="#d0504a"/>
+<text x="646.75" y="176.67" text-anchor="middle" font-size="10" fill="#333">144</text>
+<text x="613.75" y="382" text-anchor="middle" fill="#333">на грані</text>
+<text x="613.75" y="396" text-anchor="middle" fill="#333">сітки</text>
+<rect x="780.25" y="330.9" width="32" height="33.1" fill="#4c9be8"/>
+<text x="796.25" y="326.9" text-anchor="middle" font-size="10" fill="#333">26</text>
+<rect x="814.25" y="251.96" width="32" height="112.04" fill="#f0a030"/>
+<text x="830.25" y="247.96" text-anchor="middle" font-size="10" fill="#333">88</text>
+<rect x="848.25" y="89" width="32" height="275" fill="#d0504a"/>
+<text x="864.25" y="85" text-anchor="middle" font-size="10" fill="#333">216</text>
+<text x="831.25" y="382" text-anchor="middle" fill="#333">всередині</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#888"/>
+<rect x="70" y="466" width="12" height="12" fill="#4c9be8"/>
+<text x="88" y="476" fill="#333">ширина зони 0</text>
+<rect x="183.8" y="466" width="12" height="12" fill="#f0a030"/>
+<text x="201.8" y="476" fill="#333">ширина зони 1</text>
+<rect x="297.6" y="466" width="12" height="12" fill="#d0504a"/>
+<text x="315.6" y="476" fill="#333">ширина зони 2 (книга)</text>
+</svg>

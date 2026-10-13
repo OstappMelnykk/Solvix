@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" font-family="system-ui, sans-serif" font-size="12">
+<rect width="960" height="500" fill="#ffffff"/>
+<text x="480" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#222">Найгірша клітинка після згладжування (скалярний якобіан, більше — краще)</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#e3e3e3"/>
+<text x="62" y="368" text-anchor="end" fill="#555">0</text>
+<line x1="70" x2="940" y1="302.4" y2="302.4" stroke="#e3e3e3"/>
+<text x="62" y="306.4" text-anchor="end" fill="#555">0.14</text>
+<line x1="70" x2="940" y1="240.8" y2="240.8" stroke="#e3e3e3"/>
+<text x="62" y="244.8" text-anchor="end" fill="#555">0.28</text>
+<line x1="70" x2="940" y1="179.2" y2="179.2" stroke="#e3e3e3"/>
+<text x="62" y="183.2" text-anchor="end" fill="#555">0.42</text>
+<line x1="70" x2="940" y1="117.6" y2="117.6" stroke="#e3e3e3"/>
+<text x="62" y="121.6" text-anchor="end" fill="#555">0.56</text>
+<line x1="70" x2="940" y1="56" y2="56" stroke="#e3e3e3"/>
+<text x="62" y="60" text-anchor="end" fill="#555">0.7</text>
+<text transform="translate(16 210) rotate(-90)" text-anchor="middle" fill="#555">скал. якобіан найгіршої клітинки</text>
+<rect x="82.43" y="317.9" width="14.57" height="46.1" fill="#b0b0b0"/>
+<text x="89.71" y="313.9" text-anchor="middle" font-size="10" fill="#333">0.1</text>
+<rect x="99" y="303.81" width="14.57" height="60.19" fill="#e0a0a0"/>
+<text x="106.29" y="299.81" text-anchor="middle" font-size="10" fill="#333">0.14</text>
+<rect x="115.57" y="313.61" width="14.57" height="50.39" fill="#8cb8e8"/>
+<text x="122.86" y="309.61" text-anchor="middle" font-size="10" fill="#333">0.11</text>
+<rect x="132.14" y="315.31" width="14.57" height="48.69" fill="#4c8be0"/>
+<text x="139.43" y="311.31" text-anchor="middle" font-size="10" fill="#333">0.11</text>
+<rect x="148.71" y="175.28" width="14.57" height="188.72" fill="#3aa860"/>
+<text x="156" y="171.28" text-anchor="middle" font-size="10" fill="#333">0.43</text>
+<rect x="165.29" y="125.26" width="14.57" height="238.74" fill="#1f7a40"/>
+<text x="172.57" y="121.26" text-anchor="middle" font-size="10" fill="#333">0.54</text>
+<text x="132.14" y="382" text-anchor="middle" fill="#333">S1</text>
+<rect x="206.71" y="327.68" width="14.57" height="36.32" fill="#b0b0b0"/>
+<text x="214" y="323.68" text-anchor="middle" font-size="10" fill="#333">0.08</text>
+<rect x="223.29" y="328.99" width="14.57" height="35.01" fill="#e0a0a0"/>
+<text x="230.57" y="324.99" text-anchor="middle" font-size="10" fill="#333">0.08</text>
+<rect x="239.86" y="309.42" width="14.57" height="54.58" fill="#8cb8e8"/>
+<text x="247.14" y="305.42" text-anchor="middle" font-size="10" fill="#333">0.12</text>
+<rect x="256.43" y="311.49" width="14.57" height="52.51" fill="#4c8be0"/>
+<text x="263.71" y="307.49" text-anchor="middle" font-size="10" fill="#333">0.12</text>
+<rect x="273" y="248.74" width="14.57" height="115.26" fill="#3aa860"/>
+<text x="280.29" y="244.74" text-anchor="middle" font-size="10" fill="#333">0.26</text>
+<rect x="289.57" y="213.97" width="14.57" height="150.03" fill="#1f7a40"/>
+<text x="296.86" y="209.97" text-anchor="middle" font-size="10" fill="#333">0.34</text>
+<text x="256.43" y="382" text-anchor="middle" fill="#333">S2</text>
+<rect x="331" y="317.9" width="14.57" height="46.1" fill="#b0b0b0"/>
+<text x="338.29" y="313.9" text-anchor="middle" font-size="10" fill="#333">0.1</text>
+<rect x="347.57" y="312.38" width="14.57" height="51.62" fill="#e0a0a0"/>
+<text x="354.86" y="308.38" text-anchor="middle" font-size="10" fill="#333">0.12</text>
+<rect x="364.14" y="217.04" width="14.57" height="146.96" fill="#8cb8e8"/>
+<text x="371.43" y="213.04" text-anchor="middle" font-size="10" fill="#333">0.33</text>
+<rect x="380.71" y="246.43" width="14.57" height="117.57" fill="#4c8be0"/>
+<text x="388" y="242.43" text-anchor="middle" font-size="10" fill="#333">0.27</text>
+<rect x="397.29" y="117.72" width="14.57" height="246.28" fill="#3aa860"/>
+<text x="404.57" y="113.72" text-anchor="middle" font-size="10" fill="#333">0.56</text>
+<rect x="413.86" y="112.21" width="14.57" height="251.79" fill="#1f7a40"/>
+<text x="421.14" y="108.21" text-anchor="middle" font-size="10" fill="#333">0.57</text>
+<text x="380.71" y="382" text-anchor="middle" fill="#333">S3</text>
+<rect x="455.29" y="317.9" width="14.57" height="46.1" fill="#b0b0b0"/>
+<text x="462.57" y="313.9" text-anchor="middle" font-size="10" fill="#333">0.1</text>
+<rect x="471.86" y="364" width="14.57" height="0" fill="#e0a0a0"/>
+<text x="479.14" y="360" text-anchor="middle" font-size="10" fill="#333">-0.02</text>
+<rect x="488.43" y="316.05" width="14.57" height="47.95" fill="#8cb8e8"/>
+<text x="495.71" y="312.05" text-anchor="middle" font-size="10" fill="#333">0.11</text>
+<rect x="505" y="315.29" width="14.57" height="48.71" fill="#4c8be0"/>
+<text x="512.29" y="311.29" text-anchor="middle" font-size="10" fill="#333">0.11</text>
+<rect x="521.57" y="240.15" width="14.57" height="123.85" fill="#3aa860"/>
+<text x="528.86" y="236.15" text-anchor="middle" font-size="10" fill="#333">0.28</text>
+<rect x="538.14" y="178.03" width="14.57" height="185.97" fill="#1f7a40"/>
+<text x="545.43" y="174.03" text-anchor="middle" font-size="10" fill="#333">0.42</text>
+<text x="505" y="382" text-anchor="middle" fill="#333">S4</text>
+<rect x="579.57" y="268.55" width="14.57" height="95.45" fill="#b0b0b0"/>
+<text x="586.86" y="264.55" text-anchor="middle" font-size="10" fill="#333">0.22</text>
+<rect x="596.14" y="280.73" width="14.57" height="83.27" fill="#e0a0a0"/>
+<text x="603.43" y="276.73" text-anchor="middle" font-size="10" fill="#333">0.19</text>
+<rect x="612.71" y="264.17" width="14.57" height="99.83" fill="#8cb8e8"/>
+<text x="620" y="260.17" text-anchor="middle" font-size="10" fill="#333">0.23</text>
+<rect x="629.29" y="264.04" width="14.57" height="99.96" fill="#4c8be0"/>
+<text x="636.57" y="260.04" text-anchor="middle" font-size="10" fill="#333">0.23</text>
+<rect x="645.86" y="95.68" width="14.57" height="268.32" fill="#3aa860"/>
+<text x="653.14" y="91.68" text-anchor="middle" font-size="10" fill="#333">0.61</text>
+<rect x="662.43" y="95.3" width="14.57" height="268.7" fill="#1f7a40"/>
+<text x="669.71" y="91.3" text-anchor="middle" font-size="10" fill="#333">0.61</text>
+<text x="629.29" y="382" text-anchor="middle" fill="#333">S5</text>
+<rect x="703.86" y="288.54" width="14.57" height="75.46" fill="#b0b0b0"/>
+<text x="711.14" y="284.54" text-anchor="middle" font-size="10" fill="#333">0.17</text>
+<rect x="720.43" y="336.36" width="14.57" height="27.64" fill="#e0a0a0"/>
+<text x="727.71" y="332.36" text-anchor="middle" font-size="10" fill="#333">0.06</text>
+<rect x="737" y="276.73" width="14.57" height="87.27" fill="#8cb8e8"/>
+<text x="744.29" y="272.73" text-anchor="middle" font-size="10" fill="#333">0.2</text>
+<rect x="753.57" y="267.2" width="14.57" height="96.8" fill="#4c8be0"/>
+<text x="760.86" y="263.2" text-anchor="middle" font-size="10" fill="#333">0.22</text>
+<rect x="770.14" y="182.32" width="14.57" height="181.68" fill="#3aa860"/>
+<text x="777.43" y="178.32" text-anchor="middle" font-size="10" fill="#333">0.41</text>
+<rect x="786.71" y="149.9" width="14.57" height="214.1" fill="#1f7a40"/>
+<text x="794" y="145.9" text-anchor="middle" font-size="10" fill="#333">0.49</text>
+<text x="753.57" y="382" text-anchor="middle" fill="#333">S6</text>
+<rect x="828.14" y="350.86" width="14.57" height="13.14" fill="#b0b0b0"/>
+<text x="835.43" y="346.86" text-anchor="middle" font-size="10" fill="#333">0.03</text>
+<rect x="844.71" y="364" width="14.57" height="0" fill="#e0a0a0"/>
+<text x="852" y="360" text-anchor="middle" font-size="10" fill="#333">-0.08</text>
+<rect x="861.29" y="336.48" width="14.57" height="27.52" fill="#8cb8e8"/>
+<text x="868.57" y="332.48" text-anchor="middle" font-size="10" fill="#333">0.06</text>
+<rect x="877.86" y="338.29" width="14.57" height="25.71" fill="#4c8be0"/>
+<text x="885.14" y="334.29" text-anchor="middle" font-size="10" fill="#333">0.06</text>
+<rect x="894.43" y="227.62" width="14.57" height="136.38" fill="#3aa860"/>
+<text x="901.71" y="223.62" text-anchor="middle" font-size="10" fill="#333">0.31</text>
+<rect x="911" y="228.42" width="14.57" height="135.58" fill="#1f7a40"/>
+<text x="918.29" y="224.42" text-anchor="middle" font-size="10" fill="#333">0.31</text>
+<text x="877.86" y="382" text-anchor="middle" fill="#333">S7</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#888"/>
+<rect x="70" y="466" width="12" height="12" fill="#b0b0b0"/>
+<text x="88" y="476" fill="#333">без згладжування</text>
+<rect x="203.6" y="466" width="12" height="12" fill="#e0a0a0"/>
+<text x="221.6" y="476" fill="#333">звичайне (без перевірок)</text>
+<rect x="390" y="466" width="12" height="12" fill="#8cb8e8"/>
+<text x="408" y="476" fill="#333">Лапласівка (з перевіркою)</text>
+<rect x="583" y="466" width="12" height="12" fill="#4c8be0"/>
+<text x="601" y="476" fill="#333">Лапласівка + ковзання</text>
+<rect x="749.6" y="466" width="12" height="12" fill="#3aa860"/>
+<text x="767.6" y="476" fill="#333">оптимізація</text>
+<rect x="70" y="484" width="12" height="12" fill="#1f7a40"/>
+<text x="88" y="494" fill="#333">Лапласівка + оптимізація</text>
+</svg>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" font-family="system-ui, sans-serif" font-size="12">
+<rect width="960" height="500" fill="#ffffff"/>
+<text x="480" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#222">Частка позначених листків, розрізаних повністю</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#e3e3e3"/>
+<text x="62" y="368" text-anchor="end" fill="#555">0</text>
+<line x1="70" x2="940" y1="302.4" y2="302.4" stroke="#e3e3e3"/>
+<text x="62" y="306.4" text-anchor="end" fill="#555">22</text>
+<line x1="70" x2="940" y1="240.8" y2="240.8" stroke="#e3e3e3"/>
+<text x="62" y="244.8" text-anchor="end" fill="#555">44</text>
+<line x1="70" x2="940" y1="179.2" y2="179.2" stroke="#e3e3e3"/>
+<text x="62" y="183.2" text-anchor="end" fill="#555">66</text>
+<line x1="70" x2="940" y1="117.6" y2="117.6" stroke="#e3e3e3"/>
+<text x="62" y="121.6" text-anchor="end" fill="#555">88</text>
+<line x1="70" x2="940" y1="56" y2="56" stroke="#e3e3e3"/>
+<text x="62" y="60" text-anchor="end" fill="#555">110</text>
+<text transform="translate(16 210) rotate(-90)" text-anchor="middle" fill="#555">відсотків</text>
+<rect x="471" y="172.91" width="32" height="191.09" fill="#e0a0a0"/>
+<text x="487" y="168.91" text-anchor="middle" font-size="10" fill="#333">68.24</text>
+<rect x="505" y="92.97" width="32" height="271.03" fill="#3aa860"/>
+<text x="521" y="88.97" text-anchor="middle" font-size="10" fill="#333">96.8</text>
+<text x="505" y="382" text-anchor="middle" fill="#333">вибір швів</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#888"/>
+<rect x="70" y="466" width="12" height="12" fill="#e0a0a0"/>
+<text x="88" y="476" fill="#333">по одному, жадібно</text>
+<rect x="216.8" y="466" width="12" height="12" fill="#3aa860"/>
+<text x="234.8" y="476" fill="#333">пошук з поверненням</text>
+</svg>

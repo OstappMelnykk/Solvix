@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" font-family="system-ui, sans-serif" font-size="12">
+<rect width="960" height="500" fill="#ffffff"/>
+<text x="480" y="26" text-anchor="middle" font-size="16" font-weight="600" fill="#222">Найгірша клітинка після згладжування залежно від ширини перехідної зони (куб 3×3×3 у сітці 5×5×5)</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#e3e3e3"/>
+<text x="62" y="368" text-anchor="end" fill="#555">0</text>
+<line x1="70" x2="940" y1="302.4" y2="302.4" stroke="#e3e3e3"/>
+<text x="62" y="306.4" text-anchor="end" fill="#555">0.14</text>
+<line x1="70" x2="940" y1="240.8" y2="240.8" stroke="#e3e3e3"/>
+<text x="62" y="244.8" text-anchor="end" fill="#555">0.28</text>
+<line x1="70" x2="940" y1="179.2" y2="179.2" stroke="#e3e3e3"/>
+<text x="62" y="183.2" text-anchor="end" fill="#555">0.42</text>
+<line x1="70" x2="940" y1="117.6" y2="117.6" stroke="#e3e3e3"/>
+<text x="62" y="121.6" text-anchor="end" fill="#555">0.56</text>
+<line x1="70" x2="940" y1="56" y2="56" stroke="#e3e3e3"/>
+<text x="62" y="60" text-anchor="end" fill="#555">0.7</text>
+<text transform="translate(16 210) rotate(-90)" text-anchor="middle" fill="#555">скал. якобіан найгіршої клітинки</text>
+<rect x="181" y="315.31" width="32" height="48.69" fill="#4c8be0"/>
+<text x="197" y="311.31" text-anchor="middle" font-size="10" fill="#333">0.11</text>
+<rect x="215" y="113.27" width="32" height="250.73" fill="#3aa860"/>
+<text x="231" y="109.27" text-anchor="middle" font-size="10" fill="#333">0.57</text>
+<text x="215" y="382" text-anchor="middle" fill="#333">ширина зони 0</text>
+<text x="215" y="396" text-anchor="middle" fill="#333">513 клітинок</text>
+<rect x="471" y="311.49" width="32" height="52.51" fill="#4c8be0"/>
+<text x="487" y="307.49" text-anchor="middle" font-size="10" fill="#333">0.12</text>
+<rect x="505" y="215.62" width="32" height="148.38" fill="#3aa860"/>
+<text x="521" y="211.62" text-anchor="middle" font-size="10" fill="#333">0.34</text>
+<text x="505" y="382" text-anchor="middle" fill="#333">ширина зони 1</text>
+<text x="505" y="396" text-anchor="middle" fill="#333">1021 клітинок</text>
+<rect x="761" y="246.43" width="32" height="117.57" fill="#4c8be0"/>
+<text x="777" y="242.43" text-anchor="middle" font-size="10" fill="#333">0.27</text>
+<rect x="795" y="112.2" width="32" height="251.8" fill="#3aa860"/>
+<text x="811" y="108.2" text-anchor="middle" font-size="10" fill="#333">0.57</text>
+<text x="795" y="382" text-anchor="middle" fill="#333">ширина зони 2 (книга)</text>
+<text x="795" y="396" text-anchor="middle" fill="#333">1727 клітинок</text>
+<line x1="70" x2="940" y1="364" y2="364" stroke="#888"/>
+<rect x="70" y="466" width="12" height="12" fill="#4c8be0"/>
+<text x="88" y="476" fill="#333">Лапласівка 40 проходів</text>
+<rect x="243.2" y="466" width="12" height="12" fill="#3aa860"/>
+<text x="261.2" y="476" fill="#333">Лапласівка 20 + оптимізація 20</text>
+</svg>
