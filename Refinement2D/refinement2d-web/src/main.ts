@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { setupDrawing } from './draw';
+import { chordsOf, label } from './chords';
 import { MeshDto, StateDto, StepDto, getState, post, preview } from './api';
 
 // A page to look at the 2D refinement: an orthographic camera you can pan and zoom, the cells filled and outlined, the cells you pick
@@ -102,13 +103,17 @@ function build(): void {
   if (!data) return;
   view = data.mesh;
 
+  const axisOfChords = Number($<HTMLSelectElement>('chords').value);
+  const chords = axisOfChords >= 0 ? chordsOf(data.mesh, axisOfChords) : null;
   const positions: number[] = [], colors: number[] = [], lines: number[] = [];
   const colour = new THREE.Color();
-  for (const cell of data.mesh.cells) {
+  for (const [index, cell] of data.mesh.cells.entries()) {
     const p = cell.nodes.map(n => world(data.mesh.nodes[n]));
     colour.set(0xffffff);
     const template = data.made.get(cell.id);
     if (template) colour.set(template === 'T1' ? 0xffd8a8 : 0xfbf6b4);
+    const inChord = chords?.info.get(index);
+    if (inChord) colour.setHSL(((inChord.chord * 0.618) % 1), 0.55, inChord.position % 2 === 0 ? 0.62 : 0.8);
     if (data.m.has(cell.id)) colour.set(0xe8e04a);
     if (data.unreached.has(cell.id)) colour.set(0xff6b6b);
     for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) { positions.push(p[k].x, p[k].y, 0); colors.push(colour.r, colour.g, colour.b); }
@@ -127,6 +132,26 @@ function build(): void {
       for (const [u, v] of [[a, b], [b, c], [c, d], [d, a]]) roots.push(u[0], u[1], 0.2, v[0], v[1], 0.2);
     }
     shown.add(lineSegments(roots, 0x000000));
+  }
+
+  if (chords) {
+    const seam: number[] = [];
+    for (const [a, b] of chords.seams) { const u = world(data.mesh.nodes[a]), v = world(data.mesh.nodes[b]); seam.push(u.x, u.y, 0.4, v.x, v.y, 0.4); }
+    const blue = lineSegments(seam, 0x1f6fe5);
+    (blue.material as THREE.LineBasicMaterial).linewidth = 3;
+    shown.add(blue);
+    if (data.mesh.cells.length <= 400) {
+      for (const [index, cell] of data.mesh.cells.entries()) {
+        const at = chords.info.get(index)!;
+        const c = cell.nodes.map(n => world(data.mesh.nodes[n]));
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: label(at.position), depthTest: false }));
+        sprite.position.set((c[0].x + c[1].x + c[2].x + c[3].x) / 4, (c[0].y + c[1].y + c[2].y + c[3].y) / 4, 0.5);
+        const shortest = Math.min(...[0, 1, 2, 3].map(k => c[k].distanceTo(c[(k + 1) % 4])));
+        const size = Math.min(0.3, 0.6 * shortest);
+        sprite.scale.set(size, size, 1);
+        shown.add(sprite);
+      }
+    }
   }
 
   if (data.marked.length > 0) {
@@ -252,7 +277,7 @@ $('refineNow').onclick = async () => { const cells = [...selected]; selected.cle
 $('clear').onclick = () => { selected.clear(); build(); };
 $('undo').onclick = async () => { selected.clear(); await send('/api/undo', {}); };
 $('redo').onclick = async () => { selected.clear(); await send('/api/redo', {}); };
-for (const id of ['showRoots', 'showMarks', 'pass']) $(id).onchange = build;
+for (const id of ['showRoots', 'showMarks', 'pass', 'chords']) $(id).onchange = build;
 window.addEventListener('resize', resize);
 
 function loop(): void { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
