@@ -776,6 +776,14 @@ describe('colouring by mesh quality', () => {
     // the middle element (x from 1/3 to 2/3) is cut at 0.5 and is the invalid one: its cap is red
     const colour = cap.geometry.getAttribute('color');
     expect(colour.getX(0)).toBeGreaterThan(colour.getY(0) * 2);
+    // the structure shows: the dark lines where the elements meet, and the vertices of the cubes that are left
+    expect(view.root.children.some(c => c.userData['sectionStructure'])).toBeTrue();
+    const corners = view.root.children.find(c => c.userData['sectionNodes'] === 'corners') as THREE.Points;
+    const midpoints = view.root.children.find(c => c.userData['sectionNodes'] === 'midpoints') as THREE.Points;
+    const kept = (p: THREE.Points) => Array.from({ length: p.geometry.getAttribute('position').count }, (_, i) => p.geometry.getAttribute('position').getX(i));
+    expect(kept(corners).length).toBe(4);                              // the unit cube's 8 corners: the 4 with x = 1 are on the kept side
+    expect(kept(midpoints).length).toBeGreaterThan(0);
+    expect([...kept(corners), ...kept(midpoints)].every(x => x >= 0.5 - 1e-9)).toBeTrue();
     // the body itself does not reach to the other side of the plane
     const body = (view.pickables as THREE.Mesh[])[0].geometry.getAttribute('position');
     expect(Math.min(...Array.from({ length: body.count }, (_, i) => body.getX(i)))).toBeGreaterThan(0.5 - 1e-6);

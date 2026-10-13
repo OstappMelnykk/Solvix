@@ -819,6 +819,9 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const cut = input.section;
     const capPositions: number[] = [];
     const capColors: number[] = [];
+    const outline: number[] = [];                  // the edge of every cap, drawn dark over it
+    const interior: number[] = [];                 // the edges of the elements inside the body, so its structure shows
+    const wantInterior = state.hexes.length * counts[0] * counts[1] * counts[2] <= 8000;
     const resolutionCap = faceResolution(counts);
     for (const hex of state.hexes) {
       for (let ex = 0; ex < counts[0]; ex++)
@@ -826,6 +829,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
           for (let ez = 0; ez < counts[2]; ez++) {
             if (!visible(hex.id, ex, ey, ez)) continue;
             const { min, max } = geometry.elementExtent(hex, ex, ey, ez, cut.axis);
+            if (wantInterior) interior.push(...clipSegmentsToPlane(geometry.elementEdges(hex, ex, ey, ez, 3), cut));
             if (!(min < cut.at && max > cut.at)) continue;
             const e = [ex, ey, ez];
             const sixFaces: { positions: number[]; indices: number[] }[] = [];
@@ -849,6 +853,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
             for (let i = 0; i < polygon.length; i++) {
               const a = polygon[i], b = polygon[(i + 1) % polygon.length];
               capPositions.push(centre.x, centre.y, centre.z, a.x, a.y, a.z, b.x, b.y, b.z);
+              outline.push(a.x, a.y, a.z, b.x, b.y, b.z);
               for (let k = 0; k < 3; k++) capColors.push(rgb.r, rgb.g, rgb.b);
             }
           }
@@ -859,9 +864,35 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
       const capMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
       markForWeightedOit(capMaterial);
+      capMaterial.polygonOffset = true;               // behind its own outline, which lies in the same plane
+      capMaterial.polygonOffsetFactor = 1;
+      capMaterial.polygonOffsetUnits = 1;
       const cap = new THREE.Mesh(capGeometry, capMaterial);
       cap.userData['sectionCap'] = true;
       root.add(cap);
+    }
+    // the structure of the body that is left: where the elements meet (their edges), and the vertices of the cubes
+    const structure = [...interior, ...outline];
+    if (structure.length > 0) {
+      const lineGeometry = new THREE.BufferGeometry();
+      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(structure, 3));
+      const inside = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
+      inside.userData['sectionStructure'] = true;
+      root.add(inside);
+    }
+    const kept = (n: { x: number; y: number; z: number }) => {
+      const d = alongOf(cut.axis, n.x, n.y, n.z) - cut.at;
+      return cut.keep === 'above' ? d >= -1e-9 : d <= 1e-9;
+    };
+    const cornerNodes = new Set(state.hexes.flatMap(h => h.nodeIds.slice(0, 8)));
+    for (const [wanted, colour, size] of [[true, 0xffffff, 7], [false, 0xf0b429, 5]] as const) {
+      const points = state.nodes.filter(n => cornerNodes.has(n.id) === wanted && kept(n));
+      if (points.length === 0) continue;
+      const pointGeometry = new THREE.BufferGeometry();
+      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(n => [n.x, n.y, n.z]), 3));
+      const dots = new THREE.Points(pointGeometry, new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false, depthTest: true }));
+      dots.userData['sectionNodes'] = wanted ? 'corners' : 'midpoints';
+      root.add(dots);
     }
   }
 
