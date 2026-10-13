@@ -126,6 +126,42 @@ public static class HexTemplates
 
     private static bool IsFolded(BodyCell cell) => Hex20Geometry.MinDeterminant(cell.Positions) <= 1e-9;
 
+    // The Jacobian ratio Solvix accepts (see QualityProfiles): beyond it a cube is not accepted for the solver.
+    private const double AcceptedJacobianRatio = 300;
+
+    // and the largest corner angle of a face it accepts (degrees)
+    private const double AcceptedCornerAngle = 163;       // Solvix accepts 165: a margin, as the solver measures the cube cut into smaller elements
+
+    // A cube the solver would accept as to its Jacobian: valid and not too uneven.
+    private static bool IsUneven(BodyCell cell)
+    {
+        var (min, max) = Hex20Geometry.DeterminantRange(cell.Positions);
+        return min <= 1e-9 || max / min > AcceptedJacobianRatio;
+    }
+
+    // ... and also with no face corner wider than the solver accepts (the corner nodes only, as Solvix measures it)
+    private static readonly int[][] CubeFaces =
+    {
+        new[] { 0, 1, 2, 3 }, new[] { 4, 5, 6, 7 }, new[] { 0, 1, 5, 4 }, new[] { 1, 2, 6, 5 }, new[] { 2, 3, 7, 6 }, new[] { 3, 0, 4, 7 },
+    };
+
+    private static bool IsUnacceptable(BodyCell cell)
+    {
+        if (IsUneven(cell)) return true;
+        foreach (var face in CubeFaces)
+            for (int i = 0; i < 4; i++)
+            {
+                var corner = cell.Positions[face[i]];
+                var u = cell.Positions[face[(i + 3) % 4]] - corner;
+                var v = cell.Positions[face[(i + 1) % 4]] - corner;
+                double lengths = u.Length * v.Length;
+                if (lengths <= 0) return true;
+                double angle = Math.Acos(Math.Clamp((u.X * v.X + u.Y * v.Y + u.Z * v.Z) / lengths, -1, 1)) * 180 / Math.PI;
+                if (angle > AcceptedCornerAngle) return true;
+            }
+        return false;
+    }
+
     // For each shape of push, doubles the strength from a tiny value until no cube is folded, then bisects down
     // to the weakest strength that still works; the body bent the least wins. When nothing works, the strongest
     // push with the fewest folded cubes is kept (the editor flags those cubes as usual).
@@ -133,12 +169,19 @@ public static class HexTemplates
 
     private static (Rounding Rounding, BodyPlan Plan) FitWith(Func<Rounding, BodyPlan> build)
     {
+        // the push is searched for in three tries: the weakest that leaves every cube acceptable to the solver (valid, an even
+        // Jacobian, no wide corner), else the weakest that keeps the Jacobian even, else the weakest that merely leaves none folded
+        return Search(build, IsUnacceptable) ?? Search(build, IsUneven) ?? Search(build, IsFolded, fallback: true)!.Value;
+    }
+
+    private static (Rounding Rounding, BodyPlan Plan)? Search(Func<Rounding, BodyPlan> build, Func<BodyCell, bool> bad, bool fallback = false)
+    {
         BodyPlan? best = null;
         Rounding? bestRounding = null;
         Rounding? fallbackRounding = null;
         double bestStrength = double.MaxValue;
-        BodyPlan? fallback = null;
-        int fallbackFolded = int.MaxValue;
+        BodyPlan? fallbackPlan = null;
+        int fallbackBad = int.MaxValue;
         foreach (var shape in RoundingShapes)
         {
             Rounding At(double k) => new(shape.Edge * k, shape.EdgeWidth, shape.Corner * k, shape.CornerWidth);
@@ -147,9 +190,9 @@ public static class HexTemplates
             while (high <= MaxStrength && high < bestStrength)
             {
                 var attempt = build(At(high));
-                int folded = attempt.Cells.Count(IsFolded);
-                if (folded < fallbackFolded) (fallback, fallbackFolded, fallbackRounding) = (attempt, folded, At(high));
-                if (folded == 0) { plan = attempt; break; }
+                int count = attempt.Cells.Count(bad);
+                if (count < fallbackBad) (fallbackPlan, fallbackBad, fallbackRounding) = (attempt, count, At(high));
+                if (count == 0) { plan = attempt; break; }
                 low = high;
                 high *= 2;
             }
@@ -158,12 +201,13 @@ public static class HexTemplates
             {
                 double mid = (low + high) / 2;
                 var attempt = build(At(mid));
-                if (attempt.Cells.Any(IsFolded)) low = mid;
+                if (attempt.Cells.Any(bad)) low = mid;
                 else { high = mid; plan = attempt; }
             }
             if (high < bestStrength) (best, bestStrength, bestRounding) = (plan, high, At(high));
         }
-        return best is not null ? (bestRounding!, best) : (fallbackRounding ?? RoundingShapes.Select(x => new Rounding(x.Edge, x.EdgeWidth, x.Corner, x.CornerWidth)).First(), fallback!);
+        if (best is not null) return (bestRounding!, best);
+        return fallback ? (fallbackRounding ?? new Rounding(RoundingShapes[0].Edge, RoundingShapes[0].EdgeWidth, RoundingShapes[0].Corner, RoundingShapes[0].CornerWidth), fallbackPlan!) : null;
     }
 
     // Outward push at the ridges of a square (2D) or a cube (3D), as a factor on the radius: 1 away from them.
