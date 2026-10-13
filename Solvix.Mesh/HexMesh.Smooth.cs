@@ -7,7 +7,9 @@ namespace Solvix.Mesh;
 /// <param name="Corners">All the corner nodes of the mesh (the others are frozen on the surface, a ridge or a corner).</param>
 /// <param name="MaxMove">The largest distance any corner node ended up from where it started.</param>
 /// <param name="MeanMove">The mean of that distance over the corner nodes that were free.</param>
-public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0);
+/// <param name="FoldedBefore">Cubes that were folded (negative or zero Jacobian) when smoothing began.</param>
+/// <param name="FoldedAfter">... and how many are, when it ended.</param>
+public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0);
 
 public sealed partial class HexMesh
 {
@@ -30,14 +32,33 @@ public sealed partial class HexMesh
     /// <param name="density">How strongly the local density is kept, 0..1: the neighbour weight is 1 / length^density, so 1 keeps
     /// the spacing as it is (the default) and 0 is the plain Laplacian that evens the spacing out.</param>
     /// <param name="featureAngle">Degrees: the surface normals at a node may differ by this much and the node still slides.</param>
-    public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25)
+    /// <param name="untangle">The corner nodes of a folded cube are free to move in every direction, surface or not, and a step
+    /// is taken when it makes the worst Jacobian around the node better even if the cubes there are still folded: that is
+    /// what unfolds them. A folded cube cannot be solved, so this is what is wanted unless the surface must not change.</param>
+    public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true)
     {
+        int foldedBefore = _hexes.Values.Count(h => !h.IsValid());
         double flatCosine = Math.Cos(featureAngle * Math.PI / 180);
         var free = new List<(int Id, List<int> Neighbours, bool OnSurface)>();
         foreach (int id in InteriorCornerNodes()) free.Add((id, CornerNeighbours(id, surfaceOnly: false), false));
         int interior = free.Count;
         if (surface)
             foreach (int id in FlatSurfaceCornerNodes(flatCosine)) free.Add((id, CornerNeighbours(id, surfaceOnly: true), true));
+        var tangled = new HashSet<int>();
+        if (untangle)
+        {
+            var already = free.Select(f => f.Id).ToHashSet();
+            foreach (var hex in _hexes.Values.Where(h => !h.IsValid()))
+                for (int slot = 0; slot < Hex20Reference.CornerCount; slot++)
+                {
+                    int id = hex.NodeIds[slot];
+                    if (!tangled.Add(id)) continue;
+                    // a corner of a folded cube moves freely in 3D, looking at all its neighbours
+                    int at = free.FindIndex(f => f.Id == id);
+                    if (at >= 0) free[at] = (id, CornerNeighbours(id, surfaceOnly: false), false);
+                    else free.Add((id, CornerNeighbours(id, surfaceOnly: false), false));
+                }
+        }
         var start = free.ToDictionary(f => f.Id, f => _nodes[f.Id].Position);
         var moved = new HashSet<int>();
         for (int iteration = 0; iteration < iterations; iteration++)
@@ -65,25 +86,30 @@ public sealed partial class HexMesh
                     step -= normal.Value * Dot(step, normal.Value);        // slide along the surface, never off it
                 }
                 if (step.Length <= 1e-12) continue;
-                if (TryMoveKeepingValid(id, step)) moved.Add(id);
+                if (TryMoveKeepingValid(id, step, tangled.Contains(id))) moved.Add(id);
             }
         }
         var travelled = free.Select(f => (_nodes[f.Id].Position - start[f.Id]).Length).ToList();
         int corners = _owners.Count(o => o.Value.All(x => Hex20Reference.IsCorner(x.Slot)));
-        return new SmoothReport(interior, free.Count - interior, moved.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0);
+        return new SmoothReport(interior, free.Count - interior, moved.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0, foldedBefore, _hexes.Values.Count(h => !h.IsValid()));
     }
 
-    // moves the corner by `step` (its edge midpoints by half), keeping the hexes around it valid
-    private bool TryMoveKeepingValid(int nodeId, Vec3 step)
+    // moves the corner by `step` (its edge midpoints by half), keeping the hexes around it valid; around a folded cube
+    // (`untangling`) a step that only makes the worst Jacobian there better is taken too
+    private bool TryMoveKeepingValid(int nodeId, Vec3 step, bool untangling = false)
     {
         var start = _nodes[nodeId].Position;
         var snapshot = new Dictionary<int, Vec3>();
         foreach (var (hexId, _) in _owners[nodeId])
             foreach (int id in _hexes[hexId].NodeIds) snapshot[id] = _nodes[id].Position;
+        double Worst() => _owners[nodeId].Min(o => _hexes[o.Hex].MinDeterminant());
+        double before = Worst();
         for (int attempt = 0; attempt < 5; attempt++, step *= 0.5)
         {
             DragNode(nodeId, start + step);
+            double after = Worst();
             if (_owners[nodeId].All(o => _hexes[o.Hex].IsValid())) return true;
+            if (untangling && before <= 1e-9 && after > before + 1e-12) return true;
             foreach (var (id, p) in snapshot) _nodes[id].Position = p;
         }
         return false;

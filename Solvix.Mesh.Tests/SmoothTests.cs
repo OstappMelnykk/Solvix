@@ -312,4 +312,54 @@ public class SmoothTests
         Assert.That(result.Info, Does.Contain("внутрішніх 8"));       // the 8 inner vertices of a 3 x 3 x 3 body
         Assert.That(result.Info, Does.Contain("на поверхні 0"));
     }
+
+    // ---- folded cubes ----
+
+    // the vertex (1, 1, 1) pulled out past its neighbour at x = 2: the cubes around it fold
+    private static HexMeshEditor Folded()
+    {
+        var editor = Body(t => t);
+        editor.MoveNode(Centre(editor.Mesh).Id, new Vec3(2.6, 1.0, 1.0), true);
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Not.Empty);
+        return editor;
+    }
+
+    [Test]
+    public void Smoothing_unfolds_cubes_that_were_folded()
+    {
+        var editor = Folded();
+        int before = editor.Mesh.InvalidHexes().Count;
+
+        var result = editor.Smooth(100, 0.5);
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Empty);
+        Assert.That(result.Info, Does.Contain($"Вивернутих кубів: було {before}, стало 0"));
+    }
+
+    [Test]
+    public void The_corners_of_a_folded_cube_on_the_surface_move_too_so_that_it_can_unfold()
+    {
+        // a vertex on the top surface of a slab, thrown through its neighbours
+        var editor = Body(t => t, 3, 3, 1);
+        editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(2.6, 1.0, 1.0), true);
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Not.Empty);
+
+        var result = editor.Smooth(100, 0.5);
+
+        Assert.That(result.Ok, Is.True, result.Error);
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Empty);
+    }
+
+    [Test]
+    public void With_unfolding_off_a_folded_cube_on_the_surface_is_left_alone()
+    {
+        var editor = Body(t => t, 3, 3, 1);
+        editor.MoveNode(SlabVertex(editor.Mesh).Id, new Vec3(2.6, 1.0, 1.0), true);
+
+        var result = editor.Smooth(100, 0.5, untangle: false);
+
+        Assert.That(result.Ok, Is.False);                           // the surface is not touched, and the slab has no inside
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Not.Empty);
+    }
 }

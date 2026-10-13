@@ -106,17 +106,17 @@ public sealed class HexMeshEditor
     });
 
     /// <summary>Laplacian smoothing that keeps the local density (see <see cref="HexMesh.Smooth"/>); with surface = true the smooth patches of the surface slide too.</summary>
-    public EditResult Smooth(int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25) => Apply(() =>
+    public EditResult Smooth(int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true) => Apply(() =>
     {
         if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
         if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
         if (!(density >= 0 && density <= 1)) return EditResult.Fail("The density weight must be in [0, 1].");
         if (!(featureAngle > 0 && featureAngle <= 90)) return EditResult.Fail("The feature angle must be in (0, 90] degrees.");
-        var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle);
+        var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle, untangle);
         if (report.Moved > 0)
         {
             var c = System.Globalization.CultureInfo.InvariantCulture;
-            return EditResult.Done($"Згладжено: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved}. Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.");
+            return EditResult.Done($"Згладжено: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved}. Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.{(report.FoldedBefore > 0 ? $" Вивернутих кубів: було {report.FoldedBefore}, стало {report.FoldedAfter}." : "")}");
         }
         if (report.Interior + report.Surface == 0)
             return EditResult.Fail(surface

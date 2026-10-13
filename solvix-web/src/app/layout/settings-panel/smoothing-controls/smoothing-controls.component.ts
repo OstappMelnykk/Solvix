@@ -36,6 +36,8 @@ export class SmoothingControlsComponent {
   featureAngle = 25;
   // Also slide the vertices on the outer surface (along it); off by default, since it moves them off the STL.
   surface = false;
+  // Unfold the folded cubes: their corners move freely, even on the surface. On by default - a folded cube cannot be solved.
+  untangle = true;
 
   get busy(): boolean {
     return this.editor.busy();
@@ -59,6 +61,10 @@ export class SmoothingControlsComponent {
     input.value = String(value);
   }
 
+  onUntangle(event: Event): void {
+    this.untangle = (event.target as HTMLInputElement).checked;
+  }
+
   onSurface(event: Event): void {
     this.surface = (event.target as HTMLInputElement).checked;
   }
@@ -75,7 +81,8 @@ export class SmoothingControlsComponent {
         relaxation: this.relaxation,
         surface: this.surface,
         density: this.densityPercent / 100,
-        featureAngle: this.featureAngle
+        featureAngle: this.featureAngle,
+        untangle: this.untangle
       },
       () => (this.smoothedVersion = this.editor.getState(this.sessionId)?.version ?? null)
     );

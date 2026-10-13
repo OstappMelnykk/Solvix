@@ -23,6 +23,10 @@
   <span>Згладжувати й поверхню</span>
   <input type="checkbox" [checked]="surface" (change)="onSurface($event)" />
 </label>
+<label class="row" title="Кути вивернутих кубів (їх видно як «вивернуті» на сторінці якості) рухаються вільно в усіх напрямках, навіть на поверхні, доки куби не розвернуться. Вивернутий куб не можна розрахувати. Вимкніть, якщо поверхня не має змінюватись.">
+  <span>Розплутувати вивернуті куби</span>
+  <input type="checkbox" [checked]="untangle" (change)="onUntangle($event)" />
+</label>
 <label class="row" *ngIf="surface" title="Де нормалі сусідніх граней відрізняються більше, ніж на цей кут, вершина вважається гребенем чи кутом і лишається на місці. Більше — рухається й більше поверхні, але заокруглюються краї.">
   <span>Кут гребеня, °</span>
   <input type="number" min="1" max="90" step="1" [value]="featureAngle" (change)="onNumber('angle', $event)" />

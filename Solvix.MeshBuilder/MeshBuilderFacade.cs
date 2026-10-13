@@ -105,8 +105,8 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
     public MeshCommandResultDto MoveNode(int sessionId, int nodeId, MeshPointDto position, bool carryEdgeMidpoints) =>
         Command(sessionId, e => e.MoveNode(nodeId, new Vec3(position.X, position.Y, position.Z), carryEdgeMidpoints));
 
-    public MeshCommandResultDto Smooth(int sessionId, int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25) =>
-        Command(sessionId, e => e.Smooth(iterations, relaxation, surface, density, featureAngle));
+    public MeshCommandResultDto Smooth(int sessionId, int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true) =>
+        Command(sessionId, e => e.Smooth(iterations, relaxation, surface, density, featureAngle, untangle));
 
     public MeshCommandResultDto Undo(int sessionId) => sessions.With(sessionId, e =>
     {

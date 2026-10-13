@@ -26,15 +26,16 @@ describe('SmoothingControlsComponent', () => {
 
   it('smooths with the settings the user chose, each kept within its range', () => {
     component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25 }, jasmine.any(Function));
+    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true }, jasmine.any(Function));
 
     type('iterations', '25.4');
     type('relaxation', '0.2');
     type('density', '40');
     type('angle', '60');
     component.onSurface({ target: { checked: true } } as unknown as Event);
+    component.onUntangle({ target: { checked: false } } as unknown as Event);
     component.smooth();
-    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 25, relaxation: 0.2, surface: true, density: 0.4, featureAngle: 60 }, jasmine.any(Function));
+    expect(editor.smooth).toHaveBeenCalledWith(1, { iterations: 25, relaxation: 0.2, surface: true, density: 0.4, featureAngle: 60, untangle: false }, jasmine.any(Function));
 
     type('iterations', '9999');
     type('relaxation', '0');

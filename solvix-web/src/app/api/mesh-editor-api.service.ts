@@ -80,6 +80,8 @@ export interface MeshSmoothOptions {
   readonly density: number;
   // degrees: surface vertices where the normals differ by more stay put (ridges, corners)
   readonly featureAngle: number;
+  // the corners of folded cubes move freely (surface or not) so that the cubes unfold
+  readonly untangle: boolean;
 }
 
 export interface MeshPointDto {
