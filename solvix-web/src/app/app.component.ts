@@ -5,7 +5,9 @@ import { SessionTabsComponent } from './layout/session-tabs/session-tabs.compone
 import { ToolbarPanelComponent } from './layout/toolbar-panel/toolbar-panel.component';
 import { FooterComponent } from './layout/footer/footer.component';
 import { SixViewOverlayComponent } from './layout/six-view-overlay/six-view-overlay.component';
+import { CubeConstructorComponent } from './layout/cube-constructor/cube-constructor.component';
 import { ToastContainerComponent } from './layout/toast-container/toast-container.component';
+import { GlobalShortcutsComponent } from './layout/global-shortcuts/global-shortcuts.component';
 import { WorkspaceViewService } from './state/workspace-view.service';
 import { WORKSPACE_VIEWS } from './layout/workspace-views';
 
@@ -24,7 +26,9 @@ import { WORKSPACE_VIEWS } from './layout/workspace-views';
     ToolbarPanelComponent,
     FooterComponent,
     SixViewOverlayComponent,
-    ToastContainerComponent
+    CubeConstructorComponent,
+    ToastContainerComponent,
+    GlobalShortcutsComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'

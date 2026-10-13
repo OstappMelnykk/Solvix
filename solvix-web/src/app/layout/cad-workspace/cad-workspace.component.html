@@ -3,7 +3,7 @@
     <app-render-window class="cad-workspace__render-window" [hidden]="sessions.activeSessionId() === null" />
     <div class="cad-workspace__empty" *ngIf="sessions.activeSessionId() === null">Немає відкритих сесій</div>
   </as-split-area>
-  <as-split-area [size]="split.settingsWidth()" [minSize]="split.settingsMinWidth" [maxSize]="split.settingsMaxWidth">
+  <as-split-area [size]="panelWidth()" [minSize]="panelMin()" [maxSize]="panelMax()">
     <app-settings-panel class="cad-workspace__settings-panel" [hidden]="sessions.activeSessionId() === null" />
     <div class="cad-workspace__empty" *ngIf="sessions.activeSessionId() === null"></div>
   </as-split-area>

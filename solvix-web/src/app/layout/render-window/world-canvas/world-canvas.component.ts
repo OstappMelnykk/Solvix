@@ -1,14 +1,20 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
 import * as THREE from 'three';
+import { nearestNodeOnScreen } from '../../../geometry/view-gizmo';
+import { SurfaceSnapper, stick } from '../../../geometry/surface-snap';
+import { GroundCell, groundCellUnder } from '../../../geometry/ground-cell';
+import { centreIsInView } from '../../../geometry/view-check';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
-import { IDEAL_WORLD_INDEX } from '../../../config/app-settings';
+import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { WorldRepresentation } from '../../../state/world-representation.service';
 import { WorldCameraMemoryService } from '../../../state/world-camera-memory.service';
 import { SharedModelService } from '../../../state/shared-model.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
+import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
 import { disposeDimensionLines } from '../../../geometry/dimension-lines';
@@ -20,9 +26,14 @@ import { buildFloorGrid, updateGridResolution } from '../../../geometry/scene-ob
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
+import { MeshPick, MeshView, disposeMeshView, preferredHit } from '../../../geometry/mesh-editor-view';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
+// Above this many CSS pixels of movement between pointerdown and pointerup the
+// gesture was an OrbitControls drag, not a click - the browser's own `click`
+// has no such threshold, so it is tracked by hand.
+const CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
 const DEFAULT_ORTHO_HALF_HEIGHT = 5;
@@ -85,6 +96,47 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // the surface (ImportedReferenceRenderService, geometry/scene-objects/hole-highlight.ts) -
   // a separate overlay, independently toggleable (ImportedReferenceDisplayService.holesVisible).
   @Input() holeHighlight: THREE.Object3D | null = null;
+  // The mesh editor's drawing for this World (MeshEditorRenderService) - a
+  // fresh object whenever the server state or the selection changes. Added to
+  // the scene as is (each World gets its own, so no clone is needed) and
+  // disposed here when it is swapped out, since this canvas is the one that
+  // draws it.
+  @Input() meshView: MeshView | null = null;
+  // A click on a node or face of meshView, or on empty space (pick: null).
+  // `additive` is true for Shift+click (pick the cube instead of the face).
+  @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null; additive: boolean }>();
+  // Where the pointer is hovering over meshView (the Solver World highlights what a click would act on); only
+  // while hoverEnabled. Null when it is over nothing.
+  @Input() hoverEnabled = false;
+  @Output() readonly meshHover = new EventEmitter<MeshPick | null>();
+  // Building with the mouse (Ideal World): a left click removes the cube under the pointer, a right click adds one -
+  // on the face under the pointer, or, on the ground, the first cube in that cell of the lattice.
+  @Input() buildEnabled = false;
+  @Output() readonly meshBuild = new EventEmitter<{ action: 'add' | 'remove'; pick: MeshPick | null; ground: GroundCell | null }>();
+  // The brush: with the left button down the pointer paints over the surface (a stroke: start, the faces it passes,
+  // end) instead of rotating the view or picking one face; the right button rotates then.
+  @Input() paintEnabled = false;
+  @Output() readonly paint = new EventEmitter<{ phase: 'start' | 'move' | 'end'; pick: MeshPick | null }>();
+  // The node (of meshView) that may be dragged with the translate gizmo - set
+  // only for the World where nodes move (the Real World), null elsewhere.
+  @Input() draggableNodeId: number | null = null;
+  // Fired when a drag of the gizmo ends: where the user dropped the node.
+  // Fired continuously while the gizmo is dragged: where the node is right now.
+  @Output() readonly nodeDragging = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
+  // The nodes stuck to the imported surface (Real World): they slide along it when dragged, and turn up in a colour of
+  // their own. A node sticks when it is dragged to within a few percent of the surface's size from it.
+  @Input() attachedNodeIds: ReadonlySet<number> = new Set<number>();
+  // How close to the surface, as a share of its size, a dragged node sticks to it (set in the panel).
+  @Input() snapShare = 0.01;
+  // Place-on-surface mode (Real World): with a node selected, a click on the imported surface asks for the node to be put
+  // at that point; a click on a node still picks it, and the cubes do not take clicks.
+  @Input() placeOnSurface = false;
+  @Output() readonly surfacePlace = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
+  // Switch the sticking off altogether (a node then moves freely, as before).
+  @Input() snapEnabled = true;
+  @Output() readonly nodeAttach = new EventEmitter<{ nodeId: number; attached: boolean }>();
+  @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
+
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   // Bumped only when this canvas's WebGL context was lost and the browser
@@ -155,6 +207,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // forgotten, like AxesHelper) so its `visible` flag can be flipped from
   // the on-canvas toggle button below, independently per World.
   private gridHelper!: LineSegments2;
+  // Translate gizmo for the mesh editor's selected node. It drags an invisible
+  // proxy placed at the node; the drop position is reported on release (the
+  // server decides what the move does to the edges around it).
+  private nodeGizmo!: TransformControls;
+  private readonly nodeProxy = new THREE.Object3D();
+  private gizmoNodeId: number | null = null;
   // Mirrors gridHelper.visible for the template - a real default from
   // construction, same reasoning as `cameraMode` above: the template can
   // read isGridVisible() during Angular's very first change detection
@@ -164,6 +222,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private readonly referenceRender = inject(ImportedReferenceRenderService);
   private readonly importedReferenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly sixViewOverlay = inject(SixViewOverlayService);
+  private readonly meshSelection = inject(MeshEditorSelectionService);
+  private readonly attachmentSettings = inject(SurfaceAttachmentService);
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -213,6 +273,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Same sharing model as currentDimensionLines/lastDimensionLines.
   private currentHoleHighlight: THREE.Object3D | null = null;
   private lastHoleHighlight: THREE.Object3D | null = null;
+  private currentMeshView: MeshView | null = null;
+  private lastMeshView: MeshView | null = null;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointerNdc = new THREE.Vector2();
+  private pointerDownClient: { x: number; y: number } | null = null;
   private readonly cameraMemory = inject(WorldCameraMemoryService);
   private readonly sharedModel = inject(SharedModelService);
   private lastSessionId: number | null = null;
@@ -237,6 +302,75 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private onContextRestored = () => {
     this.checkResize();
     this.oitRenderer.render(this.scene, this.camera);
+  };
+
+  private snapper: SurfaceSnapper | null = null;
+  private altHeld = false;
+  private painting = false;
+  private lastPaintKey = '';
+  private paintFrame = 0;
+
+  private onPointerDown = (event: PointerEvent) => {
+    this.pointerDownClient = { x: event.clientX, y: event.clientY };
+    if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging) {
+      this.painting = true;
+      this.lastPaintKey = '';
+      this.canvasRef.nativeElement.setPointerCapture?.(event.pointerId);
+      this.paint.emit({ phase: 'start', pick: this.pickAt(event.clientX, event.clientY) });
+    }
+  };
+  private onPointerUp = (event: PointerEvent) => {
+    if (event.button === 2) {
+      this.handleRightClick(event);
+      return;
+    }
+    if (this.painting) {
+      // a stroke is not a click
+      this.painting = false;
+      this.pointerDownClient = null;
+      if (this.paintFrame !== 0) cancelAnimationFrame(this.paintFrame);
+      this.paintFrame = 0;
+      this.canvasRef.nativeElement.releasePointerCapture?.(event.pointerId);
+      this.paint.emit({ phase: 'end', pick: null });
+      return;
+    }
+    this.handleClick(event);
+  };
+  private hoverFrame = 0;
+  private onPointerMove = (event: PointerEvent) => {
+    this.altHeld = event.altKey;
+    if (this.painting) {
+      // the faces under the pointer while the button is down: one raycast per frame, and a face only once in a row
+      const x = event.clientX;
+      const y = event.clientY;
+      if (this.paintFrame !== 0) cancelAnimationFrame(this.paintFrame);
+      this.paintFrame = requestAnimationFrame(() => {
+        this.paintFrame = 0;
+        const pick = this.pickAt(x, y);
+        const key = pick && pick.kind === 'face' ? `${pick.hex}:${pick.face}:${pick.p}:${pick.q}:${pick.element?.join(',')}` : '';
+        if (key !== '' && key !== this.lastPaintKey) {
+          this.lastPaintKey = key;
+          this.paint.emit({ phase: 'move', pick });
+        }
+      });
+      return;
+    }
+    if (!this.hoverEnabled || !this.active || event.buttons !== 0) return;
+    // one raycast per frame at most, however many events the pointer sends
+    if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
+    const x = event.clientX;
+    const y = event.clientY;
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = 0;
+      this.meshHover.emit(this.pickAt(x, y));
+    });
+  };
+  // The right button builds: no browser menu on top of it.
+  private onContextMenu = (event: Event) => {
+    if (this.buildEnabled) event.preventDefault();
+  };
+  private onPointerLeave = () => {
+    if (this.hoverEnabled) this.meshHover.emit(null);
   };
 
   ngAfterViewInit(): void {
@@ -266,6 +400,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private attachCanvasListeners(canvas: HTMLCanvasElement): void {
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored, false);
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointermove', this.onPointerMove);
+    canvas.addEventListener('pointerleave', this.onPointerLeave);
+    canvas.addEventListener('contextmenu', this.onContextMenu);
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -283,6 +422,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateHoleHighlight();
+    this.updateMeshView();
     this.updateSession();
     this.oitRenderer.render(this.scene, this.camera);
   }
@@ -303,11 +443,21 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const canvas = this.canvasRef.nativeElement;
     canvas.removeEventListener('webglcontextlost', this.onContextLost);
     canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('pointermove', this.onPointerMove);
+    canvas.removeEventListener('pointerleave', this.onPointerLeave);
+    canvas.removeEventListener('contextmenu', this.onContextMenu);
+    if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
     if (this.currentImportedReference) {
       disposeImportedReferenceClone(this.currentImportedReference);
     }
+    if (this.currentMeshView) {
+      disposeMeshView(this.currentMeshView);
+    }
     this.controls?.dispose();
     this.rotateGizmo?.dispose();
+    this.nodeGizmo?.dispose();
     this.oitRenderer?.dispose();
     this.renderer?.dispose();
   }
@@ -344,6 +494,31 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // land on a square/clean orientation instead of fighting to eyeball it.
     this.rotateGizmo.setRotationSnap(THREE.MathUtils.degToRad(45));
     this.scene.add(this.rotateGizmo.getHelper());
+
+    this.nodeGizmo = new TransformControls(this.camera, this.renderer.domElement);
+    this.nodeGizmo.setMode('translate');
+    this.nodeGizmo.setSize(0.9);
+    this.scene.add(this.nodeGizmo.getHelper());
+    // Live feedback while dragging: the dot follows the gizmo.
+    this.nodeGizmo.addEventListener('objectChange', () => {
+      if (this.gizmoNodeId !== null) this.stickToSurface(this.gizmoNodeId);
+      const mesh = this.gizmoNodeId === null ? undefined : this.currentMeshView?.nodeMeshes.get(this.gizmoNodeId);
+      mesh?.position.copy(this.nodeProxy.position);
+      if (this.gizmoNodeId !== null) {
+        const { x, y, z } = this.nodeProxy.position;
+        this.nodeDragging.emit({ nodeId: this.gizmoNodeId, position: { x, y, z } });
+      }
+    });
+    this.nodeGizmo.addEventListener('dragging-changed', event => {
+      if (event.value || this.gizmoNodeId === null) {
+        return;
+      }
+      const round = (value: number) => Math.round(value * 1e6) / 1e6;
+      this.nodeMoved.emit({
+        nodeId: this.gizmoNodeId,
+        position: { x: round(this.nodeProxy.position.x), y: round(this.nodeProxy.position.y), z: round(this.nodeProxy.position.z) }
+      });
+    });
 
     // Fires continuously while dragging a ring - keep the dimension-lines/
     // ruler overlays' ORIENTATION following live (cheap: just copies the
@@ -406,8 +581,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const hadAttachedReference = this.currentImportedReference !== null;
 
     this.scene.remove(this.rotateGizmo.getHelper());
+    this.scene.remove(this.nodeGizmo.getHelper());
     this.controls.dispose();
     this.rotateGizmo.dispose();
+    this.nodeGizmo.dispose();
     this.oitRenderer.dispose();
     this.renderer.dispose();
 
@@ -466,11 +643,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.updateDimensionLines();
     this.updateRuler();
     this.updateHoleHighlight();
+    this.updateMeshView();
 
     // Each a fixed scene fixture (not per-session/model), same lifetime as
     // the whole component, so none of them needs cleanup/disposal logic of
     // its own - see their own files under geometry/scene-objects/ for why
     // each looks the way it does.
+    this.scene.add(this.nodeProxy);
     this.scene.add(buildSceneLights());
     this.scene.add(buildAxesHelper());
 
@@ -541,6 +720,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.currentImportedReference = null;
     }
 
+    this.snapper = null;
     if (source === null) {
       return;
     }
@@ -548,12 +728,24 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const clone = buildImportedReferenceClone(source, style);
     this.currentImportedReference = clone;
     this.scene.add(clone);
+    // The reference can be turned in the Ideal and the Real World alike; in the Real World nodes also stick to it.
     this.rotateGizmo.attach(clone);
+    if (this.worldIndex === REAL_WORLD_INDEX) this.snapper = new SurfaceSnapper(clone);
     this.renderer.compile(this.scene, this.camera);
 
-    if (geometryChanged) {
+    if (geometryChanged && this.worldIndex === IDEAL_WORLD_INDEX) {
       this.centerOrbitTargetOn(clone);
     }
+  }
+
+  // While a node is dragged: close enough to the imported surface, it sticks to it; a stuck node is kept on the surface
+  // - the nearest point of it to where the gizmo is - so it slides instead of moving freely. Alt lets go.
+  private stickToSurface(nodeId: number): void {
+    const snapper = this.snapper;
+    if (!snapper || !this.snapEnabled) return;
+    const result = stick(snapper, this.nodeProxy.position, this.attachedNodeIds.has(nodeId), this.altHeld, this.snapShare);
+    if (result.point) this.nodeProxy.position.copy(result.point);
+    if (result.change) this.nodeAttach.emit({ nodeId, attached: result.change === 'attach' });
   }
 
   // Re-aims OrbitControls at the reference's current world-space bounding-
@@ -726,6 +918,148 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer.compile(this.scene, this.camera);
   }
 
+  // Keeps the translate gizmo on the selected node (Real World only): placed at
+  // the node's dot, removed when nothing is selected or the node is gone.
+  private syncNodeGizmo(): void {
+    const id = this.draggableNodeId;
+    const mesh = id === null ? undefined : this.currentMeshView?.nodeMeshes.get(id);
+    if (!mesh) {
+      if (this.nodeGizmo.object) {
+        this.nodeGizmo.detach();
+      }
+      this.gizmoNodeId = null;
+      return;
+    }
+    if (this.nodeGizmo.dragging) {
+      return;
+    }
+    this.nodeProxy.position.copy(mesh.position);
+    if (this.nodeGizmo.object !== this.nodeProxy) {
+      this.nodeGizmo.attach(this.nodeProxy);
+    }
+    this.gizmoNodeId = id;
+  }
+
+  private updateMeshView(): void {
+    const source = this.meshView;
+    if (this.lastMeshView === source) {
+      return;
+    }
+    this.lastMeshView = source;
+
+    const hadMesh = this.currentMeshView !== null;
+    if (this.currentMeshView) {
+      this.scene.remove(this.currentMeshView.root);
+      disposeMeshView(this.currentMeshView);
+      this.currentMeshView = null;
+    }
+    if (source === null) {
+      return;
+    }
+    this.currentMeshView = source;
+    this.scene.add(source.root);
+    this.renderer.compile(this.scene, this.camera);
+    // The first cube of a session: aim the orbit at it instead of leaving the
+    // camera pointed at the world origin - unless it is already in view (a cube put down by a click where the user is
+    // looking), when the view must stay put instead of jumping.
+    if (!hadMesh && !centreIsInView(this.camera, source.root)) {
+      this.centerOrbitTargetOn(source.root);
+    }
+  }
+
+  // A left click (not an orbit drag) picks whatever node or face is under the
+  // pointer; the parent decides what that means.
+  private handleClick(event: PointerEvent): void {
+    const down = this.pointerDownClient;
+    this.pointerDownClient = null;
+    // A press on a gizmo handle is not a click on the scene.
+    if (!down || event.button !== 0 || !this.active || this.rotateGizmo.dragging || this.nodeGizmo.dragging || this.nodeGizmo.axis !== null) {
+      return;
+    }
+    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) {
+      return;
+    }
+    if (!this.currentMeshView) {
+      return;
+    }
+    const pick = this.pickAt(event.clientX, event.clientY);
+    if (this.placeOnSurface && this.worldIndex === REAL_WORLD_INDEX) {
+      this.placeOrPick(event, pick);
+      return;
+    }
+    // While building a left click on a cube removes it; a click on a node still picks the node (to move it).
+    if (this.buildEnabled && pick?.kind === 'face') {
+      this.meshBuild.emit({ action: 'remove', pick, ground: null });
+      return;
+    }
+    this.meshPick.emit({ pick, additive: event.shiftKey });
+  }
+
+  // In place-on-surface mode: a node is picked; otherwise the point of the imported surface under the pointer is where the
+  // selected node goes.
+  private placeOrPick(event: PointerEvent, pick: MeshPick | null): void {
+    const nodeId = this.draggableNodeId;
+    const reference = this.currentImportedReference;
+    if (nodeId !== null && reference) {
+      this.aimRay(event.clientX, event.clientY);
+      const hit = this.raycaster.intersectObject(reference, true)[0];
+      if (hit) {
+        // With a vertex selected, a click on the surface places it - unless the pointer is right on another vertex
+        // (nodes lie on the surface, so a wide node pick would otherwise swallow every click near them).
+        const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+        const nodes = Array.from(this.currentMeshView?.nodeMeshes ?? [], ([id, mesh]): [number, THREE.Vector3] => [id, mesh.getWorldPosition(new THREE.Vector3())]);
+        const near = nearestNodeOnScreen(nodes, this.camera, rect.width, rect.height, new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top), 9);
+        if (near && near.nodeId !== nodeId) {
+          this.meshPick.emit({ pick: { kind: 'node', nodeId: near.nodeId }, additive: false });
+          return;
+        }
+        this.surfacePlace.emit({ nodeId, position: { x: hit.point.x, y: hit.point.y, z: hit.point.z } });
+        return;
+      }
+    }
+    // a node is picked; a click on nothing (or on a cube, which takes no clicks here) drops the selection
+    this.meshPick.emit({ pick: pick?.kind === 'node' ? pick : null, additive: false });
+  }
+
+  // A right click (not a pan) while building: add a cube where the pointer is.
+  private handleRightClick(event: PointerEvent): void {
+    const down = this.pointerDownClient;
+    this.pointerDownClient = null;
+    if (!this.buildEnabled || !down || !this.active) return;
+    if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) return;
+    // with no cubes yet there is nothing to pick, but the ground is there
+    const pick = this.currentMeshView ? this.pickAt(event.clientX, event.clientY) : null;
+    this.aimRay(event.clientX, event.clientY);
+    const ground = pick === null ? groundCellUnder(this.raycaster.ray) : null;
+    this.meshBuild.emit({ action: 'add', pick, ground });
+  }
+
+  // Points the raycaster along the view ray through a point of the screen.
+  private aimRay(clientX: number, clientY: number): void {
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    this.pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+  }
+
+  // What is under a point of the screen: a hit mesh names its pick, or - for a mesh holding many small faces, as
+  // the Solver World's - resolves the triangle that was hit to the small face it belongs to.
+  private pickAt(clientX: number, clientY: number): MeshPick | null {
+    const view = this.currentMeshView;
+    if (!view) {
+      return null;
+    }
+    this.aimRay(clientX, clientY);
+    const hits = this.raycaster.intersectObjects(view.pickables, false);
+    // a node that is reachable through other cubes (the nodes of the picked cube) wins over whatever is in front of it
+    const hit = preferredHit(hits);
+    if (!hit) {
+      return null;
+    }
+    const resolve = hit.object.userData['resolvePick'] as ((triangle: number) => MeshPick | null) | undefined;
+    return resolve && hit.faceIndex !== undefined && hit.faceIndex !== null ? resolve(hit.faceIndex) : ((hit.object.userData['pick'] as MeshPick | undefined) ?? null);
+  }
+
   // Gates the STL-reference visibility toggle button below (world-canvas.
   // component.html) to the one canvas the reference actually lives on - same
   // reasoning as RenderWindowComponent.getImportedReference's own
@@ -733,6 +1067,46 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Input instead.
   isIdealWorldCanvas(): boolean {
     return this.worldIndex === IDEAL_WORLD_INDEX;
+  }
+
+  // The node selected in the Real World is stuck to the imported surface: it can be let go with a button here (as well as
+  // with Alt while dragging).
+  canDetachSelected(): boolean {
+    return this.worldIndex === REAL_WORLD_INDEX && this.draggableNodeId !== null && this.attachedNodeIds.has(this.draggableNodeId);
+  }
+
+  detachSelected(): void {
+    if (this.canDetachSelected()) this.nodeAttach.emit({ nodeId: this.draggableNodeId!, attached: false });
+  }
+
+  isPlaceOn(): boolean {
+    return this.placeOnSurface && this.worldIndex === REAL_WORLD_INDEX;
+  }
+
+  togglePlace(): void {
+    this.attachmentSettings.setPlaceMode(!this.attachmentSettings.placeMode());
+  }
+
+  hasSurface(): boolean {
+    return this.worldIndex === REAL_WORLD_INDEX && this.currentImportedReference !== null;
+  }
+
+  // Building with the mouse is in the Ideal World and the Real World.
+  showsBuildToggle(): boolean {
+    return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;
+  }
+
+  isBuildOn(): boolean {
+    return this.showsBuildToggle() && this.sessionId !== null && this.meshSelection.buildMode(this.sessionId, this.worldIndex);
+  }
+
+  toggleBuild(): void {
+    if (this.showsBuildToggle() && this.sessionId !== null) this.meshSelection.setBuildMode(this.sessionId, this.worldIndex, !this.isBuildOn());
+  }
+
+  // The reference is shown in the Ideal World to build around and in the Real World for nodes to stick to.
+  showsReferenceToggle(): boolean {
+    return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;
   }
 
   // Backing state for the on-canvas STL-reference visibility toggle -
@@ -748,14 +1122,14 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // ImportedReferenceDisplayService's own DEFAULT_STYLE - never actually
   // shown there (isIdealWorldCanvas gates the button itself).
   isImportedReferenceVisible(): boolean {
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+    if (!this.showsReferenceToggle() || this.sessionId === null) {
       return true;
     }
     return this.importedReferenceDisplay.getStyle(this.sessionId).visible;
   }
 
   toggleImportedReferenceVisible(): void {
-    if (this.worldIndex !== IDEAL_WORLD_INDEX || this.sessionId === null) {
+    if (!this.showsReferenceToggle() || this.sessionId === null) {
       return;
     }
     const currentlyVisible = this.importedReferenceDisplay.getStyle(this.sessionId).visible;
@@ -829,13 +1203,18 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.updateDimensionLines();
       this.updateRuler();
       this.updateHoleHighlight();
-        this.updateSession();
+      this.updateMeshView();
+      this.syncNodeGizmo();
+      this.updateSession();
       this.updateSettleAnimation();
 
       // ImportedReferenceDisplayService.rotateGizmoVisible - the user's own
       // show/hide toggle for the rings, independent of whether a reference is
       // even attached (rotateGizmo.object stays undefined until one is).
-      const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined;
+      // In the Real World the turning rings would sit over the nodes: they step aside while a node is selected, so its
+      // gizmo and the clicks on the nodes are not taken by a ring.
+      const ringsInTheWay = this.worldIndex === REAL_WORLD_INDEX && this.draggableNodeId !== null;
+      const gizmoWanted = (this.importedReferenceStyle?.rotateGizmoVisible ?? true) && this.rotateGizmo.object !== undefined && !ringsInTheWay;
       this.rotateGizmo.getHelper().visible = this.active && gizmoWanted;
       this.rotateGizmo.enabled = this.active && gizmoWanted;
       // ImportedReferenceDisplayService.holeMarkersVisible - independent of
@@ -846,7 +1225,13 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       // Suppress orbiting while a ring is actively being dragged - otherwise
       // OrbitControls' own pointer handling fights the gizmo's for the same
       // mouse drag.
-      this.controls.enabled = this.active && !this.rotateGizmo.dragging;
+      const nodeGizmoWanted = this.active && this.nodeGizmo.object !== undefined;
+      this.nodeGizmo.getHelper().visible = nodeGizmoWanted;
+      this.nodeGizmo.enabled = nodeGizmoWanted;
+      this.controls.enabled = this.active && !this.rotateGizmo.dragging && !this.nodeGizmo.dragging && !this.painting;
+      // with the brush the left button paints and the right one rotates
+      this.controls.mouseButtons.LEFT = this.paintEnabled ? null as never : THREE.MOUSE.ROTATE;
+      this.controls.mouseButtons.RIGHT = this.paintEnabled ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
       this.controls.update();
     } catch (error) {
       console.error(`[WorldCanvasComponent] world ${this.worldIndex}: per-frame update failed, skipping this tick`, error);
@@ -967,6 +1352,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.controls.object = camera;
     this.controls.update();
     this.rotateGizmo.camera = camera;
+    this.nodeGizmo.camera = camera;
   }
 
   // Backing state + action for the on-canvas floor-grid visibility toggle
@@ -1020,6 +1406,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   openSixView(): void {
     if (this.currentModel && this.sessionId !== null) {
       const framingObjects: THREE.Object3D[] = [this.currentModel];
+      if (this.currentMeshView) {
+        framingObjects.push(this.currentMeshView.root);
+      }
       if (this.currentImportedReference) {
         framingObjects.push(this.currentImportedReference);
       }
@@ -1030,7 +1419,22 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         framingObjects,
         // AxesHelper stays (not part of previewFixtures) - orientation is
         // exactly what these 6 fixed-axis panels are about.
-        hiddenDuringView: this.previewFixtures()
+        hiddenDuringView: this.previewFixtures(),
+        meshView: () => this.currentMeshView,
+        nodesEditable: this.worldIndex === REAL_WORLD_INDEX,
+        surface:
+          this.worldIndex === REAL_WORLD_INDEX
+            ? {
+                snapper: () => this.snapper,
+                isAttached: nodeId => this.attachedNodeIds.has(nodeId),
+                setAttached: (nodeId, attached) => this.nodeAttach.emit({ nodeId, attached }),
+                share: () => this.snapShare,
+                enabled: () => this.snapEnabled,
+                object: () => this.currentImportedReference,
+                placeMode: () => this.placeOnSurface,
+                place: (nodeId, position) => this.surfacePlace.emit({ nodeId, position: { x: position.x, y: position.y, z: position.z } })
+              }
+            : undefined
       });
     }
   }
@@ -1043,12 +1447,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // updateSession does on every session switch - without this, switching
   // away and back would bring the OLD (pre-reset) angle back.
   resetCamera(): void {
-    this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
-    this.orthographicCamera.position.set(...DEFAULT_CAMERA_POSITION);
+    // A big body (a pipe 8 cubes across) lies outside the default view: look at the mesh instead, from
+    // the same diagonal direction, far enough to see all of it. A small or empty mesh keeps the default.
+    const framed = this.frameOfMesh();
+    const position = framed?.position ?? new THREE.Vector3(...DEFAULT_CAMERA_POSITION);
+    const target = framed?.target ?? new THREE.Vector3(...DEFAULT_ORBIT_TARGET);
+    this.perspectiveCamera.position.copy(position);
+    this.orthographicCamera.position.copy(position);
     this.orthographicCamera.zoom = 1;
-    this.orthoHalfHeight = DEFAULT_ORTHO_HALF_HEIGHT;
+    this.orthoHalfHeight = framed?.orthoHalfHeight ?? DEFAULT_ORTHO_HALF_HEIGHT;
     this.updateCameraFrustum(this.lastWidth, this.lastHeight);
-    this.controls.target.set(...DEFAULT_ORBIT_TARGET);
+    this.controls.target.copy(target);
 
     if (this.cameraMode !== 'perspective') {
       this.setActiveCamera(this.perspectiveCamera, 'perspective');
@@ -1062,5 +1471,27 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         target: this.controls.target.clone()
       });
     }
+  }
+
+  // Where to look to see the whole mesh, or null when the default view already does.
+  private frameOfMesh(): { position: THREE.Vector3; target: THREE.Vector3; orthoHalfHeight: number } | null {
+    const view = this.meshView;
+    if (!view) {
+      return null;
+    }
+    const box = new THREE.Box3().setFromObject(view.root);
+    if (box.isEmpty()) {
+      return null;
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const extent = Math.max(size.x, size.y, size.z);
+    const defaultDistance = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).length();
+    const distance = extent * 2.2;
+    if (distance <= defaultDistance) {
+      return null;
+    }
+    const target = box.getCenter(new THREE.Vector3());
+    const direction = new THREE.Vector3(...DEFAULT_CAMERA_POSITION).normalize();
+    return { position: target.clone().addScaledVector(direction, distance), target, orthoHalfHeight: Math.max(DEFAULT_ORTHO_HALF_HEIGHT, extent * 0.75) };
   }
 }

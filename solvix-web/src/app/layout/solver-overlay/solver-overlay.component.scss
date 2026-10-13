@@ -1,0 +1,363 @@
+$surface: rgba(24, 26, 30, 0.9);
+$border: rgba(255, 255, 255, 0.14);
+$text: #e4e6ea;
+$muted: #8b919b;
+$accent: #da680b;
+$load: #2fbf4f;
+$fix: #3d8bff;
+$material: #c77dff;
+
+// Over the canvas, but only the controls themselves take the mouse - the rest must still reach the scene.
+:host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  font-family: sans-serif;
+  font-size: 12px;
+  color: $text;
+}
+
+.toolbox,
+.viewbox,
+.face-legend,
+.legend {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+// The top right corner of the canvas (the camera buttons are in the top left): the tools in a row, and under them the
+// view settings.
+.side {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 380px;
+  pointer-events: none;
+}
+
+.toolbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  pointer-events: auto;
+}
+
+.viewbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  pointer-events: auto;
+}
+
+.box-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: $muted;
+}
+
+.viewbox__title {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: $muted;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid $border;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segment {
+  flex: 1;
+  padding: 7px 12px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid $border;
+  color: $text;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:last-child {
+    border-right: 0;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.segment--on {
+  background: $accent;
+  color: #fff;
+  font-weight: 700;
+
+  &:hover {
+    background: $accent;
+  }
+}
+
+.segment--load.segment--on {
+  background: $load;
+}
+
+.segment--fix.segment--on {
+  background: $fix;
+}
+
+.segment--erase.segment--on {
+  background: #d9534f;
+}
+
+.segment--material.segment--on {
+  background: $material;
+  color: #1b1030;
+}
+
+.segmented--small .segment {
+  padding: 5px 9px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caption {
+  min-width: 66px;
+  font-size: 11px;
+  color: $muted;
+}
+
+.hint {
+  font-size: 10px;
+  color: $muted;
+}
+
+.hint--warn {
+  color: #ffb14a;
+  line-height: 1.35;
+}
+
+.hint--wide {
+  line-height: 1.35;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid $border;
+  border-radius: 8px;
+  overflow: hidden;
+
+  button {
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    border: 0;
+    color: $text;
+    font-size: 15px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+  }
+}
+
+.stepper__value {
+  min-width: 26px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px 4px 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $border;
+  border-radius: 14px;
+  color: $text;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.chip--on {
+  border-color: $material;
+  box-shadow: 0 0 0 1px $material;
+  background: rgba(199, 125, 255, 0.16);
+}
+
+.chip__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  input[type='range'] {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.viewbox > input[type='range'] {
+  width: 100%;
+}
+
+.value {
+  min-width: 34px;
+  text-align: right;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.num {
+  width: 82px;
+  background: #1e1f22;
+  color: $text;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 11px;
+}
+
+.face-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 10px;
+  pointer-events: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch--load {
+  background: #44ff44;
+}
+
+.swatch--fix {
+  background: #3388ff;
+}
+
+.legend {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 8px;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.legend__bar {
+  width: 14px;
+  height: 130px;
+  border-radius: 3px;
+}
+
+.legend__label {
+  margin-top: 2px;
+  color: $muted;
+}
+
+.viewer-btn {
+  padding: 5px 10px;
+  background: $accent;
+  border: 1px solid $accent;
+  border-radius: 6px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.brush {
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid $border;
+  border-radius: 6px;
+  color: $text;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  &--on {
+    background: $accent;
+    border-color: $accent;
+    color: #fff;
+  }
+}

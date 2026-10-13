@@ -6,6 +6,19 @@ import { SixViewOverlayService, SixViewSource } from '../../state/six-view-overl
 import { WeightedOitRenderer } from '../../rendering/weighted-oit';
 import { WebglContextBudgetService } from '../../state/webgl-context-budget.service';
 import { ImportedReferenceDisplayService } from '../../state/imported-reference-display.service';
+import { MeshEditorService } from '../../state/mesh-editor.service';
+import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
+import { MeshPick } from '../../geometry/mesh-editor-view';
+import { NodeDrag, positionText, roundedPosition } from '../../geometry/mesh-editor-drag';
+import { stick } from '../../geometry/surface-snap';
+import { Gizmo, GizmoAxis, gizmoFor, hitGizmo, nearestNodeOnScreen } from '../../geometry/view-gizmo';
+
+// A node is grabbed (and its ring shows) only when the pointer is this close to it, in pixels: far enough that a press
+// beside a node still pans the view.
+const GRAB_RADIUS_PX = 8;
+// In the views a node is dragged in a plane and passes the surface more often than in the World's own view, so it sticks
+// at half the distance set in the panel.
+const SIX_VIEW_STICK_FACTOR = 0.5;
 
 interface ViewDirection {
   readonly label: string;
@@ -51,10 +64,30 @@ const VIEW_DIRECTIONS: ViewDirection[] = [
 })
 export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('canvas') private canvasRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
+  // One 2D canvas over each panel, on which the gizmo of the selected node is drawn.
+  @ViewChildren('gizmo') private gizmoRefs!: QueryList<ElementRef<HTMLCanvasElement>>;
 
   private readonly overlay = inject(SixViewOverlayService);
   private readonly referenceDisplay = inject(ImportedReferenceDisplayService);
   private readonly webglBudget = inject(WebglContextBudgetService);
+  private readonly meshEditor = inject(MeshEditorService);
+  private readonly meshSelection = inject(MeshEditorSelectionService);
+
+  // The panel shown large (the others shrink into a strip beside it); nodes can
+  // be dragged in it. null = the plain 3x2 grid.
+  mainPanel: number | null = null;
+  // Live coordinates of the node being dragged, shown over the panel it is dragged in.
+  dragText: string | null = null;
+  dragPanel: number | null = null;
+  private drag: NodeDrag | null = null;
+  // Where a press on empty space began in each panel: if it ends without moving it was a click (see surfaceClick).
+  private readonly emptyPress: (THREE.Vector2 | null)[] = VIEW_DIRECTIONS.map(() => null);
+  // The node under the pointer in each panel (a ring is drawn round it, so the user sees what a press would grab).
+  private readonly hoverNode: (number | null)[] = VIEW_DIRECTIONS.map(() => null);
+  private reframeNextFrame = false;
+  // Pointer handlers per panel, added with the panel's renderer and removed with it.
+  private readonly pointerHandlers: Array<{ down: (e: PointerEvent) => void; move: (e: PointerEvent) => void; up: (e: PointerEvent) => void } | undefined> =
+    VIEW_DIRECTIONS.map(() => undefined);
 
   // Nullable, one slot per panel - unlike the old "all empty or all full"
   // batch model, each panel's renderer/oit/camera/controls bundle is
@@ -176,7 +209,8 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (this.renderers[i]) {
       return true;
     }
-    if (canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+    const measured = this.panelSize(canvas);
+    if (measured.width === 0 || measured.height === 0) {
       return false; // not measurable yet - retry next frame
     }
     if (this.recreatingPanel[i]) {
@@ -240,6 +274,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls[i] = controls;
+    this.attachPointerHandlers(i, canvas);
     this.cameraHalfHeights[i] = 1;
     this.lastPanelSizes[i].width = 0;
     this.lastPanelSizes[i].height = 0;
@@ -276,6 +311,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
           canvas.removeEventListener('webglcontextrestored', onRestored);
         }
       }
+      this.detachPointerHandlers(i, canvas);
       this.controls[i]?.dispose();
       this.oitRenderers[i]?.dispose();
       renderer.dispose();
@@ -305,6 +341,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
         }
       }
       this.onContextRestoredHandlers[i] = undefined as unknown as () => void;
+      this.detachPointerHandlers(i, canvas);
       this.controls[i]?.dispose();
       this.oitRenderers[i]?.dispose();
       // dispose() only, deliberately NOT forceContextLoss() - these 6
@@ -325,6 +362,308 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
       this.cameras[i] = null;
       this.controls[i] = null;
     }
+  }
+
+  // --- main panel + node dragging ---------------------------------------------
+
+  isMain(i: number): boolean {
+    return this.mainPanel === i;
+  }
+
+  // Makes panel i the large one (or, if it already is, goes back to the grid).
+  toggleMain(i: number): void {
+    this.mainPanel = this.mainPanel === i ? null : i;
+    this.drag = null;
+    this.dragText = null;
+    this.dragPanel = null;
+    // The panels change size, so every view is framed again once the new layout is
+    // measured (next frame) - otherwise the model sits off-centre in the resized panels.
+    this.reframeNextFrame = true;
+  }
+
+  // What to tell the user about dragging nodes: the Ideal World's lattice is fixed; elsewhere any panel will do.
+  headerHint(): string {
+    const source = this.overlay.active();
+    if (!source?.meshView) {
+      return '';
+    }
+    if (!source.nodesEditable) {
+      return 'Це Ideal World: вузли тут не рухаються. Щоб їх тягнути, відкрийте «6 сторін» у вкладці Real World.';
+    }
+    return 'Клікніть по вузлу, щоб вибрати. Стрілка тягне по осі, центр — вільно в площині виду. Працює в будь-якому виді.';
+  }
+
+  // The selected node is stuck to the imported surface: let it go with a button (or hold Alt while dragging).
+  canDetach(): boolean {
+    const source = this.overlay.active();
+    const nodeId = source ? this.meshSelection.nodeId(source.sessionId) : null;
+    return nodeId !== null && source?.surface?.isAttached(nodeId) === true;
+  }
+
+  detach(): void {
+    const source = this.overlay.active();
+    const nodeId = source ? this.meshSelection.nodeId(source.sessionId) : null;
+    if (nodeId !== null && this.canDetach()) source!.surface!.setAttached(nodeId, false);
+  }
+
+  // True when nodes can be dragged in the panels of this overlay.
+  canDragNodes(): boolean {
+    return this.overlay.active()?.nodesEditable === true;
+  }
+
+  // The size of a panel's drawing area. Measured on the panel (the canvas's
+  // parent), NOT on the canvas: renderer.setSize() pins the canvas to fixed pixel
+  // dimensions, so its own clientWidth would never notice the panel being resized
+  // (a window resize, or one panel becoming the large one).
+  private panelSize(canvas: HTMLCanvasElement): { width: number; height: number } {
+    const panel = canvas.parentElement;
+    return { width: panel?.clientWidth ?? 0, height: panel?.clientHeight ?? 0 };
+  }
+
+  private attachPointerHandlers(i: number, canvas: HTMLCanvasElement): void {
+    const handlers = {
+      down: (event: PointerEvent) => this.onPanelPointerDown(i, event),
+      move: (event: PointerEvent) => this.onPanelPointerMove(i, event),
+      up: (event: PointerEvent) => this.onPanelPointerUp(i, event)
+    };
+    this.pointerHandlers[i] = handlers;
+    // Capture phase: the press must reach us BEFORE OrbitControls' own pointerdown
+    // so that grabbing a node can stop the panel from panning.
+    canvas.addEventListener('pointerdown', handlers.down, true);
+    canvas.addEventListener('pointermove', handlers.move);
+    canvas.addEventListener('pointerup', handlers.up);
+    canvas.addEventListener('pointercancel', handlers.up);
+  }
+
+  private detachPointerHandlers(i: number, canvas: HTMLCanvasElement | undefined): void {
+    const handlers = this.pointerHandlers[i];
+    if (!handlers) {
+      return;
+    }
+    if (!canvas) {
+      this.pointerHandlers[i] = undefined; // the element is already gone, and its listeners with it
+      return;
+    }
+    canvas.removeEventListener('pointerdown', handlers.down, true);
+    canvas.removeEventListener('pointermove', handlers.move);
+    canvas.removeEventListener('pointerup', handlers.up);
+    canvas.removeEventListener('pointercancel', handlers.up);
+    this.pointerHandlers[i] = undefined;
+  }
+
+  private ndcOf(canvas: HTMLCanvasElement, event: PointerEvent): THREE.Vector2 {
+    const rect = canvas.getBoundingClientRect();
+    return new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+  }
+
+  // The node (dot) under the pointer in panel i, if any: the one nearest to the pointer on the screen, within a few
+  // pixels - found by where it is on the screen, so a node behind another cube can be had too.
+  private nodeUnderPointer(i: number, canvas: HTMLCanvasElement, event: PointerEvent): number | null {
+    const camera = this.cameras[i];
+    const view = this.overlay.active()?.meshView?.();
+    const { width, height } = this.panelSize(canvas);
+    if (!camera || !view || width === 0 || height === 0) {
+      return null;
+    }
+    const nodes = Array.from(view.nodeMeshes, ([id, mesh]) => [id, mesh.position] as [number, THREE.Vector3]);
+    return nearestNodeOnScreen(nodes, camera, width, height, this.pixelOf(canvas, event), GRAB_RADIUS_PX)?.nodeId ?? null;
+  }
+
+  // Sticking to the imported surface, as in the World's own view: a node dragged close to it sticks and from then on
+  // slides along it (Alt lets go). Returns where the node goes.
+  private stuck(nodeId: number, position: THREE.Vector3, released: boolean): THREE.Vector3 {
+    const surface = this.overlay.active()?.surface;
+    const snapper = surface?.snapper();
+    if (!surface || !snapper || !surface.enabled()) return position;
+    const result = stick(snapper, position, surface.isAttached(nodeId), released, surface.share() * SIX_VIEW_STICK_FACTOR);
+    if (result.change) surface.setAttached(nodeId, result.change === 'attach');
+    return result.point ?? position;
+  }
+
+  // The gizmo of the selected node in panel i (null when no node is selected or nodes cannot be dragged).
+  private gizmoOf(i: number): Gizmo | null {
+    const source = this.overlay.active();
+    const camera = this.cameras[i];
+    const canvas = this.canvasRefs?.get(i)?.nativeElement;
+    if (!source || !camera || !canvas || !this.canDragNodes()) return null;
+    const nodeId = this.meshSelection.nodeId(source.sessionId);
+    const mesh = nodeId === null ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
+    const { width, height } = this.panelSize(canvas);
+    if (!mesh || width === 0 || height === 0) return null;
+    return gizmoFor(camera, width, height, mesh.position);
+  }
+
+  private pixelOf(canvas: HTMLCanvasElement, event: PointerEvent): THREE.Vector2 {
+    const rect = canvas.getBoundingClientRect();
+    return new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top);
+  }
+
+  private onPanelPointerDown(i: number, event: PointerEvent): void {
+    if (event.button !== 0 || !this.canDragNodes()) {
+      return;
+    }
+    const source = this.overlay.active();
+    const canvas = event.currentTarget as HTMLCanvasElement;
+    const camera = this.cameras[i];
+    if (!source || !camera) {
+      return;
+    }
+    // The gizmo of the selected node comes first: its arrow holds the node to an axis, its centre moves it freely.
+    const gizmo = this.gizmoOf(i);
+    const grabbed = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
+    let nodeId = grabbed ? this.meshSelection.nodeId(source.sessionId) : this.nodeUnderPointer(i, canvas, event);
+    const mesh = nodeId === null ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
+    if (nodeId === null || !mesh) {
+      this.emptyPress[i] = this.pixelOf(canvas, event);       // empty space: OrbitControls pans the view - unless it turns out to be a click
+      return;
+    }
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    this.drag = new NodeDrag(nodeId, mesh.position.clone(), camera, grabbed?.kind === 'axis' ? grabbed.direction : null);
+    this.dragPanel = i;
+    if (this.meshSelection.nodeId(source.sessionId) !== nodeId) {
+      this.meshSelection.selectNode(source.sessionId, nodeId);
+    }
+    this.dragText = positionText(mesh.position);
+  }
+
+  private onPanelPointerMove(i: number, event: PointerEvent): void {
+    const canvas = event.currentTarget as HTMLCanvasElement;
+    if (!this.drag) {
+      if (this.canDragNodes()) {
+        const gizmo = this.gizmoOf(i);
+        const over = gizmo ? hitGizmo(gizmo, this.pixelOf(canvas, event)) : null;
+        const node = over ? null : this.nodeUnderPointer(i, canvas, event);
+        this.hoverNode[i] = node;
+        canvas.style.cursor = over ? (over.kind === 'centre' ? 'move' : 'grab') : node !== null ? 'pointer' : '';
+      }
+      return;
+    }
+    const view = this.overlay.active()?.meshView?.();
+    if (!view) {
+      return;
+    }
+    // the pointer position in the panel that started the drag, whichever panel the event comes from
+    const position = this.stuck(this.drag.nodeId, this.drag.positionFor(this.ndcOf(canvas, event)), event.altKey);
+    // Live feedback: the dot (and its click target) follow the pointer.
+    view.nodeMeshes.get(this.drag.nodeId)?.position.copy(position);
+    view.pickables.find(o => (o.userData['pick'] as MeshPick).kind === 'node' && (o.userData['pick'] as { nodeId: number }).nodeId === this.drag!.nodeId)?.position.copy(position);
+    this.dragText = positionText(position);
+    canvas.style.cursor = 'grabbing';
+  }
+
+  private onPanelPointerUp(i: number, event: PointerEvent): void {
+    const drag = this.drag;
+    if (!drag) {
+      this.surfaceClick(i, event);
+      return;
+    }
+    this.drag = null;
+    this.dragText = null;
+    this.dragPanel = null;
+    const canvas = event.currentTarget as HTMLCanvasElement;
+    canvas.style.cursor = '';
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+    const source = this.overlay.active();
+    if (!source) {
+      return;
+    }
+    const position = this.stuck(drag.nodeId, drag.positionFor(this.ndcOf(canvas, event)), event.altKey);
+    if (position.distanceTo(drag.start) < 1e-6) {
+      return; // a click on the node, not a move
+    }
+    this.meshEditor.moveNode(source.sessionId, drag.nodeId, roundedPosition(position), this.meshEditor.carryEdgeMidpoints);
+  }
+
+  // In "place on the surface" mode: a click (not a pan) on empty space of a view, with a node selected, puts the node on
+  // the point of the imported surface that the click lands on - found along the line of sight of that view.
+  private surfaceClick(i: number, event: PointerEvent): void {
+    const down = this.emptyPress[i];
+    this.emptyPress[i] = null;
+    const source = this.overlay.active();
+    const surface = source?.surface;
+    const camera = this.cameras[i];
+    const canvas = event.currentTarget as HTMLCanvasElement;
+    if (!down || !source || !surface || !camera || !this.canDragNodes() || !surface.placeMode()) return;
+    if (down.distanceTo(this.pixelOf(canvas, event)) > 4) return;
+    const nodeId = this.meshSelection.nodeId(source.sessionId);
+    const object = surface.object();
+    if (nodeId === null || !object) return;
+    const raycaster = new THREE.Raycaster();
+    camera.updateMatrixWorld(true);
+    raycaster.setFromCamera(this.ndcOf(canvas, event), camera);
+    const hit = raycaster.intersectObject(object, true)[0];
+    if (hit) surface.place(nodeId, hit.point);
+  }
+
+  // --- the gizmo, drawn over each panel ---
+
+  private static readonly AXIS_COLORS: Record<GizmoAxis, string> = { x: '#ff5c5c', y: '#5cff7a', z: '#5c9cff' };
+
+  // A ring round the node a press would grab.
+  private drawHoverRing(i: number, ctx: CanvasRenderingContext2D): void {
+    const nodeId = this.hoverNode[i];
+    const source = this.overlay.active();
+    const camera = this.cameras[i];
+    const canvas = this.canvasRefs?.get(i)?.nativeElement;
+    const mesh = nodeId === null || !source ? undefined : source.meshView?.()?.nodeMeshes.get(nodeId);
+    if (!mesh || !camera || !canvas || this.drag) return;
+    const { width, height } = this.panelSize(canvas);
+    const centre = gizmoFor(camera, width, height, mesh.position).centre;
+    ctx.strokeStyle = '#ffe14d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  private drawGizmo(i: number, width: number, height: number): void {
+    const canvas = this.gizmoRefs?.get(i)?.nativeElement;
+    if (!canvas) return;
+    const ratio = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    this.drawHoverRing(i, ctx);
+    const gizmo = this.gizmoOf(i);
+    if (!gizmo) return;
+    const active = this.drag && this.dragPanel === i;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (const arrow of gizmo.arrows) {
+      const color = SixViewOverlayComponent.AXIS_COLORS[arrow.axis];
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(arrow.from.x, arrow.from.y);
+      ctx.lineTo(arrow.to.x, arrow.to.y);
+      ctx.stroke();
+      // the head
+      const angle = Math.atan2(arrow.to.y - arrow.from.y, arrow.to.x - arrow.from.x);
+      ctx.beginPath();
+      ctx.moveTo(arrow.to.x, arrow.to.y);
+      ctx.lineTo(arrow.to.x - 12 * Math.cos(angle - 0.4), arrow.to.y - 12 * Math.sin(angle - 0.4));
+      ctx.lineTo(arrow.to.x - 12 * Math.cos(angle + 0.4), arrow.to.y - 12 * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+      ctx.font = '11px sans-serif';
+      ctx.fillText(arrow.axis.toUpperCase(), arrow.to.x + 6 * Math.cos(angle) + 3, arrow.to.y + 6 * Math.sin(angle) + 4);
+    }
+    ctx.fillStyle = active ? '#ffffff' : 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gizmo.centre.x, gizmo.centre.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 
   close(): void {
@@ -404,8 +743,9 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     // so recenter() visibly resets the view immediately even when the
     // panel's on-screen size hasn't changed since the last frame.
     const canvas = this.canvasRefs?.get(i)?.nativeElement;
-    if (canvas && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-      const aspect = canvas.clientWidth / canvas.clientHeight;
+    const size = canvas ? this.panelSize(canvas) : null;
+    if (canvas && size && size.width > 0 && size.height > 0) {
+      const aspect = size.width / size.height;
       camera.left = -halfHeight * aspect;
       camera.right = halfHeight * aspect;
       camera.top = halfHeight;
@@ -449,11 +789,12 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     const controls = this.controls[i];
     const canvas = this.canvasRefs?.get(i)?.nativeElement;
     const source = this.overlay.active();
-    if (!renderer || !camera || !controls || !canvas || !source || canvas.clientWidth === 0 || canvas.clientHeight === 0) {
+    const size = canvas ? this.panelSize(canvas) : null;
+    if (!renderer || !camera || !controls || !canvas || !source || !size || size.width === 0 || size.height === 0) {
       return;
     }
-    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    this.oitRenderers[i]?.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setSize(size.width, size.height);
+    this.oitRenderers[i]?.setSize(size.width, size.height);
     const saved = this.savedCameraStates[i];
     if (saved) {
       camera.position.copy(saved.position);
@@ -481,6 +822,10 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
     if (sourceChanged) {
       this.lastSource = source;
       this.rebuildFraming(source.framingObjects);
+      this.reframeNextFrame = false;
+    } else if (this.reframeNextFrame) {
+      this.reframeNextFrame = false;
+      this.cameras.forEach((_, i) => this.applyFraming(i));
     }
 
     // Hidden only for the duration of THIS component's own render() calls
@@ -522,7 +867,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
         // white forever").
         try {
           const canvas = canvases[i].nativeElement;
-          const { clientWidth: width, clientHeight: height } = canvas;
+          const { width, height } = this.panelSize(canvas);
           if (width === 0 || height === 0) {
             continue;
           }
@@ -569,6 +914,7 @@ export class SixViewOverlayComponent implements AfterViewInit, OnDestroy {
           this.saveCameraState(i, camera, controls);
           this.webglBudget.touch(`six-view-${i}`);
           oit.render(source.scene, camera);
+          this.drawGizmo(i, width, height);
         } catch (error) {
           console.error(`[SixViewOverlayComponent] panel ${i} failed to render, skipping it this frame`, error);
         }

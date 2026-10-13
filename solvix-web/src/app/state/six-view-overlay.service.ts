@@ -1,5 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import * as THREE from 'three';
+import { MeshView } from '../geometry/mesh-editor-view';
+import { SurfaceSnapper } from '../geometry/surface-snap';
 
 // What a "6 сторін" click hands the overlay: the source World's OWN Scene
 // (not a clone) - a THREE.Scene can be rendered by any number of
@@ -33,6 +35,26 @@ export interface SixViewSource {
   // its own render() calls and restores them straight after (see
   // SixViewOverlayComponent.animate).
   readonly hiddenDuringView: readonly THREE.Object3D[];
+  // The mesh editor's drawing currently in this World's scene (a different
+  // object after every state or selection change, hence a getter), so the
+  // overlay can pick and drag its nodes. Absent for Worlds without one.
+  readonly meshView?: () => MeshView | null;
+  // Whether nodes may be dragged in the views - true only for the Real World.
+  readonly nodesEditable?: boolean;
+  // The imported surface a dragged node sticks to (Real World): the same sticking as when a node is dragged in the
+  // World's own view - the surface to stick to, which nodes are stuck already, and how to stick or free one.
+  readonly surface?: {
+    readonly snapper: () => SurfaceSnapper | null;
+    readonly isAttached: (nodeId: number) => boolean;
+    readonly setAttached: (nodeId: number, attached: boolean) => void;
+    readonly share: () => number;
+    readonly enabled: () => boolean;
+    // The imported surface itself, for putting a node on the point of it that is clicked
+    readonly object: () => THREE.Object3D | null;
+    // "Place on the surface" mode is on: a click on the surface (with a node selected) puts the node there
+    readonly placeMode: () => boolean;
+    readonly place: (nodeId: number, position: THREE.Vector3) => void;
+  };
 }
 
 // Single shared instance for the whole app - every WorldCanvasComponent's

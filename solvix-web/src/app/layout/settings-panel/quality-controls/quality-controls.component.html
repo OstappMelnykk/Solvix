@@ -1,0 +1,143 @@
+<h4>Якість сітки</h4>
+
+<ng-container *ngIf="solvix() as sx; else loading">
+
+  <!-- 1. Чи приймається сітка (критерій Solvix) -->
+  <section class="part" *ngIf="decision() as d">
+    <button type="button" class="go go--wide" [class.go--ok]="d.level === 'ok'" [class.go--no]="d.level !== 'ok'" [disabled]="d.level !== 'ok'" (click)="goToSolver()">
+      {{ d.level === 'ok' ? 'Перейти до розрахунку →' : d.title + ' (' + (d.level === 'bad' ? d.rejected + ' із ' + d.total + ', ' + percentOf(d.rejected, d.total) : d.folded + ' вивернуті') + ')' }}
+    </button>
+  </section>
+
+  <!-- 2. Критерії -->
+  <section class="part">
+    <h5>Критерії Solvix</h5>
+    <ng-container *ngFor="let m of meshMeasures(); trackBy: trackKey">
+      <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
+    </ng-container>
+    <p class="about">Значення — найгірше серед усіх елементів сітки.</p>
+  </section>
+
+  <!-- 3. Що показує сцена -->
+  <section class="part">
+    <h5>Фарбувати сцену за</h5>
+    <div class="choice">
+      <button type="button" class="choice__btn choice__grade" [class.on]="metric() === 'grade'" (click)="setMetric('grade')">Оцінка</button>
+      <hr class="choice__line" />
+      <div class="choice__measures">
+        <button type="button" class="choice__btn" *ngFor="let l of metricChoices(); trackBy: trackLimit" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">
+          <span>{{ l.label }}</span><small>{{ l.tech }}</small>
+        </button>
+      </div>
+    </div>
+    <div class="legend" *ngIf="compareId()">
+      <span *ngFor="let l of legend(); trackBy: trackResult"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
+    </div>
+    <label class="opacity" title="Менше — тіло прозоріше, і погані елементи всередині видно крізь хороші. Грані навколо поганих елементів малюються й усередині тіла.">
+      <span>Непрозорість тіла, {{ opacityPercent() }}%</span>
+      <input type="range" min="5" max="100" step="5" [value]="opacityPercent()" (input)="onOpacity($event)" />
+    </label>
+    <div class="marks">
+      <label class="mark"><input type="checkbox" [checked]="showMark('fixed')" (change)="toggleMark('fixed')" /><i class="mark__swatch mark__swatch--fixed"></i>Показувати закріплення</label>
+      <label class="mark"><input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" /><i class="mark__swatch mark__swatch--loads"></i>Показувати навантаження</label>
+    </div>
+  </section>
+
+  <!-- Дослідження всередині -->
+  <section class="part">
+    <h5>Подивитись усередину</h5>
+    <label class="mark"><input type="checkbox" [checked]="looking().onlyBad" (change)="toggleOnlyBad()" />Лише проблемні елементи</label>
+    <label class="mark"><input type="checkbox" [checked]="looking().section.enabled" (change)="toggleSection()" />Розріз тіла площиною</label>
+    <div class="cut" *ngIf="looking().section.enabled">
+      <div class="cut__axes">
+        <button type="button" class="cut__axis" *ngFor="let a of axisNames" [class.on]="looking().section.axis === a.axis" (click)="setSectionAxis(a.axis)">{{ a.name }}</button>
+        <span class="cut__value">{{ sectionText() }}</span>
+      </div>
+      <div class="cut__sides" title="Яка частина тіла лишається. Куби, крізь які проходить площина, розрізаються нею точно: до площини є, після неї нема.">
+        <button type="button" class="cut__side" [class.on]="looking().section.keep === 'below'" (click)="setSectionSide('below')">◀ лишити менші {{ sectionAxisName() }}</button>
+        <button type="button" class="cut__side" [class.on]="looking().section.keep === 'above'" (click)="setSectionSide('above')">лишити більші {{ sectionAxisName() }} ▶</button>
+      </div>
+      <input type="range" min="0" max="100" step="1" [value]="looking().section.position * 100" (input)="onSectionPosition($event)" />
+    </div>
+    <div class="walk" *ngIf="badElements().length > 0; else noBad">
+      <button type="button" class="walk__btn" title="Попередній проблемний елемент" (click)="walk(-1)">◀</button>
+      <span class="walk__text">{{ badPosition() > 0 ? 'Елемент ' + badPosition() + ' з ' + badElements().length : 'Проблемних елементів: ' + badElements().length }}</span>
+      <button type="button" class="walk__btn" title="Наступний проблемний елемент (найгірші першими)" (click)="walk(1)">▶</button>
+    </div>
+    <ng-template #noBad><div class="empty">Проблемних елементів немає.</div></ng-template>
+  </section>
+
+  <!-- Згладжування -->
+  <section class="part">
+    <app-smoothing-controls [sessionId]="sessionId" [bad]="badElements()"></app-smoothing-controls>
+  </section>
+
+  <!-- 4. Вибраний елемент -->
+  <section class="part" *ngIf="pickedElement() as p">
+    <h5>Вибраний елемент</h5>
+    <ng-container>
+      <div class="picked__head">
+        <b>{{ placeText(p) }}</b>
+        <button type="button" class="link" (click)="clearPick()">Зняти вибір</button>
+      </div>
+      <ng-container *ngIf="hasDetail(); else waiting">
+        <div class="detail__head">
+          <i [style.background]="color(elementResult())"></i><b>Solvix</b><span>{{ resultNames[elementResult()] }}</span>
+        </div>
+        <ng-container *ngFor="let m of elementMeasures(); trackBy: trackKey">
+          <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m, compact: true }"></ng-container>
+        </ng-container>
+        <div class="detail__head detail__head--other" *ngIf="otherToolResult() as r">
+          <i [style.background]="color(r)"></i><b>{{ chosenTool()?.name }}</b><span>{{ resultNames[r] }} · лише перегляд</span>
+        </div>
+      </ng-container>
+      <ng-template #waiting><div class="empty">Завантажую показники…</div></ng-template>
+    </ng-container>
+  </section>
+
+  <!-- 5. Інші інструменти: лише подивитись -->
+  <section class="part part--look">
+    <h5>Як позначили б інші інструменти</h5>
+    <ng-container *ngIf="!toolsOpen; else toolList">
+      <p class="about">Лише для порівняння на сцені. Це ніяк не впливає на висновок і на розрахунок.</p>
+      <button type="button" class="go" (click)="openTools()">Подивитись, як це позначили б інші інструменти</button>
+    </ng-container>
+    <ng-template #toolList>
+      <p class="look-note">Лише перегляд: сцена показує позначки обраного інструмента. Висновок і розрахунок лишаються за Solvix.</p>
+      <p class="look-note"><b>Відсоток</b> — яка частка елементів вашої сітки проходить перевірки цього інструмента (100% — усі елементи прийнятні).</p>
+      <div class="pills">
+        <button type="button" class="pill" *ngFor="let t of tools(); trackBy: trackById" [class.pill--on]="compareId() === t.id" [title]="t.dto.source" (click)="chooseTool(t.id)">
+          <span class="pill__name">{{ t.name }}</span>
+          <span class="pill__percent">{{ percentText(t.percent) }}</span>
+        </button>
+      </div>
+      <ng-container *ngIf="chosenTool() as tool">
+        <p class="about">{{ tool.source }}</p>
+        <p class="about about--note" *ngIf="tool.note">{{ tool.note }}</p>
+        <ng-container *ngFor="let m of measuresOf(tool); trackBy: trackKey">
+          <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
+        </ng-container>
+      </ng-container>
+      <button type="button" class="go" (click)="closeTools()">Закрити й повернути позначки Solvix</button>
+    </ng-template>
+  </section>
+</ng-container>
+<ng-template #gaugeTpl let-m let-compact="compact">
+  <div class="gauge" [class.gauge--compact]="compact">
+    <div class="gauge__head">
+      <span class="gauge__name">{{ m.limit.label }} <small>{{ m.limit.tech }}</small>
+        <button type="button" class="gauge__info" aria-label="Що це за параметр" title="Що це за параметр" (click)="openInfo(m)">i</button>
+      </span>
+      <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
+    </div>
+    <div class="gauge__track">
+      <span class="gauge__marker" [style.left]="markerLeft(m)"><span class="gauge__at">{{ m.shown }}</span></span>
+      <span *ngFor="let z of gaugeZones(m.limit); trackBy: trackResult" class="gauge__zone" [style.background]="color(z.result)"></span>
+    </div>
+    <div class="gauge__ticks">
+      <span *ngFor="let t of gaugeTicks(m.limit)" class="gauge__tick" [class.gauge__tick--end]="t.at === 100" [class.gauge__tick--mid]="t.at === 50" [style.left.%]="t.at">{{ t.text }}</span>
+    </div>
+  </div>
+</ng-template>
+<app-measure-info *ngIf="info as i" [limit]="i.limit" [tool]="i.tool" [shown]="i.shown" [ok]="i.ok" (closed)="closeInfo()"></app-measure-info>
+<ng-template #loading><div class="empty">{{ hexCount() === 0 ? 'Побудуйте хоча б один куб.' : 'Оцінюю сітку…' }}</div></ng-template>

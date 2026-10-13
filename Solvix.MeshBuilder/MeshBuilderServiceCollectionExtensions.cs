@@ -10,6 +10,7 @@ public static class MeshBuilderServiceCollectionExtensions
     // internal service shape - only that "mesh building" is available.
     public static IServiceCollection AddMeshBuilder(this IServiceCollection services)
     {
+        services.AddSingleton<MeshEditorSessions>();
         services.AddScoped<IMeshBuilderFacade, MeshBuilderFacade>();
         return services;
     }

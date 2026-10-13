@@ -1,0 +1,202 @@
+{
+  "about": "База джерел для критеріїв якості криволінійних гексаедрів (20-вузловий ізопараметричний елемент). Кожен запис: що саме сказано, які числа, наскільки це перевірено. Заповнюється під час досліджень; не вигадувати значень — якщо не прочитано, ставити verified=false.",
+  "updated": "2026-10-11",
+  "status_legend": {
+    "read": "сторінку/документ відкрито і прочитано в цій сесії (числа взято з тексту)",
+    "snippet": "бачено лише уривок із пошуку, документ не читано",
+    "memory": "відтворено з пам'яті автора коду, джерела не відкрито — ПЕРЕВІРИТИ",
+    "not_found": "шукали, не знайшли"
+  },
+  "sources": [
+    {
+      "id": "ansys-apdl-shape",
+      "title": "ANSYS Mechanical APDL Theory Reference, 12.1 Element Shape Testing",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/corp/v251/en/ans_thry/thy_et7.html",
+      "kind": "documentation",
+      "status": "read",
+      "applies_to": "3D цеглини (hex), зокрема 20-вузлові з вузлами на серединах ребер",
+      "key_points": [
+        "Цеглина має 6 чотирикутних граней і 3 чотирикутні перерізи (через вузли на серединах ребер). Aspect ratio, parallel deviation і max corner angle рахуються для кожної грані і перерізу, елемент отримує найгірше значення.",
+        "Aspect ratio: тільки кутові вузли; відношення довшої сторони до коротшої у найбільш витягнутого з двох прямокутників, побудованих через середини протилежних ребер (невпала грань спершу проєктується на площину). Сам aspect ratio слабо корелює з точністю, поки не перевищить ~1000.",
+        "Parallel deviation: вузли на серединах ігноруються; одиничні вектори протилежних ребер (узгоджені за напрямком), кут = acos(скалярний добуток), береться більший з двох; ідеал 0°.",
+        "Maximum corner angle: тільки кутові вузли; найбільший кут між сусідніми ребрами; ідеал для прямокутника 90°.",
+        "Jacobian ratio: RJ = визначник якобіана у точках вибірки; для 20-вузлової цеглини — УСІ вузли (20) і центроїд; ratio = max RJ / min RJ; якщо max і min різних знаків — ratio = -100 (умовно, елемент недійсний). Ідеал 1.",
+        "Jacobian ratio = 1 для цеглини, якщо протилежні грані паралельні і кожен серединний вузол стоїть у середньому арифметичному своїх кутових вузлів. Зсув серединних вузлів збільшує ratio і з часом 'ламає' елемент.",
+        "Warping factor: для кожної чотирикутної грані; різниця висот кінців ребра (вздовж середньої нормалі) / sqrt(проєктована площа); плоска грань = 0; повернути верхню грань одиничного куба на 22.5° дає ~0.2, на 45° ~0.4."
+      ],
+      "numbers": {
+        "aspect_ratio": { "warning": 20, "error": 1000000, "note": "для h-елементів; error 10^6 — захист від round-off" },
+        "parallel_deviation_with_midside_nodes_deg": { "warning": 100, "error": 170 },
+        "parallel_deviation_without_midside_nodes_deg": { "warning": 70, "error": 150 },
+        "max_corner_angle_quad_with_midside_nodes_deg": { "warning": 165, "error": 179.9 },
+        "jacobian_ratio_corner_or_all_nodes": { "warning": 30, "error": 1000, "note": "SHPP,LSTET,OFF (для цеглин вибірка у вузлах, не в точках Гауса)" },
+        "jacobian_ratio_integration_points_tets": { "warning": 10, "error": 40, "note": "LSTET,ON — для 10-вузлових тетраедрів" },
+        "warping_factor_3d_solid_face": { "warning": 0.2, "error": 0.4 }
+      },
+      "caveats": [
+        "Формули в документі є картинками (svg) — тексту формул немає; побудови реконструйовано з описів.",
+        "Документ не обговорює p-елементи; ліміти подано для h-елементів."
+      ]
+    },
+    {
+      "id": "ansys-apdl-shpp",
+      "title": "ANSYS Mechanical APDL Command Reference, SHPP",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/corp/v251/en/ans_cmd/Hlp_C_SHPP.html",
+      "kind": "documentation",
+      "status": "snippet",
+      "applies_to": "налаштування перевірок форми (SHPP,MODIFY)",
+      "key_points": ["Усі перевірки форми ввімкнені за замовчуванням; ліміти можна змінити SHPP,MODIFY."],
+      "numbers": {}
+    },
+    {
+      "id": "ansys-wb-jacobian",
+      "title": "ANSYS Meshing / Mechanical: Jacobian Ratio",
+      "url": "https://ansyshelp.ansys.com/public/views/secured/corp/v251/en/wb_msh/msh_jacobian_ratio.html",
+      "kind": "documentation",
+      "status": "read",
+      "applies_to": "квадратичні елементи, головно 10-вузлові тетраедри",
+      "key_points": [
+        "Метрики Jacobian Ratio (Corner Nodes) і (Gauss Points) обмежені діапазоном від -1 (найгірше) до 1 (найкраще); елемент з ratio ≤ 0 слід уникати.",
+        "'Moving a midside node away from the edge midpoint position will worsen the Jacobian ratio. If the node is moved significantly, the Jacobian ratio will become negative and the element is invalid.'",
+        "Для Mechanical перевірка Standard Mechanical використовує точки Гауса, але не кутові вузли — елемент може пройти за Гаусом і не пройти у кутових вузлах.",
+        "Сторінка оперує нормованим ratio (-1..1), що відрізняється від APDL (max/min, ≥1) — не змішувати шкали."
+      ],
+      "numbers": {}
+    },
+    {
+      "id": "ansys-turbogrid-limits",
+      "title": "ANSYS TurboGrid User's Guide: Mesh Limits",
+      "url": "https://ansyshelp.ansys.com/public/views/secured/corp/v251/en/tg_user/i1034630.html",
+      "kind": "documentation",
+      "status": "read",
+      "applies_to": "CFD-сітки (не конструкційні); шкала skewness",
+      "key_points": ["Skewness: 0 рівнокутній, 1 виродження."],
+      "numbers": { "skewness_bands": { "excellent": "0-0.25", "good": "0.25-0.5", "fair": "0.5-0.75", "poor": "0.75-0.9", "bad_sliver": "0.9-1", "degenerate": 1, "non_convex": ">1" } },
+      "caveats": ["Це CFD-довідка, не гайд для квадратичних конструкційних гексаедрів. Формулу для гексаедрів тут не дано."]
+    },
+    {
+      "id": "abaqus-verify-mesh",
+      "title": "Abaqus/CAE User's Guide: Verifying your mesh (Verify Mesh dialog)",
+      "url": "https://abaqus-docs.mit.edu/2017/English/SIMACAECAERefMap/simacae-c-mgnconcpartitionverify.htm",
+      "kind": "documentation",
+      "status": "read",
+      "applies_to": "гексаедри, клини, тетраедри (стандартні значення попереджень)",
+      "key_points": [
+        "Для гексаедрів 'shape factor' недоступний (лише для трикутників/тетраедрів).",
+        "Кути граней перевіряються 'face corner angle': менший і більший.",
+        "Aspect ratio = відношення найдовшого ребра до найкоротшого.",
+        "'Analysis checks' використовують перевірки якості з input file processor: попередження для спотворених елементів, помилка для сильно спотворених; числових значень у довідці немає."
+      ],
+      "numbers": {
+        "hexahedra": { "smaller_face_corner_angle_deg": 10, "larger_face_corner_angle_deg": 160, "aspect_ratio": 10 },
+        "wedge": { "smaller_face_corner_angle_deg": 10, "larger_face_corner_angle_deg": 160, "aspect_ratio": 10 },
+        "tetrahedra": { "shape_factor": 0.0001, "smaller_face_corner_angle_deg": 5, "larger_face_corner_angle_deg": 170, "aspect_ratio": 10 }
+      }
+    },
+    {
+      "id": "cubit-hex-metrics",
+      "title": "Sandia Cubit Help: Metrics for Hexahedral Elements (15.8)",
+      "url": "https://www.sandia.gov/files/cubit/15.8/help_manual/WebHelp/mesh_generation/mesh_quality_assessment/hexahedral_metrics.htm",
+      "kind": "documentation",
+      "status": "read",
+      "applies_to": "лінійні гексаедри (вузли у кутах); розрахунок по 8 вузлах",
+      "key_points": ["Таблиця метрик з 'acceptable range' (див. numbers). Distortion (high order) — єдина метрика, що враховує старший порядок."],
+      "numbers": {
+        "aspect_ratio": "1..4", "skew_abs_cos": "0..0.5", "taper": "0..0.4", "stretch": "0.25..1", "diagonal_ratio": "0.65..1",
+        "condition_number": "1..8", "scaled_jacobian": "0.5..1", "shear": "0.3..1", "shape": "0.3..1",
+        "relative_size": "0.5..1", "shear_and_size": "0.2..1", "shape_and_size": "0.2..1", "distortion_high_order": "0.6..1"
+      },
+      "caveats": ["Діапазони — 'acceptable range' з довідника Cubit; визначення метрик у довіднику стислі, повні формули у Verdict Manual (не прочитано)."]
+    },
+    {
+      "id": "altair-element-quality",
+      "title": "Altair HyperMesh: How Element Quality is Calculated (2021)",
+      "url": "https://2021.help.altair.com/2021/hwdesktop/hm/topics/pre_processing/meshing/element_quality_how_its_calculated_c.htm",
+      "kind": "documentation",
+      "status": "read",
+      "applies_to": "тверді елементи: 2D-перевірки на кожній грані + 3D-перевірки",
+      "key_points": [
+        "Aspect ratios 'should rarely exceed 5:1'.",
+        "Jacobian у точках Гауса: 'values of 0.7 and above are generally acceptable' (ratio мінімум/максимум).",
+        "Warpage 'up to five degrees is generally acceptable'."
+      ],
+      "numbers": { "aspect_ratio_rarely_exceed": 5, "jacobian_gauss_acceptable_from": 0.7, "warpage_deg_acceptable_up_to": 5 }
+    },
+    {
+      "id": "verdict-manual",
+      "title": "The Verdict Library Reference Manual (Stimpson, Ernst, Knupp, Pébay, Thompson, SAND2007-1751)",
+      "url": "https://visit-sphinx-github-user-manual.readthedocs.io/en/stable/_downloads/9d944264b44b411aeb4a867a1c9b1ed5/VerdictManual-revA.pdf",
+      "kind": "manual",
+      "status": "not_found",
+      "applies_to": "метрики гексаедрів (aspect, skew, taper, stretch, shear, shape, condition, scaled Jacobian…)",
+      "key_points": ["Посилання на PDF віддало 404 при спробі прочитати. Формули taper/shear/shape/condition/осі у коді Solvix відтворено з пам'яті і довідника Cubit."],
+      "numbers": {},
+      "caveats": ["ПЕРЕВІРИТИ формули за PDF або вихідним кодом Verdict. Є повідомлення (VTK GitLab issue 19644), що в посібнику Verdict є розбіжності з реальними значеннями vtkCellQuality."]
+    },
+    {
+      "id": "vtk-verdict-issue",
+      "title": "Errors in vtkCellQuality Verdict reference manual (VTK GitLab issue 19644)",
+      "url": "https://gitlab.kitware.com/vtk/vtk/-/work_items/19644",
+      "kind": "issue",
+      "status": "snippet",
+      "key_points": ["Повідомляє про розбіжності між посібником Verdict і реально обчисленими значеннями для деяких метрик чотирикутників і гексаедрів."],
+      "numbers": {}
+    },
+    {
+      "id": "johnen-hex-validity",
+      "title": "Robust and efficient validation of the linear hexahedral element (Johnen, Ledoux, Geuzaine et al.)",
+      "url": "https://ar5iv.labs.arxiv.org/html/1706.01613",
+      "kind": "paper",
+      "status": "snippet",
+      "applies_to": "лінійні гексаедри",
+      "key_points": [
+        "Додатні якобіани у кутах/на ребрах лінійного гексаедра недостатні для валідності (згадується гіпотеза Кнаппа).",
+        "Достатньо 20 визначників якобіана, щоб отримати 27 коефіцієнтів Безьє — швидка перевірка валідності."
+      ],
+      "numbers": {}
+    },
+    {
+      "id": "gmsh-curvilinear",
+      "title": "Geuzaine et al., curvilinear meshing / validity via Jacobian bounds (preprint)",
+      "url": "https://people.montefiore.uliege.be/geuzaine/preprints/curvilinear_preprint.pdf",
+      "kind": "paper",
+      "status": "snippet",
+      "applies_to": "криволінійні сітки високого порядку",
+      "key_points": ["Валідність криволінійного елемента — гарантована оцінка меж якобіана по всьому елементу, а не лише у вузлах чи точках Гауса."],
+      "numbers": {}
+    },
+    {
+      "id": "curvilinear-geometrical-accuracy",
+      "title": "Optimizing the geometrical accuracy of curvilinear meshes (arXiv 1507.04052)",
+      "url": "https://ar5iv.arxiv.org/html/1507.04052",
+      "kind": "paper",
+      "status": "snippet",
+      "key_points": ["Показано, що можна побудувати сильно перекошений скінченний елемент зі scaled Jacobian, тотожно рівним 1 — scaled Jacobian сам по собі не повна гарантія якості."],
+      "numbers": {}
+    },
+    {
+      "id": "hex-mesh-survey",
+      "title": "Hex-Mesh Generation and Processing: a Survey (arXiv 2202.12670)",
+      "url": "https://arxiv.org/pdf/2202.12670",
+      "kind": "survey",
+      "status": "snippet",
+      "key_points": ["Огляд; називає Verdict де-факто стандартом оцінки якості сіток МСЕ. Числа не прочитано."],
+      "numbers": {}
+    },
+    {
+      "id": "midnode-admissible-space",
+      "title": "Mid-Node Admissible Space for 3D quadratic tetrahedral finite elements (NJIT)",
+      "url": "https://researchwith.njit.edu/en/publications/mid-node-admissible-space-for-3d-quadratic-tetrahedral-finite-ele/",
+      "kind": "paper",
+      "status": "snippet",
+      "applies_to": "10-вузлові ТЕТРАЕДРИ, не гексаедри",
+      "key_points": ["Область допустимого положення серединного вузла, за якої визначник якобіана лишається в заданих межах. Найближчий опублікований аналог обмеження на положення серединного вузла; для гексаедрів не знайдено."],
+      "numbers": {}
+    }
+  ],
+  "not_found": [
+    "Опубліковане числове обмеження на зміщення серединного вузла 20-вузлового гексаедра (правило 'середньої третини') — шукали, не знайшли.",
+    "Рекомендований поріг якобіана в точках Гауса саме для 20-вузлових гексаедрів у Gmsh — не знайдено в прочитаних уривках.",
+    "Числові межі двогранних кутів для гексаедрів у відкритій документації — не знайдено (є діапазон 40°–180° лише для тетраедрів у CivilFEM, не застосовувати)."
+  ]
+}

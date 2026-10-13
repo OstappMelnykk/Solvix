@@ -1,0 +1,194 @@
+namespace Solvix.Mesh;
+
+/// <summary>
+/// The editing session over one mesh: every command either applies fully and
+/// becomes one undo step, or fails and leaves the mesh untouched. Undo/redo
+/// are snapshot (memento) based, so any future command gets history for free.
+/// </summary>
+public sealed class HexMeshEditor
+{
+    private const int MaxHistory = 200;
+
+    private readonly List<HexMeshState> _undo = new();
+    private readonly List<HexMeshState> _redo = new();
+
+    public HexMeshEditor() : this(new HexMesh()) { }
+
+    public HexMeshEditor(HexMesh mesh) => Mesh = mesh;
+
+    public HexMesh Mesh { get; private set; }
+
+    /// <summary>Bumped on every successful change, undo and redo; lets clients spot stale state.</summary>
+    public int Version { get; private set; }
+
+    public bool CanUndo => _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0;
+
+    /// <param name="shape">A designed cube to start from; the plain unit cube when null.</param>
+    /// <param name="cell">The lattice cell to put it in; (0, 0, 0) when null.</param>
+    public EditResult AddFirstHex(HexShape? shape = null, (int I, int J, int K)? cell = null) => Apply(() =>
+        Mesh.Hexes.Count > 0 ? EditResult.Fail("The mesh already has hexes.") : Run(() => Mesh.AddFirst(shape, cell)));
+
+    /// <param name="shape">A designed cube to attach (fitted onto the face); a plain extrusion of the face when null.</param>
+    public EditResult AddHexOnFace(int hexId, HexFace face, HexShape? shape = null) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");
+        return Run(() => Mesh.AddOnFace(hexId, face, shape));
+    });
+
+    /// <summary>Adds a ready-made body (see <see cref="HexMesh.AddBody"/>) as one undo step.</summary>
+    public EditResult AddBody(BodyPlan plan) => Apply(() => Run(() => Mesh.AddBody(plan)));
+
+    public EditResult LinkFaces(FaceRef first, FaceRef second, LinkFit fit) => Apply(() =>
+        Mesh.TryLinkFaces(first, second, fit, out var error) ? EditResult.Success : EditResult.Fail(error ?? "Link refused."));
+
+    /// <summary>
+    /// Makes two hexes neighbours without naming faces: when their ideal cells
+    /// touch, the shared face is the one between them. This is how the user
+    /// links cubes whose common face cannot be clicked from outside.
+    /// </summary>
+    public EditResult LinkHexes(int hexA, int hexB, LinkFit fit) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hexA)) return EditResult.Fail($"Unknown hex {hexA}.");
+        if (!Mesh.HasHex(hexB)) return EditResult.Fail($"Unknown hex {hexB}.");
+        if (hexA == hexB) return EditResult.Fail("A hex cannot be linked to itself.");
+        var a = Mesh.Hex(hexA).Cell;
+        var b = Mesh.Hex(hexB).Cell;
+        var delta = (b.I - a.I, b.J - a.J, b.K - a.K);
+        HexFace? shared = null;
+        foreach (var f in HexFaces.All)
+            if (f.Offset() == delta) shared = f;
+        if (shared is not HexFace face)
+        {
+            int apart = new[] { delta.Item1, delta.Item2, delta.Item3 }.Count(d => d != 0);
+            bool touching = Math.Abs(delta.Item1) <= 1 && Math.Abs(delta.Item2) <= 1 && Math.Abs(delta.Item3) <= 1;
+            if (touching)
+                return EditResult.Fail(
+                    $"These hexes touch only {(apart == 2 ? "along an edge" : "at a corner")}, not across a face, so they cannot be neighbours. " +
+                    "To connect them, add a hex that touches both (nodes along the shared edge are already shared through their common neighbours).");
+            return EditResult.Fail("These hexes are not adjacent in the ideal lattice.");
+        }
+        return Mesh.TryLinkFaces(new FaceRef(hexA, face), new FaceRef(hexB, face.Opposite()), fit, out var error)
+            ? EditResult.Success
+            : EditResult.Fail(error ?? "Link refused.");
+    });
+
+    /// <summary>
+    /// Deletes a hex. Refused when that would split the body into separate
+    /// parts (docs/GEOMETRY_RULES.md, R2); deleting the last hex is allowed.
+    /// </summary>
+    public EditResult RemoveHex(int hexId) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");
+        var parts = Mesh.ComponentSizesWithout(hexId);
+        if (parts.Count > 1)
+            return EditResult.Fail($"Removing hex {hexId} would split the body into {parts.Count} parts ({string.Join(" + ", parts)} cubes).");
+        Mesh.RemoveHex(hexId);
+        return EditResult.Success;
+    });
+
+    public EditResult UnlinkFace(int hexId, HexFace face) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hexId)) return EditResult.Fail($"Unknown hex {hexId}.");
+        if (Mesh.Neighbor(hexId, face) is null) return EditResult.Fail("That face is not linked.");
+        Mesh.Unlink(hexId, face);
+        return EditResult.Success;
+    });
+
+    /// <param name="carryEdgeMidpoints">When true, dragging a corner also moves its edges' midpoints by half.</param>
+    public EditResult MoveNode(int nodeId, Vec3 position, bool carryEdgeMidpoints) => Apply(() =>
+    {
+        if (!Mesh.HasNode(nodeId)) return EditResult.Fail($"Unknown node {nodeId}.");
+        if (!IsFinite(position)) return EditResult.Fail("The position must be a finite number.");
+        if (carryEdgeMidpoints) Mesh.DragNode(nodeId, position);
+        else Mesh.SetNodePosition(nodeId, position);
+        return EditResult.Success;
+    });
+
+    /// <summary>Laplacian smoothing that keeps the local density (see <see cref="HexMesh.Smooth"/>); with surface = true the smooth patches of the surface slide too.</summary>
+    public EditResult Smooth(int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true, double shapeTolerance = 0) => Apply(() =>
+    {
+        if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
+        if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
+        if (!(density >= 0 && density <= 1)) return EditResult.Fail("The density weight must be in [0, 1].");
+        if (!(shapeTolerance >= 0 && shapeTolerance <= 0.5)) return EditResult.Fail("The shape tolerance must be in [0, 0.5] of an edge.");
+        if (!(featureAngle > 0 && featureAngle <= 90)) return EditResult.Fail("The feature angle must be in (0, 90] degrees.");
+        var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle, untangle, straighten, shapeTolerance);
+        if (report.Moved > 0)
+        {
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            return EditResult.Done($"Згладжено за {report.Passes} проходів: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved} (з них середин ребер {report.EdgesStraightened}){(report.Reshaped > 0 ? $", форму підправлено в {report.Reshaped} вершинах" : "")}. Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.{(report.FoldedBefore > 0 ? $" Вивернутих кубів: було {report.FoldedBefore}, стало {report.FoldedAfter}." : "")}");
+        }
+        if (report.Interior + report.Surface == 0)
+            return EditResult.Fail(surface
+                ? "Nothing to smooth: every vertex is on a ridge or a corner of the body."
+                : "Nothing to smooth: every vertex lies on the surface (the body is too thin to have interior vertices). Turn on smoothing of the surface.");
+        return EditResult.Fail("Nothing to smooth: the mesh is already smooth, or each step would fold a cube.");
+    });
+
+    public EditResult Reset() => Apply(() =>
+    {
+        Mesh = new HexMesh();
+        return EditResult.Success;
+    });
+
+    public bool Undo()
+    {
+        if (_undo.Count == 0) return false;
+        _redo.Add(Mesh.ToState());
+        Mesh = HexMesh.FromState(Pop(_undo));
+        Version++;
+        return true;
+    }
+
+    public bool Redo()
+    {
+        if (_redo.Count == 0) return false;
+        _undo.Add(Mesh.ToState());
+        Mesh = HexMesh.FromState(Pop(_redo));
+        Version++;
+        return true;
+    }
+
+    // Runs a command against the live mesh; if it fails (or throws) the mesh is
+    // restored from the snapshot taken first, so a refused command never leaves
+    // half a change behind.
+    private EditResult Apply(Func<EditResult> command)
+    {
+        var before = Mesh.ToState();
+        EditResult result;
+        try
+        {
+            result = command();
+        }
+        catch (InvalidOperationException error)
+        {
+            result = EditResult.Fail(error.Message);
+        }
+        if (!result.Ok)
+        {
+            Mesh = HexMesh.FromState(before);
+            return result;
+        }
+        _undo.Add(before);
+        if (_undo.Count > MaxHistory) _undo.RemoveAt(0);
+        _redo.Clear();
+        Version++;
+        return result;
+    }
+
+    private static EditResult Run(Action action)
+    {
+        action();
+        return EditResult.Success;
+    }
+
+    private static HexMeshState Pop(List<HexMeshState> stack)
+    {
+        var last = stack[^1];
+        stack.RemoveAt(stack.Count - 1);
+        return last;
+    }
+
+    private static bool IsFinite(Vec3 v) => double.IsFinite(v.X) && double.IsFinite(v.Y) && double.IsFinite(v.Z);
+}

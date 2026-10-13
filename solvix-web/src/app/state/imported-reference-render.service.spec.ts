@@ -43,18 +43,18 @@ describe('ImportedReferenceRenderService', () => {
     expect(render.getScaledReference(sessionId)).toBeNull();
   });
 
-  it('setDensity clamps to [1, 90] and rounds', () => {
+  it('setDensity clamps to [0.1, 500] and rounds to hundredths', () => {
     const sessionId = sessions.sessions()[0].id;
     importedGeometry.set(sessionId, box(2, 1, 1), 'model.glb');
 
-    render.setDensity(sessionId, 500);
-    expect(render.getDensity(sessionId)).toBe(90);
+    render.setDensity(sessionId, 900);
+    expect(render.getDensity(sessionId)).toBe(500);
 
     render.setDensity(sessionId, -5);
-    expect(render.getDensity(sessionId)).toBe(1);
+    expect(render.getDensity(sessionId)).toBe(0.1);
 
-    render.setDensity(sessionId, 12.6);
-    expect(render.getDensity(sessionId)).toBe(13);
+    render.setDensity(sessionId, 12.634);
+    expect(render.getDensity(sessionId)).toBe(12.63);
   });
 
   it('computes scale as density / longest bounding-box length', () => {
@@ -158,6 +158,31 @@ describe('ImportedReferenceRenderService', () => {
     expect(render.getScaledReference(sessionId)).toBeNull();
     expect(render.getDimensionLines(sessionId)).toBeNull();
     expect(render.getRuler(sessionId)).toBeNull();
+  });
+
+  // Regression: after a page reload the import is restored from storage but
+  // nothing has called refreshScaledReference yet, so getScaledReference
+  // returned null and callers fell back to the RAW import - shown at the
+  // file's native units instead of the chosen size (gigantic or microscopic).
+  it('getScaledReference lazily rebuilds the scaled clone after a simulated reload', () => {
+    const sessionId = sessions.sessions()[0].id;
+    importedGeometry.set(sessionId, box(2, 1, 1), 'model.glb');
+    render.setDensity(sessionId, 10);
+    const scaleBefore = worldBox(render.getScaledReference(sessionId)!).getSize(new THREE.Vector3()).x;
+
+    // Simulate a page reload: fresh injector, same localStorage, so
+    // ImportedReferenceRenderService's in-memory scaledReferenceBySession
+    // cache starts empty even though the import/density are still persisted.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+    const reloadedSessions = TestBed.inject(SessionsService);
+    const reloadedRender = TestBed.inject(ImportedReferenceRenderService);
+    const reloadedSessionId = reloadedSessions.sessions()[0].id;
+
+    const clone = reloadedRender.getScaledReference(reloadedSessionId);
+
+    expect(clone).not.toBeNull();
+    expect(worldBox(clone!).getSize(new THREE.Vector3()).x).toBeCloseTo(scaleBefore, 4);
   });
 
   it('disposes dimension lines and ruler (but not the shared reference geometry) when a session closes', () => {

@@ -1,0 +1,128 @@
+<div class="side">
+<div class="toolbox">
+  <label class="box-title" title="Показати або згорнути вікно"><input type="checkbox" [checked]="open('tools')" (change)="toggleOpen('tools')" />Інструменти</label>
+  <div class="segmented" *ngIf="open('tools')" role="tablist" aria-label="Інструмент">
+    <button
+      *ngFor="let item of tools"
+      type="button"
+      role="tab"
+      class="segment"
+      [class.segment--on]="tool() === item.tool"
+      [class.segment--load]="item.tool === 'load'"
+      [class.segment--fix]="item.tool === 'fix'"
+      [class.segment--erase]="item.tool === 'erase'"
+      [class.segment--material]="item.tool === 'material'"
+      [title]="item.title"
+      (click)="setTool(item.tool)"
+    >
+      {{ item.label }}
+    </button>
+  </div>
+
+  <div class="row" *ngIf="open('tools')">
+    <span class="caption">Дія</span>
+    <button type="button" class="brush" [disabled]="!canUndo()" (click)="undo()" title="Скасувати останню дію (Cmd/Ctrl+Z)">↶ Скасувати</button>
+    <button type="button" class="brush" [disabled]="!canRedo()" (click)="redo()" title="Повернути скасовану дію (Cmd/Ctrl+Shift+Z)">↷ Повернути</button>
+  </div>
+
+  <div class="row" *ngIf="open('tools') && isFaceTool()">
+    <span class="caption">Пензель</span>
+    <button type="button" class="brush" [class.brush--on]="brush()" (click)="toggleBrush()" title="Малювати по поверхні: тримайте кнопку миші й проводьте — те, чого торкнеться пензель, стане навантаженим, закріпленим або матиме обраний матеріал">
+      {{ brush() ? '🖌 Малюю: вимкнути' : '🖌 Малювати по поверхні' }}
+    </button>
+  </div>
+
+  <div class="row" *ngIf="open('tools') && tool() === 'load'">
+    <span class="caption">Тиск, МПа</span>
+    <input type="number" class="num" step="0.5" [value]="pressureMpa()" (change)="onPressureMpa($event)" title="Тиск, яким позначаються нові грані. Від'ємний — стиск, додатний — розтяг. Вже навантажені грані його не змінюють." />
+    <span class="hint">нові грані отримають цей тиск</span>
+  </div>
+
+  <div class="row" *ngIf="open('tools') && scopes().length > 0">
+    <span class="caption">Охоплення</span>
+    <div class="segmented segmented--small">
+      <button *ngFor="let item of scopes(); trackBy: trackScope" type="button" class="segment" [class.segment--on]="scope() === item.scope" [title]="item.title" (click)="setScope(item.scope)">
+        {{ item.label }}
+      </button>
+    </div>
+  </div>
+
+  <div class="row" *ngIf="open('tools') && hasDepth()">
+    <span class="caption">Глибина</span>
+    <div class="stepper">
+      <button type="button" (click)="deeper(-1)" [disabled]="depth() === 0" aria-label="Менше">−</button>
+      <span class="stepper__value">{{ depth() }}</span>
+      <button type="button" (click)="deeper(1)" aria-label="Більше">+</button>
+    </div>
+    <span class="hint">елементів углиб від грані</span>
+  </div>
+
+  <div class="palette" *ngIf="open('tools') && isMaterialTool()">
+    <button
+      *ngFor="let material of materials()"
+      type="button"
+      class="chip"
+      [class.chip--on]="activeMaterial() === material.name"
+      [title]="material.label + ': E = ' + (material.e / 1e9).toPrecision(3) + ' ГПа, ν = ' + material.nu"
+      (click)="setActiveMaterial(material.name)"
+    >
+      <span class="chip__swatch" [style.background]="colorOf(material.name)"></span>{{ material.label }}
+    </button>
+  </div>
+
+  <div class="hint hint--wide" *ngIf="open('tools')">{{ hint() }}</div>
+</div>
+
+<div class="viewbox">
+  <label class="box-title" title="Показати або згорнути вікно"><input type="checkbox" [checked]="open('view')" (change)="toggleOpen('view')" />Вигляд</label>
+  <ng-container *ngIf="open('view')">
+  <div class="control">
+    <span class="caption">Прозорість</span>
+    <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" aria-label="Прозорість" />
+    <span class="value">{{ opacityPercent() }}%</span>
+  </div>
+  <label class="check" title="Сині грані: де тіло закріплене">
+    <input type="checkbox" [checked]="showMark('fixed')" (change)="toggleMark('fixed')" />
+    Показувати закріплення
+  </label>
+  <label class="check" title="Зелені грані: де прикладене навантаження">
+    <input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" />
+    Показувати навантаження
+  </label>
+  <label class="check" title="Підписи з величиною тиску на навантажених гранях">
+    <input type="checkbox" [checked]="pressureLabels()" (change)="togglePressureLabels()" />
+    Підписи тиску
+  </label>
+  <label class="check" title="Малювати грані між елементами: видно сітку всередині тіла">
+    <input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />
+    Внутрішні грані
+  </label>
+  <label class="check" *ngIf="hasResult()" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно">
+    <input type="checkbox" [checked]="showVectors()" (change)="toggleVectors()" />
+    Стрілки зсуву
+  </label>
+  <div class="control" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення на ×1 непомітні.">
+    <span class="caption">Деформація ×</span>
+    <input type="number" class="num" min="0" [max]="top()" step="any" [value]="scale()" (change)="onScaleNumber($event)" />
+  </div>
+  <input *ngIf="hasResult()" type="range" min="0" [max]="sliderSteps" step="1" [value]="scaleSlider()" (input)="onScaleSlider($event)" aria-label="Деформація" />
+  <div class="hint hint--warn" *ngIf="unreliable()">{{ unreliableText }}</div>
+  <div class="hint" *ngIf="hasResult() && !unreliable()">Максимум ×{{ top() | number: '1.0-0' }}: далі форма тіла була б неправдоподібною.</div>
+  <div class="hint" *ngIf="hasResult()">{{ shownText() }}</div>
+  <button *ngIf="hasResult()" type="button" class="viewer-btn" (click)="openViewer()" title="Усе зайве зникає, лишається тіло й інструменти перегляду: плеєр деформації, шкала кольорів">▶ Режим перегляду</button>
+</ng-container>
+</div>
+</div>
+
+<div class="face-legend">
+  <span class="item"><span class="swatch swatch--load"></span>Навантаження: <b>{{ loadedText() }}</b></span>
+  <span class="item" *ngFor="let k of pressureKey()"><span class="swatch" [style.background]="k.color"></span>{{ k.text }}</span>
+  <span class="item"><span class="swatch swatch--fix"></span>Закріплено: <b>{{ fixedText() }}</b></span>
+</div>
+
+<div class="legend" *ngIf="legend() as l">
+  <span class="legend__max">{{ l.max }}</span>
+  <div class="legend__bar" [style.background]="l.gradient"></div>
+  <span class="legend__min">{{ l.min }}</span>
+  <div class="legend__label">{{ l.label }}</div>
+</div>

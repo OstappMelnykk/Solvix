@@ -17,12 +17,30 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.MeshBuilder.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Data", "Solvix.Data\Solvix.Data.csproj", "{50184ECC-CADA-4D5A-BF5A-196016B06111}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Mesh", "Solvix.Mesh\Solvix.Mesh.csproj", "{40C2CB07-D2BD-49A5-B137-3F5157897476}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Mesh.Tests", "Solvix.Mesh.Tests\Solvix.Mesh.Tests.csproj", "{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Api.Tests", "Solvix.Api.Tests\Solvix.Api.Tests.csproj", "{A01DCDBC-3D2C-4193-A6E3-A58E30CB38ED}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Fem", "Solvix.Fem\Solvix.Fem.csproj", "{49BA6A72-B919-4C09-AC13-97A2AD0B51D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.Fem.Tests", "Solvix.Fem.Tests\Solvix.Fem.Tests.csproj", "{696134A4-BB10-41C3-8F0A-E24D766B6744}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{696134A4-BB10-41C3-8F0A-E24D766B6744}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{696134A4-BB10-41C3-8F0A-E24D766B6744}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{696134A4-BB10-41C3-8F0A-E24D766B6744}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{696134A4-BB10-41C3-8F0A-E24D766B6744}.Release|Any CPU.Build.0 = Release|Any CPU
+		{49BA6A72-B919-4C09-AC13-97A2AD0B51D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{49BA6A72-B919-4C09-AC13-97A2AD0B51D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{49BA6A72-B919-4C09-AC13-97A2AD0B51D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{49BA6A72-B919-4C09-AC13-97A2AD0B51D5}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E52E03E7-621F-40B8-AD60-F292040AE79E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{E52E03E7-621F-40B8-AD60-F292040AE79E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E52E03E7-621F-40B8-AD60-F292040AE79E}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -55,5 +73,17 @@ Global
 		{50184ECC-CADA-4D5A-BF5A-196016B06111}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{50184ECC-CADA-4D5A-BF5A-196016B06111}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{50184ECC-CADA-4D5A-BF5A-196016B06111}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40C2CB07-D2BD-49A5-B137-3F5157897476}.Release|Any CPU.Build.0 = Release|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{04D643C1-42C1-47C6-A46C-E86FE7BB22B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A01DCDBC-3D2C-4193-A6E3-A58E30CB38ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A01DCDBC-3D2C-4193-A6E3-A58E30CB38ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A01DCDBC-3D2C-4193-A6E3-A58E30CB38ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A01DCDBC-3D2C-4193-A6E3-A58E30CB38ED}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

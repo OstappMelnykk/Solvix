@@ -63,6 +63,24 @@ export class SessionsService {
     this.persist();
   }
 
+  // Starts a session over: the same tab position, but a brand-new session id, so
+  // every per-session store (mesh, imported reference, camera, selection, ...)
+  // drops the old id's data through its own pruning and the new one starts empty.
+  // The old id is never reused. Returns the new id, or null for an unknown id.
+  restartSession(id: number): number | null {
+    const index = this._sessions().findIndex(session => session.id === id);
+    if (index === -1) {
+      return null;
+    }
+    const fresh = this.createSessionEntry();
+    this._sessions.update(sessions => sessions.map((session, i) => (i === index ? fresh : session)));
+    if (this._activeSessionId() === id) {
+      this._activeSessionId.set(fresh.id);
+    }
+    this.persist();
+    return fresh.id;
+  }
+
   selectSession(id: number): void {
     this._activeSessionId.set(id);
     this.persist();

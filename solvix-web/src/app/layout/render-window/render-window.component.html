@@ -1,4 +1,4 @@
-<app-world-tabs class="render-window__world-tabs" />
+<app-world-tabs class="render-window__world-tabs" *ngIf="!isViewer" />
 
 <div class="render-window__canvases">
   <app-world-canvas
@@ -11,7 +11,26 @@
     [dimensionLines]="getDimensionLines(i)"
     [ruler]="getRuler(i)"
     [holeHighlight]="getHoleHighlight(i)"
+    [meshView]="getMeshView(i)"
+    (meshPick)="onMeshPick($event.pick, $event.additive)"
+    [hoverEnabled]="i === solverWorldIndex"
+    (meshHover)="onMeshHover($event)"
+    [buildEnabled]="isBuildOn(i)"
+    (meshBuild)="onMeshBuild($event)"
+    [paintEnabled]="isBrushOn(i)"
+    (paint)="onPaint($event)"
+    [draggableNodeId]="getDraggableNodeId(i)"
+    [attachedNodeIds]="getAttachedNodes(i)"
+    [snapShare]="snapShare()"
+    [snapEnabled]="snapEnabled()"
+    [placeOnSurface]="placeOnSurface()"
+    (surfacePlace)="onSurfacePlace($event)"
+    (nodeAttach)="onNodeAttach($event)"
+    (nodeDragging)="onNodeDragging($event)"
+    (nodeMoved)="onNodeMoved($event)"
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />
+  <app-solver-overlay *ngIf="activeWorldIndex() === solverWorldIndex && sessions.activeSessionId() !== null && !isViewer" [sessionId]="sessions.activeSessionId()!" />
+  <app-solver-viewer *ngIf="isViewer" [sessionId]="sessions.activeSessionId()!" />
 </div>

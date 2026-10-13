@@ -1,7 +1,11 @@
 <div class="context">Session {{ sessionId() }} · World {{ worldIndex() }}</div>
 
+<app-quality-controls *ngIf="showsQuality() && sessionId() !== null" [sessionId]="sessionId()!" />
+<app-solver-controls *ngIf="showsSolver() && sessionId() !== null" [sessionId]="sessionId()!" />
+<app-mesh-editor-controls *ngIf="showsMeshEditor()" [sessionId]="sessionId()" [worldIndex]="worldIndex()" />
+
+<ng-container *ngIf="showsImport()">
 <h4>Import</h4>
-<ng-container *ngIf="isIdealWorld(); else importElsewhere">
   <label class="tool">
     Import model ({{ acceptedExtensions }})
     <input type="file" [attr.accept]="acceptedExtensions" hidden (change)="onImportFile($event)" />
@@ -49,8 +53,5 @@
     </label>
   </ng-container>
 </ng-container>
-<ng-template #importElsewhere>
-  <div class="hint">Доступно лише в Ideal World.</div>
-</ng-template>
 
-<app-imported-reference-controls *ngIf="isIdealWorld()" [sessionId]="sessionId()" />
+<app-imported-reference-controls *ngIf="showsImport()" [sessionId]="sessionId()" />

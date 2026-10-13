@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Solvix.Api;
 using Solvix.Api.ModelLibrary;
 using Solvix.Contracts.Facades;
 using Solvix.Data;
 using Solvix.MeshBuilder;
+using Solvix.Solver;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,14 +19,17 @@ builder.Services.AddCors(options =>
     options.AddPolicy(frontendCorsPolicy, policy =>
         policy.WithOrigins("http://localhost:4200")
             .AllowAnyHeader()
-            .AllowAnyMethod());
+            .AllowAnyMethod()
+            .AllowCredentials());   // SignalR's negotiation sends credentials
 });
 
 builder.Services.AddDbContext<SolvixDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
 builder.Services.AddMeshBuilder();
-builder.Services.AddScoped<ISolverFacade, Solvix.Solver.SolverFacade>();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<ISolverProgressNotifier, SignalRSolverNotifier>();
+builder.Services.AddSolver();
 builder.Services.AddScoped<Solvix.Bridge.Bridge>();
 
 builder.Services.Configure<ModelLibraryStorageOptions>(builder.Configuration.GetSection("ModelLibrary"));
@@ -35,7 +40,10 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<SolvixDbContext>();
-    db.Database.Migrate();
+    if (db.Database.IsRelational())
+    {
+        db.Database.Migrate();
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -48,5 +56,9 @@ app.UseHttpsRedirection();
 app.UseCors(frontendCorsPolicy);
 
 app.MapControllers();
+app.MapHub<SolverHub>("/hubs/solver");
 
 app.Run();
+
+// Lets Solvix.Api.Tests host the app in-process (WebApplicationFactory<Program>).
+public partial class Program;

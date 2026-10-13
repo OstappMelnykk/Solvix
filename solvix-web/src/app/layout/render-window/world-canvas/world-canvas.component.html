@@ -35,7 +35,43 @@
     </button>
   </div>
 
-  <div class="canvas-toolbar__group" [hidden]="!isIdealWorldCanvas()">
+  <div class="canvas-toolbar__group" [hidden]="!showsBuildToggle()">
+    <div class="canvas-toolbar__label">Будування</div>
+    <button
+      class="tool-button"
+      [class.tool-button--on]="isBuildOn()"
+      type="button"
+      title="Мишею: права кнопка — додати куб (на грань під курсором; на землі — перший куб у клітинку); ліва — видалити куб під курсором. Скасувати можна Ctrl+Z."
+      (click)="toggleBuild()"
+    >
+      {{ isBuildOn() ? 'Будувати мишею: увімкнено' : 'Будувати мишею: вимкнено' }}
+    </button>
+    <div class="canvas-toolbar__hint" [hidden]="!isBuildOn()">ПКМ — додати · ЛКМ — видалити</div>
+  </div>
+
+  <div class="canvas-toolbar__group" [hidden]="!hasSurface()">
+    <div class="canvas-toolbar__label">Вершина на STL</div>
+    <button
+      class="tool-button"
+      [class.tool-button--on]="isPlaceOn()"
+      type="button"
+      title="1) клікніть вершину; 2) клікніть точку на поверхні STL — вершина стане туди й прилипне. Поки режим увімкнено, куби не приймають кліків."
+      (click)="togglePlace()"
+    >
+      {{ isPlaceOn() ? 'Ставити кліком: увімкнено' : 'Ставити кліком: вимкнено' }}
+    </button>
+    <div class="canvas-toolbar__hint" [hidden]="!isPlaceOn()">{{ draggableNodeId === null ? '1) клікніть вершину' : '2) вершина ' + draggableNodeId + ' вибрана: клікніть точку на STL' }}</div>
+  </div>
+
+  <div class="canvas-toolbar__group" [hidden]="!canDetachSelected()">
+    <div class="canvas-toolbar__label">Вершина прилипла до STL</div>
+    <button class="tool-button" type="button" title="Відлипити вибрану вершину від STL: далі вона рухається вільно. Те саме — утримувати Alt під час тягнення." (click)="detachSelected()">
+      Відлипити від STL
+    </button>
+    <div class="canvas-toolbar__hint">Alt під час тягнення теж відриває</div>
+  </div>
+
+  <div class="canvas-toolbar__group" [hidden]="!showsReferenceToggle()">
     <div class="canvas-toolbar__label">Модель</div>
     <button
       class="tool-button"

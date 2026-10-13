@@ -1,0 +1,130 @@
+<h4>3D FEM Solver</h4>
+<div class="stats">Куби: {{ hexCount() }} · елементів СЕ: {{ elementCount() }}</div>
+
+<div class="group">
+  <div class="group-label"><span class="step">1</span> Сітка СЕ</div>
+  <div class="hint">Кількість скінченних елементів у кожному кубі по його осях. Більше — точніший результат, але довший розрахунок.</div>
+  <div class="triple">
+    <label *ngFor="let name of axes; let i = index" [title]="'Кількість СЕ в кубі вздовж осі ' + name[1]">
+      {{ name }}
+      <input type="number" min="1" max="8" step="1" [value]="divisions()[i]" (change)="onDivision(i, $event)" />
+    </label>
+  </div>
+</div>
+
+<div class="group">
+  <div class="group-label"><span class="step">2</span> Матеріали</div>
+  <div class="hint">Оберіть матеріал у списку й фарбуйте ним елементи на сцені (інструмент «Матеріал»). Око ховає матеріал, щоб бачити, що за ним.</div>
+  <div class="materials">
+    <div
+      *ngFor="let material of materials()"
+      class="material"
+      [class.material--on]="activeMaterial() === material.name"
+      [class.material--hidden]="isHidden(material.name)"
+      [title]="'E = ' + (material.e / 1e9).toPrecision(3) + ' ГПа, ν = ' + material.nu"
+      (click)="selectMaterial(material.name)"
+      role="button"
+      tabindex="0"
+      (keydown.enter)="selectMaterial(material.name)"
+    >
+      <span class="material__swatch" [style.background]="colorOf(material.name)"></span>
+      <span class="material__name">{{ material.label }}</span>
+      <span class="material__count" title="Елементів із цим матеріалом">{{ countOf(material.name) }}/{{ elementCount() }}</span>
+      <button class="material__eye" type="button" [title]="isHidden(material.name) ? 'Показати матеріал' : 'Сховати матеріал'" (click)="toggleHidden(material.name, $event)">
+        {{ isHidden(material.name) ? '◌' : '◉' }}
+      </button>
+    </div>
+  </div>
+  <div class="pair">
+    <button class="btn" type="button" (click)="fillAll()">Залити все вибраним</button>
+    <button class="btn" type="button" (click)="resetMaterials()">До основного</button>
+  </div>
+  <label class="row">
+    <span>Основний матеріал</span>
+    <select [value]="defaultMaterial()" (change)="onDefaultMaterial($event)">
+      <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
+    </select>
+  </label>
+  <button class="btn btn--ghost" type="button" (click)="isMaterialFormOpen = !isMaterialFormOpen">{{ isMaterialFormOpen ? '▾' : '▸' }} Свій матеріал</button>
+  <div *ngIf="isMaterialFormOpen">
+    <label class="row"><span>Назва</span><input type="text" [value]="newLabel" (input)="newLabel = $any($event.target).value" /></label>
+    <label class="row"><span>E, ГПа</span><input type="number" step="1" min="0" [value]="newYoungGPa" (change)="onYoung($event)" /></label>
+    <label class="row"><span>ν (0…0.5)</span><input type="number" step="0.01" min="0" max="0.49" [value]="newPoisson" (change)="onPoisson($event)" /></label>
+    <button class="btn" type="button" [disabled]="!canAddMaterial()" (click)="addMaterial()">Додати матеріал</button>
+  </div>
+</div>
+
+<div class="group" *ngIf="layers().length > 0">
+  <div class="group-label">Шари</div>
+  <div class="hint">Куби шару діляться матеріалом. Шар, названий як матеріал (емаль, дентин, пульпа), одразу його отримує.</div>
+  <label class="row" *ngFor="let layer of layers()">
+    <span>{{ layer.name }} ({{ layer.hexes.length }})</span>
+    <select [value]="layerMaterial(layer.name)" (change)="onLayerMaterial(layer.name, $event)">
+      <option value="">— різні —</option>
+      <option *ngFor="let material of materials()" [value]="material.name">{{ material.label }}</option>
+    </select>
+  </label>
+</div>
+
+<div class="group">
+  <div class="group-label">Якість сітки</div>
+  <ng-container *ngIf="decision() as d; else checking">
+    <div class="decision" [attr.data-level]="d.level">
+      <b>{{ d.level === 'ok' ? '✓' : '✗' }} {{ d.title }}</b>
+      <span>{{ d.summary }}</span>
+    </div>
+    <button class="btn" type="button" (click)="openQuality()">Порівняння стандартів у Quality World →</button>
+  </ng-container>
+  <ng-template #checking><div class="hint">Оцінюю сітку…</div></ng-template>
+  <button class="btn" type="button" [class.btn--on]="showQuality()" (click)="toggleQuality()">Показати на сцені</button>
+</div>
+
+<div class="group">
+  <div class="group-label"><span class="step">3</span> Навантаження і опори</div>
+  <div class="hint">Малюйте на сцені інструментами «Тиск» і «Опора»: клік по грані, або «Пензель» — проведіть по поверхні. Тут задається лише величина тиску.</div>
+
+  <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
+    Pn — тиск для нових граней (Па)
+    <input type="number" step="100000" [value]="pressure()" (change)="onPressure($event)" />
+    <span class="hint">{{ pressureHint() }} · від'ємне = стиск</span>
+  </label>
+
+  <button class="btn" type="button" (click)="applyPressureToAll()" title="Усі вже навантажені грані отримають поточний Pn">Застосувати Pn до всіх навантажених</button>
+  <button class="btn" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
+</div>
+
+<button class="btn" type="button" [disabled]="isRunning()" (click)="validate()">Перевірити</button>
+<div class="issues" *ngIf="validation() as v">
+  <div class="issue issue--ok" *ngIf="v.canSolve && v.issues.length === 0">Усе гаразд, можна рахувати.</div>
+  <div class="issue" *ngFor="let issue of v.issues" [class.issue--error]="issue.severity === 'error'" [class.issue--warning]="issue.severity === 'warning'">
+    {{ issue.severity === 'error' ? '✕' : '⚠' }} {{ issue.message }}
+  </div>
+</div>
+<button class="btn-solve" type="button" [disabled]="isRunning() || hexCount() === 0 || meshRejected()" [title]="meshRejected() ? 'Сітка не приймається за критеріями Solvix — виправте її на сторінці якості' : ''" (click)="solve()">
+  <ng-container *ngIf="isRunning(); else idle">Розрахунок… {{ progressPercent() }}%</ng-container>
+  <ng-template #idle>▶ Розрахувати</ng-template>
+</button>
+<div class="progress" *ngIf="isRunning()">
+  <div class="progress__bar" [style.width.%]="progressPercent()"></div>
+</div>
+<div class="status" *ngIf="jobText()" [class.status--error]="job().state === 'failed'">{{ jobText() }}</div>
+<button class="btn" type="button" *ngIf="isRunning()" (click)="cancel()">Скасувати розрахунок</button>
+
+<div class="group" *ngIf="result()">
+  <div class="group-label">Результати</div>
+  <table class="summary">
+    <tr *ngFor="let row of summary()" [title]="row.title">
+      <th>{{ row.label }}</th>
+      <td>{{ row.value }}</td>
+    </tr>
+  </table>
+  <label class="row">
+    <span>Показувати</span>
+    <select [value]="display().field" (change)="onField($event)">
+      <option value="vonMises">Напруження за Мізесом</option>
+      <option value="displacement">Переміщення</option>
+      <option value="none">Матеріали</option>
+    </select>
+  </label>
+  <button class="btn" type="button" (click)="clearResult()">Прибрати результат</button>
+</div>

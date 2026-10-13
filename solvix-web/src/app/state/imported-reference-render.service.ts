@@ -11,8 +11,8 @@ import { buildHoleHighlight, disposeHoleHighlight } from '../geometry/scene-obje
 import { findHoleBoundaryClusters, findHoleBoundaryEdges, findHoleBoundaryLoops } from '../geometry/watertight-check';
 
 const DEFAULT_DENSITY = 10;
-const MIN_DENSITY = 1;
-const MAX_DENSITY = 90;
+const MIN_DENSITY = 0.1;
+const MAX_DENSITY = 500;
 
 // Owns everything about how the imported reference is actually PLACED and
 // DRAWN in the 3D view, per session - scale (see "density" below), user-
@@ -84,7 +84,7 @@ export class ImportedReferenceRenderService {
   }
 
   setDensity(sessionId: number, density: number): void {
-    const clamped = Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, Math.round(density)));
+    const clamped = Math.min(MAX_DENSITY, Math.max(MIN_DENSITY, Math.round(density * 100) / 100));
     this.densityBySession.set(sessionId, clamped);
     this.refreshScaledReference(sessionId);
   }
@@ -103,9 +103,26 @@ export class ImportedReferenceRenderService {
 
   // The imported geometry, scaled so its longest axis measures `density`
   // world units - this, not the raw import, is what RenderWindowComponent
-  // shows. null until refreshScaledReference() has run at least once for
-  // this session (call right after a successful import).
+  // shows. Lazily builds the scaled clone on first read when there's an
+  // import but nothing cached yet - the common case being a session
+  // restored from ImportedGeometryStorageService on page reload, where
+  // nothing has called refreshScaledReference() this page load (unlike a
+  // fresh import, which does via settings-panel). Without this, callers
+  // fell back to the RAW, unscaled import (see RenderWindowComponent.
+  // getImportedReference), which showed the file at its native units
+  // instead of `density` world units - looking gigantic (or microscopic)
+  // depending on the file's original scale.
   getScaledReference(sessionId: number): THREE.Object3D | null {
+    const cached = this.scaledReferenceBySession.get(sessionId);
+    if (cached) {
+      return cached;
+    }
+    if (!this.importedGeometry.get(sessionId)) {
+      return null;
+    }
+    // The first time this page load that a reference exists at all (a
+    // restored session's display cache catching up with storage).
+    this.refreshScaledReference(sessionId);
     return this.scaledReferenceBySession.get(sessionId) ?? null;
   }
 

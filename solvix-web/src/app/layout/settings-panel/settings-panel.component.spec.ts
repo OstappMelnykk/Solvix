@@ -7,6 +7,8 @@ import { SettingsPanelComponent } from './settings-panel.component';
 import { SessionsService } from '../../state/sessions.service';
 import { ImportedGeometryService } from '../../state/imported-geometry.service';
 import { ModelImportService } from '../../geometry/model-import.service';
+import { ActiveWorldService } from '../../state/active-world.service';
+import { IDEAL_WORLD_INDEX, QUALITY_WORLD_INDEX, REAL_WORLD_INDEX, SOLVER_WORLD_INDEX } from '../../config/app-settings';
 
 // A controllable stand-in for the real load - lets a test hold a "file
 // import in flight" open across other actions (switching/closing sessions)
@@ -110,5 +112,25 @@ describe('SettingsPanelComponent import race conditions', () => {
     fakeImport.loads.complete();
 
     expect(component.getImportDisplayStatus().kind).toBe('success');
+  });
+});
+
+describe('SettingsPanelComponent: where the imported geometry is set up', () => {
+  it('shows the import block in the Ideal World and the Real World, and nowhere else (not even a note about it)', () => {
+    TestBed.configureTestingModule({ providers: [{ provide: ModelImportService, useValue: new FakeModelImportService() }, provideHttpClient(), provideHttpClientTesting()] });
+    const fixture = TestBed.createComponent(SettingsPanelComponent);
+    const world = TestBed.inject(ActiveWorldService);
+    const text = () => (fixture.nativeElement as HTMLElement).textContent ?? '';
+    const showsImport = (index: number) => {
+      world.selectCurrentWorld(index);
+      fixture.detectChanges();
+      return text().includes('Import model');
+    };
+
+    expect(showsImport(IDEAL_WORLD_INDEX)).toBeTrue();
+    expect(showsImport(REAL_WORLD_INDEX)).toBeTrue();
+    expect(showsImport(SOLVER_WORLD_INDEX)).toBeFalse();
+    expect(showsImport(QUALITY_WORLD_INDEX)).toBeFalse();
+    expect(text()).not.toContain('Доступно лише в Ideal World');
   });
 });
