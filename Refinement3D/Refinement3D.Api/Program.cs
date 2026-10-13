@@ -20,13 +20,13 @@ app.MapPost("/api/grid", (GridRequest r) =>
 app.MapPost("/api/refine", (RefineRequest r) =>
 {
     try { session.Refine(r.Cells, r.NI, r.NJ, r.NK, r.ExpandTransitions); }
-    catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
+    catch (Exception e) when (e is ArgumentException or InvalidOperationException or ArithmeticException) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
     return Results.Ok(session.State());
 });
 app.MapPost("/api/preview", (RefineRequest r) =>
 {
     try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ, r.NK, r.ExpandTransitions) }); }
-    catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message }); }
+    catch (Exception e) when (e is ArgumentException or InvalidOperationException or ArithmeticException) { return Results.BadRequest(new { error = e.Message }); }
 });
 // one cube divided by one template, for looking at what the template does inside: kind T1 (a corner marked), T2 (an edge), T4 (a face)
 app.MapGet("/api/template", (string kind, int n) =>

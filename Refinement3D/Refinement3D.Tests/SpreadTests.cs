@@ -90,3 +90,43 @@ public class SpreadTests
         }
     }
 }
+
+/// <summary>Many refinements one after another make the lattice very fine; that must work while the numbers fit and be refused cleanly after.</summary>
+public class DepthTests
+{
+    private static string Signature(HexMesh mesh) =>
+        string.Join(";", mesh.Cells.Values.Select(c => string.Join(",", c.Nodes.Select(mesh.PointOf).Select(p => $"{p.X}:{p.Y}:{p.Z}"))).OrderBy(s => s, StringComparer.Ordinal));
+
+    [Test]
+    public void Refining_the_same_corner_again_and_again_stays_conforming_until_the_lattice_is_too_fine_and_then_is_refused_untouched()
+    {
+        var mesh = HexMesh.Grid(3, 3, 3);
+        int rounds = 0;
+        while (true)
+        {
+            string before = Signature(mesh);
+            var leaf = mesh.Cells.Values.Where(c => c.Nodes.Select(mesh.PointOf).Min(p => p.X + p.Y + p.Z) == 0).OrderBy(c => c.Nodes.Select(mesh.PointOf).Max(p => p.X + p.Y + p.Z)).First();
+            try { Refiner.Refine(mesh, new[] { leaf.Id }, 3, 3, 3); }
+            catch (InvalidOperationException)
+            {
+                Assert.That(Signature(mesh), Is.EqualTo(before), "a refused refinement must not change the mesh");
+                break;
+            }
+            Assert.That(Conformity.Check(mesh), Is.Empty, $"round {rounds}");
+            Assert.That(++rounds, Is.LessThan(40), "the lattice never got too fine");
+        }
+        Assert.That(rounds, Is.GreaterThanOrEqualTo(4), "at least a few rounds of n = 3 must be possible");
+    }
+
+    [Test]
+    public void The_coordinates_never_pass_the_limit_the_checks_can_handle()
+    {
+        var mesh = HexMesh.Grid(2, 2, 2);
+        for (int round = 0; round < 6; round++)
+        {
+            try { Refiner.Refine(mesh, new[] { mesh.Cells.Keys.First() }, 8, 8, 8); }
+            catch (InvalidOperationException) { break; }
+            Assert.That(mesh.Nodes.Max(p => Math.Max(p.X, Math.Max(p.Y, p.Z))), Is.LessThanOrEqualTo(1L << 40));
+        }
+    }
+}

@@ -91,11 +91,13 @@ public static class Conformity
     }
 
     // the determinant of the three edge vectors leaving a corner towards the other corners along +x, +y, +z of the cell
-    public static long JacobianAtCorner(Pt3[] p, int slot)
+    public static Int128 JacobianAtCorner(Pt3[] p, int slot)
     {
         Pt3 Toward(int axis) => Hex.Bit(slot, axis) == 0 ? p[slot ^ (1 << axis)] - p[slot] : p[slot] - p[slot ^ (1 << axis)];
         var (a, b, c) = (Toward(0), Toward(1), Toward(2));
-        return checked(a.X * (b.Y * c.Z - b.Z * c.Y) - a.Y * (b.X * c.Z - b.Z * c.X) + a.Z * (b.X * c.Y - b.Y * c.X));
+        // 128 bits: the coordinates are kept below 2^40 (see Refiner.EnsureFine), so the product of three differences cannot overflow
+        Int128 ax = a.X, ay = a.Y, az = a.Z, bx = b.X, by = b.Y, bz = b.Z, cx = c.X, cy = c.Y, cz = c.Z;
+        return ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
     }
 
     /// <summary>The volume of the trilinear hexahedron, exact by the two-point Gauss rule (the Jacobian is of degree two in each variable).</summary>

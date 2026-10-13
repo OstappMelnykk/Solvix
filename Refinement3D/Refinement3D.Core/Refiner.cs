@@ -43,9 +43,22 @@ public sealed record RefineStep(
 /// </summary>
 public static class Refiner
 {
+    /// <summary>
+    /// The lattice gets finer by a factor nI x nJ x nK with every refinement, and its coordinates have to stay exact integers that the checks can multiply:
+    /// below 2^40. A refinement that would go over it is refused before anything is changed.
+    /// </summary>
+    public static void EnsureFine(HexMesh mesh, int nI, int nJ, int nK)
+    {
+        long biggest = mesh.Nodes.Count == 0 ? 1 : mesh.Nodes.Max(p => Math.Max(p.X, Math.Max(p.Y, p.Z)));
+        Int128 after = (Int128)biggest * nI * nJ * nK;
+        if (after > (1L << 40))
+            throw new InvalidOperationException($"The lattice is too fine for another refinement ({nI}x{nJ}x{nK} would make it {after} units across a cell of the coarse grid's size {mesh.Scale}); undo some refinements or use a smaller n.");
+    }
+
     public static RefineResult Refine(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, bool expandTransitions = false)
     {
         if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        EnsureFine(mesh, nI, nJ, nK);
         var marked = markedCells.ToHashSet();
         foreach (int id in marked) if (!mesh.Cells.ContainsKey(id)) throw new ArgumentException($"Unknown cell {id}.");
         var required = marked.ToHashSet();                            // the cells the user chose, and what they become: these must be cut in full
@@ -59,6 +72,7 @@ public static class Refiner
     public static List<RefineStep> Preview(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, bool expandTransitions = false)
     {
         if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        EnsureFine(mesh, nI, nJ, nK);
         var copy = mesh.Clone();
         var marked = markedCells.ToHashSet();
         foreach (int id in marked) if (!copy.Cells.ContainsKey(id)) throw new ArgumentException($"Unknown cell {id}.");
