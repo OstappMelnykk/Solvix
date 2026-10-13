@@ -69,6 +69,14 @@
       <div><button id="stepApply" class="go" hidden>Застосувати результат</button><button id="stepClose">Закрити</button></div>
     </div>
 
+    <h2>Шаблони</h2>
+    <label>Шаблон
+      <select id="tKind"><option value="T1">T1: позначений кут</option><option value="T2">T2: позначене ребро</option><option value="T4">T4: позначена грань</option></select>
+    </label>
+    <label>n <input id="tN" type="number" min="2" max="8" value="3" /></label>
+    <div><button id="tShow">Показати шаблон</button><button id="tClose" hidden>Закрити</button></div>
+    <div id="tText" class="hint"></div>
+
     <h2>Розріз</h2>
     <label>Вісь
       <select id="cutAxis"><option value="-1">без розрізу</option><option value="0">X</option><option value="1">Y</option><option value="2">Z</option></select>
@@ -77,6 +85,7 @@
     <label>До шару <input id="cutHi" type="range" min="0" max="3" value="3" /></label>
     <div id="cutText" class="hint"></div>
     <label>Непрозорість <input id="opacity" type="range" min="10" max="100" value="100" /></label>
+    <label>Розсунути <input id="explode" type="range" min="0" max="100" value="0" /></label>
 
     <h2>Показати</h2>
     <label>Кореневі клітинки <input id="showRoots" type="checkbox" checked /></label>

@@ -57,3 +57,10 @@ export async function preview(cells: number[], nI: number, nJ: number, nK: numbe
   const data = await response.json();
   return response.ok ? (data as { steps: StepDto[] }) : { error: String(data.error ?? response.status) };
 }
+
+// One cube divided by one template (T1: a corner marked, T2: an edge, T4: a face).
+export async function templateOf(kind: string, n: number): Promise<{ mesh: MeshDto; marked: number[]; children: number } | { error: string }> {
+  const response = await fetch(`/api/template?kind=${kind}&n=${n}`);
+  const data = await response.json();
+  return response.ok ? data : { error: String(data.error ?? response.status) };
+}

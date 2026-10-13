@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { MeshDto, StateDto, StepDto, getState, post, preview } from './api';
+import { MeshDto, StateDto, StepDto, getState, post, preview, templateOf } from './api';
 import { setupDrawing } from './draw';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -55,6 +55,7 @@ let state: StateDto | null = null;
 let view: MeshDto | null = null;                              // the mesh on the screen (the state's, or a wizard stage's)
 let steps: StepDto[] | null = null;                           // the wizard: the stages of a refinement, one at a time (null when it is closed)
 let stepIndex = 0;
+let template: { mesh: MeshDto; marked: number[]; kind: string; n: number; children: number } | null = null;     // one cube divided by one template (the template view)
 const selected = new Set<number>();                           // the cells in M
 let triangleCell: number[] = [];                              // the cell each drawn triangle belongs to (for picking)
 let faceMesh: THREE.Mesh | null = null;
@@ -75,6 +76,9 @@ interface Scene3D {
 }
 
 function currentScene(): Scene3D | null {
+  if (template) {
+    return { mesh: template.mesh, marked: template.marked, m: new Set(), made: new Map(), unreached: new Set(), focus: null, spoiled: new Set(), trial: [], added: [] };
+  }
   if (steps) {
     const step = steps[stepIndex];
     const mesh = step.mesh ?? steps.slice(0, stepIndex).reverse().find(x => x.kind === 'layers')!.mesh!;
@@ -158,18 +162,37 @@ function build(): void {
 
   const positions: number[] = [], colors: number[] = [], lines: number[] = [];
   const colour = new THREE.Color();
+  // the cells moved apart from the middle of the mesh (and a little smaller), so that the inside can be seen; every face is then drawn
+  const explode = value('explode') / 100;
+  const box = new THREE.Box3();
+  for (const p of mesh.nodes) box.expandByPoint(world(p));
+  const middle = box.getCenter(new THREE.Vector3());
+  const corners = new Map<number, THREE.Vector3[]>();
+  for (const cell of cells) {
+    const p = cell.nodes.map(n => world(mesh.nodes[n]));
+    if (explode > 0) {
+      const centre = p.reduce((sum, q) => sum.add(q), new THREE.Vector3()).multiplyScalar(1 / 8);
+      const shift = new THREE.Vector3().subVectors(centre, middle).multiplyScalar(explode * 0.8);
+      const shrink = 1 - Math.min(0.4, explode * 0.5);
+      for (let i = 0; i < 8; i++) p[i] = new THREE.Vector3().subVectors(p[i], centre).multiplyScalar(shrink).add(centre).add(shift);
+    }
+    corners.set(cell.id, p);
+  }
+  const allFaces = explode > 0 || template !== null;
   for (const cell of cells) {
     colour.set(0xffffff);
-    const template = data.made.get(cell.id);
-    if (template) colour.set(TEMPLATE_COLOUR[template] ?? 0xffffff);
+    const kind = data.made.get(cell.id);
+    if (kind) colour.set(TEMPLATE_COLOUR[kind] ?? 0xffffff);
+    if (template) colour.setHSL(((cells.indexOf(cell) * 0.381966) % 1), 0.6, 0.72);       // every child of the template its own colour
     if (data.m.has(cell.id)) colour.set(0xe8e04a);
     if (data.unreached.has(cell.id)) colour.set(0xff6b6b);
     if (data.spoiled.has(cell.id)) colour.set(0xb03a2e);
     if (data.focus === cell.id) colour.set(0xffb347);
+    const at = corners.get(cell.id)!;
     for (let axis = 0; axis < 3; axis++)
       for (let side = 0; side < 2; side++) {
-        if (count.get(key(cell, axis, side)) !== 1) continue;
-        const p = faceSlots(axis, side).map(s => world(mesh.nodes[cell.nodes[s]]));
+        if (!allFaces && count.get(key(cell, axis, side)) !== 1) continue;
+        const p = faceSlots(axis, side).map(s => at[s]);
         const normal = new THREE.Vector3().subVectors(p[1], p[0]).cross(new THREE.Vector3().subVectors(p[3], p[0])).normalize();
         const shade = 0.62 + 0.38 * Math.abs(normal.dot(LIGHT));
         for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) {
@@ -191,7 +214,7 @@ function build(): void {
   shown.add(faceMesh);
   shown.add(lineSegments(lines, 0x555555));
 
-  if ($<HTMLInputElement>('showRoots').checked) {
+  if ($<HTMLInputElement>('showRoots').checked && explode === 0 && !template) {
     const roots: number[] = [];
     for (const r of mesh.roots) {
       if (!rootShown[r.id]) continue;
@@ -203,21 +226,24 @@ function build(): void {
     shown.add(lineSegments(roots, 0x000000));
   }
 
-  const inSlab = (node: number): boolean => cells.length > 0 && usedNodes(cells).has(node);
-  for (const [ids, color, size] of [[data.marked, 0xd61f1f, 8], [data.added, 0x8e44ad, 10], [data.trial, 0xff8c00, 12]] as [number[], number, number][]) {
+  for (const [ids, color, size] of [[data.marked, 0xd61f1f, 9], [data.added, 0x8e44ad, 10], [data.trial, 0xff8c00, 12]] as [number[], number, number][]) {
     if (ids.length === 0) continue;
+    const set = new Set(ids);
     const pts: number[] = [];
-    for (const id of ids) if (mesh.nodes[id] && inSlab(id)) { const w = world(mesh.nodes[id]); pts.push(w.x, w.y, w.z); }
+    for (const cell of cells) {                                       // a node is drawn at its corner of every shown cell, so it follows the cells when they are moved apart
+      const at = corners.get(cell.id)!;
+      for (let s = 0; s < 8; s++) if (set.has(cell.nodes[s])) pts.push(at[s].x, at[s].y, at[s].z);
+    }
     if (pts.length === 0) continue;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     shown.add(new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation: false, depthTest: false })));
   }
 
-  $<HTMLButtonElement>('undo').disabled = !!steps || !state?.canUndo;
-  $<HTMLButtonElement>('redo').disabled = !!steps || !state?.canRedo;
-  $<HTMLButtonElement>('refine').disabled = !!steps || selected.size === 0;
-  $<HTMLButtonElement>('refineNow').disabled = !!steps || selected.size === 0;
+  $<HTMLButtonElement>('undo').disabled = !!steps || !!template || !state?.canUndo;
+  $<HTMLButtonElement>('redo').disabled = !!steps || !!template || !state?.canRedo;
+  $<HTMLButtonElement>('refine').disabled = !!steps || !!template || selected.size === 0;
+  $<HTMLButtonElement>('refineNow').disabled = !!steps || !!template || selected.size === 0;
   const problems = mesh.problems ?? [];
   const midPass = steps && ['layers', 'seam', 'marks'].includes(steps[stepIndex].kind);
   $('status').innerHTML = `Клітинок: <b>${mesh.cells.length}</b>, вузлів: <b>${mesh.nodes.length}</b> · ` +
@@ -226,22 +252,13 @@ function build(): void {
   $('problems').textContent = midPass ? '' : problems.slice(0, 12).join('\n');
 }
 
-let usedCache: { cells: unknown; set: Set<number> } | null = null;
-function usedNodes(cells: { nodes: number[] }[]): Set<number> {
-  if (usedCache?.cells === cells) return usedCache.set;
-  const set = new Set<number>();
-  for (const c of cells) for (const n of c.nodes) set.add(n);
-  usedCache = { cells, set };
-  return set;
-}
-
 // ---- picking --------------------------------------------------------------------------------------------------------
 
 const raycaster = new THREE.Raycaster();
 let down: [number, number] | null = null;
 canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
 canvas.addEventListener('pointerup', e => {
-  if (!state || steps || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4 || !faceMesh) return;
+  if (!state || steps || template || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4 || !faceMesh) return;
   const rect = canvas.getBoundingClientRect();
   raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -(((e.clientY - rect.top) / rect.height) * 2 - 1)), camera);
   const hit = raycaster.intersectObject(faceMesh)[0];
@@ -325,6 +342,41 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'Escape') closeWizard();
 });
 
+// ---- the template view: one cube divided by one template --------------------------------------------------------------
+
+const TEMPLATE_TEXT: Record<string, (n: number, children: number) => string> = {
+  T1: (n, c) => `T1 — позначений один вузол (кут, червоний). Куб розрізається на n = ${n} вкладених «оболонок» навколо цього кута; між сусідніми оболонками три плити (по одній на вісь X, Y, Z), всередині найменшої — кубик у куті. Усього 3n−2 = ${c} клітинок. Три ребра, що виходять із кута, діляться на n частин, решта ребер лишаються цілими.`,
+  T2: (n, c) => `T2 — позначені два вузли на одному ребрі (червоні). Це двовимірний T1 у перерізі, витягнутий уздовж ребра: n = ${n} вкладених «труб» і між ними по два крила. Усього 2n−1 = ${c} клітинок. Саме ребро лишається цілим, два ребра, що виходять із його кінців упоперек, діляться на n частин.`,
+  T4: (n, c) => `T4 — позначені чотири вузли однієї грані (червоні). Куб ділиться на n = ${n} пластин, паралельних цій грані. Усього n = ${c} клітинок. Позначена грань лишається цілою, чотири ребра, що виходять із неї, діляться на n частин.`
+};
+
+async function showTemplate(): Promise<void> {
+  const kind = $<HTMLSelectElement>('tKind').value, n = value('tN');
+  const answer = await templateOf(kind, n);
+  if ('error' in answer) { $('tText').textContent = 'Помилка: ' + answer.error; return; }
+  if (!template) $<HTMLInputElement>('explode').value = '45';
+  template = { ...answer, kind, n };
+  view = answer.mesh;
+  fit(answer.mesh);
+  $('tText').textContent = TEMPLATE_TEXT[kind](n, answer.children);
+  $('tClose').hidden = false;
+  build();
+}
+
+function closeTemplate(): void {
+  template = null;
+  $<HTMLInputElement>('explode').value = '0';
+  $('tText').textContent = '';
+  $('tClose').hidden = true;
+  if (state) fit(state);
+  build();
+}
+
+$('tShow').onclick = () => void showTemplate();
+$('tClose').onclick = closeTemplate;
+$('tKind').onchange = () => { if (template) void showTemplate(); };
+$('tN').oninput = () => { if (template) void showTemplate(); };
+
 // ---- the buttons ----------------------------------------------------------------------------------------------------
 
 async function send(path: string, body: unknown, refit = false): Promise<boolean> {
@@ -345,7 +397,7 @@ $('refineNow').onclick = async () => { const cells = [...selected]; selected.cle
 $('clear').onclick = () => { selected.clear(); build(); };
 $('undo').onclick = () => { selected.clear(); void send('/api/undo', {}); };
 $('redo').onclick = () => { selected.clear(); void send('/api/redo', {}); };
-for (const id of ['showRoots', 'showMarks', 'pass', 'cutAxis', 'cutLo', 'cutHi', 'opacity']) $(id).oninput = build;
+for (const id of ['showRoots', 'showMarks', 'pass', 'cutAxis', 'cutLo', 'cutHi', 'opacity', 'explode']) $(id).oninput = build;
 
 function loop(): void { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
 

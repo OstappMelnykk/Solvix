@@ -27,6 +27,28 @@ app.MapPost("/api/preview", (RefineRequest r) =>
     try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ, r.NK) }); }
     catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message }); }
 });
+// one cube divided by one template, for looking at what the template does inside: kind T1 (a corner marked), T2 (an edge), T4 (a face)
+app.MapGet("/api/template", (string kind, int n) =>
+{
+    if (n < 2 || n > 8) return Results.BadRequest(new { error = "n must be from 2 to 8." });
+    int mask = kind switch
+    {
+        "T1" => 1,                                              // the corner (-, -, -)
+        "T2" => 1 | 2,                                          // the edge from (-, -, -) to (+, -, -), along x
+        "T4" => Hex.FaceMask(0, 0),                             // the face on the minus side of x
+        _ => 0
+    };
+    if (mask == 0) return Results.BadRequest(new { error = "kind must be T1, T2 or T4." });
+    var mesh = HexMesh.Grid(1, 1, 1);
+    mesh.Rescale(n);
+    var parent = mesh.Cells.Values.Single();
+    var corners = mesh.CornersOf(parent);
+    var marked = Patterns.SlotsOf(mask).Select(slot => parent.Nodes[slot]).ToList();
+    var children = Templates.ChildrenFor(corners, mask, n)!;
+    mesh.RemoveCell(parent.Id);
+    foreach (var c in children) mesh.AddToRoot(mesh.AddCell(0, c));
+    return Results.Ok(new { mesh = Session.MeshOf(mesh), marked, children = children.Count });
+});
 app.MapPost("/api/undo", () => { session.Undo(); return session.State(); });
 app.MapPost("/api/redo", () => { session.Redo(); return session.State(); });
 
@@ -86,7 +108,7 @@ sealed class Session
             seam = step.Try is null ? null : new { cell = step.Try.Cell, side = step.Try.Side, kind = step.Try.Kind, faceNodes = step.Try.FaceNodes, added = step.Try.Added, cutAcross = step.Try.CutAcross, uncut = step.Try.Uncut }
         }).ToArray();
 
-    private static object MeshOf(HexMesh mesh) => new
+    public static object MeshOf(HexMesh mesh) => new
     {
         scale = mesh.Scale,
         nodes = mesh.Nodes.Select(p => new[] { p.X, p.Y, p.Z }),
