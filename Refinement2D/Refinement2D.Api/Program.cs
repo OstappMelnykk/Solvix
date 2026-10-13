@@ -5,8 +5,7 @@ using Refinement2D.Core;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 var app = builder.Build();
-app.UseDefaultFiles();
-app.UseStaticFiles();
+// the page is a separate project (refinement2d-web): in development it asks this API through its dev server's proxy
 
 var session = new Session();
 
