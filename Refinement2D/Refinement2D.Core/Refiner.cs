@@ -91,21 +91,23 @@ public static class Refiner
     /// </summary>
     public static HashSet<int> MarkNodes(QuadMesh mesh, ISet<int> marked, int axis)
     {
-        var active = marked.Select(id => mesh.Cells[id].Root).ToHashSet();
         var marks = new HashSet<int>();
         long d = mesh.Scale;
-        foreach (var root in mesh.Roots)
+        foreach (int id in marked)
         {
-            if (!active.Contains(root.Id)) continue;
+            var cell = mesh.Cells[id];
+            var root = mesh.Roots[cell.Root];
             int layer = axis == 0 ? root.I : root.J;
             bool even = ((layer % 2) + 2) % 2 == 0;
             long seam = (layer + (even ? 1 : 0)) * d;                                      // the shared edge of the pair (layer, layer + 1) or (layer - 1, layer)
-            long low = (axis == 0 ? root.J : root.I) * d, high = low + d;
-            for (int id = 0; id < mesh.Nodes.Count; id++)
+            var onSeam = cell.Nodes.Select(mesh.PointOf).Where(p => (axis == 0 ? p.X : p.Y) == seam).ToList();
+            if (onSeam.Count < 2) continue;                                                 // the cell does not touch the seam: its own seam comes later
+            long low = onSeam.Min(p => axis == 0 ? p.Y : p.X), high = onSeam.Max(p => axis == 0 ? p.Y : p.X);
+            for (int node = 0; node < mesh.Nodes.Count; node++)
             {
-                var p = mesh.Nodes[id];
+                var p = mesh.Nodes[node];
                 long along = axis == 0 ? p.X : p.Y, across = axis == 0 ? p.Y : p.X;
-                if (along == seam && across >= low && across <= high) marks.Add(id);
+                if (along == seam && across >= low && across <= high) marks.Add(node);
             }
         }
         return marks;
