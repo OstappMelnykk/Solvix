@@ -1,0 +1,386 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { setupDrawing } from './draw';
+import { chordsOf, frameAt, label } from './chords';
+import { MeshDto, StateDto, StepDto, getState, post, preview } from './api';
+
+// A page to look at the 2D refinement: an orthographic camera you can pan and zoom, the cells filled and outlined, the cells you pick
+// (M), the nodes each pass marked, and the cells a pass could not cut.
+const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const canvas = $<HTMLCanvasElement>('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf4f4f0);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+camera.position.z = 5;
+const controls = new OrbitControls(camera, canvas);
+controls.enableRotate = false;
+controls.screenSpacePanning = true;
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+
+let state: StateDto | null = null;
+// the wizard: the stages of a refinement, one at a time (null when it is closed)
+let steps: StepDto[] | null = null;
+let stepIndex = 0;
+let animStep = 0;                                           // events of the numbering shown so far (null: animation off)
+let animOn = false;
+let animTimer: number | null = null;
+let pickedChordCell: number | null = null;                 // the cell whose chord is shown alone (chord view)
+let shown = new THREE.Group();
+scene.add(shown);
+const selected = new Set<number>();
+
+// the lattice is in 1/scale of a coarse cell; the world is in coarse cells, so that a drawing keeps its place between refinements
+let view: MeshDto | null = null;
+const world = (p: [number, number]): THREE.Vector3 => new THREE.Vector3(p[0] / view!.scale, p[1] / view!.scale, 0);
+
+function resize(): void {
+  const { clientWidth: w, clientHeight: h } = canvas;
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(w, h, false);
+  const half = (camera.top - camera.bottom) / 2 || 1;
+  camera.left = (-half * w) / h;
+  camera.right = (half * w) / h;
+  camera.updateProjectionMatrix();
+}
+
+function fit(): void {
+  if (!state) return;
+  const xs = state.nodes.map(p => p[0] / state!.scale), ys = state.nodes.map(p => p[1] / state!.scale);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const { clientWidth: w, clientHeight: h } = canvas;
+  const half = Math.max((maxY - minY) / 2, ((maxX - minX) / 2) * (h / w)) * 1.08;
+  camera.top = half;
+  camera.bottom = -half;
+  camera.zoom = 1;
+  camera.position.set((minX + maxX) / 2, (minY + maxY) / 2, 5);
+  controls.target.set((minX + maxX) / 2, (minY + maxY) / 2, 0);
+  resize();
+  controls.update();
+}
+
+function lineSegments(positions: number[], color: number): THREE.LineSegments {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
+}
+
+// What to draw: the mesh, the marked nodes, the cells in M, the cells the last refinement made (by template), the cells not cut in full.
+interface Scene2D {
+  mesh: MeshDto;
+  marked: number[];
+  m: Set<number>;
+  made: Map<number, string>;
+  unreached: Set<number>;
+  focus: number | null;                       // the cell a seam of its own is being found for
+  spoiled: Set<number>;                       // the cells of M that the attempt would spoil
+  trial: number[];                            // the nodes of the edge tried
+  added: number[];                            // the nodes the completion had to add
+}
+
+function currentScene(): Scene2D | null {
+  if (steps) {
+    const step = steps[stepIndex];
+    const mesh = step.mesh ?? steps.slice(0, stepIndex).reverse().find(x => x.kind === 'layers')!.mesh!;
+    const made = new Map<number, string>();
+    // the cells that came out of the templates (shown on the stage of the templates and on the stage after it)
+    if (step.kind === 'templates' || step.kind === 'expand') for (const a of step.applied) for (const c of a.children) made.set(c, a.template);
+    const seam = step.seam;
+    return {
+      mesh, marked: ['layers', 'seam', 'marks', 'templates'].includes(step.kind) ? step.marked : [], m: new Set(step.m), made, unreached: new Set(step.unreached),
+      focus: seam ? seam.cell : null, spoiled: new Set(seam?.spoiled ?? []), trial: seam?.edgeNodes ?? [], added: seam?.added ?? []
+    };
+  }
+  if (!state) return null;
+  const made = new Map<number, string>(), unreached = new Set<number>(), marked: number[] = [];
+  const pass = Number($<HTMLSelectElement>('pass').value);
+  if (state.passes) for (const p of state.passes) {
+    for (const a of p.applied) for (const c of a.children) made.set(c, a.template);
+    for (const u of p.unreached ?? []) unreached.add(u);
+    if ($<HTMLInputElement>('showMarks').checked && (pass < 0 || p.axis === pass)) marked.push(...p.marked);
+  }
+  return { mesh: state, marked, m: selected, made, unreached, focus: null, spoiled: new Set(), trial: [], added: [] };
+}
+
+function build(): void {
+  scene.remove(shown);
+  shown.traverse(o => {
+    const object = o as THREE.Mesh;
+    object.geometry?.dispose();
+    (object.material as THREE.Material | undefined)?.dispose?.();
+  });
+  shown = new THREE.Group();
+  scene.add(shown);
+  const data = currentScene();
+  if (!data) return;
+  view = data.mesh;
+
+  const axisOfChords = Number($<HTMLSelectElement>('chords').value);
+  let chords = axisOfChords >= 0 ? chordsOf(data.mesh, axisOfChords) : null;
+  let trail = new Set<number>(), current: number | null = null;
+  if (chords && animOn) {
+    const frame = frameAt(chords.events, animStep);
+    chords = { ...chords, info: frame.info, seams: animStep >= chords.events.length ? chords.seams : [] };
+    trail = frame.trail;
+    current = frame.current;
+  }
+  $('chordAnim').hidden = axisOfChords < 0;
+  const only = chords && pickedChordCell !== null ? data.mesh.cells.findIndex(c => c.id === pickedChordCell) : -1;
+  const alone = only >= 0 && !animOn ? chords!.members[chords!.info.get(only)!.chord] : null;      // the chord of the clicked cell
+  const positions: number[] = [], colors: number[] = [], lines: number[] = [];
+  const colour = new THREE.Color();
+  for (const [index, cell] of data.mesh.cells.entries()) {
+    const p = cell.nodes.map(n => world(data.mesh.nodes[n]));
+    colour.set(0xffffff);
+    const template = data.made.get(cell.id);
+    if (template) colour.set(template === 'T1' ? 0xffd8a8 : 0xfbf6b4);
+    const inChord = chords?.info.get(index);
+    if (chords && animOn) colour.set(0xf2f2f2);
+    if (trail.has(index)) colour.set(0xbcd8ff);
+    if (inChord) colour.setHSL(((inChord.chord * 0.618) % 1), 0.55, inChord.position % 2 === 0 ? 0.62 : 0.8);
+    if (alone) {
+      const at = alone.get(index);
+      if (at === undefined) colour.set(0xeeeeee); else colour.setHSL(0.58, 0.6, at % 2 === 0 ? 0.62 : 0.82);
+    }
+    if (data.m.has(cell.id)) colour.set(0xe8e04a);
+    if (data.unreached.has(cell.id)) colour.set(0xff6b6b);
+    if (data.spoiled.has(cell.id)) colour.set(0xb03a2e);
+    if (data.focus === cell.id) colour.set(0xffb347);
+    if (current === index) colour.set(0xffb347);
+    for (const t of [[0, 1, 2], [0, 2, 3]]) for (const k of t) { positions.push(p[k].x, p[k].y, 0); colors.push(colour.r, colour.g, colour.b); }
+    for (let k = 0; k < 4; k++) lines.push(p[k].x, p[k].y, 0.1, p[(k + 1) % 4].x, p[(k + 1) % 4].y, 0.1);
+  }
+  const fill = new THREE.BufferGeometry();
+  fill.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  fill.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  shown.add(new THREE.Mesh(fill, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+  shown.add(lineSegments(lines, 0x666666));
+
+  if ($<HTMLInputElement>('showRoots').checked) {
+    const roots: number[] = [];
+    for (const r of data.mesh.roots) {
+      const a = [r.i, r.j], b = [r.i + 1, r.j], c = [r.i + 1, r.j + 1], d = [r.i, r.j + 1];
+      for (const [u, v] of [[a, b], [b, c], [c, d], [d, a]]) roots.push(u[0], u[1], 0.2, v[0], v[1], 0.2);
+    }
+    shown.add(lineSegments(roots, 0x000000));
+  }
+
+  if (chords) {
+    const seam: number[] = [];
+    if (!alone) for (const [a, b] of chords.seams) { const u = world(data.mesh.nodes[a]), v = world(data.mesh.nodes[b]); seam.push(u.x, u.y, 0.4, v.x, v.y, 0.4); }
+    const blue = lineSegments(seam, 0x1f6fe5);
+    (blue.material as THREE.LineBasicMaterial).linewidth = 3;
+    shown.add(blue);
+    if (data.mesh.cells.length <= 400) {
+      for (const [index, cell] of data.mesh.cells.entries()) {
+        const at = alone ? (alone.has(index) ? { position: alone.get(index)! } : null) : chords.info.get(index);
+        if (!at) continue;
+        const c = cell.nodes.map(n => world(data.mesh.nodes[n]));
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: label(at.position), depthTest: false }));
+        sprite.position.set((c[0].x + c[1].x + c[2].x + c[3].x) / 4, (c[0].y + c[1].y + c[2].y + c[3].y) / 4, 0.5);
+        const shortest = Math.min(...[0, 1, 2, 3].map(k => c[k].distanceTo(c[(k + 1) % 4])));
+        const size = Math.min(0.3, 0.6 * shortest);
+        sprite.scale.set(size, size, 1);
+        shown.add(sprite);
+      }
+    }
+  }
+
+  if (data.marked.length > 0) {
+    const pts: number[] = [];
+    for (const id of data.marked) if (data.mesh.nodes[id]) { const w = world(data.mesh.nodes[id]); pts.push(w.x, w.y, 0.3); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    shown.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xd61f1f, size: 7, sizeAttenuation: false })));
+  }
+  for (const [ids, color, size] of [[data.added, 0x8e44ad, 9], [data.trial, 0xff8c00, 11]] as [number[], number, number][]) {
+    if (ids.length === 0) continue;
+    const pts: number[] = [];
+    for (const id of ids) { const w = world(data.mesh.nodes[id]); pts.push(w.x, w.y, 0.35); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    shown.add(new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation: false })));
+  }
+
+  $<HTMLButtonElement>('undo').disabled = !!steps || !state?.canUndo;
+  $<HTMLButtonElement>('redo').disabled = !!steps || !state?.canRedo;
+  $<HTMLButtonElement>('refine').disabled = !!steps || selected.size === 0;
+  $<HTMLButtonElement>('refineNow').disabled = !!steps || selected.size === 0;
+  const problems = data.mesh.problems ?? [];
+  const midPass = steps && ['marks'].includes(steps[stepIndex].kind);
+  $('status').innerHTML = `Клітинок: <b>${data.mesh.cells.length}</b>, вузлів: <b>${data.mesh.nodes.length}</b> · ` +
+    (midPass ? '<span style="color:#9aa0a6">(стан до застосування шаблонів)</span>' : problems.length === 0 ? '<span class="ok">сітка конформна ✓</span>' : `<span style="color:#ff8b7a">проблем: ${problems.length}</span>`) +
+    (data.unreached.size ? ` · <span style="color:#ff8b7a">не розрізано до кінця: ${data.unreached.size}</span>` : '');
+  $('problems').textContent = midPass ? '' : problems.slice(0, 12).join('\n');
+}
+
+function cellAt(wx: number, wy: number): number | null {
+  for (const cell of view!.cells) {
+    const p = cell.nodes.map(n => world(view!.nodes[n]));
+    let inside = false;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++)
+      if ((p[i].y > wy) !== (p[j].y > wy) && wx < ((p[j].x - p[i].x) * (wy - p[i].y)) / (p[j].y - p[i].y) + p[i].x) inside = !inside;
+    if (inside) return cell.id;
+  }
+  return null;
+}
+
+// a click picks a cell, a drag pans: tell them apart by how far the pointer went
+let down: [number, number] | null = null;
+canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!state || steps || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 2 - 1, y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+  const w = new THREE.Vector3(x, y, 0).unproject(camera);
+  const id = cellAt(w.x, w.y);
+  if (id === null) return;
+  if (Number($<HTMLSelectElement>('chords').value) >= 0 && !animOn) { pickedChordCell = pickedChordCell === id ? null : id; build(); return; }
+  if (selected.has(id)) selected.delete(id); else selected.add(id);
+  build();
+});
+
+// ---- the animation of the numbering -----------------------------------------------------------------------------------
+
+function animText(): string {
+  const chords = chordsOf(view!, Number($<HTMLSelectElement>('chords').value));
+  const total = chords.events.length;
+  if (animStep === 0) return `Подій: ${total}. Натисніть ▶ або «крок».`;
+  const e = chords.events[animStep - 1];
+  const at = `Подія ${animStep} з ${total}. `;
+  switch (e.kind) {
+    case 'begin': return at + `Беру клітинку, яка ще не в жодній хорді: це нова хорда №${e.chord}. Іду від неї назад, шукаю початок.`;
+    case 'back': return at + 'Крок назад через протилежне ребро до сусіда.';
+    case 'turned': return at + (e.cycle ? 'Прийшов назад у вихідну клітинку: хорда замкнена, початок довільний — тут.' : 'Далі сусіда нема (край сітки чи дірка): це початок хорди.') + ' Тепер іду вперед і нумерую.';
+    case 'number': return at + `Клітинці даю номер ${e.position}.` + (e.natural ? '' : ' Хорда йде тут боком, номер лише для цієї хорди.');
+    default: return at + `Хорда №${e.chord} закінчена: ${e.position} клітинок${e.cycle ? ', замкнена' : ''}. Шви — між парами (0,1), (2,3), … Далі беру наступну ще не пронумеровану клітинку.`;
+  }
+}
+
+function animRender(): void {
+  const total = animOn ? chordsOf(view!, Number($<HTMLSelectElement>('chords').value)).events.length : 0;
+  animStep = Math.max(0, Math.min(animStep, total));
+  build();
+  if (animOn) $('animText').textContent = animText();
+}
+function animStop(): void { if (animTimer !== null) { clearInterval(animTimer); animTimer = null; } $('animPlay').textContent = '▶'; }
+function animPlay(): void {
+  if (animTimer !== null) { animStop(); return; }
+  $('animPlay').textContent = '⏸';
+  const speed = Number($<HTMLInputElement>('animSpeed').value);
+  animTimer = window.setInterval(() => {
+    const total = chordsOf(view!, Number($<HTMLSelectElement>('chords').value)).events.length;
+    if (animStep >= total) { animStop(); return; }
+    animStep++;
+    animRender();
+  }, 1000 / speed);
+}
+$('animToggle').onclick = () => { animOn = !animOn; animStop(); animStep = 0; $('animPanel').hidden = !animOn; $('animToggle').textContent = animOn ? '■ Закрити алгоритм' : '▶ Алгоритм нумерації'; animRender(); };
+$('animReset').onclick = () => { animStop(); animStep = 0; animRender(); };
+$('animBack').onclick = () => { animStop(); animStep--; animRender(); };
+$('animStep').onclick = () => { animStop(); animStep++; animRender(); };
+$('animPlay').onclick = animPlay;
+$('animSpeed').oninput = () => { if (animTimer !== null) { animStop(); animPlay(); } };
+
+// ---- the wizard ---------------------------------------------------------------------------------------------------
+
+const axisName = (axis: number): string => (axis === 0 ? 'X (I)' : 'Y (J)');
+
+function describe(step: StepDto): [string, string] {
+  const count = (t: string): number => step.applied.filter(a => a.template === t).length;
+  switch (step.kind) {
+    case 'start':
+      return ['Вибрані клітинки M', 'Жовті клітинки — M, їх треба згустити. Далі алгоритм іде по осі X, потім по Y: на кожній осі позначає вузли, ділить клітинки шаблонами й розширює M.'];
+    case 'layers':
+      return [`Прохід ${axisName(step.axis)}: шви шарів`, `Позначено вузли на швах пар шарів вихідної сітки (червоні) і дописано вузли, яких не вистачало для дозволених візерунків. Червоні клітинки — клітинки з M, яких ці шви не дісталися: їм треба власний шов (${step.unreached.length}).`];
+    case 'seam': {
+      const t = step.seam!;
+      const edge = t.edge === 'far' ? 'далеке' : 'ближнє';
+      const verdict = t.accepted ? 'Підходить: залишаю ці мітки.' : !t.cutAcross ? 'Не підходить: після цього клітинка все одно не розрізається впоперек.' : `Не підходить: це зіпсувало б ${t.spoiled.length} інших клітинок M (темно-червоні).`;
+      return [`Прохід ${axisName(step.axis)}: власний шов клітинки`, `Оранжева клітинка не дістає до шва. Пробую її ${edge} ребро (оранжеві вузли)${t.added.length ? ', замикання дописало вузли (фіолетові): ' + t.added.length : ''}. ${verdict}`];
+    }
+    case 'marks':
+      return [`Прохід ${axisName(step.axis)}: позначені вузли`, `Шари вздовж осі йдуть парами (парний + непарний). Червоні вузли лежать на шві пари, в якій є клітинка з M, і на власному шві кожної клітинки з M, до якої шов не дотягся (${step.marked.length} вузлів). Клітинка з одним позначеним вузлом (кут) отримає T1, з двома на ребрі — T2.`];
+    case 'templates':
+      return [`Прохід ${axisName(step.axis)}: застосовано шаблони`, `Поділено клітинок: ${step.applied.length} (T1 — ${count('T1')}, T2 — ${count('T2')}), n = ${step.n}. Клітинки з T2 розрізані на ${step.n} смуги паралельно позначеному ребру, з T1 — на ${2 * step.n - 1} частин навколо позначеного кута. На спільних ребрах вузли збігаються з обох боків.`];
+    case 'expand':
+      return [`Розширення M після проходу ${axisName(step.axis)}`, `До M додано всі щойно розділені клітинки (${step.m.length} в M). Наступний прохід позначить вузли й на їхніх швах, тож перехідні шари теж ділитимуться.`];
+    default:
+      return ['Результат', 'Усі проходи виконано. «Застосувати результат» залишить цю сітку (її можна скасувати), «Закрити» поверне початкову.'];
+  }
+}
+
+function showStep(): void {
+  if (!steps) return;
+  const step = steps[stepIndex];
+  const [title, text] = describe(step);
+  $('wizard').hidden = false;
+  $('stepCounter').textContent = `Крок ${stepIndex + 1} з ${steps.length}`;
+  $('stepTitle').textContent = title;
+  $('stepText').textContent = text;
+  $<HTMLButtonElement>('stepBack').disabled = stepIndex === 0;
+  $<HTMLButtonElement>('stepNext').hidden = stepIndex === steps.length - 1;
+  $<HTMLButtonElement>('stepApply').hidden = stepIndex !== steps.length - 1;
+  build();
+}
+
+function closeWizard(): void {
+  steps = null;
+  $('wizard').hidden = true;
+  build();
+}
+
+$('refine').onclick = async () => {
+  const answer = await preview([...selected], value('ni'), value('nj'));
+  if ('error' in answer) { $('problems').textContent = 'Помилка: ' + answer.error; return; }
+  steps = answer.steps;
+  stepIndex = 0;
+  showStep();
+};
+$('stepNext').onclick = () => { if (steps && stepIndex < steps.length - 1) { stepIndex++; showStep(); } };
+$('stepBack').onclick = () => { if (steps && stepIndex > 0) { stepIndex--; showStep(); } };
+$('stepClose').onclick = closeWizard;
+$('stepApply').onclick = async () => {
+  const cells = [...selected];
+  selected.clear();
+  closeWizard();
+  await send('/api/refine', { cells, nI: value('ni'), nJ: value('nj') });
+};
+window.addEventListener('keydown', e => {
+  if (!steps) return;
+  if (e.key === 'ArrowRight') $('stepNext').click();
+  else if (e.key === 'ArrowLeft') $('stepBack').click();
+  else if (e.key === 'Escape') closeWizard();
+});
+
+async function send(path: string, body: unknown): Promise<boolean> {
+  const answer = await post(path, body);
+  if (answer.state) state = answer.state;
+  $('problems').textContent = 'error' in answer ? 'Помилка: ' + answer.error : '';
+  build();
+  return !('error' in answer);
+}
+
+const holes = (): number[][] => $<HTMLInputElement>('holes').value.split(';').map(s => s.trim()).filter(Boolean).map(s => s.split(',').map(Number));
+const value = (id: string): number => Number($<HTMLInputElement>(id).value);
+$('grid').onclick = async () => { selected.clear(); if (await send('/api/grid', { nx: value('nx'), ny: value('ny'), holes: holes() })) fit(); };
+$('refineNow').onclick = async () => { const cells = [...selected]; selected.clear(); await send('/api/refine', { cells, nI: value('ni'), nJ: value('nj') }); };
+$('clear').onclick = () => { selected.clear(); build(); };
+$('undo').onclick = async () => { selected.clear(); await send('/api/undo', {}); };
+$('redo').onclick = async () => { selected.clear(); await send('/api/redo', {}); };
+for (const id of ['showRoots', 'showMarks', 'pass', 'chords']) $(id).onchange = build;
+window.addEventListener('resize', resize);
+
+function loop(): void { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
+getState().then(s => {
+  state = s;
+  $<HTMLInputElement>('nx').value = String(Math.max(...s.roots.map(r => r.i)) + 1);
+  $<HTMLInputElement>('ny').value = String(Math.max(...s.roots.map(r => r.j)) + 1);
+  resize();
+  fit();
+  build();
+  loop();
+});
+
+setupDrawing();
