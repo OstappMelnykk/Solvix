@@ -178,7 +178,8 @@ function build(): void {
     }
     corners.set(cell.id, p);
   }
-  const allFaces = explode > 0 || template !== null;
+  // the faces between two cells are drawn only when something lets the eye through: the cells moved apart, a see-through mesh, or the box ticked
+  const allFaces = explode > 0 || template !== null || value('opacity') < 100 || $<HTMLInputElement>('inner').checked;
   for (const cell of cells) {
     colour.set(0xffffff);
     const kind = data.made.get(cell.id);
@@ -397,7 +398,7 @@ $('refineNow').onclick = async () => { const cells = [...selected]; selected.cle
 $('clear').onclick = () => { selected.clear(); build(); };
 $('undo').onclick = () => { selected.clear(); void send('/api/undo', {}); };
 $('redo').onclick = () => { selected.clear(); void send('/api/redo', {}); };
-for (const id of ['showRoots', 'showMarks', 'pass', 'cutAxis', 'cutLo', 'cutHi', 'opacity', 'explode']) $(id).oninput = build;
+for (const id of ['showRoots', 'showMarks', 'pass', 'cutAxis', 'cutLo', 'cutHi', 'opacity', 'explode', 'inner']) $(id).oninput = build;
 
 function loop(): void { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
 
