@@ -21,6 +21,9 @@
     .problems { color: #ff8b7a; font-size: 12px; white-space: pre-wrap; }
     .ok { color: #7bd88f; }
     .hint { color: var(--muted); font-size: 12px; }
+    .step-title { font-weight: 600; margin: 4px 0; }
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0; font-size: 11px; color: var(--muted); }
+    .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
   </style>
 </head>
 <body>
@@ -36,9 +39,28 @@
     <label>nI (по X) <input id="ni" type="number" min="2" max="8" value="2" /></label>
     <label>nJ (по Y) <input id="nj" type="number" min="2" max="8" value="2" /></label>
     <div class="hint">Клік по клітинці додає її в M (жовті), повторний знімає. Коліщатко — масштаб, перетягування — панорама. Червоні клітинки — ті, яких цей прохід не зміг розрізати.</div>
-    <button id="refine" class="go">Згустити виділені</button>
+    <button id="refine" class="go">Згустити по кроках</button>
+    <button id="refineNow">Згустити одразу</button>
     <button id="clear">Зняти виділення</button>
     <div><button id="undo">↶ Скасувати</button><button id="redo">↷ Повернути</button></div>
+
+    <div id="wizard" hidden>
+      <h2>Майстер</h2>
+      <div id="stepCounter" class="hint"></div>
+      <div id="stepTitle" class="step-title"></div>
+      <div id="stepText" class="hint"></div>
+      <div class="legend">
+        <span><i style="background:#e8e04a"></i>клітинки M</span>
+        <span><i style="background:#ffd8a8"></i>T1</span>
+        <span><i style="background:#fbf6b4"></i>T2</span>
+        <span><i style="background:#d61f1f"></i>позначені вузли</span>
+        <span><i style="background:#ff6b6b"></i>не розрізані</span>
+      </div>
+      <div>
+        <button id="stepBack">← Назад</button><button id="stepNext" class="go">Далі →</button>
+      </div>
+      <div><button id="stepApply" class="go" hidden>Застосувати результат</button><button id="stepClose">Закрити</button></div>
+    </div>
 
     <h2>Показати</h2>
     <label>Кореневі клітинки <input id="showRoots" type="checkbox" checked /></label>

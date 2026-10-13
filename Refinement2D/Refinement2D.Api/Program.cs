@@ -22,6 +22,11 @@ app.MapPost("/api/refine", (RefineRequest r) =>
     catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
     return Results.Ok(session.State());
 });
+app.MapPost("/api/preview", (RefineRequest r) =>
+{
+    try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ) }); }
+    catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message }); }
+});
 app.MapPost("/api/undo", () => { session.Undo(); return session.State(); });
 app.MapPost("/api/redo", () => { session.Redo(); return session.State(); });
 
@@ -65,6 +70,29 @@ sealed class Session
         _redo.RemoveAt(_redo.Count - 1);
         _last = null;
     }
+
+    // the refinement of the current mesh, stage by stage, without changing it: what the page's wizard steps through
+    public object[] Preview(int[] cells, int nI, int nJ) =>
+        Refiner.Preview(_mesh, cells, nI, nJ).Select(step => (object)new
+        {
+            kind = step.Kind,
+            axis = step.Axis,
+            n = step.N,
+            mesh = MeshOf(step.Mesh),
+            marked = step.Marked,
+            m = step.M,
+            applied = step.Applied.Select(a => new { cell = a.Cell, template = a.Template, index = a.Index, children = a.Children }),
+            unreached = step.Unreached
+        }).ToArray();
+
+    private static object MeshOf(QuadMesh mesh) => new
+    {
+        scale = mesh.Scale,
+        nodes = mesh.Nodes.Select(p => new[] { p.X, p.Y }),
+        cells = mesh.Cells.Values.OrderBy(c => c.Id).Select(c => new { id = c.Id, nodes = c.Nodes, root = c.Root }),
+        roots = mesh.Roots.Select(r => new { id = r.Id, i = r.I, j = r.J }),
+        problems = Conformity.Check(mesh)
+    };
 
     public object State() => new
     {

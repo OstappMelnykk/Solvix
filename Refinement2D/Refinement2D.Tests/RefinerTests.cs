@@ -213,6 +213,29 @@ public class RefinerTests
         Assert.That(whole, Is.GreaterThan(checkedLeaves * 0.9), $"{whole} of {checkedLeaves} marked leaves were cut as asked");
     }
 
+    [Test]
+    public void The_preview_shows_the_stages_in_order_ends_in_the_same_mesh_as_refining_and_leaves_the_original_alone()
+    {
+        var a = QuadMesh.Grid(7, 7);
+        var b = QuadMesh.Grid(7, 7);
+        var cells = new[] { (3, 3), (4, 5) };
+        string before = Signature(a);
+
+        var steps = Refiner.Preview(a, LeavesOf(a, cells), 3, 2);
+        Refiner.Refine(b, LeavesOf(b, cells), 3, 2);
+
+        Assert.That(steps.Select(x => x.Kind), Is.EqualTo(new[] { "start", "marks", "templates", "expand", "marks", "templates", "expand", "final" }));
+        Assert.That(steps.Select(x => x.Axis), Is.EqualTo(new[] { -1, 0, 0, 0, 1, 1, 1, -1 }));
+        Assert.That(Signature(a), Is.EqualTo(before), "the preview must not change the mesh it was given");
+        Assert.That(Signature(steps[^1].Mesh), Is.EqualTo(Signature(b)));
+        Assert.That(steps[1].Marked, Is.Not.Empty);
+        Assert.That(steps[2].Applied, Is.Not.Empty);
+        Assert.That(steps[1].Mesh.Cells.Count, Is.LessThan(steps[2].Mesh.Cells.Count), "the templates add cells");
+        // every stage is conforming except the ones in the middle of a pass, where the marks are only shown; the end of each pass is
+        Assert.That(Conformity.Check(steps[3].Mesh), Is.Empty);
+        Assert.That(Conformity.Check(steps[6].Mesh), Is.Empty);
+    }
+
     // ---- helpers -------------------------------------------------------------------------------------------------------
 
     // the cells that are axis-aligned rectangles, and the rectangle (in the lattice of the moment) a cell covers

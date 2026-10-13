@@ -12,6 +12,19 @@ public sealed record PassTrace(
 public sealed record RefineResult(IReadOnlyList<PassTrace> Passes);
 
 /// <summary>
+/// One stage of a refinement, for showing it step by step: the mesh as it was then, the nodes marked, the cells in M, and what the templates did.
+/// Kinds: "start" (the cells chosen), "marks" (a pass has marked its nodes), "templates" (the templates have been applied),
+/// "expand" (what was just refined has joined M), "final".
+/// </summary>
+public sealed record RefineStep(
+    string Kind, int Axis, int N,
+    QuadMesh Mesh,
+    IReadOnlyList<int> Marked,
+    IReadOnlyList<int> M,
+    IReadOnlyList<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Applied,
+    IReadOnlyList<int> Unreached);
+
+/// <summary>
 /// Local two-dimensional refinement with transition templates. For each axis in turn (I, then J): mark the nodes on the seams between
 /// even-odd pairs of coarse layers that hold a marked cell, split every cell that has marked nodes by the template its pattern needs,
 /// and add the cells just split to the marked set. A cell of the marked set ends up cut into nI x nJ; the cells round it receive
@@ -30,17 +43,40 @@ public static class Refiner
         return new RefineResult(passes);
     }
 
+    /// <summary>The refinement of a copy of the mesh, recorded stage by stage; the mesh itself is not changed. The last stage is the result.</summary>
+    public static List<RefineStep> Preview(QuadMesh mesh, IEnumerable<int> markedCells, int nI, int nJ)
+    {
+        var copy = mesh.Clone();
+        var marked = markedCells.ToHashSet();
+        foreach (int id in marked) if (!copy.Cells.ContainsKey(id)) throw new ArgumentException($"Unknown cell {id}.");
+        var required = marked.ToHashSet();
+        var none = Array.Empty<(int, string, int, IReadOnlyList<int>)>();
+        var steps = new List<RefineStep> { new("start", -1, 0, copy.Clone(), Array.Empty<int>(), marked.OrderBy(x => x).ToList(), none, Array.Empty<int>()) };
+        for (int axis = 0; axis < 2; axis++) Pass(copy, marked, required, axis, axis == 0 ? nI : nJ, steps);
+        steps.Add(new RefineStep("final", -1, 0, copy.Clone(), Array.Empty<int>(), Array.Empty<int>(), none, Array.Empty<int>()));
+        return steps;
+    }
+
     /// <summary>One pass along an axis: rescale by n, mark, complete, give the cells of M a seam of their own where the layers gave none, apply the templates, expand M.</summary>
-    public static PassTrace Pass(QuadMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n)
+    public static PassTrace Pass(QuadMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n, List<RefineStep>? steps = null)
     {
         mesh.Rescale(n);
         var nodes = MarkNodes(mesh, marked, axis);
         Complete(mesh, nodes);
         ExtendForMarkedCells(mesh, marked, required, axis, nodes);
         var unreached = required.Where(id => !IsCutAcross(mesh.Cells[id], nodes, axis)).OrderBy(x => x).ToList();
-        var applied = Apply(mesh, nodes, n, marked);
+        var noChildren = Array.Empty<(int, string, int, IReadOnlyList<int>)>();
+        steps?.Add(new RefineStep("marks", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.OrderBy(x => x).ToList(), noChildren, unreached));
+        var applied = Apply(mesh, nodes, n);
+        steps?.Add(new RefineStep("templates", axis, n, mesh.Clone(), nodes.OrderBy(x => x).ToList(), marked.Where(mesh.Cells.ContainsKey).OrderBy(x => x).ToList(), applied, unreached));
+        // Expand: what was just refined joins the marked set (and the user's cells become what they were cut into)
         foreach (var a in applied)
+        {
+            marked.Remove(a.Cell);
+            marked.UnionWith(a.Children);
             if (required.Remove(a.Cell)) required.UnionWith(a.Children);
+        }
+        steps?.Add(new RefineStep("expand", axis, n, mesh.Clone(), Array.Empty<int>(), marked.OrderBy(x => x).ToList(), applied, unreached));
         return new PassTrace(axis, n, nodes.OrderBy(x => x).ToList(), applied, marked.OrderBy(x => x).ToList(), unreached);
     }
 
@@ -161,7 +197,7 @@ public static class Refiner
 
     // ---- templates -----------------------------------------------------------------------------------------------------
 
-    private static List<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Apply(QuadMesh mesh, HashSet<int> marks, int n, HashSet<int> marked)
+    private static List<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Apply(QuadMesh mesh, HashSet<int> marks, int n)
     {
         var applied = new List<(int, string, int, IReadOnlyList<int>)>();
         foreach (var cell in mesh.Cells.Values.OrderBy(c => c.Id).ToList())
@@ -187,8 +223,6 @@ public static class Refiner
             }
             mesh.RemoveCell(cell.Id);
             foreach (var child in children) mesh.AddToRoot(child);
-            marked.Remove(cell.Id);
-            foreach (var child in children) marked.Add(child.Id);                    // Expand: what was just refined joins the marked set
             applied.Add((cell.Id, name, index, children.Select(c => c.Id).ToList()));
         }
         return applied;
