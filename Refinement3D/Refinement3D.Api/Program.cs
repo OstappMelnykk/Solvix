@@ -19,13 +19,13 @@ app.MapPost("/api/grid", (GridRequest r) =>
 });
 app.MapPost("/api/refine", (RefineRequest r) =>
 {
-    try { session.Refine(r.Cells, r.NI, r.NJ, r.NK); }
+    try { session.Refine(r.Cells, r.NI, r.NJ, r.NK, r.ExpandTransitions); }
     catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message, state = session.State() }); }
     return Results.Ok(session.State());
 });
 app.MapPost("/api/preview", (RefineRequest r) =>
 {
-    try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ, r.NK) }); }
+    try { return Results.Ok(new { steps = session.Preview(r.Cells, r.NI, r.NJ, r.NK, r.ExpandTransitions) }); }
     catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return Results.BadRequest(new { error = e.Message }); }
 });
 // one cube divided by one template, for looking at what the template does inside: kind T1 (a corner marked), T2 (an edge), T4 (a face)
@@ -56,7 +56,7 @@ app.MapPost("/api/redo", () => { session.Redo(); return session.State(); });
 app.Run();
 
 record GridRequest(int Nx, int Ny, int Nz, int[][]? Holes);
-record RefineRequest(int[] Cells, int NI, int NJ, int NK);
+record RefineRequest(int[] Cells, int NI, int NJ, int NK, bool ExpandTransitions = false);
 
 sealed class Session
 {
@@ -66,10 +66,10 @@ sealed class Session
 
     public void Reset(HexMesh mesh) { _mesh = mesh; _undo.Clear(); _redo.Clear(); _last = null; }
 
-    public void Refine(int[] cells, int nI, int nJ, int nK)
+    public void Refine(int[] cells, int nI, int nJ, int nK, bool expandTransitions)
     {
         var next = _mesh.Clone();
-        var result = Refiner.Refine(next, cells, nI, nJ, nK);
+        var result = Refiner.Refine(next, cells, nI, nJ, nK, expandTransitions);
         _undo.Add(_mesh);
         _redo.Clear();
         _mesh = next;
@@ -95,8 +95,8 @@ sealed class Session
     }
 
     // the refinement of the current mesh, stage by stage, without changing it: what the page's wizard steps through
-    public object[] Preview(int[] cells, int nI, int nJ, int nK) =>
-        Refiner.Preview(_mesh, cells, nI, nJ, nK).Select(step => (object)new
+    public object[] Preview(int[] cells, int nI, int nJ, int nK, bool expandTransitions) =>
+        Refiner.Preview(_mesh, cells, nI, nJ, nK, expandTransitions).Select(step => (object)new
         {
             kind = step.Kind,
             axis = step.Axis,
