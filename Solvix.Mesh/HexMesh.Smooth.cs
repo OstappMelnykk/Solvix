@@ -10,7 +10,8 @@ namespace Solvix.Mesh;
 /// <param name="FoldedBefore">Cubes that were folded (negative or zero Jacobian) when smoothing began.</param>
 /// <param name="FoldedAfter">... and how many are, when it ended.</param>
 /// <param name="EdgesStraightened">Edge midpoints that were brought back towards the middle of their edge.</param>
-public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0, int EdgesStraightened = 0);
+/// <param name="Passes">The passes made: fewer than asked when the mesh stopped changing.</param>
+public readonly record struct SmoothReport(int Interior, int Surface, int Moved, int Corners = 0, double MaxMove = 0, double MeanMove = 0, int FoldedBefore = 0, int FoldedAfter = 0, int EdgesStraightened = 0, int Passes = 0);
 
 public sealed partial class HexMesh
 {
@@ -41,7 +42,8 @@ public sealed partial class HexMesh
     /// what unfolds them. A folded cube cannot be solved, so this is what is wanted unless the surface must not change.</param>
     public SmoothReport Smooth(int iterations, double relaxation = 0.5, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true)
     {
-        int foldedBefore = _hexes.Values.Count(h => !h.IsValid());
+        var quality = new CubeQuality(this);
+        int foldedBefore = _hexes.Values.Count(h => !quality.Valid(h.Id));
         double flatCosine = Math.Cos(featureAngle * Math.PI / 180);
         var free = new List<(int Id, List<int> Neighbours, bool OnSurface)>();
         foreach (int id in InteriorCornerNodes()) free.Add((id, CornerNeighbours(id, surfaceOnly: false), false));
@@ -49,14 +51,14 @@ public sealed partial class HexMesh
         if (surface)
             foreach (int id in FlatSurfaceCornerNodes(flatCosine)) free.Add((id, CornerNeighbours(id, surfaceOnly: true), true));
         var interiorSet = free.Take(interior).Select(f => f.Id).ToHashSet();
+        var foldedHexes = _hexes.Values.Where(h => !quality.Valid(h.Id)).Select(h => h.Id).ToHashSet();
         var tangled = new HashSet<int>();
         if (untangle)
         {
-            var already = free.Select(f => f.Id).ToHashSet();
-            foreach (var hex in _hexes.Values.Where(h => !h.IsValid()))
+            foreach (int hexId in foldedHexes)
                 for (int slot = 0; slot < Hex20Reference.CornerCount; slot++)
                 {
-                    int id = hex.NodeIds[slot];
+                    int id = _hexes[hexId].NodeIds[slot];
                     if (!tangled.Add(id)) continue;
                     // a corner of a folded cube moves freely in 3D, looking at all its neighbours
                     int at = free.FindIndex(f => f.Id == id);
@@ -65,13 +67,35 @@ public sealed partial class HexMesh
                 }
         }
         var start = free.ToDictionary(f => f.Id, f => _nodes[f.Id].Position);
-        var foldedHexes = _hexes.Values.Where(h => !h.IsValid()).Select(h => h.Id).ToHashSet();
         var midpoints = straighten ? EdgeMidpoints(untangle ? foldedHexes : new HashSet<int>()) : new List<(int Id, int A, int B)>();
-        var midStart = midpoints.ToDictionary(m => m.Id, m => _nodes[m.Id].Position);
         var movedMid = new HashSet<int>();
         var moved = new HashSet<int>();
+        // a pass that moves nothing by more than this ends the run: the mesh has settled
+        var low = new Vec3(_nodes.Values.Min(n => n.Position.X), _nodes.Values.Min(n => n.Position.Y), _nodes.Values.Min(n => n.Position.Z));
+        var high = new Vec3(_nodes.Values.Max(n => n.Position.X), _nodes.Values.Max(n => n.Position.Y), _nodes.Values.Max(n => n.Position.Z));
+        double settled = 1e-9 * Math.Max(1e-9, (high - low).Length);
+        // First the bent edges alone are straightened, until they settle: when the corners are in place that is all a folded
+        // cube needs, and the corners then have nothing to untangle (they would otherwise be dragged about by the
+        // Laplacian while cubes are still folded because of a bent edge).
+        for (int round = 0; round < Math.Max(iterations, 50) && midpoints.Count > 0; round++)
+        {
+            double pulled = 0;
+            foreach (var (id, a, b) in midpoints)
+            {
+                var pull = ((_nodes[a].Position + _nodes[b].Position) * 0.5 - _nodes[id].Position) * relaxation;
+                if (pull.Length <= 1e-12) continue;
+                if (TryMoveMidpoint(quality, id, pull, untangle)) { movedMid.Add(id); pulled = Math.Max(pulled, pull.Length); }
+            }
+            if (pulled < settled) break;
+        }
+        int passes = 0;
+        // While a cube is folded the spacing of the nodes is only an accident of how it got folded, not a density worth keeping:
+        // the passes then use the plain Laplacian (density 0), which also unties it best; then the density asked for is kept.
+        bool folded = untangle && foldedBefore > 0;
         for (int iteration = 0; iteration < iterations; iteration++)
         {
+            passes++;
+            double largest = 0;
             // first the edges are straightened (a bent midpoint is what folds a cube most often), then the corners
             foreach (var (id, a, b) in midpoints)
             {
@@ -79,12 +103,12 @@ public sealed partial class HexMesh
                 var target = (_nodes[a].Position + _nodes[b].Position) * 0.5;
                 var pull = (target - node.Position) * relaxation;
                 if (pull.Length <= 1e-12) continue;
-                if (TryMoveMidpoint(id, pull, untangle)) movedMid.Add(id);
+                if (TryMoveMidpoint(quality, id, pull, untangle)) { movedMid.Add(id); largest = Math.Max(largest, pull.Length); }
             }
             foreach (var (id, neighbours, onSurface) in free)
             {
                 // a corner that is only free because its cube was folded moves only while a cube around it still is
-                if (tangled.Contains(id) && !interiorSet.Contains(id) && _owners[id].All(o => _hexes[o.Hex].IsValid())) continue;
+                if (tangled.Contains(id) && !interiorSet.Contains(id) && quality.ValidAround(id)) continue;
                 var node = _nodes[id];
                 double weight = 0;
                 Vec3 sum = Vec3.Zero;
@@ -93,7 +117,7 @@ public sealed partial class HexMesh
                     var p = _nodes[other].Position;
                     double length = (p - node.Position).Length;
                     if (length <= 1e-12) continue;
-                    double w = density == 0 ? 1 : Math.Pow(length, -density);
+                    double w = density == 0 || folded ? 1 : Math.Pow(length, -density);
                     weight += w;
                     sum += p * w;
                 }
@@ -106,49 +130,110 @@ public sealed partial class HexMesh
                     step -= normal.Value * Dot(step, normal.Value);        // slide along the surface, never off it
                 }
                 if (step.Length <= 1e-12) continue;
-                if (TryMoveKeepingValid(id, step, tangled.Contains(id))) moved.Add(id);
+                if (TryMoveKeepingValid(quality, id, step, tangled.Contains(id))) { moved.Add(id); largest = Math.Max(largest, step.Length); }
             }
+            if (folded) folded = _hexes.Values.Any(h => !quality.Valid(h.Id));
+            else if (largest < settled) break;
         }
         var travelled = free.Select(f => (_nodes[f.Id].Position - start[f.Id]).Length).ToList();
         int corners = _owners.Count(o => o.Value.All(x => Hex20Reference.IsCorner(x.Slot)));
-        return new SmoothReport(interior, free.Count - interior, moved.Count + movedMid.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0, foldedBefore, _hexes.Values.Count(h => !h.IsValid()), movedMid.Count);
+        return new SmoothReport(interior, free.Count - interior, moved.Count + movedMid.Count, corners, travelled.Count > 0 ? travelled.Max() : 0, travelled.Count > 0 ? travelled.Average() : 0,
+            foldedBefore, _hexes.Values.Count(h => !quality.Valid(h.Id)), movedMid.Count, passes);
     }
 
-    // moves the corner by `step` (its edge midpoints by half), keeping the hexes around it valid; around a folded cube
-    // (`untangling`) a step that only makes the worst Jacobian there better is taken too
-    private bool TryMoveKeepingValid(int nodeId, Vec3 step, bool untangling = false)
+    // A cube is "good enough" when its smallest Jacobian determinant is at least this fraction of its largest (1 is a
+    // parallelepiped). A step that leaves every cube around the node good enough is always fine, so the smoothing does not
+    // stall on a mesh that is already fine.
+    private const double GoodEnough = 0.5;
+
+    // moves the corner by `step` (its edge midpoints by half). Taken when the cubes around it stay valid and either all are
+    // good enough or the cost of the neighbourhood (the sum of 1 / quality over its cubes) does not grow; a step that only
+    // makes a folded cube better is taken too when untangling. Halved up to four times, and dropped if it still is not
+    // accepted. (A rule on the single worst cube deadlocks when many things are bent at once: each fix makes some other
+    // cube a little worse until its own turn. The sum lets that trade happen but heavily punishes a cube that heads for
+    // degeneracy, which is what a step at a curved boundary does.)
+    private bool TryMoveKeepingValid(CubeQuality quality, int nodeId, Vec3 step, bool untangling = false)
     {
         var start = _nodes[nodeId].Position;
         var snapshot = new Dictionary<int, Vec3>();
         foreach (var (hexId, _) in _owners[nodeId])
             foreach (int id in _hexes[hexId].NodeIds) snapshot[id] = _nodes[id].Position;
-        double Worst() => _owners[nodeId].Min(o => _hexes[o.Hex].MinDeterminant());
-        double before = Worst();
+        double before = quality.Cost(nodeId);
+        double worstBefore = quality.Worst(nodeId);
         for (int attempt = 0; attempt < 5; attempt++, step *= 0.5)
         {
             DragNode(nodeId, start + step);
-            double after = Worst();
-            if (_owners[nodeId].All(o => _hexes[o.Hex].IsValid())) return true;
-            if (untangling && before <= 1e-9 && after > before + 1e-12) return true;
+            quality.Changed(nodeId);
+            if (Accepts(quality, nodeId, before, worstBefore, untangling)) return true;
             foreach (var (id, p) in snapshot) _nodes[id].Position = p;
+            quality.Changed(nodeId);
         }
         return false;
     }
 
-    // moves one edge midpoint by `pull`, as for a corner: kept when the cubes around stay valid, or (untangling) get better
-    private bool TryMoveMidpoint(int nodeId, Vec3 pull, bool untangling)
+    // moves one edge midpoint by `pull`, accepted by the same rule
+    private bool TryMoveMidpoint(CubeQuality quality, int nodeId, Vec3 pull, bool untangling)
     {
         var start = _nodes[nodeId].Position;
-        double Worst() => _owners[nodeId].Min(o => _hexes[o.Hex].MinDeterminant());
-        double before = Worst();
+        double before = quality.Cost(nodeId);
+        double worstBefore = quality.Worst(nodeId);
         for (int attempt = 0; attempt < 5; attempt++, pull *= 0.5)
         {
             _nodes[nodeId].Position = start + pull;
-            if (_owners[nodeId].All(o => _hexes[o.Hex].IsValid())) return true;
-            if (untangling && before <= 1e-9 && Worst() > before + 1e-12) return true;
+            quality.Changed(nodeId);
+            if (Accepts(quality, nodeId, before, worstBefore, untangling)) return true;
         }
         _nodes[nodeId].Position = start;
+        quality.Changed(nodeId);
         return false;
+    }
+
+    private static bool Accepts(CubeQuality quality, int nodeId, double costBefore, double worstBefore, bool untangling)
+    {
+        if (quality.ValidAround(nodeId))
+            return quality.Worst(nodeId) >= GoodEnough || quality.Cost(nodeId) <= costBefore * (1 + 1e-9);
+        // still folded around the node: only a step that makes the worst cube better counts, and only when untangling
+        return untangling && worstBefore <= 1e-9 && quality.Worst(nodeId) > worstBefore + 1e-12;
+    }
+
+    /// <summary>
+    /// The quality of the cubes around a node, kept between steps: a cube's smallest and largest Jacobian determinant is
+    /// worked out once and only again when one of its nodes has moved.
+    /// </summary>
+    private sealed class CubeQuality(HexMesh mesh)
+    {
+        private readonly Dictionary<int, (double Min, double Max)> _range = new();
+
+        private (double Min, double Max) Range(int hexId)
+        {
+            if (!_range.TryGetValue(hexId, out var range))
+            {
+                range = Hex20Geometry.DeterminantRange(mesh._hexes[hexId].Positions());
+                _range[hexId] = range;
+            }
+            return range;
+        }
+
+        public void Changed(int nodeId)
+        {
+            foreach (var (hexId, _) in mesh._owners[nodeId]) _range.Remove(hexId);
+        }
+
+        // a folded cube: not above 1e-9; otherwise smallest / largest determinant, 1 for the most regular cube
+        private double Of(int hexId)
+        {
+            var (min, max) = Range(hexId);
+            return min <= 1e-9 ? min : min / max;
+        }
+
+        public bool Valid(int hexId) => Range(hexId).Min > 1e-9;
+
+        public double Worst(int nodeId) => mesh._owners[nodeId].Min(o => Of(o.Hex));
+
+        // the sum of 1 / quality over the cubes around the node (infinite while one is folded)
+        public double Cost(int nodeId) => mesh._owners[nodeId].Sum(o => Of(o.Hex) <= 1e-9 ? double.PositiveInfinity : 1 / Of(o.Hex));
+
+        public bool ValidAround(int nodeId) => mesh._owners[nodeId].All(o => Valid(o.Hex));
     }
 
     // The midpoint nodes that may be straightened with the corner nodes of their edge: those of edges inside the body, and

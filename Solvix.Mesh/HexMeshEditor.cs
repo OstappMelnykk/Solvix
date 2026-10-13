@@ -116,7 +116,7 @@ public sealed class HexMeshEditor
         if (report.Moved > 0)
         {
             var c = System.Globalization.CultureInfo.InvariantCulture;
-            return EditResult.Done($"Згладжено: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved} (з них середин ребер {report.EdgesStraightened}). Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.{(report.FoldedBefore > 0 ? $" Вивернутих кубів: було {report.FoldedBefore}, стало {report.FoldedAfter}." : "")}");
+            return EditResult.Done($"Згладжено за {report.Passes} проходів: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved} (з них середин ребер {report.EdgesStraightened}). Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.{(report.FoldedBefore > 0 ? $" Вивернутих кубів: було {report.FoldedBefore}, стало {report.FoldedAfter}." : "")}");
         }
         if (report.Interior + report.Surface == 0)
             return EditResult.Fail(surface

@@ -32,7 +32,7 @@ public sealed class Hex20
     /// <summary>The 8-corner cube primitive (real positions).</summary>
     public Vec3[] Corners() => Enumerable.Range(0, Hex20Reference.CornerCount).Select(s => _mesh.Node(NodeIds[s]).Position).ToArray();
 
-    private IReadOnlyList<Vec3> Positions() => NodeIds.Select(id => _mesh.Node(id).Position).ToArray();
+    internal IReadOnlyList<Vec3> Positions() => NodeIds.Select(id => _mesh.Node(id).Position).ToArray();
 
     /// <summary>Isoparametric map from the reference cube [-1,1]^3 to real space.</summary>
     public Vec3 Map(Vec3 xi) => Hex20Geometry.Map(Positions(), xi);
@@ -49,6 +49,9 @@ public sealed class Hex20
     /// non-positive value means the hex is folded or degenerate.
     /// </summary>
     public double MinDeterminant() => Hex20Geometry.MinDeterminant(Positions());
+
+    /// <summary>The smallest and the largest Jacobian determinant of the cube: their ratio says how regular it is (1 for a parallelepiped).</summary>
+    public (double Min, double Max) DeterminantRange() => Hex20Geometry.DeterminantRange(Positions());
 
     public bool IsValid(double minDeterminant = 1e-9) => MinDeterminant() > minDeterminant;
 

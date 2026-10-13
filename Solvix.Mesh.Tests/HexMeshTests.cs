@@ -228,3 +228,25 @@ public class HexMeshTests
         Assert.That(fem.Positions[nA, 0], Is.EqualTo(p.X));
     }
 }
+
+public class DeterminantTableTests
+{
+    [Test]
+    public void The_tabulated_minimum_determinant_equals_the_direct_one_for_deformed_cubes()
+    {
+        var random = new Random(11);
+        for (int trial = 0; trial < 200; trial++)
+        {
+            var positions = Enumerable.Range(0, Hex20Reference.NodeCount).Select(s => new Vec3(
+                (Hex20Reference.LocalCoords[s, 0] + 1) / 2.0 + (random.NextDouble() - 0.5) * 0.4,
+                (Hex20Reference.LocalCoords[s, 1] + 1) / 2.0 + (random.NextDouble() - 0.5) * 0.4,
+                (Hex20Reference.LocalCoords[s, 2] + 1) / 2.0 + (random.NextDouble() - 0.5) * 0.4)).ToList();
+
+            var (min, max) = Hex20Geometry.DeterminantRange(positions);
+
+            Assert.That(min, Is.EqualTo(Hex20Geometry.MinDeterminantDirect(positions)).Within(1e-12));
+            Assert.That(max, Is.GreaterThanOrEqualTo(min));
+            Assert.That(Hex20Geometry.MinDeterminant(positions), Is.EqualTo(min));
+        }
+    }
+}

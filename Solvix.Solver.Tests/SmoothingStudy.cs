@@ -19,6 +19,8 @@ public class SmoothingStudy
             G("scaledJacobian"), G("minCornerAngle"), G("maxCornerAngle"), G("equiangleSkew"), G("jacobianRatio"), G("warpingFactor"), editor.Mesh.Hexes.Min(h => h.MinDeterminant()));
     }
 
+    static void Log(string line) { Console.WriteLine(line); File.AppendAllText("/tmp/study_progress.log", line + "\n"); }
+
     static string Fmt(Snap s) => $"fold {s.Folded,3} bad {s.Bad,4}/{s.Elements,-4} SJ {s.MinSJ,5:0.00} minA {s.MinAngle,5:0.0} maxA {s.MaxAngle,6:0.0} skew {s.Skew,4:0.00} JR {Math.Min(s.JacRatio, 9999),7:0.0} warp {s.Warp,5:0.00} minDet {s.MinDet,7:0.0000}";
 
     static HexMeshEditor Rough(int n, double jitter, int seed)
@@ -53,15 +55,17 @@ public class SmoothingStudy
             var e = new HexMeshEditor();
             e.AddBody(HexTemplates.Kind(p.Kind).Build(p.Values));
             var before = Measure(e);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             var r = e.Smooth(30, 0.5);
+            var took = clock.ElapsedMilliseconds;
             var after = Measure(e);
             var e3 = new HexMeshEditor();
             e3.AddBody(HexTemplates.Kind(p.Kind).Build(p.Values));
             var r3 = e3.Smooth(30, 0.5, surface: true, featureAngle: 60);
             var surf = Measure(e3);
-            Console.WriteLine($"STUDY B {p.Name,-34} cubes {e.Mesh.Hexes.Count,4} before: {Fmt(before)}");
-            Console.WriteLine($"STUDY B {"",-34} inner ok={r.Ok}  after: {Fmt(after)}");
-            Console.WriteLine($"STUDY B {"",-34} +surf ok={r3.Ok} after: {Fmt(surf)}");
+            Log($"STUDY B {p.Name,-34} cubes {e.Mesh.Hexes.Count,4} before: {Fmt(before)}");
+            Log($"STUDY B {"",-34} inner ok={r.Ok} {took} ms after: {Fmt(after)}");
+            Log($"STUDY B {"",-34} +surf ok={r3.Ok} after: {Fmt(surf)}");
         }
     }
 }
