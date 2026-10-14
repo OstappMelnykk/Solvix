@@ -175,6 +175,6 @@ export class MeshEditorSelectionService {
   }
 
   private selection(sessionId: number): Selection {
-    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, xray: true, build: { 0: true, 1: true }, revision: 0 }));
+    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
   }
 }

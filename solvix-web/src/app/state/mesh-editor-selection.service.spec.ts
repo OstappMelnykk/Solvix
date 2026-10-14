@@ -217,7 +217,12 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.face(1)).toBeNull();
   });
 
-  it('keeps whether building with the mouse is on per session and World (on in the Ideal and the Real World to begin with), and the nodes seen through the cubes (on)', () => {
+  it('keeps whether building with the mouse is on per session and World (off to begin with), and the nodes seen through the cubes (on)', () => {
+    expect(selection.buildMode(1, 0)).toBeFalse();
+    expect(selection.buildMode(1, 1)).toBeFalse();
+    selection.setBuildMode(1, 0, true);
+    selection.setBuildMode(1, 1, true);
+    selection.setBuildMode(2, 1, true);
     expect(selection.buildMode(1, 0)).toBeTrue();
     expect(selection.buildMode(1, 1)).toBeTrue();
     expect(selection.buildMode(1, 3)).toBeFalse();            // nowhere else
