@@ -49,16 +49,21 @@ describe('mesh-editor-view', () => {
       expect(edges.geometry.getAttribute('position').count).toBe(12 * 10 * 2);
     });
 
-    it('draws the faces as opaque as asked: 0.22 is the usual tint, and the other face states scale with it', () => {
-      const opacities = (faceOpacity?: number) =>
-        picks(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity }).pickables)
-          .map((p, i) => ({ p, i })).filter(x => x.p.kind === 'face')
-          .map(x => ((buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity }).pickables[x.i] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity);
+    it('draws the outside of the body as opaque as asked, and 100% is solid (it writes depth, so it hides what is behind it)', () => {
+      const outer = (faceOpacity?: number) => {
+        const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity });
+        const index = picks(view.pickables).findIndex(p => p.kind === 'face');
+        return view.pickables[index] as THREE.Mesh;
+      };
+      const mat = (faceOpacity?: number) => outer(faceOpacity).material as THREE.MeshBasicMaterial;
 
-      expect(opacities()[0]).toBeCloseTo(0.16, 6);                // a free face, as it always was
-      expect(opacities(0.22)[0]).toBeCloseTo(0.16, 6);
-      expect(opacities(1)[0]).toBeCloseTo(0.16 / 0.22, 6);        // everything scales by the same factor
-      expect(opacities(0.02)[0]).toBeLessThan(0.02);
+      expect(mat().opacity).toBeCloseTo(0.22, 6);                  // the usual tint
+      expect(mat(0.6).opacity).toBeCloseTo(0.6, 6);
+      expect(mat(0.6).depthWrite).toBeFalse();
+      expect(mat(1).opacity).toBe(1);
+      expect(mat(1).transparent).toBeFalse();
+      expect(mat(1).depthWrite).toBeTrue();
+      expect(mat(0.02).opacity).toBeCloseTo(0.02, 6);
     });
 
     it('draws a linked face once, so two hexes do not z-fight', () => {
@@ -178,18 +183,25 @@ describe('mesh-editor-view', () => {
       });
     });
 
-    it('colours free, linked and candidate faces differently', () => {
+    it('gives the outside of the body one tone, hides the faces between linked cubes (they can still be clicked), and keeps a candidate for linking orange', () => {
       const state = linkedPairState();
-      const view = buildMeshView(state, 'real', noSelection);
-      const colorOf = (hex: number, face: string) => {
-        const object = view.pickables.find(o => {
+      const find = (view: ReturnType<typeof buildMeshView>, hex: number, face: string) =>
+        view.pickables.find(o => {
           const p = o.userData['pick'] as MeshPick;
           return p.kind === 'face' && p.hex === hex && p.face === face;
         }) as THREE.Mesh;
-        return (object.material as THREE.MeshBasicMaterial).color.getHex();
-      };
+      const material = (view: ReturnType<typeof buildMeshView>, hex: number, face: string) => find(view, hex, face).material as THREE.MeshBasicMaterial;
 
-      expect(colorOf(0, 'XPlus')).not.toBe(colorOf(0, 'XMinus'));
+      const view = buildMeshView(state, 'real', noSelection, { subdivisions: 1, faceOpacity: 0.5 });
+      expect(material(view, 0, 'XMinus').color.getHex()).toBe(material(view, 1, 'XPlus').color.getHex());   // every outer face has the same tone
+      expect(material(view, 0, 'XMinus').opacity).toBe(0.5);
+      expect(find(view, 0, 'XPlus')).toBeDefined();                  // the shared face is there to be clicked...
+      expect(material(view, 0, 'XPlus').opacity).toBe(0);            // ...but not drawn
+
+      const candidate = { ...state, faces: state.faces.map(f => (f.hex === 0 && f.face === 'XPlus' ? { ...f, status: 'Candidate' as const } : f)) };
+      const withCandidate = buildMeshView(candidate, 'real', noSelection, { subdivisions: 1, faceOpacity: 0.5 });
+      expect(material(withCandidate, 0, 'XPlus').color.getHex()).not.toBe(material(withCandidate, 0, 'XMinus').color.getHex());
+      expect(material(withCandidate, 0, 'XPlus').opacity).toBeGreaterThan(0);
     });
 
     it('builds an empty root for a state with no hexes', () => {

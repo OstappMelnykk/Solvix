@@ -146,14 +146,13 @@ const MIDPOINT_RADIUS = 0.032;
 const CORNER_HIT_RADIUS = 0.11;
 const MIDPOINT_HIT_RADIUS = 0.08;
 
-const FACE_COLORS: Record<FaceStatus, number> = {
-  Free: 0x5b8fb9,
-  Linked: 0x4fb477,
-  Candidate: 0xe08a2e
-};
-const FACE_OPACITY: Record<FaceStatus, number> = { Free: 0.16, Linked: 0.22, Candidate: 0.4 };
-// the opacity of a linked face, which the user's setting is measured against
-const LINKED_FACE_OPACITY = FACE_OPACITY.Linked;
+// One tone for every face of the body, so no face looks like another kind: only a candidate for linking (orange) and a picked face differ.
+const BODY_FACE_COLOR = 0x5b8fb9;
+const CANDIDATE_FACE_COLOR = 0xe08a2e;
+// how opaque a face that is not picked is (a candidate for linking shows through the body a little more than the user's setting)
+const CANDIDATE_MIN_OPACITY = 0.4;
+// the opacity of the faces when the user has not set it
+const DEFAULT_FACE_OPACITY = 0.22;
 const BASE_HEX_COLOR = 0x39c5f2;
 const ADAPTING_HEX_COLOR = 0xc77dff;
 const PREVIEW_FACE_COLOR = 0x6ee06e;
@@ -289,8 +288,7 @@ export function buildMeshView(
   // Inside of each cube: lines of constant (alpha, beta, gamma) through the shape
   // functions. The 12 edges are drawn above already, so a line is skipped when
   // both of its fixed coordinates sit on the cube's boundary.
-  const faceOpacity = Math.min(1, Math.max(0, options.faceOpacity ?? LINKED_FACE_OPACITY));
-  const faceScale = faceOpacity / LINKED_FACE_OPACITY;
+  const faceOpacity = Math.min(1, Math.max(0, options.faceOpacity ?? DEFAULT_FACE_OPACITY));
   const counts = (Array.isArray(options.subdivisions) ? options.subdivisions : [options.subdivisions, options.subdivisions, options.subdivisions]).map(n => Math.max(1, Math.floor(n)));
   if (counts.some(n => n > 1)) {
     const gridVertices: number[] = [];
@@ -371,12 +369,17 @@ export function buildMeshView(
     const picked = pickIndex !== undefined;
     const preview = selection.hoverFace?.hex === face.hex && selection.hoverFace.face === face.face;
     const facePicked = selection.face?.hex === face.hex && selection.face.face === face.face;
-    const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : FACE_COLORS[face.status];
+    const candidate = face.status === 'Candidate';
+    const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : candidate ? CANDIDATE_FACE_COLOR : BODY_FACE_COLOR;
+    // The outside of the body has the opacity the user set (100%: solid, it hides what is behind). A face between two linked cubes is inside the body:
+    // it is not drawn unless it is picked or hovered (it can still be clicked), so no inner faces cloud the view.
+    const inside = face.status === 'Linked';
+    const opacity = preview || facePicked ? Math.max(0.6, faceOpacity) : picked ? Math.max(0.42, faceOpacity) : candidate ? Math.max(CANDIDATE_MIN_OPACITY, faceOpacity) : inside ? 0 : faceOpacity;
     const material = new THREE.MeshBasicMaterial({
       color,
-      opacity: preview || facePicked ? Math.max(0.6, faceOpacity) : picked ? Math.max(0.42, faceOpacity) : Math.min(1, FACE_OPACITY[face.status] * faceScale),
-      transparent: true,
-      depthWrite: false,
+      opacity,
+      transparent: opacity < 1,
+      depthWrite: opacity >= 1,                                                       // a solid face hides what is behind it
       side: THREE.DoubleSide
     });
     const mesh = new THREE.Mesh(geometry, material);
@@ -408,7 +411,8 @@ export function buildMeshView(
       new THREE.MeshBasicMaterial({ color: selected ? SELECTED_NODE_COLOR : attached ? ATTACHED_NODE_COLOR : isCorner ? CORNER_COLOR : MIDPOINT_COLOR })
     );
     mesh.position.copy(nodePosition(node, mode));
-    const through = options.xrayNodes === true || reachable.has(node.id);
+    // at full opacity the body is solid: only the nodes of the picked cubes show through, not every inner node
+    const through = (options.xrayNodes === true && faceOpacity < 1) || reachable.has(node.id);
     if (through) {
       (mesh.material as THREE.MeshBasicMaterial).depthTest = false;
       mesh.renderOrder = 10;

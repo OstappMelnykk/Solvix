@@ -597,6 +597,9 @@ function appendSurface(positions: number[], indices: number[], face: SmallFace, 
   }
 }
 
+// how opaque the faces of the elements that are not excellent stay when the Quality World is see-through
+const BAD_ELEMENT_OPACITY = 0.85;
+
 export function buildSolverView(input: SolverViewInput): MeshView {
   const { state, setup, result, field } = input;
   const root = new THREE.Group();
@@ -771,10 +774,12 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     }
     const colorOf = (face: DrawnFace, value: number) =>
       values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent')]) : materialColor(materialOf(face.owner.id, ...face.element));
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
+    const addBody = (subset: readonly DrawnFace[], subsetOpacity: number): void => {
+    const subsetSolid = subsetOpacity >= 1;
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     markForWeightedOit(material);
-    let bodyGeometry = faceGeometry(faces, colorOf, true, values !== null);
+    let bodyGeometry = faceGeometry(subset, colorOf, true, values !== null);
     let faceOfTriangle: number[] | null = null;
     if (input.section) {
       // the plane of a section cuts the faces it runs through: what is on the kept side stays, to the very plane
@@ -787,7 +792,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
     // (after a cut, the face each triangle came from was kept)
     mesh.userData['resolvePick'] = (triangle: number): PickedFace | null => {
-      const face = faces[faceOfTriangle ? (faceOfTriangle[triangle] ?? -1) : Math.floor(triangle / triangles)];
+      const face = subset[faceOfTriangle ? (faceOfTriangle[triangle] ?? -1) : Math.floor(triangle / triangles)];
       return face
         ? { kind: 'face', hex: face.owner.id, face: face.face, p: face.p, q: face.q, element: face.element, inner: !face.outer }
         : null;
@@ -795,6 +800,14 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     mesh.userData['pick'] = mesh.userData['resolvePick'](0);
     root.add(mesh);
     pickables.push(mesh);
+    };
+    if (seeThrough) {
+      // the body is see-through: the faces of the elements that are not excellent stay dense (they are what is looked for), the rest is as faint as the user asked
+      const bad = faces.filter(face => isBad(face.owner.id, ...face.element));
+      const rest = faces.filter(face => !isBad(face.owner.id, ...face.element));
+      if (rest.length > 0) addBody(rest, opacity);
+      if (bad.length > 0) addBody(bad, Math.max(opacity, BAD_ELEMENT_OPACITY));
+    } else addBody(faces, opacity);
 
     for (const face of faces) {
       if (!face.outer || input.marksOpacity === 0) continue;
