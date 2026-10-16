@@ -31,7 +31,7 @@ describe('SolverOverlayComponent', () => {
     result = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'tool', 'setTool', 'scopesOf', 'scope', 'setScope', 'depth', 'setDepth', 'divisions', 'setup', 'activeMaterial', 'setActiveMaterial',
-      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures', 'pressureLabels', 'setPressureLabels'
+      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures', 
     ]);
     solver.tool.and.callFake(() => tool);
     solver.brush.and.callFake(() => brush);
@@ -83,13 +83,6 @@ describe('SolverOverlayComponent', () => {
   });
 
   describe('pressure', () => {
-    it('the labels on the faces are switched with a tick', () => {
-      solver.pressureLabels.and.returnValue(true);
-      expect(component.pressureLabels()).toBeTrue();
-      component.togglePressureLabels();
-      expect(solver.setPressureLabels).toHaveBeenCalledWith(1, false);
-    });
-
     it('is set in MPa for the next faces, and the legend lists the different pressures', () => {
       expect(component.pressureMpa()).toBe(-1);
       component.onPressureMpa({ target: { value: '-2.5' } } as unknown as Event);
@@ -183,33 +176,14 @@ describe('SolverOverlayComponent', () => {
     });
   });
 
-  it('says what a click does with the chosen tool', () => {
-    const hints = (['view', 'load', 'fix', 'erase', 'material'] as Tool[]).map(t => {
-      tool = t;
-      return component.hint();
-    });
-
-    expect(new Set(hints).size).toBe(5);
-    expect(hints[1]).toContain('навантажити');
-    expect(hints[3]).toContain('стерти');
-    expect(hints[4]).toContain('пофарбувати');
-  });
-
-  it('has a brush for the Pressure, Support and Material tools but not for View, and says how to use it', () => {
+  it('has a brush for the Pressure, Support and Material tools but not for View', () => {
     tool = 'view';
     expect(component.isFaceTool()).toBeFalse();
     tool = 'material';
     expect(component.isFaceTool()).toBeTrue();
-    expect(component.hint()).toContain('Клік');
-    brush = true;
-    expect(component.hint()).toContain('матеріал');
-    brush = false;
     tool = 'fix';
     expect(component.isFaceTool()).toBeTrue();
-    expect(component.hint()).toContain('Клік');
-
     brush = true;
-    expect(component.hint()).toContain('проводьте');
     component.toggleBrush();
 
     expect(solver.setBrush).toHaveBeenCalledWith(1, false);

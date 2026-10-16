@@ -7,7 +7,7 @@ import { SolverService } from './solver.service';
 
 // The one place that answers "undo" and "redo" for the whole app, for the session and the World that are open: in the Solver
 // World the last change of the set-up (supports, pressures, materials, division), everywhere else the last change of the mesh
-// (a cube, a vertex, a smoothing...). The keys (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Ctrl+Y) and every undo button go through it.
+// (a cube, a vertex...). The keys (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Ctrl+Y) and every undo button go through it.
 @Injectable({ providedIn: 'root' })
 export class UndoRedoService {
   private readonly sessions = inject(SessionsService);

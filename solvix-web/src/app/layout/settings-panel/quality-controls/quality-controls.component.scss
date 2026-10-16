@@ -11,32 +11,82 @@ $text: #e4e6ea;
 }
 
 h4 {
-  margin: 0 0 12px;
-  padding-bottom: 6px;
+  margin: 0 0 8px;
+  padding-bottom: 4px;
   border-bottom: 1px solid $field-border;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #9096a0;
 }
 
-// every part of the panel is a card of its own under a header that is easy to see
+// every part is a card with a small caps label, the same as in the Ideal and Real panels
 h5 {
-  margin: 0 0 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid $field-border;
-  font-size: 16px;
-  font-weight: 700;
-  color: $text;
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6f737a;
 }
 
 .part {
-  margin-bottom: 14px;
-  padding: 12px 14px 14px;
-  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.verdict-note {
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e0a458;
+
+  &[data-level='blocked'] {
+    color: #e0675d;
+  }
+}
+
+.hint {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #6f737a;
+}
+
+.tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  background: $field-bg;
   border: 1px solid $field-border;
-  border-radius: 10px;
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &--on {
+    background: $accent-toggle;
+    border-color: $accent-toggle;
+    color: #fff;
+  }
+}
+
+.pair {
+  display: flex;
+  gap: 4px;
 }
 
 i {
@@ -49,19 +99,19 @@ i {
 
 // the verdict
 .verdict {
-  padding: 10px 12px;
+  padding: 7px 10px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid;
-  border-left-width: 6px;
+  border-left-width: 5px;
   border-radius: 8px;
 
   &__title {
-    font-size: 17px;
+    font-size: 14px;
     font-weight: 700;
   }
 
   &__sub {
-    margin: 2px 0 10px;
+    margin: 1px 0 6px;
     color: $muted;
   }
 }
@@ -247,18 +297,6 @@ i {
   }
 }
 
-.opacity {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 8px 0;
-  font-size: 13px;
-
-  input {
-    width: 100%;
-  }
-}
-
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -276,7 +314,8 @@ i {
 
 // the gauges
 .gauge {
-  margin-bottom: 7px;
+  margin-bottom: 3px;
+  font-size: 12px;
 
   // the same ruler in a smaller size: for the measures of one picked element
   &--compact {
@@ -285,17 +324,6 @@ i {
 
     .gauge__value {
       font-size: 13px;
-    }
-
-    .gauge__name small {
-      font-size: 10px;
-    }
-
-    .gauge__info {
-      width: 14px;
-      height: 14px;
-      margin-left: 4px;
-      font-size: 9px;
     }
 
     .gauge__track {
@@ -327,13 +355,150 @@ i {
   }
 
   &__name {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px dotted $muted;
+    color: inherit;
+    font: inherit;
     font-weight: 600;
+    text-align: left;
+    cursor: pointer;
 
-    small {
-      margin-left: 4px;
-      font-weight: 400;
-      color: $muted;
-      font-size: 11px;
+    &:hover {
+      border-bottom-color: $text;
+      color: #fff;
+    }
+  }
+
+  &__value {
+    margin-left: auto;
+    color: $muted;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sides {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  &__side {
+    flex: 1;
+    padding: 4px 6px;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+
+    &.on {
+      border-color: $accent-toggle;
+      background: color-mix(in srgb, $accent-toggle 20%, transparent);
+    }
+  }
+}
+
+.walk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+
+  &__btn {
+    width: 36px;
+    padding: 5px 0;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $accent-toggle;
+    }
+  }
+
+  &__text {
+    font-size: 13px;
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: $muted;
+
+  span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+// the gauges
+.gauge {
+  margin-bottom: 3px;
+  font-size: 12px;
+
+  // the same ruler in a smaller size: for the measures of one picked element
+  &--compact {
+    margin-bottom: 4px;
+    font-size: 12px;
+
+    .gauge__value {
+      font-size: 13px;
+    }
+
+    .gauge__track {
+      height: 6px;
+      margin-top: 5px;
+    }
+
+    .gauge__marker {
+      width: 11px;
+      height: 11px;
+      margin: -5.5px 0 0 -5.5px;
+      border-width: 2px;
+    }
+
+    .gauge__at {
+      display: none;
+    }
+
+    .gauge__ticks {
+      height: 12px;
+      font-size: 9px;
+    }
+  }
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  &__name {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px dotted $muted;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      border-bottom-color: $text;
+      color: #fff;
     }
   }
 
@@ -361,7 +526,7 @@ i {
   }
 
   &__value {
-    font-size: 20px;
+    font-size: 15px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -369,17 +534,17 @@ i {
   &__track {
     position: relative;
     display: flex;
-    height: 10px;
-    margin-top: 20px;
+    height: 7px;
+    margin-top: 15px;
     border-radius: 5px;
     gap: 2px;
   }
 
   &__ticks {
     position: relative;
-    height: 16px;
-    margin-top: 2px;
-    font-size: 11px;
+    height: 13px;
+    margin-top: 1px;
+    font-size: 10px;
     color: $muted;
     font-variant-numeric: tabular-nums;
   }
@@ -420,9 +585,9 @@ i {
     position: absolute;
     z-index: 1;
     top: 50%;
-    width: 16px;
-    height: 16px;
-    margin: -8px 0 0 -8px;
+    width: 13px;
+    height: 13px;
+    margin: -6.5px 0 0 -6.5px;
     background: #000;
     border: 3px solid #f0b429;
     border-radius: 50%;
@@ -803,33 +968,11 @@ i {
 }
 
 // the supports and the loads on the scene can be shown or hidden
-.marks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid $field-border;
-}
-
 .mark {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-
-  &__swatch {
-    width: 14px;
-    height: 14px;
-
-    &--fixed {
-      background: #3388ff;
-    }
-
-    &--loads {
-      background: #44ff44;
-    }
-  }
 }
 
 // the look at other tools: a plain list, the tool on the left and the share it accepts on the right
@@ -844,7 +987,7 @@ i {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .pill {
@@ -852,7 +995,7 @@ i {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 5px 10px;
   background: $field-bg;
   border: 1px solid $field-border;
   border-radius: 6px;

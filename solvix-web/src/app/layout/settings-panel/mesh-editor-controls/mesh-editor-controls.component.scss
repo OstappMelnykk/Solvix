@@ -125,18 +125,6 @@ h4 {
   color: #f0a8a8;
 }
 
-.opacity {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 3px 0 6px;
-  font-size: 12px;
-  color: #b8bcc4;
-
-  input {
-    width: 100%;
-  }
-}
 
 .row {
   display: flex;
@@ -148,6 +136,21 @@ h4 {
 
   > span:first-child {
     color: #b8bcc4;
+  }
+
+  select {
+    background: $field-bg;
+    color: #dfe1e5;
+    border: 1px solid $field-border;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 12px;
+    font-family: inherit;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
   }
 
   input[type='number'] {
@@ -441,4 +444,123 @@ kbd {
   border: 1px solid #ff4fd8;
   border-radius: 6px;
   font-size: 11px;
+}
+
+.sub-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b8bcc4;
+  margin: 2px 0 2px;
+}
+
+.points {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8a8f98;
+}
+
+.tool--on {
+  background: $accent-toggle;
+  border-color: $accent-toggle;
+  color: #fff;
+}
+
+// A slider with its value and its two ends: the filled part of the track shows how much, the number says exactly.
+.slider {
+  padding: 0 0 2px;
+}
+
+.slider__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: #b8bcc4;
+
+  b {
+    color: #dfe1e5;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.slider__range {
+  --p: 0.2;
+  display: block;
+  width: 100%;
+  height: 18px;
+  margin: 2px 0 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+
+  &::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, $accent-toggle calc(7px + (100% - 14px) * var(--p)), #3a3d43 calc(7px + (100% - 14px) * var(--p)));
+  }
+
+  &::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: #3a3d43;
+  }
+
+  &::-moz-range-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: $accent-toggle;
+  }
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border: 2px solid #1e1f22;
+    border-radius: 50%;
+    background: #dfe1e5;
+  }
+
+  &::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #1e1f22;
+    border-radius: 50%;
+    background: #dfe1e5;
+  }
+
+  &:focus-visible {
+    outline: none;
+
+    &::-webkit-slider-thumb {
+      background: $accent;
+    }
+  }
+}
+
+.slider__scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #6f737a;
+}
+
+// the header of a block with a button at its end
+.group-label--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  .chip {
+    width: auto;
+    padding: 1px 8px;
+    font-size: 10px;
+    white-space: nowrap;
+    text-transform: none;
+    letter-spacing: 0;
+  }
 }

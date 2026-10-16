@@ -1,13 +1,18 @@
 import { Injectable, inject } from '@angular/core';
 import { SOLVER_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
-import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValues } from '../geometry/solver-view';
+import { buildQualityView } from '../geometry/quality-view';
+import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValues, materialColor } from '../geometry/solver-view';
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
 
 // In the result viewer the supports and loads are a strong coat, clear at a glance; they can be switched off to see
 // the field under them.
 const VIEWER_MARKS_OPACITY = 0.85;
+
+// The body of the Solver World while it is being set up: the Real World's look, a white-grey body (an element of another material than the
+// default one has the colour of its material), the edges and no dots of the nodes.
+const SETUP_BODY_COLOR = 0xe4e7eb;
 
 interface Cached {
   readonly key: string;
@@ -38,7 +43,7 @@ export class SolverRenderService {
       this.cache.delete(sessionId);
       return null;
     }
-    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}:${this.solver.viewerMarks(sessionId)}:${this.solver.marks(sessionId, 'solver').fixed}${this.solver.marks(sessionId, 'solver').loads}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.revision(sessionId)}:${this.solver.viewer(sessionId)}:${this.solver.viewerMarks(sessionId)}:${this.solver.marks(sessionId, 'solver').fixed}${this.solver.marks(sessionId, 'solver').loads}:${this.solver.display(sessionId).edges}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) {
       this.follow(sessionId, cached);
@@ -59,14 +64,41 @@ export class SolverRenderService {
       marksOpacity: this.solver.viewer(sessionId) ? (this.solver.viewerMarks(sessionId) ? VIEWER_MARKS_OPACITY : 0) : undefined,
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
-      showInner: this.solver.showInner(sessionId),
-      showLabels: this.solver.pressureLabels(sessionId),
-      quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
+      showInner: this.solver.showInner(sessionId)
     };
-    const view = buildSolverView(input);
+    const view = input.result ? buildSolverView(input) : this.buildSetupView(sessionId, input);
     this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true, vectors: display.vectors });
     this.applyHighlight(sessionId);
     return view;
+  }
+
+  // Before there is a result: the same view as the Real and the Quality Worlds, with the materials, supports and pressures on it.
+  private buildSetupView(sessionId: number, input: SolverViewInput): MeshView {
+    const setup = input.setup;
+    const hiddenMaterials = this.solver.hiddenMaterials(sessionId);
+    const materialOf = (hex: number, ex: number, ey: number, ez: number) => this.solver.elementMaterial(sessionId, hex, ex, ey, ez);
+    return buildQualityView({
+      state: input.state,
+      setup,
+      quality: null,
+      metric: 'grade',
+      look: input.opacity >= 1 ? { kind: 'solid' } : { kind: 'translucent', opacity: input.opacity },
+      onlyBad: false,
+      showFixed: input.showFixed !== false,
+      showLoads: input.showLoads !== false,
+      bodyColor: SETUP_BODY_COLOR,
+      colorOfElement: (hex, ex, ey, ez) => {
+        const material = materialOf(hex, ex, ey, ez);
+        return material !== null && material !== setup?.defaultMaterial ? materialColor(material).getHex() : null;
+      },
+      hidden: (hex, ex, ey, ez) => {
+        const material = materialOf(hex, ex, ey, ez);
+        return material !== null && hiddenMaterials.has(material);
+      },
+      showInner: input.showInner === true,
+      dots: false,
+      edges: this.solver.display(sessionId).edges
+    });
   }
 
   // The deformation and the colour range are applied in place: no rebuild, however often they change.

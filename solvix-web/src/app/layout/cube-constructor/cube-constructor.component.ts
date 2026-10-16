@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubeConstructorService } from '../../state/cube-constructor.service';
 import { MeshShapeParametersDto } from '../../api/mesh-editor-api.service';
 import { NodeDrag, roundedPosition } from '../../geometry/mesh-editor-drag';
+import { buildSceneLights } from '../../geometry/scene-objects/scene-lights';
 import { MeshPick, MeshView, buildMeshView, disposeMeshView } from '../../geometry/mesh-editor-view';
 import {
   CONSTRUCTOR_REGIONS,
@@ -40,6 +41,17 @@ const PARAMETER_FIELDS: readonly ParameterField[] = [
 // Moving less than this many CSS pixels between press and release is a click, not a drag.
 const CLICK_THRESHOLD_PX = 4;
 
+// The two arrows on the picked node of a flat view: the axes that view shows (the same colours as the Real World's gizmo). A drag by an arrow moves the node
+// along that axis only; a drag by the node itself moves it freely in the plane of the view.
+const VIEW_AXES: Record<'front' | 'side' | 'top', readonly [number, number]> = { front: [0, 1], side: [2, 1], top: [0, 2] };
+const AXIS_COLORS = [0xe5484d, 0x4ade80, 0x4a8fe3];
+const AXIS_VECTORS = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
+// the arrow's length as a share of what the view shows from top to bottom, and how near (in pixels) a pointer must be to grab it
+const ARROW_SHARE = 0.13;
+const ARROW_GRAB_PX = 9;
+// within this many pixels of the node itself a press takes the node (a free move), not an arrow
+const NODE_BODY_PX = 16;
+
 // The cube constructor: one cube designed on its own in a full-screen window -
 // front, side and top views where a node is dragged in the plane of the view,
 // plus a free 3D view - with parameters, a library of shapes and a table of the 20
@@ -73,6 +85,7 @@ export class CubeConstructorComponent implements OnDestroy {
   private drag: NodeDrag | null = null;
   private press: { x: number; y: number; region: ConstructorRegion | null } | null = null;
   private lastRegion: ConstructorRegion | null = null;
+  private readonly arrows: Partial<Record<'front' | 'side' | 'top', THREE.Group>> = {};
   private listeners: Array<[string, (e: never) => void, boolean]> = [];
 
   // The canvas lives under *ngIf (it exists only while the window is open), so the
@@ -191,6 +204,14 @@ export class CubeConstructorComponent implements OnDestroy {
     this.renderer.setClearColor(0x1e1f22);
     this.renderer.setScissorTest(true);
     this.scene.add(new THREE.AxesHelper(0.6));
+    this.scene.add(buildSceneLights());                  // the faces are lit like the worlds' (without light they are black)
+    for (const region of ['front', 'side', 'top'] as const) {
+      const group = new THREE.Group();
+      VIEW_AXES[region].forEach(axis => group.add(buildArrow(axis)));
+      group.visible = false;
+      this.arrows[region] = group;
+      this.scene.add(group);
+    }
     this.perspective = perspectiveCameraFor(positionsBounds(this.draft.positions), 1);
     this.controls = new OrbitControls(this.perspective, canvas);
     this.controls.enableDamping = false;
@@ -260,12 +281,56 @@ export class CubeConstructorComponent implements OnDestroy {
       if (!camera) {
         continue;
       }
+      this.placeArrows(region, camera);
       const glY = height - (rect.y + rect.height);
       renderer.setViewport(rect.x, glY, rect.width, rect.height);
       renderer.setScissor(rect.x, glY, rect.width, rect.height);
       renderer.render(this.scene, camera);
     }
   };
+
+  // The arrows of a flat view sit on the picked node and show only in their own view, a constant share of its height.
+  private placeArrows(region: ConstructorRegion, camera: THREE.Camera): void {
+    const slot = this.draft.selectedSlot;
+    for (const key of ['front', 'side', 'top'] as const) {
+      const group = this.arrows[key];
+      if (!group) continue;
+      group.visible = key === region && slot !== null && this.draft.mode !== 'template';
+      if (group.visible && slot !== null) {
+        const position = this.draft.positions[slot];
+        group.position.set(position.x, position.y, position.z);
+        group.scale.setScalar(arrowLength(camera));
+      }
+    }
+  }
+
+  // The axis (0..2) of the arrow of the picked node under a pointer in a flat view, or null: the pointer is near the arrow's line, on the node's pixel to its tip.
+  private arrowAt(region: ConstructorRegion, x: number, y: number, width: number, height: number): number | null {
+    const slot = this.draft.selectedSlot;
+    const camera = this.cameraOf(region);
+    if (region === 'perspective' || slot === null || !camera || this.draft.mode === 'template') {
+      return null;
+    }
+    const rect = regionRects(width, height)[region];
+    const toPixel = (point: THREE.Vector3) => {
+      const ndc = point.clone().project(camera);
+      return new THREE.Vector2(rect.x + ((ndc.x + 1) / 2) * rect.width, rect.y + ((1 - ndc.y) / 2) * rect.height);
+    };
+    const position = this.draft.positions[slot];
+    const origin = new THREE.Vector3(position.x, position.y, position.z);
+    const from = toPixel(origin);
+    const at = new THREE.Vector2(x, y);
+    const length = arrowLength(camera);
+    for (const axis of VIEW_AXES[region]) {
+      const tip = toPixel(origin.clone().addScaledVector(AXIS_VECTORS[axis], length));
+      const along = tip.clone().sub(from);
+      const t = Math.min(1, Math.max(0, at.clone().sub(from).dot(along) / Math.max(along.lengthSq(), 1e-9)));
+      if (from.clone().addScaledVector(along, t).distanceTo(at) <= ARROW_GRAB_PX && from.distanceTo(at) > NODE_BODY_PX) {
+        return axis;
+      }
+    }
+    return null;
+  }
 
   // Rebuilds the drawing when the draft changed, and re-frames the cameras when a whole new shape
   // arrived (but not while a node is dragged - the view must not rescale under the pointer).
@@ -361,15 +426,18 @@ export class CubeConstructorComponent implements OnDestroy {
       this.controls.enabled = p.region === 'perspective' && this.slotAt('perspective', p.x, p.y, p.width, p.height) === null;
     }
     if (p.region && p.region !== 'perspective') {
-      const slot = this.slotAt(p.region, p.x, p.y, p.width, p.height);
       const camera = this.cameraOf(p.region);
-      if (slot !== null && camera) {
+      // an arrow of the picked node wins over the node's larger click target around it
+      const arrow = this.arrowAt(p.region, p.x, p.y, p.width, p.height);
+      const slot = arrow === null ? this.slotAt(p.region, p.x, p.y, p.width, p.height) : null;
+      const grabbed = slot ?? (arrow !== null ? this.draft.selectedSlot : null);
+      if (grabbed !== null && camera) {
         event.stopImmediatePropagation();
         event.preventDefault();
         this.canvas.setPointerCapture(event.pointerId);
-        const position = this.draft.positions[slot];
-        this.drag = new NodeDrag(slot, new THREE.Vector3(position.x, position.y, position.z), camera);
-        this.draft.selectSlot(slot);
+        const position = this.draft.positions[grabbed];
+        this.drag = new NodeDrag(grabbed, new THREE.Vector3(position.x, position.y, position.z), camera, arrow === null ? null : AXIS_VECTORS[arrow].clone());
+        this.draft.selectSlot(grabbed);
       }
     }
   }
@@ -390,7 +458,7 @@ export class CubeConstructorComponent implements OnDestroy {
       return;
     }
     if (p.region) {
-      this.canvas.style.cursor = this.slotAt(p.region, p.x, p.y, p.width, p.height) !== null ? 'grab' : '';
+      this.canvas.style.cursor = this.slotAt(p.region, p.x, p.y, p.width, p.height) !== null || this.arrowAt(p.region, p.x, p.y, p.width, p.height) !== null ? 'grab' : '';
     }
   }
 
@@ -423,4 +491,26 @@ export class CubeConstructorComponent implements OnDestroy {
     const p = this.pointer(event as unknown as PointerEvent);
     this.controls.enabled = p.region === 'perspective';
   }
+}
+
+// How long the arrows are in a flat view: a share of what it shows from top to bottom.
+function arrowLength(camera: THREE.Camera): number {
+  const ortho = camera as THREE.OrthographicCamera;
+  return ((ortho.top - ortho.bottom) / (ortho.zoom || 1)) * ARROW_SHARE;
+}
+
+// An arrow of unit length along a world axis: a thin shaft and a cone, drawn over everything.
+function buildArrow(axis: number): THREE.Group {
+  const group = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color: AXIS_COLORS[axis], depthTest: false });
+  const shaft = new THREE.CylinderGeometry(0.018, 0.018, 0.8).translate(0, 0.4, 0);
+  const head = new THREE.ConeGeometry(0.07, 0.2).translate(0, 0.9, 0);
+  for (const geometry of [shaft, head]) {
+    if (axis === 0) geometry.rotateZ(-Math.PI / 2);
+    if (axis === 2) geometry.rotateX(Math.PI / 2);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 20;
+    group.add(mesh);
+  }
+  return group;
 }

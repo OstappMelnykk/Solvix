@@ -30,12 +30,14 @@ export class SolverControlsComponent implements DoCheck {
 
   @Input({ required: true }) sessionId!: number;
 
-  readonly axes = ['Nx', 'Ny', 'Nz'] as const;
   // Form fields of the custom material (not sent until the button is pressed).
   newLabel = '';
   newYoungGPa = 70;
   newPoisson = 0.3;
+  newColor = '#4a8fe3';
   isMaterialFormOpen = false;
+  // The material the form edits (null: the form makes a new one).
+  editingName: string | null = null;
 
   // --- the mesh of small elements ---
 
@@ -49,14 +51,6 @@ export class SolverControlsComponent implements DoCheck {
 
   elementCount(): number {
     return this.hexCount() * this.divisions().reduce((product, n) => product * n, 1);
-  }
-
-  onDivision(axis: number, event: Event): void {
-    const value = Math.floor(Number((event.target as HTMLInputElement).value));
-    if (!Number.isFinite(value)) return;
-    const next = [...this.divisions()];
-    next[axis] = Math.min(8, Math.max(1, value));
-    this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
   }
 
   // --- materials: a palette; the active one is what the Material tool paints with ---
@@ -120,9 +114,38 @@ export class SolverControlsComponent implements DoCheck {
   addMaterial(): void {
     if (!this.canAddMaterial()) return;
     const label = this.newLabel.trim();
-    const name = `custom-${label.toLowerCase().replace(/[^a-z0-9а-яіїєґ]+/gi, '-')}`;
-    this.solver.upsertMaterial(this.sessionId, { name, label, e: this.newYoungGPa * GPA, nu: this.newPoisson });
+    const name = this.editingName ?? `custom-${label.toLowerCase().replace(/[^a-z0-9а-яіїєґ]+/gi, '-')}`;
+    this.solver.upsertMaterial(this.sessionId, { name, label, e: this.newYoungGPa * GPA, nu: this.newPoisson, color: this.newColor });
     this.solver.setActiveMaterial(this.sessionId, name);
+    this.newLabel = '';
+    this.editingName = null;
+    this.isMaterialFormOpen = false;
+  }
+
+  // The form takes the values of a material, and saving puts them back under its name.
+  startEdit(material: { name: string; label: string; e: number; nu: number; color?: string }, event: Event): void {
+    event.stopPropagation();
+    this.editingName = material.name;
+    this.newLabel = material.label;
+    this.newYoungGPa = Number((material.e / GPA).toPrecision(6));
+    this.newPoisson = material.nu;
+    this.newColor = material.color ?? this.colorOf(material.name);
+    this.isMaterialFormOpen = true;
+  }
+
+  // The default material cannot be removed (change the default first).
+  canRemoveEdited(): boolean {
+    return this.editingName !== null && this.editingName !== this.defaultMaterial();
+  }
+
+  removeEdited(): void {
+    if (!this.canRemoveEdited()) return;
+    this.solver.removeMaterial(this.sessionId, this.editingName!);
+    this.cancelEdit();
+  }
+
+  cancelEdit(): void {
+    this.editingName = null;
     this.newLabel = '';
     this.isMaterialFormOpen = false;
   }
@@ -172,12 +195,6 @@ export class SolverControlsComponent implements DoCheck {
     return this.decisionOf.value;
   }
 
-  // The solver is not started on a mesh that Solvix does not accept.
-  meshRejected(): boolean {
-    const d = this.decision();
-    return d !== null && d.level !== 'ok';
-  }
-
   openQuality(): void {
     this.activeWorld.selectCurrentWorld(QUALITY_WORLD_INDEX);
   }
@@ -188,14 +205,6 @@ export class SolverControlsComponent implements DoCheck {
 
   refreshQuality(): void {
     this.solver.refreshQuality(this.sessionId);
-  }
-
-  showQuality(): boolean {
-    return this.solver.showQuality(this.sessionId);
-  }
-
-  toggleQuality(): void {
-    this.solver.setShowQuality(this.sessionId, !this.showQuality());
   }
 
   readonly gradeLabels: readonly { key: QualityGradeName; label: string }[] = [
@@ -247,13 +256,8 @@ export class SolverControlsComponent implements DoCheck {
 
   // --- solving ---
 
-  validate(): void {
-    this.solver.validate(this.sessionId);
-  }
-
-  // A mesh Solvix does not accept can still be solved, but the user is asked first; an unusable one the server refuses.
+  // The quality of the mesh does not stand in the way: the user decides (the verdict above only says what to expect).
   solve(): void {
-    if (this.meshRejected()) return;
     void this.solver.solve(this.sessionId);
   }
 
@@ -263,10 +267,6 @@ export class SolverControlsComponent implements DoCheck {
 
   isRunning(): boolean {
     return this.solver.isRunning(this.sessionId);
-  }
-
-  validation() {
-    return this.solver.validation(this.sessionId);
   }
 
   job() {
@@ -324,11 +324,5 @@ export class SolverControlsComponent implements DoCheck {
       { label: 'Вузлів СЕ', value: String(result.ux.length), title: 'Вузли сітки, на якій розв\'язано задачу' },
       { label: 'Час', value: `${result.elapsedSeconds.toFixed(2)} с`, title: 'Час розрахунку' }
     ];
-  }
-
-  // The pressure of a MPa value, for the hint under the Pn field.
-  pressureHint(): string {
-    const p = this.pressure();
-    return p < 0 ? `стиск, ${(-p / MPA).toPrecision(3)} МПа` : p > 0 ? `розтяг, ${(p / MPA).toPrecision(3)} МПа` : 'немає навантаження';
   }
 }

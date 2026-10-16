@@ -114,33 +114,6 @@ h4 {
   font-weight: 700;
 }
 
-.issues {
-  margin-bottom: 4px;
-}
-
-.issue {
-  margin-bottom: 3px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.issue--error {
-  background: rgba(224, 82, 82, 0.2);
-  color: #f0a8a8;
-}
-
-.issue--warning {
-  background: rgba(226, 185, 59, 0.16);
-  color: #e2b93b;
-}
-
-.issue--ok {
-  background: rgba(79, 180, 119, 0.2);
-  color: #8fe0b0;
-}
-
 .progress {
   height: 6px;
   margin: 4px 0;
@@ -166,31 +139,6 @@ h4 {
   margin: 2px 0 6px;
   font-size: 11px;
   color: #8a8f98;
-}
-
-.triple {
-  display: flex;
-  gap: 6px;
-
-  label {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 11px;
-    color: #8a8f98;
-  }
-
-  input {
-    width: 100%;
-    box-sizing: border-box;
-    background: $field-bg;
-    color: #dfe1e5;
-    border: 1px solid $field-border;
-    border-radius: 4px;
-    padding: 3px 6px;
-    font-size: 12px;
-  }
 }
 
 .field {
@@ -253,20 +201,6 @@ h4 {
   background: transparent;
   border-style: dashed;
   color: #9096a0;
-}
-
-.step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-right: 4px;
-  border-radius: 50%;
-  background: $accent-toggle;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
 }
 
 .materials {

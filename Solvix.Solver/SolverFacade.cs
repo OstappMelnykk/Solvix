@@ -16,6 +16,12 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         return s.Setup.ToDto();
     });
 
+    public SolverSetupDto RemoveMaterial(int sessionId, string name) => sessions.With(sessionId, s =>
+    {
+        s.Setup.Remove(name);
+        return s.Setup.ToDto();
+    });
+
     public SolverSetupDto SetHexMaterial(int sessionId, IReadOnlyList<int> hexIds, string? material) => sessions.With(sessionId, s =>
     {
         if (string.IsNullOrEmpty(material) || s.Setup.MaterialsByName.ContainsKey(material)) s.Setup.SetMaterial(hexIds, material);

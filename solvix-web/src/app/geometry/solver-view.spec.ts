@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, clipMeshToPlane, clipSegmentsToPlane, elementCentreOf, elementSectionLoops, triangulateLoop, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, setMaterialColors, elementCentreOf, elementSectionLoops, triangulateLoop, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -82,6 +82,17 @@ const faceVertex = (view: ReturnType<typeof buildSolverView>, hex: number, face:
 
 describe('solver-view', () => {
   describe('colours', () => {
+    it('a material of the user\'s own has the colour he gave it, and the others keep theirs', () => {
+      const before = materialColor('steel').getHexString();
+      setMaterialColors([{ name: 'mine', color: '#12ab34' }, { name: 'plain' }]);
+
+      expect(materialColor('mine').getHexString()).toBe('12ab34');
+      expect(materialColor('plain').getHexString()).toBe(materialColor('plain').getHexString());
+      expect(materialColor('steel').getHexString()).toBe(before);
+      setMaterialColors([]);
+      expect(materialColor('mine').getHexString()).not.toBe('12ab34');
+    });
+
     it('the ramp runs from blue to red and clamps what is outside', () => {
       expect(rampColor(0).getHex()).toBe(0x2b3cc4);
       expect(rampColor(1).getHex()).toBe(0xe4572e);
@@ -285,35 +296,6 @@ describe('solver-view', () => {
   });
 
   describe('clamped and pressed faces', () => {
-    it('makes the label as big as the surface it speaks of', () => {
-      const labelHeight = (loads: SolverSetupDto['loads']) => {
-        const view = buildSolverView(input({ setup: setup({ divisions: [2, 1, 1], loads }) }));
-        let height = 0;
-        view.root.traverse(c => { if (c.userData['pressureLabel']) height = c.scale.y; });
-        disposeMeshView(view);
-        return height;
-      };
-      const one = labelHeight([{ hex: 0, face: 'ZPlus', pressure: -1e6, p: 0, q: 0 }]);
-      const two = labelHeight([{ hex: 0, face: 'ZPlus', pressure: -1e6, p: 0, q: 0 }, { hex: 0, face: 'ZPlus', pressure: -1e6, p: 1, q: 0 }]);
-      expect(one).toBeGreaterThan(0);
-      expect(two).toBeGreaterThan(one);
-    });
-
-    it('writes the pressure on the pressed face, one label per side and pressure, and none when hidden', () => {
-      const labels = (view: ReturnType<typeof buildSolverView>) => { const found: THREE.Object3D[] = []; view.root.traverse(c => { if (c.userData['pressureLabel']) found.push(c); }); return found; };
-      const loads = [{ hex: 1, face: 'XPlus' as const, pressure: -5e6, p: 0, q: 0 }];
-      const shown = buildSolverView(input({ setup: setup({ loads }) }));
-      const hidden = buildSolverView(input({ setup: setup({ loads }), showLoads: false }));
-      const none = buildSolverView(input());
-      const off = buildSolverView(input({ setup: setup({ loads }), showLabels: false }));
-      expect(labels(off).length).toBe(0);
-      disposeMeshView(off);
-      expect(labels(shown).length).toBe(1);
-      expect(labels(hidden).length).toBe(0);
-      expect(labels(none).length).toBe(0);
-      [shown, hidden, none].forEach(disposeMeshView);
-    });
-
     it('overlays them in blue and green, small face by small face', () => {
       const plain = buildSolverView(input());
       const marked = buildSolverView(input({
@@ -666,132 +648,6 @@ describe('colouring by mesh quality', () => {
     expect(new THREE.Color(GRADE_COLORS.excellent).g).toBeGreaterThan(new THREE.Color(GRADE_COLORS.excellent).r);
   });
 
-  it('paints each cube with the colour of its grade instead of its material', () => {
-    const view = buildSolverView({ state: linkedPairState(), setup: setup(), result: null, field: 'vonMises', deformationScale: 1, opacity: 1, quality: quality('excellent', 'invalid') });
-
-    const good = colourOf(view, 0);
-    const bad = colourOf(view, 1);
-
-    expect(good.g).toBeGreaterThan(good.r);                  // green (shading only darkens)
-    expect(bad.r).toBeGreaterThan(bad.g * 2);                // red
-    disposeMeshView(view);
-  });
-
-  it('colours each small element by its own grade, not the whole cube by its worst', () => {
-    const state = singleCubeState();
-    const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', values: { scaledJacobian: 0.1 } }] };
-
-    const view = buildSolverView({ state, setup: setup({ divisions: [2, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q });
-    const colours = new Set<string>();
-    const mesh = (view.pickables as THREE.Mesh[])[0];
-    const color = mesh.geometry.getAttribute('color');
-    for (let i = 0; i < color.count; i++) colours.add(new THREE.Color(color.getX(i), color.getY(i), color.getZ(i)).getHex() > 0 ? (color.getX(i) > color.getY(i) * 2 ? 'red' : 'green') : '');
-
-    expect(colours.has('red')).toBeTrue();
-    expect(colours.has('green')).toBeTrue();
-    disposeMeshView(view);
-  });
-
-  it('with the body see-through, also draws the faces around a bad element inside it (and only those)', () => {
-    const state = singleCubeState();
-    const flagged = (grade: 'invalid' | 'excellent') => ({ ...quality('excellent', 'excellent'), flagged: grade === 'invalid' ? [{ hex: 0, ex: 1, ey: 0, ez: 0, grade, values: { scaledJacobian: 0.1 } }] : [] });
-    const vertices = (opacity: number, q: SolverQualityDto) => {
-      const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity, quality: q });
-      const count = (view.pickables as THREE.Mesh[])[0].geometry.getAttribute('position').count;
-      disposeMeshView(view);
-      return count;
-    };
-
-    const solid = vertices(1, flagged('invalid'));
-    expect(vertices(0.4, flagged('invalid'))).toBeGreaterThan(solid);        // the 2 faces of the middle element appear
-    expect(vertices(0.4, flagged('excellent'))).toBe(solid);                 // nothing bad: the inside stays empty
-  });
-
-  it('can draw only the bad elements, and cut the body by a plane', () => {
-    const state = singleCubeState();
-    const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', values: { scaledJacobian: 0.1 } }] };
-    const faces = (extra: Partial<SolverViewInput>) => {
-      const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q, ...extra });
-      const count = (view.pickables as THREE.Mesh[])[0]?.geometry.getAttribute('position').count ?? 0;
-      disposeMeshView(view);
-      return count;
-    };
-    const all = faces({});
-    const one = faces({ onlyBad: true });
-
-    expect(one).toBeGreaterThan(0);
-    expect(one).toBeLessThan(all);                                          // the one bad element alone: 6 faces instead of the body's surface
-    const half = faces({ section: { axis: 0, at: 0, keep: 'above' } });
-    expect(half).toBeGreaterThan(0);
-    expect(faces({ section: { axis: 0, at: 1e6, keep: 'above' } })).toBe(0);   // everything cut away
-  });
-
-  it('draws the plane of the cut, across the whole body and not pickable', () => {
-    const state = singleCubeState();
-    const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, section: { axis: 0, at: 0.5, keep: 'above' } });
-    const plane = view.root.children.find(c => c.userData['sectionPlane'])!;
-    expect(plane).toBeDefined();
-
-    const sheet = (plane.children[0] as THREE.Mesh).geometry.getAttribute('position');
-    const xs = Array.from({ length: sheet.count }, (_, i) => sheet.getX(i));
-    expect(xs.every(x => Math.abs(x - 0.5) < 0.02)).toBeTrue();                 // it lies at the cut (a hair off it, so that it does not fight the cap for the pixel)
-    expect(view.pickables.includes(plane.children[0])).toBeFalse();
-    const noCut = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1 });
-    expect(noCut.root.children.some(c => c.userData['sectionPlane'])).toBeFalse();
-    disposeMeshView(view);
-    disposeMeshView(noCut);
-  });
-
-  it('cuts the triangles, the lines and the elements exactly at the plane of a section', () => {
-    // one triangle from x = 0 to x = 2, the plane at x = 1: the kept half is a trapezoid (two triangles)
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 2, 0, 0, 0, 2, 0], 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1], 3));
-    geometry.setIndex([0, 1, 2]);
-
-    const above = clipMeshToPlane(geometry, 1, { axis: 0, at: 1, keep: 'above' });
-    const below = clipMeshToPlane(geometry, 1, { axis: 0, at: 1, keep: 'below' });
-
-    const xs = (g: THREE.BufferGeometry) => Array.from({ length: g.getAttribute('position').count }, (_, i) => g.getAttribute('position').getX(i));
-    expect(Math.min(...xs(above.geometry))).toBeCloseTo(1, 4);                     // nothing beyond the plane is left (to a hair of slack)
-    expect(Math.max(...xs(below.geometry))).toBeCloseTo(1, 4);
-    expect(above.faceOfTriangle.every(f => f === 0)).toBeTrue();                   // and each piece knows its face
-    expect(clipMeshToPlane(geometry, 1, { axis: 0, at: 5, keep: 'above' }).geometry.getAttribute('position').count).toBe(0);
-    expect(clipMeshToPlane(geometry, 1, { axis: 0, at: -5, keep: 'above' }).geometry.getAttribute('position').count).toBe(3);   // untouched
-
-    const near = (actual: number[], expected: number[]) => actual.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 4));
-    near(clipSegmentsToPlane([0, 0, 0, 2, 0, 0], { axis: 0, at: 1, keep: 'above' }), [1, 0, 0, 2, 0, 0]);
-    near(clipSegmentsToPlane([0, 0, 0, 2, 0, 0], { axis: 0, at: 1, keep: 'below' }), [0, 0, 0, 1, 0, 0]);
-    expect(clipSegmentsToPlane([0, 0, 0, 2, 0, 0], { axis: 0, at: 3, keep: 'above' })).toEqual([]);
-  });
-
-  it('with a section through a cube, draws a cap in the colour of each element the plane runs through, and the body ends at the plane', () => {
-    const state = singleCubeState();           // the unit cube
-    const q = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid' as const, values: { scaledJacobian: 0.1 } }] };
-    const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q, section: { axis: 0, at: 0.5, keep: 'above' } });
-
-    const cap = view.root.children.find(c => c.userData['sectionCap']) as THREE.Mesh;
-    expect(cap).toBeDefined();
-    const capX = cap.geometry.getAttribute('position');
-    expect(Array.from({ length: capX.count }, (_, i) => capX.getX(i)).every(x => Math.abs(x - 0.5) < 0.02)).toBeTrue();   // the cap lies in the plane (a hair inside the body)
-    // the middle element (x from 1/3 to 2/3) is cut at 0.5 and is the invalid one: its cap is red
-    const colour = cap.geometry.getAttribute('color');
-    expect(colour.getX(0)).toBeGreaterThan(colour.getY(0) * 2);
-    // the structure shows: the dark lines where the elements meet, and the vertices of the cubes that are left
-    expect(view.root.children.some(c => c.userData['sectionStructure'])).toBeTrue();
-    const corners = view.root.children.find(c => c.userData['sectionNodes'] === 'corners') as THREE.Points;
-    const midpoints = view.root.children.find(c => c.userData['sectionNodes'] === 'midpoints') as THREE.Points;
-    const kept = (p: THREE.Points) => Array.from({ length: p.geometry.getAttribute('position').count }, (_, i) => p.geometry.getAttribute('position').getX(i));
-    expect(kept(corners).length).toBe(4);                              // the unit cube's 8 corners: the 4 with x = 1 are on the kept side
-    expect(kept(midpoints).length).toBeGreaterThan(0);
-    expect([...kept(corners), ...kept(midpoints)].every(x => x >= 0.5 - 0.02)).toBeTrue();
-    // the body itself does not reach to the other side of the plane
-    const body = (view.pickables as THREE.Mesh[])[0].geometry.getAttribute('position');
-    expect(Math.min(...Array.from({ length: body.count }, (_, i) => body.getX(i)))).toBeGreaterThan(0.5 - 1e-4);
-    disposeMeshView(view);
-  });
-
-  // the six faces of the unit cube, each as two triangles
   const cubeFaces = () => {
     const corner = (x: number, y: number, z: number) => [x, y, z];
     const quad = (a: number[], b: number[], c: number[], d: number[]) => ({ positions: [...a, ...b, ...c, ...d], indices: [0, 1, 2, 0, 2, 3] });
@@ -829,17 +685,6 @@ describe('colouring by mesh quality', () => {
 
     expect(other.x).toBeGreaterThan(centre.x);
     expect(elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 99, ex: 0, ey: 0, ez: 0 })).toBeNull();
-  });
-
-  it('wins over the field of a result while it is shown', () => {
-    const state = singleCubeState();
-    const result = resultFor(state, [1, 1, 1], () => ({ vm: 5e6 }));
-    const q = quality('poor', 'poor');
-
-    const view = buildSolverView({ state, setup: setup(), result, field: 'vonMises', deformationScale: 1, opacity: 1, quality: q });
-
-    expect(colourOf(view, 0).r).toBeGreaterThan(colourOf(view, 0).b * 2);        // the grade's orange, not the ramp's blue/red
-    disposeMeshView(view);
   });
 });
 

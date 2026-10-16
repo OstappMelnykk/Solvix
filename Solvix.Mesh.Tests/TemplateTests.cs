@@ -314,4 +314,76 @@ public class TemplateTests
         Assert.That(() => new BodyPlan(new[] { new BodyCell(0, 0, 0, positions.Take(5).ToList()) }), Throws.ArgumentException);
         Assert.That(() => new BodyPlan(Array.Empty<BodyCell>()), Throws.ArgumentException);
     }
+
+    private static HexMeshEditor AddTemplate(HexMeshEditor editor, string kind, IReadOnlyDictionary<string, double>? values = null)
+    {
+        var result = editor.AddTemplateBody(HexTemplates.Kind(kind).Build(values));
+        Assert.That(result.Ok, Is.True, result.Error);
+        return editor;
+    }
+
+    private static (Vec3 Min, Vec3 Max) RealBounds(HexMesh mesh) => (
+        new Vec3(mesh.Nodes.Min(n => n.Position.X), mesh.Nodes.Min(n => n.Position.Y), mesh.Nodes.Min(n => n.Position.Z)),
+        new Vec3(mesh.Nodes.Max(n => n.Position.X), mesh.Nodes.Max(n => n.Position.Y), mesh.Nodes.Max(n => n.Position.Z)));
+
+    [Test]
+    public void A_template_body_is_centred_at_the_origin_in_the_real_world_and_on_the_lattice()
+    {
+        foreach (var preset in HexTemplates.Presets.Take(12))
+        {
+            var mesh = AddTemplate(new HexMeshEditor(), preset.Kind, preset.Values).Mesh;
+
+            var (min, max) = RealBounds(mesh);
+            Assert.That((min.X + max.X) / 2, Is.EqualTo(0).Within(1e-9), preset.Name);
+            Assert.That((min.Y + max.Y) / 2, Is.EqualTo(0).Within(1e-9), preset.Name);
+            Assert.That((min.Z + max.Z) / 2, Is.EqualTo(0).Within(1e-9), preset.Name);
+            // the cells are the nearest whole cells to the middle: at most half a cell off
+            foreach (var axis in new Func<Hex20, int>[] { h => h.Cell.I, h => h.Cell.J, h => h.Cell.K })
+                Assert.That((mesh.Hexes.Min(axis) + mesh.Hexes.Max(axis) + 1) / 2.0, Is.EqualTo(0).Within(0.5), preset.Name);
+        }
+    }
+
+    [Test]
+    public void Adding_a_second_template_replaces_the_first_and_centres_the_new_one()
+    {
+        var editor = AddTemplate(new HexMeshEditor(), "pipe");
+        int pipeCubes = editor.Mesh.Hexes.Count;
+
+        AddTemplate(editor, "block", V(("countX", 3), ("countY", 2), ("countZ", 1)));
+
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(6));
+        Assert.That(editor.Mesh.Hexes.Count, Is.Not.EqualTo(pipeCubes));
+        Assert.That(editor.Mesh.Hexes.All(h => h.IsTemplate), Is.True);
+        var (min, max) = RealBounds(editor.Mesh);
+        Assert.That((min.X + max.X) / 2, Is.EqualTo(0).Within(1e-9));
+        Assert.That(editor.Mesh.InvalidHexes(), Is.Empty);
+        Assert.That(editor.Mesh.ComponentSizesWithout(-1).Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Replacing_a_template_is_one_undo_step_that_brings_the_old_one_back()
+    {
+        var editor = AddTemplate(new HexMeshEditor(), "pipe");
+        int pipeCubes = editor.Mesh.Hexes.Count;
+        AddTemplate(editor, "block", V(("countX", 2), ("countY", 1), ("countZ", 1)));
+
+        editor.Undo();
+
+        Assert.That(editor.Mesh.Hexes.Count, Is.EqualTo(pipeCubes));
+        Assert.That(editor.Mesh.Hexes.All(h => h.IsTemplate), Is.True);      // the mark survives the snapshot
+    }
+
+    [Test]
+    public void A_template_leaves_hand_made_cubes_alone_and_goes_beside_them_when_the_centre_is_taken()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+
+        AddTemplate(editor, "block", V(("countX", 2), ("countY", 2), ("countZ", 2)));
+        AddTemplate(editor, "block", V(("countX", 1), ("countY", 1), ("countZ", 1)));
+
+        Assert.That(editor.Mesh.Hexes.Count(h => !h.IsTemplate), Is.EqualTo(1));
+        Assert.That(editor.Mesh.Hexes.Count(h => h.IsTemplate), Is.EqualTo(1));
+        Assert.That(editor.Mesh.HexAtCell((0, 0, 0))!.IsTemplate, Is.False);
+    }
 }

@@ -1,3 +1,4 @@
+import { setMaterialColors } from '../geometry/solver-view';
 import { Injectable, effect, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { KeyedStore } from './keyed-store';
@@ -90,9 +91,7 @@ interface SessionSolver {
   // Also draw the faces between the elements (the grid inside the body).
   showInner: boolean;
   // Write the pressure on the pressed faces.
-  pressureLabels: boolean;
   // Colour the cubes by the quality of their worst element instead of by material.
-  showQuality: boolean;
   // The mesh judged by Solvix's criterion and, to look at, by other tools.
   qualityReport: SolverQualityReportDto | null;
   // The other tool whose marks are drawn on the scene instead of Solvix's, for a look only (null: Solvix's own).
@@ -174,8 +173,6 @@ export class SolverService {
       activeMaterial: 'rubber',
       hidden: new Set<string>(),
       showInner: false,
-      pressureLabels: true,
-      showQuality: false,
       qualityReport: null,
       qualityCompare: null,
       qualityDetail: null,
@@ -470,27 +467,8 @@ export class SolverService {
     this.refreshQuality(sessionId);
   }
 
-  showQuality(sessionId: number): boolean {
-    return this.entry(sessionId).showQuality;
-  }
-
-  setShowQuality(sessionId: number, show: boolean): void {
-    this.entry(sessionId).showQuality = show;
-    if (show) this.refreshQuality(sessionId);
-    this.touch(sessionId);
-  }
-
   showInner(sessionId: number): boolean {
     return this.entry(sessionId).showInner;
-  }
-
-  pressureLabels(sessionId: number): boolean {
-    return this.entry(sessionId).pressureLabels;
-  }
-
-  setPressureLabels(sessionId: number, show: boolean): void {
-    this.entry(sessionId).pressureLabels = show;
-    this.touch(sessionId);
   }
 
   setShowInner(sessionId: number, show: boolean): void {
@@ -610,6 +588,10 @@ export class SolverService {
 
   upsertMaterial(sessionId: number, material: SolverMaterialDto): void {
     this.apply(sessionId, this.api.upsertMaterial(sessionId, material));
+  }
+
+  removeMaterial(sessionId: number, name: string): void {
+    this.apply(sessionId, this.api.removeMaterial(sessionId, name));
   }
 
   setDefaultMaterial(sessionId: number, material: string): void {
@@ -963,6 +945,7 @@ export class SolverService {
 
   private acceptSetup(sessionId: number, setup: SolverSetupDto): void {
     this.entry(sessionId).setup = setup;
+    setMaterialColors(setup.materials);
     this.touch(sessionId);
   }
 

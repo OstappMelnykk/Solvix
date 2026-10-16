@@ -25,6 +25,7 @@ public static class Materials
         if (string.IsNullOrWhiteSpace(m.Name)) return "The material needs a name.";
         if (!double.IsFinite(m.E) || m.E <= 0) return $"{m.Label}: Young's modulus must be positive.";
         if (!double.IsFinite(m.Nu) || m.Nu < 0 || m.Nu >= 0.5) return $"{m.Label}: Poisson's ratio must be in [0, 0.5).";
+        if (m.Color is not null && !System.Text.RegularExpressions.Regex.IsMatch(m.Color, "^#[0-9a-fA-F]{6}$")) return $"{m.Label}: the colour must be #rrggbb.";
         return null;
     }
 }

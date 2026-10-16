@@ -49,16 +49,21 @@ describe('mesh-editor-view', () => {
       expect(edges.geometry.getAttribute('position').count).toBe(12 * 10 * 2);
     });
 
-    it('draws the faces as opaque as asked: 0.22 is the usual tint, and the other face states scale with it', () => {
-      const opacities = (faceOpacity?: number) =>
-        picks(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity }).pickables)
-          .map((p, i) => ({ p, i })).filter(x => x.p.kind === 'face')
-          .map(x => ((buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity }).pickables[x.i] as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity);
+    it('draws the outside of the body as opaque as asked, and 100% is solid (it writes depth, so it hides what is behind it)', () => {
+      const outer = (faceOpacity?: number) => {
+        const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity });
+        const index = picks(view.pickables).findIndex(p => p.kind === 'face');
+        return view.pickables[index] as THREE.Mesh;
+      };
+      const mat = (faceOpacity?: number) => outer(faceOpacity).material as THREE.MeshBasicMaterial;
 
-      expect(opacities()[0]).toBeCloseTo(0.16, 6);                // a free face, as it always was
-      expect(opacities(0.22)[0]).toBeCloseTo(0.16, 6);
-      expect(opacities(1)[0]).toBeCloseTo(0.16 / 0.22, 6);        // everything scales by the same factor
-      expect(opacities(0.02)[0]).toBeLessThan(0.02);
+      expect(mat().opacity).toBeCloseTo(0.22, 6);                  // the usual tint
+      expect(mat(0.6).opacity).toBeCloseTo(0.6, 6);
+      expect(mat(0.6).depthWrite).toBeFalse();
+      expect(mat(1).opacity).toBe(1);
+      expect(mat(1).transparent).toBeFalse();
+      expect(mat(1).depthWrite).toBeTrue();
+      expect(mat(0.02).opacity).toBeCloseTo(0.02, 6);
     });
 
     it('draws a linked face once, so two hexes do not z-fight', () => {
@@ -157,12 +162,11 @@ describe('mesh-editor-view', () => {
         expect(overEverything(view, state.hexes[1].nodeIds[6])).toBeTrue();
       });
 
-      it('with x-ray every node is drawn over the cubes and wins a click', () => {
+      it('with x-ray every node wins a click over the faces in front of it (and is seen through the body, weaker the more opaque it is)', () => {
         const state = linkedPairState();
         const view = buildMeshView(state, 'real', noSelection, { subdivisions: 1, xrayNodes: true });
 
         for (const node of state.nodes) {
-          expect(overEverything(view, node.id)).toBeTrue();
           expect(nodeHit(view, node.id).userData['priority']).toBeTrue();
         }
       });
@@ -178,18 +182,25 @@ describe('mesh-editor-view', () => {
       });
     });
 
-    it('colours free, linked and candidate faces differently', () => {
+    it('gives the outside of the body one tone, hides the faces between linked cubes (they can still be clicked), and keeps a candidate for linking orange', () => {
       const state = linkedPairState();
-      const view = buildMeshView(state, 'real', noSelection);
-      const colorOf = (hex: number, face: string) => {
-        const object = view.pickables.find(o => {
+      const find = (view: ReturnType<typeof buildMeshView>, hex: number, face: string) =>
+        view.pickables.find(o => {
           const p = o.userData['pick'] as MeshPick;
           return p.kind === 'face' && p.hex === hex && p.face === face;
         }) as THREE.Mesh;
-        return (object.material as THREE.MeshBasicMaterial).color.getHex();
-      };
+      const material = (view: ReturnType<typeof buildMeshView>, hex: number, face: string) => find(view, hex, face).material as THREE.MeshBasicMaterial;
 
-      expect(colorOf(0, 'XPlus')).not.toBe(colorOf(0, 'XMinus'));
+      const view = buildMeshView(state, 'real', noSelection, { subdivisions: 1, faceOpacity: 0.5 });
+      expect(material(view, 0, 'XMinus').color.getHex()).toBe(material(view, 1, 'XPlus').color.getHex());   // every outer face has the same tone
+      expect(material(view, 0, 'XMinus').opacity).toBe(0.5);
+      expect(find(view, 0, 'XPlus')).toBeDefined();                  // the shared face is there to be clicked...
+      expect(material(view, 0, 'XPlus').opacity).toBe(0);            // ...but not drawn
+
+      const candidate = { ...state, faces: state.faces.map(f => (f.hex === 0 && f.face === 'XPlus' ? { ...f, status: 'Candidate' as const } : f)) };
+      const withCandidate = buildMeshView(candidate, 'real', noSelection, { subdivisions: 1, faceOpacity: 0.5 });
+      expect(material(withCandidate, 0, 'XPlus').color.getHex()).not.toBe(material(withCandidate, 0, 'XMinus').color.getHex());
+      expect(material(withCandidate, 0, 'XPlus').opacity).toBeGreaterThan(0);
     });
 
     it('builds an empty root for a state with no hexes', () => {
@@ -392,9 +403,51 @@ describe('mesh-editor-view', () => {
     });
   });
 
+  describe('the opacity has no jump', () => {
+    // the strength of what is hidden by the body: the opacity of the weaker copy of the edges (the copy over everything)
+    const hiddenStrength = (opacity: number) => {
+      const view = buildMeshView(linkedPairState(), 'real', noSelection, { subdivisions: 1, faceOpacity: opacity });
+      const copy = view.root.children.find(c => c instanceof THREE.LineSegments && (c.material as THREE.Material).depthTest === false) as THREE.LineSegments | undefined;
+      disposeMeshView(view);
+      return copy ? (copy.material as THREE.LineBasicMaterial).opacity : 0;
+    };
+
+    it('what is hidden by the body fades evenly to nothing as it becomes solid', () => {
+      expect(hiddenStrength(0.22)).toBe(1);
+      expect(hiddenStrength(0.7)).toBeCloseTo(1, 6);
+      expect(hiddenStrength(0.85)).toBeCloseTo(0.5, 6);
+      expect(hiddenStrength(0.95)).toBeCloseTo(1 / 6, 6);
+      expect(hiddenStrength(0.99)).toBeLessThan(0.05);               // 99 % is almost what 100 % is
+      expect(hiddenStrength(1)).toBe(0);
+
+      let previous = Infinity;
+      for (const opacity of [0.5, 0.7, 0.8, 0.9, 0.97, 0.99, 1]) {
+        const strength = hiddenStrength(opacity);
+        expect(strength).toBeLessThanOrEqual(previous);
+        previous = strength;
+      }
+    });
+
+    it('the faces are lit the same way solid or not (matt, no reflections of the light), and a translucent body writes its depth before the lines', () => {
+      const faceMaterials = (opacity: number) => {
+        const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity: opacity });
+        const faces = (view.pickables as THREE.Mesh[]).filter(o => (o.userData['pick'] as MeshPick).kind === 'face').map(f => f.material as THREE.Material);
+        const depthOnly = view.root.children.filter(c => c instanceof THREE.Mesh && (c.material as THREE.Material).colorWrite === false).length;
+        disposeMeshView(view);
+        return { faces, depthOnly };
+      };
+      const solid = faceMaterials(1);
+      const nearlySolid = faceMaterials(0.99);
+      expect(solid.faces.every(m => m.type === 'MeshLambertMaterial')).toBeTrue();
+      expect(nearlySolid.faces.every(m => m.type === 'MeshLambertMaterial')).toBeTrue();        // no jump of the look at 100 %
+      expect(solid.depthOnly).toBe(0);
+      expect(nearlySolid.depthOnly).toBeGreaterThan(0);
+    });
+  });
+
   describe('inner grid', () => {
     const segmentsOf = (view: ReturnType<typeof buildMeshView>) =>
-      view.root.children.filter((c): c is THREE.LineSegments => c instanceof THREE.LineSegments);
+      view.root.children.filter((c): c is THREE.LineSegments => c instanceof THREE.LineSegments && (c.material as THREE.Material).depthTest !== false);     // not the weaker copy over everything
 
     it('is off by default: only the cube edges are lines', () => {
       expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection)).length).toBe(1);
@@ -410,7 +463,7 @@ describe('mesh-editor-view', () => {
     });
 
     describe('the nodes of the divided cube', () => {
-      const pointsOf = (view: ReturnType<typeof buildMeshView>) => view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points);
+      const pointsOf = (view: ReturnType<typeof buildMeshView>) => view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points && (c.material as THREE.Material).depthTest !== false);
 
       it('are absent without a division', () => {
         expect(pointsOf(buildMeshView(singleCubeState(), 'real', noSelection)).length).toBe(0);
@@ -467,7 +520,7 @@ describe('mesh-editor-view', () => {
     it('can divide each axis by its own number, like the solver\'s Nx, Ny, Nz', () => {
       const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: [2, 1, 1] });
       const lines = segmentsOf(view)[1].geometry.getAttribute('position');
-      const points = view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points)[0];
+      const points = view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points && (c.material as THREE.Material).depthTest !== false)[0];
 
       expect(lines.count).toBe(4 * 12 * 2);                                          // the middle plane x = 0.5 only: 2 lines along y and 2 along z, 12 samples each
       expect(points.geometry.getAttribute('position').count).toBe(12);              // 32 nodes of a 2x1x1 division, 20 of them the cube's own
@@ -523,5 +576,27 @@ describe('mesh-editor-view', () => {
       expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 0 })).length).toBe(1);
       expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1.7 })).length).toBe(1);
     });
+  });
+
+  it('draws the dots of the corners and of the midpoints each at the size asked for, with the click targets never smaller than the usual ones', () => {
+    const radii = (scale: { corner: number; mid: number } | undefined) => {
+      const state = singleCubeState();
+      const view = buildMeshView(state, 'real', { hexes: [], face: null, hoverFace: null, nodeId: null }, { subdivisions: 1, nodeScale: scale });
+      const cornerId = state.hexes[0].nodeIds[0], midId = state.hexes[0].nodeIds[8];
+      const dot = (id: number) => (view.nodeMeshes.get(id)!.geometry as THREE.SphereGeometry).parameters.radius;
+      const hit = (id: number) => ((view.pickables.find(p => (p.userData['pick'] as { nodeId?: number }).nodeId === id) as THREE.Mesh).geometry as THREE.SphereGeometry).parameters.radius;
+      const out = { corner: dot(cornerId), mid: dot(midId), cornerHit: hit(cornerId), midHit: hit(midId) };
+      disposeMeshView(view);
+      return out;
+    };
+
+    const usual = radii(undefined);
+    const mixed = radii({ corner: 3, mid: 0.3 });
+
+    expect(radii({ corner: 1, mid: 1 }).corner).toBeCloseTo(usual.corner, 9);
+    expect(mixed.corner).toBeCloseTo(usual.corner * 3, 9);
+    expect(mixed.mid).toBeCloseTo(usual.mid * 0.3, 9);
+    expect(mixed.midHit).toBeCloseTo(usual.midHit, 9);
+    expect(mixed.cornerHit).toBeGreaterThanOrEqual(usual.cornerHit);
   });
 });

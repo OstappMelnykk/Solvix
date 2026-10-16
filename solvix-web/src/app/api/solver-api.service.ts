@@ -14,6 +14,8 @@ export interface SolverMaterialDto {
   readonly e: number;
   // Poisson's ratio, [0, 0.5).
   readonly nu: number;
+  // The colour on the scene, #rrggbb; without it the colour comes from the name.
+  readonly color?: string;
 }
 
 // A face of a cube, or one small face of it: p, q are the cell in the side's grid (p along the lower of the face's
@@ -182,6 +184,10 @@ export class SolverApiService {
 
   upsertMaterial(sessionId: number, material: SolverMaterialDto): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'materials'), material);
+  }
+
+  removeMaterial(sessionId: number, name: string): Observable<SolverSetupDto> {
+    return this.http.delete<SolverSetupDto>(this.url(sessionId, `materials/${encodeURIComponent(name)}`));
   }
 
   setDefaultMaterial(sessionId: number, material: string): Observable<SolverSetupDto> {

@@ -114,7 +114,7 @@ describe('MeshEditorRenderService', () => {
 
     expect(withGrid).not.toBe(first);
     expect(render.getView(sessionId, REAL_WORLD_INDEX)).toBe(withGrid);
-    expect(withGrid!.root.children.filter(c => c instanceof THREE.LineSegments).length).toBe(2);
+    expect(withGrid!.root.children.filter(c => c instanceof THREE.LineSegments && (c.material as THREE.Material).depthTest !== false).length).toBe(2);        // the edges and the inner grid (not the weaker copies)
   });
 
   it('builds a separate view per World: lattice positions for Ideal, real positions for Real', () => {

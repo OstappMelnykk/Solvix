@@ -472,6 +472,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    // the Quality World's section cuts with the clipping planes of its materials
+    this.renderer.localClippingEnabled = true;
     this.oitRenderer = new WeightedOitRenderer(this.renderer);
     this.oitRenderer.setSize(width, height);
 
@@ -1089,51 +1091,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   hasSurface(): boolean {
     return this.worldIndex === REAL_WORLD_INDEX && this.currentImportedReference !== null;
-  }
-
-  // Building with the mouse is in the Ideal World and the Real World.
-  showsBuildToggle(): boolean {
-    return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;
-  }
-
-  isBuildOn(): boolean {
-    return this.showsBuildToggle() && this.sessionId !== null && this.meshSelection.buildMode(this.sessionId, this.worldIndex);
-  }
-
-  toggleBuild(): void {
-    if (this.showsBuildToggle() && this.sessionId !== null) this.meshSelection.setBuildMode(this.sessionId, this.worldIndex, !this.isBuildOn());
-  }
-
-  // The reference is shown in the Ideal World to build around and in the Real World for nodes to stick to.
-  showsReferenceToggle(): boolean {
-    return this.worldIndex === IDEAL_WORLD_INDEX || this.worldIndex === REAL_WORLD_INDEX;
-  }
-
-  // Backing state for the on-canvas STL-reference visibility toggle -
-  // mirrors the settings-panel's own "Показати" checkbox
-  // (ImportedReferenceControlsComponent.isReferenceVisible/
-  // onReferenceVisibleChange, both driving the same
-  // ImportedReferenceDisplayService.visible flag), just reachable without
-  // opening the panel. Unlike lowering opacity, unchecking this actually
-  // drops the reference from the scene entirely (RenderWindowComponent.
-  // getImportedReference returns null while !visible), so whatever it was
-  // occluding becomes visible again rather than merely dimmed. Defaults to
-  // "visible" outside the Ideal World / without a session, matching
-  // ImportedReferenceDisplayService's own DEFAULT_STYLE - never actually
-  // shown there (isIdealWorldCanvas gates the button itself).
-  isImportedReferenceVisible(): boolean {
-    if (!this.showsReferenceToggle() || this.sessionId === null) {
-      return true;
-    }
-    return this.importedReferenceDisplay.getStyle(this.sessionId).visible;
-  }
-
-  toggleImportedReferenceVisible(): void {
-    if (!this.showsReferenceToggle() || this.sessionId === null) {
-      return;
-    }
-    const currentlyVisible = this.importedReferenceDisplay.getStyle(this.sessionId).visible;
-    this.importedReferenceDisplay.setVisible(this.sessionId, !currentlyVisible);
   }
 
   private updateSession(): void {

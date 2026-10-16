@@ -23,7 +23,7 @@ internal static class SolverValidator
 
         var alive = new HashSet<int>(mesh.ElementIds);
         if (mesh.FoldedHexes.Count > 0)
-            Error($"Вивернуті або вироджені куби (виправте їх перед розрахунком): {string.Join(", ", mesh.FoldedHexes.Take(12))}{(mesh.FoldedHexes.Count > 12 ? "…" : "")}.");
+            Warning($"Вивернуті або вироджені куби (розрахунок біля них може бути хибним або не запуститися): {string.Join(", ", mesh.FoldedHexes.Take(12))}{(mesh.FoldedHexes.Count > 12 ? "…" : "")}.");
 
         // materials in use
         var used = mesh.ElementIds.Select(setup.MaterialOf).Concat(setup.ElementMaterials.Where(m => alive.Contains(m.Key.Hex)).Select(m => setup.MaterialOf(m.Key))).Distinct().ToList();
@@ -38,7 +38,7 @@ internal static class SolverValidator
         var quality = elements > MaxElements ? null : MeshQuality.Evaluate(setup, mesh).Profiles.First(p => p.Id == "solvix");
         int invalid = quality?.Grades["invalid"] ?? 0;
         if (invalid > 0 && mesh.FoldedHexes.Count == 0)
-            Error($"{invalid} малих елементів вивернуті або вироджені після поділу кубів: розрахунок неможливий. Перегляньте їх у Quality World і виправте сітку або поділ.");
+            Warning($"{invalid} малих елементів вивернуті або вироджені після поділу кубів: розрахунок біля них може бути хибним або не запуститися. Перегляньте їх у Quality World.");
         int poor = quality?.Grades["poor"] ?? 0;
         if (quality is not null && poor > 0) Warning($"{poor} елементів не проходять критерії якості Solvix (найгірше: {Worst(quality)}): напруження біля них будуть неточними.");
         var moduli = used.Where(setup.MaterialsByName.ContainsKey).Select(n => setup.MaterialsByName[n].E).ToList();

@@ -27,6 +27,9 @@ public sealed class Hex20
     /// <summary>The layer this cube belongs to (a named group such as enamel or dentin), or null.</summary>
     public string? Layer { get; internal set; }
 
+    /// <summary>True for a cube that came with a template body (the mesh keeps only one such body at a time).</summary>
+    public bool IsTemplate { get; internal set; }
+
     public int[] NodeIds { get; } = new int[Hex20Reference.NodeCount];
 
     /// <summary>The 8-corner cube primitive (real positions).</summary>

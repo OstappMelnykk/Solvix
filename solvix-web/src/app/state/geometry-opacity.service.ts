@@ -1,38 +1,43 @@
 import { Injectable } from '@angular/core';
 import { IDEAL_WORLD_INDEX, QUALITY_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 
-// What the faces of the Ideal and Real Worlds are drawn with by default: a faint tint, so the nodes and the lines show.
-export const DEFAULT_FACE_OPACITY = 0.22;
+// How opaque the body is drawn by default: translucent enough to see the inner lines and nodes, the nearer ones stronger and the farther dimmer.
+export const DEFAULT_BODY_OPACITY = 0.7;
 
-// How opaque the geometry of a World is, set per session and per World (the Solver World keeps its own, in its view
-// settings). In the Ideal and Real Worlds it is the opacity of a cube's faces (the other face states scale with it);
-// in the Quality World it is the opacity of the whole body, so the bad elements inside show through. Plain data, read
-// by the render services, which put it in their cache keys.
+// The lowest opacity of the body.
+export const MIN_BODY_OPACITY = 0.05;
+
+// How opaque the body is, per session. It is ONE value for the Ideal, the Real and the Quality World (a slider in any of them moves it for all three, so
+// the body looks the same wherever one looks at it); 100% is a solid body, less shows the inside. The Solver World keeps its own opacity in its view
+// settings. Plain data, read by the render services, which put it in their cache keys.
 @Injectable({ providedIn: 'root' })
 export class GeometryOpacityService {
-  private readonly values = new Map<string, number>();
-  private revisions = new Map<number, number>();
+  private readonly values = new Map<number, number>();
 
-  static minimum(worldIndex: number): number {
-    return worldIndex === QUALITY_WORLD_INDEX ? 0.05 : 0.02;
+  static minimum(_worldIndex: number): number {
+    return MIN_BODY_OPACITY;
   }
 
   static initial(worldIndex: number): number {
-    return worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX ? DEFAULT_FACE_OPACITY : 1;
+    return GeometryOpacityService.sharesTheBody(worldIndex) ? DEFAULT_BODY_OPACITY : 1;
+  }
+
+  private static sharesTheBody(worldIndex: number): boolean {
+    return worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX || worldIndex === QUALITY_WORLD_INDEX;
   }
 
   get(sessionId: number, worldIndex: number): number {
-    return this.values.get(`${sessionId}:${worldIndex}`) ?? GeometryOpacityService.initial(worldIndex);
+    if (!GeometryOpacityService.sharesTheBody(worldIndex)) return 1;
+    return this.values.get(sessionId) ?? DEFAULT_BODY_OPACITY;
   }
 
   set(sessionId: number, worldIndex: number, value: number): void {
-    if (!Number.isFinite(value)) return;
-    const clamped = Math.min(1, Math.max(GeometryOpacityService.minimum(worldIndex), value));
-    this.values.set(`${sessionId}:${worldIndex}`, clamped);
+    if (!Number.isFinite(value) || !GeometryOpacityService.sharesTheBody(worldIndex)) return;
+    this.values.set(sessionId, Math.min(1, Math.max(MIN_BODY_OPACITY, value)));
   }
 
   // The settings of a session that is gone.
   forget(sessionId: number): void {
-    for (const key of [...this.values.keys()]) if (key.startsWith(`${sessionId}:`)) this.values.delete(key);
+    this.values.delete(sessionId);
   }
 }

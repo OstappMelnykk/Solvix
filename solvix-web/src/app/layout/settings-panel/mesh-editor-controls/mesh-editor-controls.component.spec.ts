@@ -8,6 +8,8 @@ import { SolverService } from '../../../state/solver.service';
 import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
+import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { NodeSizeService } from '../../../state/node-size.service';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { linkedPairState, singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
 
@@ -26,7 +28,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
@@ -45,6 +47,69 @@ describe('MeshEditorControlsComponent', () => {
     component = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
     component.sessionId = 1;
     component.worldIndex = REAL_WORLD_INDEX;
+  });
+
+  describe('the panel as a page', () => {
+    const render = (world: number, shown: MeshStateDto = singleCubeState()) => {
+      state = shown;
+      const fixture = TestBed.createComponent(MeshEditorControlsComponent);
+      fixture.componentInstance.sessionId = 1;
+      fixture.componentInstance.worldIndex = world;
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('has the sections in the order of work, the first cube and the constructor in one row, and no undo, redo, hint, mapping check or x-ray option', () => {
+      const root = render(IDEAL_WORLD_INDEX);
+      const labels = Array.from(root.querySelectorAll('.group-label')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
+      expect(labels.slice(0, 2)).toEqual(['Початок', 'Робота з шестигранником']);
+      expect(labels).toContain('Налаштування сітки');
+      expect(labels.slice(-2)).toEqual(['Рівномірне згущення', 'Локальне згущення']);
+
+      const start = root.querySelector('.group')!;
+      expect(Array.from(start.querySelectorAll('.pair button')).map(b => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['Перший куб N', 'Конструктор куба… C']);
+
+      const text = root.textContent ?? '';
+      for (const gone of ['Скасувати', 'Повернути', 'Клік по грані', 'Перевірка мапінгу', 'Вузли видно', 'Внутрішня сітка', 'Куби:']) expect(text).not.toContain(gone);
+    });
+
+    it('explains the node in short points: which cubes own it, and how to move it', () => {
+      selection.selectNode(1, linkedPairState().hexes[0].nodeIds[1]);
+      const root = render(REAL_WORLD_INDEX, linkedPairState());
+
+      const points = Array.from(root.querySelectorAll('.points li')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
+      expect(points).toContain('куб 0 — №1, кут');
+      expect(points).toContain('куб 1 — №0, кут');
+      expect(points).toContain('Shift — ×10; перший крок до найближчого цілого');
+      expect(root.textContent).not.toContain('глобальний id');
+    });
+
+    it('has building with the mouse in the start block, one per World, and the slider of the opacity with its value', () => {
+      const root = render(IDEAL_WORLD_INDEX);
+      const start = root.querySelector('.group')!;
+      const button = Array.from(start.querySelectorAll('button')).find(b => b.textContent!.includes('Будувати мишею'))!;
+      expect(button.textContent).toContain('вимкнено');
+      button.click();
+      expect(selection.buildMode(1, IDEAL_WORLD_INDEX)).toBeTrue();
+      expect(selection.buildMode(1, REAL_WORLD_INDEX)).toBeFalse();
+
+      expect(root.querySelector('.slider__head b')?.textContent).toContain('%');
+      expect(root.querySelector('input.slider__range')).not.toBeNull();
+    });
+
+    it('has the block of the node only in the Real World, where the nodes are moved', () => {
+      const labels = (root: HTMLElement) => Array.from(root.querySelectorAll('.group-label')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
+      expect(labels(render(IDEAL_WORLD_INDEX))).not.toContain('Вузол');
+      expect(labels(render(REAL_WORLD_INDEX))).toContain('Вузол');
+    });
+
+    it('has the uniform division as a block of its own, like the local one, with three bare fields X Y Z and no explanation', () => {
+      const root = render(REAL_WORLD_INDEX);
+      const group = Array.from(root.querySelectorAll('.group')).find(g => g.querySelector('.group-label')?.textContent?.trim() === 'Рівномірне згущення')!;
+      expect(Array.from(group.querySelectorAll('.row span')).map(e => e.textContent!.trim())).toEqual(['X', 'Y', 'Z']);
+      expect(group.querySelectorAll('input').length).toBe(3);
+      expect(group.querySelector('.hint')).toBeNull();
+    });
   });
 
   it('offers "first cube" only for an empty mesh that has been loaded', () => {
@@ -329,30 +394,6 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.nudgeStep).toBe(0.5);
   });
 
-  it('asks twice before resetting the mesh', () => {
-    state = singleCubeState();
-
-    component.requestReset();
-    expect(editor.reset).not.toHaveBeenCalled();
-    component.cancelReset();
-    expect(component.isResetConfirming).toBeFalse();
-
-    component.requestReset();
-    component.confirmReset();
-    expect(editor.reset).toHaveBeenCalledWith(1);
-    expect(solver.forget).toHaveBeenCalledWith(1);     // the old cubes' supports and loads are gone on the server
-  });
-
-  it('reports the mapping probe result, and "outside" when nothing was found', () => {
-    editor.mapIdealToReal.and.returnValue(of({ found: true, point: { x: 1, y: 2, z: 3 } }));
-    editor.mapRealToIdeal.and.returnValue(of({ found: false, point: null }));
-
-    component.probeIdealToReal();
-    expect(component.mappingResult).toBe('Real: (1.0000, 2.0000, 3.0000)');
-    component.probeRealToIdeal();
-    expect(component.mappingResult).toBe('Поза тілом');
-  });
-
   it('forwards undo/redo and exposes their availability', () => {
     state = { ...singleCubeState(), canUndo: true, canRedo: false };
 
@@ -370,12 +411,9 @@ describe('MeshEditorControlsComponent', () => {
 
     component.addFirst();
     component.undo();
-    component.confirmReset();
 
     expect(editor.addFirstHex).not.toHaveBeenCalled();
     expect(editor.undo).not.toHaveBeenCalled();
-    expect(editor.reset).not.toHaveBeenCalled();
-    expect(solver.forget).not.toHaveBeenCalled();
     expect(component.hexCount()).toBe(0);
   });
 
@@ -531,6 +569,39 @@ describe('MeshEditorControlsComponent', () => {
       expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
     });
 
+    it('a Shift step first goes to the nearest whole number in its direction, and from a whole number it is ten steps', () => {
+      const base = singleCubeState();
+      state = { ...base, nodes: base.nodes.map(n => (n.id === 6 ? { ...n, x: 1.35 } : n)) };
+      selection.selectNode(1, 6);
+      component.nudgeStep = 0.1;
+
+      press('ArrowRight', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 2, y: 1, z: 1 }, false);
+      press('ArrowLeft', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 1 }, false);
+      press('ArrowRight');                                                      // a small step is a small step
+      expect((editor.moveNode.calls.mostRecent().args[2] as { x: number }).x).toBeCloseTo(1.45, 9);
+
+      state = base;                                                              // on a whole number: ten steps
+      press('ArrowRight', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 2, y: 1, z: 1 }, false);
+    });
+
+    it('moves along Y also with ] and [ (by the place of the key) and Alt + up/down, for a keyboard without PageUp and PageDown', () => {
+      state = singleCubeState();
+      selection.selectNode(1, 6);   // corner (1, 1, 1)
+      component.nudgeStep = 0.1;
+
+      press('х', { code: 'BracketRight' });                                  // the key of ] on the Ukrainian layout
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1.1, z: 1 }, false);
+      press('[', { code: 'BracketLeft', shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
+      press('ArrowUp', { altKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1.1, z: 1 }, false);
+      press('ArrowDown', { altKey: true, shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
+    });
+
     it('arrow keys do nothing without a selected node or outside the Real World', () => {
       state = singleCubeState();
       press('ArrowRight');
@@ -561,49 +632,6 @@ describe('MeshEditorControlsComponent', () => {
 
       expect(press('n').defaultPrevented).toBeFalse();
       expect(editor.addFirstHex).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('start over (whole session)', () => {
-    it('asks first, and cancelling changes nothing', () => {
-      const sessions = TestBed.inject(SessionsService);
-      const before = sessions.sessions().map(s => s.id);
-      component.sessionId = before[0];
-
-      component.requestRestart();
-      expect(component.isRestartConfirming).toBeTrue();
-      component.cancelRestart();
-
-      expect(component.isRestartConfirming).toBeFalse();
-      expect(sessions.sessions().map(s => s.id)).toEqual(before);
-    });
-
-    it('confirming replaces the session with a fresh one and clears the selection', () => {
-      const sessions = TestBed.inject(SessionsService);
-      const old = sessions.sessions()[0].id;
-      component.sessionId = old;
-      selection.toggleHex(old, 3);
-      selection.selectNode(old, 7);
-
-      component.requestRestart();
-      component.confirmRestart();
-
-      expect(component.isRestartConfirming).toBeFalse();
-      expect(sessions.sessions().map(s => s.id)).not.toContain(old);
-      expect(sessions.sessions().length).toBe(1);
-      expect(sessions.activeSessionId()).toBe(sessions.sessions()[0].id);
-      expect(selection.hexes(old)).toEqual([]);
-      expect(selection.nodeId(old)).toBeNull();
-    });
-
-    it('does nothing without a session', () => {
-      const sessions = TestBed.inject(SessionsService);
-      const before = sessions.sessions().map(s => s.id);
-      component.sessionId = null;
-
-      component.confirmRestart();
-
-      expect(sessions.sessions().map(s => s.id)).toEqual(before);
     });
   });
 
@@ -715,15 +743,38 @@ describe('MeshEditorControlsComponent', () => {
       const shared = linkedPairState().hexes[0].nodeIds[1];
       selection.selectNode(1, shared);
 
-      expect(component.nodeOwnersText()).toBe('куб 0: локальний №1 (кут); куб 1: локальний №0 (кут)');
+      expect(component.nodeOwners()).toEqual([{ hex: 0, local: 1, kind: 'кут' }, { hex: 1, local: 0, kind: 'кут' }]);
     });
 
-    it('a node owned by one cube has one entry, and no node selected gives an empty text', () => {
+    it('a node owned by one cube has one entry, and no node selected gives none', () => {
       state = singleCubeState();
-      expect(component.nodeOwnersText()).toBe('');
+      expect(component.nodeOwners()).toEqual([]);
 
       selection.selectNode(1, 8);
-      expect(component.nodeOwnersText()).toBe('куб 0: локальний №8 (середина ребра)');
+      expect(component.nodeOwners()).toEqual([{ hex: 0, local: 8, kind: 'середина ребра' }]);
+    });
+  });
+
+  describe('the mesh settings', () => {
+    it('has a button that puts the opacity and the sizes of the nodes back to the usual ones', () => {
+      state = singleCubeState();
+      const fixture = TestBed.createComponent(MeshEditorControlsComponent);
+      fixture.componentInstance.sessionId = 1;
+      fixture.componentInstance.worldIndex = IDEAL_WORLD_INDEX;
+      fixture.detectChanges();
+      const component = fixture.componentInstance;
+      const opacity = TestBed.inject(GeometryOpacityService);
+      const sizes = TestBed.inject(NodeSizeService);
+      opacity.set(1, IDEAL_WORLD_INDEX, 0.2);
+      sizes.set(1, 'corner', 3);
+      sizes.set(1, 'mid', 0.5);
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.group-label--row button')!.click();
+
+      expect(opacity.get(1, IDEAL_WORLD_INDEX)).toBe(DEFAULT_BODY_OPACITY);
+      expect(sizes.get(1, 'corner')).toBe(1);
+      expect(sizes.get(1, 'mid')).toBe(1);
+      expect(component.nodeSizePercent('corner')).toBe(100);
     });
   });
 });

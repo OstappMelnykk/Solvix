@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { SolverControlsComponent } from './solver-controls.component';
 import { SolverService } from '../../../state/solver.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { SolverJobDto, SolverResultDto, SolverSetupDto, SolverValidationDto } from '../../../api/solver-api.service';
+import { SolverJobDto, SolverResultDto, SolverSetupDto } from '../../../api/solver-api.service';
 import { linkedPairState } from '../../../geometry/mesh-state.fixture.spec';
 
 describe('SolverControlsComponent', () => {
@@ -11,7 +11,6 @@ describe('SolverControlsComponent', () => {
   let setup: SolverSetupDto | null;
   let job: SolverJobDto;
   let result: SolverResultDto | null;
-  let validation: SolverValidationDto | null;
   let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number; colorMax: number | null; edges: boolean; vectors: boolean };
   let divisions: number[];
   let pressure: number;
@@ -40,17 +39,15 @@ describe('SolverControlsComponent', () => {
     };
     job = { state: 'idle', progress: 0, stage: '', error: null, ticket: 0 };
     result = null;
-    validation = null;
     display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
-      'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
-      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
+      'setup', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
+      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'applyPressureToAll', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
-      'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
+      'clearSetup', 'removeMaterial', 'solve', 'cancel', 'setField', 'clearResult'
     ]);
     solver.setup.and.callFake(() => setup);
-    solver.validation.and.callFake(() => validation);
     solver.job.and.callFake(() => job);
     solver.result.and.callFake(() => result);
     solver.display.and.callFake(() => display);
@@ -69,7 +66,6 @@ describe('SolverControlsComponent', () => {
     solver.quality.and.returnValue(null);
     solver.qualityReport.and.returnValue(null);
     solver.solvixQuality.and.returnValue(null);
-    solver.showQuality.and.returnValue(false);
     solver.tool.and.returnValue('view');
     solver.materialCounts.and.returnValue(new Map([['steel', 7], ['rubber', 3]]));
     solver.isHidden.and.callFake((_s, name) => name === 'rubber');
@@ -81,22 +77,10 @@ describe('SolverControlsComponent', () => {
   });
 
   describe('the mesh of small elements', () => {
-    it('shows the division and the number of elements it makes', () => {
+    it('shows the number of elements the division makes (the division itself is set in the Real World)', () => {
       expect(component.divisions()).toEqual([2, 1, 3]);
       expect(component.hexCount()).toBe(2);
       expect(component.elementCount()).toBe(2 * 2 * 1 * 3);
-    });
-
-    it('sends the changed axis with the others kept, clamped to 1..8, ignoring non-numbers', () => {
-      const type = (axis: number, value: string) => component.onDivision(axis, { target: { value } } as unknown as Event);
-
-      type(0, '4');
-      type(1, '99');
-      type(2, '0');
-      type(0, '2.9');
-      type(1, 'abc');
-
-      expect(solver.setDivisions.calls.allArgs()).toEqual([[1, 4, 1, 3], [1, 2, 8, 3], [1, 2, 1, 1], [1, 2, 1, 3]]);
     });
   });
 
@@ -188,6 +172,49 @@ describe('SolverControlsComponent', () => {
         expect(component.isMaterialFormOpen).toBeFalse();
       });
 
+      it('an existing material is edited: the form takes its values and saving puts them back under its own name', () => {
+        const steel = { name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3, color: '#445566' };
+
+        component.startEdit(steel, new Event('click'));
+        expect(component.isMaterialFormOpen).toBeTrue();
+        expect(component.editingName).toBe('steel');
+        expect(component.newLabel).toBe('Сталь');
+        expect(component.newYoungGPa).toBe(210);
+        expect(component.newPoisson).toBe(0.3);
+        expect(component.newColor).toBe('#445566');
+
+        component.newYoungGPa = 190;
+        component.newColor = '#aabbcc';
+        component.addMaterial();
+
+        expect(solver.upsertMaterial).toHaveBeenCalledWith(1, { name: 'steel', label: 'Сталь', e: 190e9, nu: 0.3, color: '#aabbcc' });
+        expect(component.editingName).toBeNull();
+        expect(component.isMaterialFormOpen).toBeFalse();
+      });
+
+      it('a material is deleted from its edit form, except the default one', () => {
+        component.startEdit({ name: 'rubber', label: 'Гума', e: 1e7, nu: 0.45 }, new Event('click'));
+        expect(component.canRemoveEdited()).toBeTrue();
+        component.removeEdited();
+        expect(solver.removeMaterial).toHaveBeenCalledWith(1, 'rubber');
+        expect(component.editingName).toBeNull();
+
+        solver.removeMaterial.calls.reset();
+        component.startEdit({ name: component.defaultMaterial(), label: 'Основний', e: 1e9, nu: 0.3 }, new Event('click'));
+        expect(component.canRemoveEdited()).toBeFalse();
+        component.removeEdited();
+        expect(solver.removeMaterial).not.toHaveBeenCalled();
+      });
+
+      it('editing can be cancelled without sending anything', () => {
+        component.startEdit({ name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3 }, new Event('click'));
+        component.cancelEdit();
+
+        expect(component.editingName).toBeNull();
+        expect(component.isMaterialFormOpen).toBeFalse();
+        expect(solver.upsertMaterial).not.toHaveBeenCalled();
+      });
+
       it('is not added when invalid, and the number fields ignore junk', () => {
         component.newLabel = '';
         component.addMaterial();
@@ -211,14 +238,6 @@ describe('SolverControlsComponent', () => {
       expect(component.pressure()).toBe(-1e6);
     });
 
-    it('describes Pn: compression, tension or nothing', () => {
-      expect(component.pressureHint()).toContain('стиск');
-      pressure = 2e6;
-      expect(component.pressureHint()).toContain('розтяг');
-      pressure = 0;
-      expect(component.pressureHint()).toBe('немає навантаження');
-    });
-
     it('resets the set-up', () => {
       component.clearSetup();
 
@@ -227,11 +246,9 @@ describe('SolverControlsComponent', () => {
   });
 
   describe('solving', () => {
-    it('validates and solves through the service', () => {
-      component.validate();
+    it('solves through the service', () => {
       component.solve();
 
-      expect(solver.validate).toHaveBeenCalledWith(1);
       expect(solver.solve).toHaveBeenCalledWith(1);
     });
 
@@ -242,16 +259,13 @@ describe('SolverControlsComponent', () => {
         worst: {}, limits: [], flagged: []
       });
 
-      it('does not solve, and the button is disabled, while the mesh is not accepted', () => {
-        solver.solvixQuality.and.returnValue(solvix(3, 0));
-        component.solve();
-        expect(solver.solve).not.toHaveBeenCalled();
-        expect(component.meshRejected()).toBeTrue();
-
-        solver.solvixQuality.and.returnValue(solvix(0, 0));
-        component.solve();
-        expect(solver.solve).toHaveBeenCalledWith(1);
-        expect(component.meshRejected()).toBeFalse();
+      it('solves whatever the quality of the mesh: the user decides', () => {
+        for (const [rejected, invalid] of [[3, 0], [0, 2], [0, 0]]) {
+          solver.solve.calls.reset();
+          solver.solvixQuality.and.returnValue(solvix(rejected, invalid));
+          component.solve();
+          expect(solver.solve).toHaveBeenCalledWith(1);
+        }
       });
     });
 
@@ -275,12 +289,6 @@ describe('SolverControlsComponent', () => {
       component.cancel();
 
       expect(solver.cancel).toHaveBeenCalledWith(1);
-    });
-
-    it('exposes the verdict of the validation', () => {
-      validation = { canSolve: false, issues: [{ severity: 'error', message: 'Закріпіть' }] };
-
-      expect(component.validation()!.issues[0].message).toBe('Закріпіть');
     });
   });
 
@@ -336,12 +344,10 @@ describe('SolverControlsComponent', () => {
     const grades = { excellent: 3, good: 0, acceptable: 0, poor: 0, invalid: 0 };
     const q = (over: Record<string, number> = {}) => ({ id: 'solvix', name: 'Solvix', source: '', note: '', elements: 3, grades: { ...grades, ...over }, worst: {}, limits: [], flagged: [] });
 
-    it('evaluates and switches the colouring', () => {
+    it('evaluates the mesh', () => {
       component.refreshQuality();
-      component.toggleQuality();
 
       expect(solver.refreshQuality).toHaveBeenCalledWith(1);
-      expect(solver.setShowQuality).toHaveBeenCalledWith(1, true);
     });
 
     it('gives the verdict in one line, worst problem first', () => {

@@ -70,7 +70,6 @@
     </button>
   </div>
 
-  <div class="hint hint--wide" *ngIf="open('tools')">{{ hint() }}</div>
 </div>
 
 <div class="viewbox">
@@ -81,26 +80,12 @@
     <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" aria-label="Прозорість" />
     <span class="value">{{ opacityPercent() }}%</span>
   </div>
-  <label class="check" title="Сині грані: де тіло закріплене">
-    <input type="checkbox" [checked]="showMark('fixed')" (change)="toggleMark('fixed')" />
-    Показувати закріплення
-  </label>
-  <label class="check" title="Зелені грані: де прикладене навантаження">
-    <input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" />
-    Показувати навантаження
-  </label>
-  <label class="check" title="Підписи з величиною тиску на навантажених гранях">
-    <input type="checkbox" [checked]="pressureLabels()" (change)="togglePressureLabels()" />
-    Підписи тиску
-  </label>
-  <label class="check" title="Малювати грані між елементами: видно сітку всередині тіла">
-    <input type="checkbox" [checked]="showInner()" (change)="toggleInner()" />
-    Внутрішні грані
-  </label>
-  <label class="check" *ngIf="hasResult()" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно">
-    <input type="checkbox" [checked]="showVectors()" (change)="toggleVectors()" />
-    Стрілки зсуву
-  </label>
+  <div class="toggles">
+    <button type="button" class="toggle" [class.toggle--on]="showMark('fixed')" [attr.aria-pressed]="showMark('fixed')" title="Сині грані: де тіло закріплене" (click)="toggleMark('fixed')">Закріплення</button>
+    <button type="button" class="toggle" [class.toggle--on]="showMark('loads')" [attr.aria-pressed]="showMark('loads')" title="Зелені грані: де прикладене навантаження" (click)="toggleMark('loads')">Навантаження</button>
+    <button type="button" class="toggle" [class.toggle--on]="showInner()" [attr.aria-pressed]="showInner()" title="Малювати грані між елементами: видно сітку всередині тіла" (click)="toggleInner()">Внутрішні грані</button>
+    <button type="button" class="toggle" *ngIf="hasResult()" [class.toggle--on]="showVectors()" [attr.aria-pressed]="showVectors()" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно" (click)="toggleVectors()">Стрілки зсуву</button>
+  </div>
   <div class="control" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення на ×1 непомітні.">
     <span class="caption">Деформація ×</span>
     <input type="number" class="num" min="0" [max]="top()" step="any" [value]="scale()" (change)="onScaleNumber($event)" />

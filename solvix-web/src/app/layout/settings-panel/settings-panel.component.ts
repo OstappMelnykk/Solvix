@@ -16,6 +16,8 @@ import { ModelLibraryPickerComponent } from './model-library-picker/model-librar
 import { MeshEditorControlsComponent } from './mesh-editor-controls/mesh-editor-controls.component';
 import { QualityControlsComponent } from './quality-controls/quality-controls.component';
 import { SolverControlsComponent } from './solver-controls/solver-controls.component';
+import { SessionStateControlsComponent } from './session-state-controls/session-state-controls.component';
+import { StlSnapControlsComponent } from './stl-snap-controls/stl-snap-controls.component';
 
 type ImportDisplayStatus =
   | { kind: 'loading' }
@@ -34,7 +36,7 @@ type UploadDisplayStatus = { kind: 'idle' } | { kind: 'uploading' } | { kind: 'e
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [NgIf, ImportedReferenceControlsComponent, ModelLibraryPickerComponent, MeshEditorControlsComponent, SolverControlsComponent, QualityControlsComponent],
+  imports: [NgIf, SessionStateControlsComponent, StlSnapControlsComponent, ImportedReferenceControlsComponent, ModelLibraryPickerComponent, MeshEditorControlsComponent, SolverControlsComponent, QualityControlsComponent],
   templateUrl: './settings-panel.component.html',
   styleUrl: './settings-panel.component.scss'
 })
@@ -57,6 +59,8 @@ export class SettingsPanelComponent {
   // its own controls (materials, supports, pressures, the solve).
   readonly showsQuality = computed(() => this.worldIndex() === QUALITY_WORLD_INDEX);
   readonly showsSolver = computed(() => this.worldIndex() === SOLVER_WORLD_INDEX);
+  // the measuring and the sticking of the vertices to the STL are in the Real World, where the vertices are moved
+  readonly showsSnap = computed(() => this.worldIndex() === REAL_WORLD_INDEX);
   readonly showsMeshEditor = computed(() => this.worldIndex() === IDEAL_WORLD_INDEX || this.worldIndex() === REAL_WORLD_INDEX);
 
   // Which formats the file picker accepts - driven by whichever

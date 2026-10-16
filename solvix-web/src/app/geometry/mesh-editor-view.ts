@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createDepthFade } from '../rendering/depth-fade';
 import { FaceStatus, HexFaceName, MeshFaceDto, MeshNodeDto, MeshStateDto } from '../api/mesh-editor-api.service';
 
 // Pure drawing of the backend's mesh state - no geometry decisions here: the
@@ -132,6 +133,12 @@ export interface MeshViewOptions {
   readonly xrayNodes?: boolean;
   // How opaque the faces are (0..1): the opacity of a linked face; the other states scale with it. Default 0.22.
   readonly faceOpacity?: number;
+  // How large the dots of the cubes' corners and of their midpoints are, each as a share of the usual size (default 1). The click targets around them never get smaller than the usual ones.
+  readonly nodeScale?: { readonly corner: number; readonly mid: number };
+  // Draw the faces (default on); off when another view draws them and only the lines and nodes are wanted.
+  readonly faces?: boolean;
+  // Make the nodes clickable (default on); off for a view that is only looked at.
+  readonly pickable?: boolean;
 }
 
 const GRID_LINE_SAMPLES = 12;
@@ -146,14 +153,18 @@ const MIDPOINT_RADIUS = 0.032;
 const CORNER_HIT_RADIUS = 0.11;
 const MIDPOINT_HIT_RADIUS = 0.08;
 
-const FACE_COLORS: Record<FaceStatus, number> = {
-  Free: 0x5b8fb9,
-  Linked: 0x4fb477,
-  Candidate: 0xe08a2e
-};
-const FACE_OPACITY: Record<FaceStatus, number> = { Free: 0.16, Linked: 0.22, Candidate: 0.4 };
-// the opacity of a linked face, which the user's setting is measured against
-const LINKED_FACE_OPACITY = FACE_OPACITY.Linked;
+// One tone for every face of the body, so no face looks like another kind: only a candidate for linking (orange) and a picked face differ.
+const BODY_FACE_COLOR = 0x4a8fe3;
+const CANDIDATE_FACE_COLOR = 0xe08a2e;
+// how opaque a face that is not picked is (a candidate for linking shows through the body a little more than the user's setting)
+const CANDIDATE_MIN_OPACITY = 0.4;
+// the opacity of the faces when the user has not set it
+const DEFAULT_FACE_OPACITY = 0.22;
+// how visible the farthest inner lines and nodes of a see-through body are (the nearest are fully visible)
+const FAR_ALPHA = 0.15;
+// the opacity from which the hidden (inner) lines and nodes begin to fade away: at this opacity and below they are fully there, at 100% they are gone, in between they
+// fade evenly - so there is no jump between 99 % and 100 %
+const GHOST_FULL_AT = 0.7;
 const BASE_HEX_COLOR = 0x39c5f2;
 const ADAPTING_HEX_COLOR = 0xc77dff;
 const PREVIEW_FACE_COLOR = 0x6ee06e;
@@ -265,6 +276,36 @@ export function buildMeshView(
   const nodes = new Map(state.nodes.map(node => [node.id, node]));
   const positionOf = (id: number) => nodePosition(nodes.get(id)!, mode);
 
+  // A solid body (100 %) hides everything inside it; a see-through one shows the inner lines and nodes, the nearer ones
+  // stronger and the farther ones dimmer.
+  const faceOpacity = Math.min(1, Math.max(0, options.faceOpacity ?? DEFAULT_FACE_OPACITY));
+  const seeThrough = faceOpacity < 1;
+  // how much of the inner lines and nodes (those hidden by the body) is seen: 1 at GHOST_FULL_AT and below, 0 for a solid body
+  const ghost = seeThrough ? Math.min(1, Math.max(0, (1 - faceOpacity) / (1 - GHOST_FULL_AT))) : 0;
+  const bounds = new THREE.Box3();
+  for (const node of state.nodes) bounds.expandByPoint(nodePosition(node, mode));
+  const sphere = bounds.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : bounds.getBoundingSphere(new THREE.Sphere());
+  const fade = createDepthFade(sphere.center, Math.max(sphere.radius, 1e-3), seeThrough ? FAR_ALPHA : 1);
+  const lineMaterial = (color: number, opacity = 1, hidden = false): THREE.LineBasicMaterial => {
+    const material = new THREE.LineBasicMaterial({ color, transparent: seeThrough || opacity < 1 || hidden, opacity: hidden ? opacity * ghost : opacity, depthTest: !hidden });
+    fade.patch(material);
+    return material;
+  };
+  // A line is drawn twice: where nothing of the body is in front of it (depth-tested against the faces, full strength), and again over everything, weaker the
+  // more opaque the body is (that is what shows through the body).
+  const addLines = (geometry: THREE.BufferGeometry, color: number, opacity = 1): void => {
+    const lines = new THREE.LineSegments(geometry, lineMaterial(color, opacity));
+    lines.renderOrder = 2;
+    fade.track(lines);
+    root.add(lines);
+    if (ghost > 0.01) {
+      const hidden = new THREE.LineSegments(geometry, lineMaterial(color, opacity, true));
+      hidden.renderOrder = 2;
+      fade.track(hidden);
+      root.add(hidden);
+    }
+  };
+
   // Curved edges: one polyline set for the whole mesh.
   const edgeVertices: number[] = [];
   for (const hex of state.hexes) {
@@ -283,14 +324,12 @@ export function buildMeshView(
   if (edgeVertices.length > 0) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(edgeVertices, 3));
-    root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR })));
+    addLines(geometry, EDGE_COLOR);
   }
 
   // Inside of each cube: lines of constant (alpha, beta, gamma) through the shape
   // functions. The 12 edges are drawn above already, so a line is skipped when
   // both of its fixed coordinates sit on the cube's boundary.
-  const faceOpacity = Math.min(1, Math.max(0, options.faceOpacity ?? LINKED_FACE_OPACITY));
-  const faceScale = faceOpacity / LINKED_FACE_OPACITY;
   const counts = (Array.isArray(options.subdivisions) ? options.subdivisions : [options.subdivisions, options.subdivisions, options.subdivisions]).map(n => Math.max(1, Math.floor(n)));
   if (counts.some(n => n > 1)) {
     const gridVertices: number[] = [];
@@ -320,7 +359,7 @@ export function buildMeshView(
     if (gridVertices.length > 0) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(gridVertices, 3));
-      root.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: GRID_COLOR, transparent: true, opacity: 0.6 })));
+      addLines(geometry, GRID_COLOR, 0.6);
     }
 
     // The nodes the divided cube would really have, as the solver builds them: a grid of (2n+1)^3 points of which
@@ -347,7 +386,16 @@ export function buildMeshView(
     if (subNodes.length > 0) {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(subNodes, 3));
-      root.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true })));
+      const dots = (hidden: boolean): THREE.Points => {
+        const material = new THREE.PointsMaterial({ color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true, transparent: seeThrough, opacity: hidden ? ghost : 1, depthTest: !hidden });
+        fade.patch(material);
+        const points = new THREE.Points(geometry, material);
+        points.renderOrder = 3;
+        fade.track(points);
+        return points;
+      };
+      root.add(dots(false));
+      if (ghost > 0.01) root.add(dots(true));
     }
   }
 
@@ -355,7 +403,7 @@ export function buildMeshView(
   const hexById = new Map(state.hexes.map(hex => [hex.id, hex]));
   for (const face of state.faces) {
     const hex = hexById.get(face.hex);
-    if (!hex || !shouldDrawFace(face)) continue;
+    if (options.faces === false || !hex || !shouldDrawFace(face)) continue;
     const axis = faceAxis(face.face);
     const tangent = [0, 1, 2].filter(d => d !== axis);
     const slots = faceSlots(face.face);
@@ -371,25 +419,41 @@ export function buildMeshView(
     const picked = pickIndex !== undefined;
     const preview = selection.hoverFace?.hex === face.hex && selection.hoverFace.face === face.face;
     const facePicked = selection.face?.hex === face.hex && selection.face.face === face.face;
-    const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : FACE_COLORS[face.status];
-    const material = new THREE.MeshBasicMaterial({
-      color,
-      opacity: preview || facePicked ? Math.max(0.6, faceOpacity) : picked ? Math.max(0.42, faceOpacity) : Math.min(1, FACE_OPACITY[face.status] * faceScale),
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide
-    });
+    const candidate = face.status === 'Candidate';
+    const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : candidate ? CANDIDATE_FACE_COLOR : BODY_FACE_COLOR;
+    // The outside of the body has the opacity the user set (100%: solid, it hides what is behind). A face between two linked cubes is inside the body:
+    // it is not drawn unless it is picked or hovered (it can still be clicked), so no inner faces cloud the view.
+    const inside = face.status === 'Linked';
+    const opacity = preview || facePicked ? Math.max(0.6, faceOpacity) : picked ? Math.max(0.42, faceOpacity) : candidate ? Math.max(CANDIDATE_MIN_OPACITY, faceOpacity) : inside ? 0 : faceOpacity;
+    // The faces are lit and shaded like a real body (smooth shading inside a face, a crease where two faces meet) but matt - no reflections of the light on
+    // the surface - solid or not, so the look does not jump at 100 %; a translucent one blends over everything (it does not hide what is behind it).
+    const solid = opacity >= 1;
+    geometry.computeVertexNormals();
+    const material =
+      opacity <= 0
+        ? new THREE.MeshBasicMaterial({ color, opacity: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+        : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, depthTest: solid });
     const mesh = new THREE.Mesh(geometry, material);
+    // A translucent outside face also writes depth, invisibly, before the lines: what is in front of a line is then known, and the line is full strength
+    // only where nothing is in front of it.
+    if (!solid && !inside && opacity > 0) {
+      const depthOnly = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+      depthOnly.renderOrder = 0;
+      root.add(depthOnly);
+    }
+    mesh.renderOrder = 1;
     mesh.userData['pick'] = { kind: 'face', hex: face.hex, face: face.face } satisfies PickedFace;
     root.add(mesh);
     pickables.push(mesh);
   }
 
   // Nodes: corners and midpoints, one sphere per node (a shared node once).
-  const cornerGeometry = new THREE.SphereGeometry(CORNER_RADIUS, 10, 8);
-  const midGeometry = new THREE.SphereGeometry(MIDPOINT_RADIUS, 8, 6);
-  const cornerHitGeometry = new THREE.SphereGeometry(CORNER_HIT_RADIUS, 8, 6);
-  const midHitGeometry = new THREE.SphereGeometry(MIDPOINT_HIT_RADIUS, 8, 6);
+  const cornerScale = Math.max(0.05, options.nodeScale?.corner ?? 1);
+  const midScale = Math.max(0.05, options.nodeScale?.mid ?? 1);
+  const cornerGeometry = new THREE.SphereGeometry(CORNER_RADIUS * cornerScale, 10, 8);
+  const midGeometry = new THREE.SphereGeometry(MIDPOINT_RADIUS * midScale, 8, 6);
+  const cornerHitGeometry = new THREE.SphereGeometry(Math.max(CORNER_HIT_RADIUS, CORNER_RADIUS * cornerScale * 1.4), 8, 6);
+  const midHitGeometry = new THREE.SphereGeometry(Math.max(MIDPOINT_HIT_RADIUS, MIDPOINT_RADIUS * midScale * 1.4), 8, 6);
   const hitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
   // The 20 nodes of the picked cubes (and of the cube of the picked face) can be reached through other cubes: they are
   // drawn over everything, and a click on one wins over the faces in front of it.
@@ -403,21 +467,38 @@ export function buildMeshView(
     const isCorner = cornerIds.has(node.id);
     const selected = selection.nodeId === node.id;
     const attached = options.attachedNodeIds?.has(node.id) === true;
-    const mesh = new THREE.Mesh(
-      isCorner ? cornerGeometry : midGeometry,
-      new THREE.MeshBasicMaterial({ color: selected ? SELECTED_NODE_COLOR : attached ? ATTACHED_NODE_COLOR : isCorner ? CORNER_COLOR : MIDPOINT_COLOR })
-    );
+    const nodeColor = selected ? SELECTED_NODE_COLOR : attached ? ATTACHED_NODE_COLOR : isCorner ? CORNER_COLOR : MIDPOINT_COLOR;
+    const nodeMaterial = new THREE.MeshBasicMaterial({ color: nodeColor, transparent: seeThrough });
+    fade.patch(nodeMaterial);
+    const mesh = new THREE.Mesh(isCorner ? cornerGeometry : midGeometry, nodeMaterial);
+    mesh.renderOrder = 3;
+    fade.track(mesh);
     mesh.position.copy(nodePosition(node, mode));
-    const through = options.xrayNodes === true || reachable.has(node.id);
-    if (through) {
+    // the nodes of the picked cubes are drawn over everything; the others are seen where nothing of the body is in front of them, and (weaker, the more
+    // opaque the body is) through it
+    const drawnThrough = reachable.has(node.id);
+    if (drawnThrough) {
       (mesh.material as THREE.MeshBasicMaterial).depthTest = false;
       mesh.renderOrder = 10;
     }
+    // a click on an inner node wins over the faces in front of it while the body is still see-through enough for the node to be seen
+    const through = drawnThrough || (options.xrayNodes === true && ghost > 0.2);
     if (selected) mesh.scale.setScalar(1.6);
     else if (attached) mesh.scale.setScalar(1.35);
     root.add(mesh);
     nodeMeshes.set(node.id, mesh);
+    if (ghost > 0.01 && !drawnThrough) {
+      const hiddenMaterial = new THREE.MeshBasicMaterial({ color: nodeColor, transparent: true, opacity: ghost, depthTest: false });
+      fade.patch(hiddenMaterial);
+      const hidden = new THREE.Mesh(isCorner ? cornerGeometry : midGeometry, hiddenMaterial);
+      hidden.renderOrder = 4;
+      fade.track(hidden);
+      hidden.position.copy(mesh.position);
+      hidden.scale.copy(mesh.scale);
+      root.add(hidden);
+    }
 
+    if (options.pickable === false) continue;
     const hit = new THREE.Mesh(isCorner ? cornerHitGeometry : midHitGeometry, hitMaterial);
     hit.position.copy(mesh.position);
     hit.userData['pick'] = { kind: 'node', nodeId: node.id } satisfies PickedNode;

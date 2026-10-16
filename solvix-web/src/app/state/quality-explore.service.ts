@@ -13,10 +13,12 @@ export interface SectionSettings {
 export interface ExploreSettings {
   // draw only the elements the chosen measure does not grade excellent
   readonly onlyBad: boolean;
+  // true: the body is filled; false: wholly transparent, only its edges show
+  readonly filled: boolean;
   readonly section: SectionSettings;
 }
 
-const INITIAL: ExploreSettings = { onlyBad: false, section: { enabled: false, axis: 1, position: 0.5, keep: 'above' } };
+const INITIAL: ExploreSettings = { onlyBad: false, filled: true, section: { enabled: false, axis: 1, position: 0.5, keep: 'above' } };
 
 // How the Quality World is looked into, per session: only the bad elements, and a cut through the body. Plain data
 // that the quality render service reads (and keys its cache on); a revision tells when it changed.
@@ -35,6 +37,10 @@ export class QualityExploreService {
 
   setOnlyBad(sessionId: number, onlyBad: boolean): void {
     this.update(sessionId, { ...this.get(sessionId), onlyBad });
+  }
+
+  setFilled(sessionId: number, filled: boolean): void {
+    this.update(sessionId, { ...this.get(sessionId), filled });
   }
 
   setSection(sessionId: number, change: Partial<SectionSettings>): void {

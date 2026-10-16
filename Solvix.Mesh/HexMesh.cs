@@ -222,16 +222,45 @@ public sealed partial class HexMesh
     /// cells of the body are linked, and the nodes of linked faces are shared - by the same rule as
     /// everywhere: a node belongs to every cube reachable through links.
     /// </summary>
-    public IReadOnlyList<Hex20> AddBody(BodyPlan plan)
+    /// <param name="centred">
+    /// Put the body's centre at the origin of both worlds (the cells at the nearest whole cell, the real positions exactly).
+    /// Falls back to the place beside the existing cubes when the centred cells are not free.
+    /// </param>
+    /// <param name="template">Marks the cubes as a template body, which the mesh keeps only one of (see <see cref="HexMeshEditor.AddTemplateBody"/>).</param>
+    public IReadOnlyList<Hex20> AddBody(BodyPlan plan, bool centred = false, bool template = false)
     {
         var (di, dj, dk) = (0, 0, 0);
-        if (_hexes.Count > 0) di = _hexes.Values.Max(h => h.Cell.I) + 2 - plan.Min.I;
-        foreach (var c in plan.Cells)
-            if (_cells.ContainsKey((c.I + di, c.J + dj, c.K + dk))) throw new InvalidOperationException("The body would overlap an occupied cell.");
-        var shift = new Vec3(di, dj, dk);
+        var shift = Vec3.Zero;
+        bool placed = false;
+        if (centred)
+        {
+            var (min, max) = (plan.Min, plan.Max);
+            (di, dj, dk) = (CentringShift(min.I, max.I), CentringShift(min.J, max.J), CentringShift(min.K, max.K));
+            placed = plan.Cells.All(c => !_cells.ContainsKey((c.I + di, c.J + dj, c.K + dk)));
+            if (placed)
+            {
+                var all = plan.Cells.SelectMany(c => c.Positions).ToList();
+                shift = new Vec3(
+                    -(all.Min(p => p.X) + all.Max(p => p.X)) / 2,
+                    -(all.Min(p => p.Y) + all.Max(p => p.Y)) / 2,
+                    -(all.Min(p => p.Z) + all.Max(p => p.Z)) / 2);
+            }
+        }
+        if (!placed)
+        {
+            (di, dj, dk) = (0, 0, 0);
+            if (_hexes.Count > 0) di = _hexes.Values.Max(h => h.Cell.I) + 2 - plan.Min.I;
+            foreach (var c in plan.Cells)
+                if (_cells.ContainsKey((c.I + di, c.J + dj, c.K + dk))) throw new InvalidOperationException("The body would overlap an occupied cell.");
+            shift = new Vec3(di, dj, dk);
+        }
 
         var hexes = plan.Cells.Select(c => NewHex((c.I + di, c.J + dj, c.K + dk))).ToList();
-        for (int h = 0; h < hexes.Count; h++) hexes[h].Layer = plan.Cells[h].Layer;
+        for (int h = 0; h < hexes.Count; h++)
+        {
+            hexes[h].Layer = plan.Cells[h].Layer;
+            hexes[h].IsTemplate = template;
+        }
         var index = hexes.Select((h, i) => (h.Cell, i)).ToDictionary(x => x.Cell, x => x.i);
 
         // Union the slots that links make one node.
@@ -596,7 +625,7 @@ public sealed partial class HexMesh
         _nextNodeId,
         _nextHexId,
         _nodes.Values.OrderBy(n => n.Id).Select(n => new NodeState(n.Id, n.Position, n.Ideal.X, n.Ideal.Y, n.Ideal.Z)).ToList(),
-        _hexes.Values.OrderBy(h => h.Id).Select(h => new HexState(h.Id, h.Cell.I, h.Cell.J, h.Cell.K, h.ParentId, h.NodeIds.ToArray(), h.Layer)).ToList(),
+        _hexes.Values.OrderBy(h => h.Id).Select(h => new HexState(h.Id, h.Cell.I, h.Cell.J, h.Cell.K, h.ParentId, h.NodeIds.ToArray(), h.Layer, h.IsTemplate)).ToList(),
         _links.OrderBy(kv => kv.Key.Hex).ThenBy(kv => kv.Key.Face).Select(kv => new LinkState(kv.Key.Hex, kv.Key.Face, kv.Value)).ToList());
 
     public static HexMesh FromState(HexMeshState state)
@@ -609,7 +638,7 @@ public sealed partial class HexMesh
         }
         foreach (var h in state.Hexes)
         {
-            var hex = new Hex20(mesh, h.Id, (h.I, h.J, h.K)) { ParentId = h.ParentId, Layer = h.Layer };
+            var hex = new Hex20(mesh, h.Id, (h.I, h.J, h.K)) { ParentId = h.ParentId, Layer = h.Layer, IsTemplate = h.Template };
             for (int s = 0; s < Hex20Reference.NodeCount; s++)
             {
                 hex.NodeIds[s] = h.NodeIds[s];
@@ -649,6 +678,9 @@ public sealed partial class HexMesh
             ElementIds = elementIds,
         };
     }
+
+    // The whole-cell shift that brings the middle of the cells min..max (they span min .. max + 1) closest to the origin.
+    private static int CentringShift(int min, int max) => -(int)Math.Round((min + max + 1) / 2.0, MidpointRounding.ToEven);
 
     private static (int X, int Y, int Z) IdealOf((int I, int J, int K) cell, int slot) => (
         2 * cell.I + Hex20Reference.LocalCoords[slot, 0] + 1,

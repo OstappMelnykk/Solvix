@@ -3,8 +3,8 @@ import { NgFor, NgIf } from '@angular/common';
 import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
-import { SessionsService } from '../../../state/sessions.service';
+import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { DEFAULT_NODE_SIZE, MAX_NODE_SIZE, MIN_NODE_SIZE, NodeKind, NodeSizeService } from '../../../state/node-size.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { SolverService } from '../../../state/solver.service';
@@ -38,12 +38,13 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Esc', action: 'зняти виділення' },
   { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
   { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
-  { keys: '← →  ↑ ↓  PgUp PgDn', action: 'зсув вузла по X, Z, Y (Shift — ×10)' },
+  { keys: '← →  ↑ ↓', action: 'зсув вузла по X і Z (Shift — ×10, перший крок до цілого)' },
+  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла по Y: вгору / вниз (Shift — ×10, перший крок до цілого)' },
   { keys: '?', action: 'ця підказка' }
 ];
 
-// Arrow keys move X (left/right) and Z (up = away from the viewer along -Z),
-// PageUp/PageDown move Y.
+// Arrow keys move X (left/right) and Z (up = away from the viewer along -Z). Y: ] and [ (by the place of the key, so any layout), Alt + up/down, and
+// PageUp/PageDown for the keyboards that have them.
 const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
   arrowright: ['x', 1],
   arrowleft: ['x', -1],
@@ -68,26 +69,26 @@ const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
 export class MeshEditorControlsComponent {
   private readonly editor = inject(MeshEditorService);
   private readonly selection = inject(MeshEditorSelectionService);
-  private readonly sessions = inject(SessionsService);
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
   private readonly attachments = inject(SurfaceAttachmentService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
+  private readonly nodeSize = inject(NodeSizeService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
 
   adaptSecond = true;
+
+  // Local refinement: UI stub, not wired to anything yet.
+  readonly transitionWidths = [0, 1, 2];
+  localDivisions: number[] = [1, 1, 1];
+  transitionWidth = 0;
+  localRunMode: 'steps' | 'at-once' = 'steps';
   nudgeStep = 0.1;
-  isResetConfirming = false;
-  isRestartConfirming = false;
   isHelpOpen = false;
   readonly shortcuts = SHORTCUTS;
   readonly axes: readonly Axis[] = ['x', 'y', 'z'];
-
-  mappingIdeal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
-  mappingReal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
-  mappingResult: string | null = null;
 
   // Shared with the on-canvas drag gizmo (MeshEditorService.carryEdgeMidpoints).
   get carryEdgeMidpoints(): boolean {
@@ -128,14 +129,25 @@ export class MeshEditorControlsComponent {
     if (this.sessionId !== null && this.worldIndex !== null) this.geometryOpacity.set(this.sessionId, this.worldIndex, Number((event.target as HTMLInputElement).value) / 100);
   }
 
-  // --- reaching the nodes inside the body ---
+  // --- how large the dots of the nodes are drawn (Ideal and Real World, percent of the usual size): the corners and the midpoints each ---
 
-  xrayNodes(): boolean {
-    return this.sessionId !== null && this.selection.xrayNodes(this.sessionId);
+  readonly nodeSizeMin = Math.round(MIN_NODE_SIZE * 100);
+  readonly nodeSizeMax = Math.round(MAX_NODE_SIZE * 100);
+
+  nodeSizePercent(kind: NodeKind): number {
+    return this.sessionId === null ? 100 : Math.round(this.nodeSize.get(this.sessionId, kind) * 100);
   }
 
-  onXrayNodes(event: Event): void {
-    if (this.sessionId !== null) this.selection.setXrayNodes(this.sessionId, (event.target as HTMLInputElement).checked);
+  onNodeSize(kind: NodeKind, event: Event): void {
+    if (this.sessionId !== null) this.nodeSize.set(this.sessionId, kind, Number((event.target as HTMLInputElement).value) / 100);
+  }
+
+  // The opacity and the sizes of the nodes back to the usual ones.
+  resetViewSettings(): void {
+    if (this.sessionId === null || this.worldIndex === null) return;
+    this.geometryOpacity.set(this.sessionId, this.worldIndex, DEFAULT_BODY_OPACITY);
+    this.nodeSize.set(this.sessionId, 'corner', DEFAULT_NODE_SIZE);
+    this.nodeSize.set(this.sessionId, 'mid', DEFAULT_NODE_SIZE);
   }
 
   // --- nodes stuck to the imported surface ---
@@ -144,37 +156,10 @@ export class MeshEditorControlsComponent {
     const id = this.selectedNodeId();
     return this.sessionId !== null && id !== null && this.attachments.isAttached(this.sessionId, id);
   }
-
-  snapEnabled(): boolean {
-    return this.attachments.snapEnabled();
-  }
-
-  onSnapEnabled(event: Event): void {
-    this.attachments.setSnapEnabled((event.target as HTMLInputElement).checked);
-  }
-
-  // The sensitivity: how close to the STL (in % of its size) a dragged vertex sticks.
-  snapPercent(): number {
-    return Math.round(this.attachments.snapShare() * 1000) / 10;
-  }
-
-  onSnapPercent(event: Event): void {
-    this.attachments.setSnapShare(Number((event.target as HTMLInputElement).value) / 100);
-  }
-
-  attachedCount(): number {
-    return this.sessionId === null ? 0 : this.attachments.count(this.sessionId);
-  }
-
   detachNode(): void {
     const id = this.selectedNodeId();
     if (this.sessionId !== null && id !== null) this.attachments.detach(this.sessionId, id);
   }
-
-  detachAllNodes(): void {
-    if (this.sessionId !== null) this.attachments.detachAll(this.sessionId);
-  }
-
   canUndo(): boolean {
     return !this.busy && (this.state?.canUndo ?? false);
   }
@@ -455,6 +440,20 @@ export class MeshEditorControlsComponent {
     this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
   }
 
+  onLocalDivisionChange(axis: number, event: Event): void {
+    const value = Math.floor(Number((event.target as HTMLInputElement).value));
+    if (!Number.isFinite(value)) return;
+    this.localDivisions[axis] = Math.min(8, Math.max(1, value));
+  }
+
+  onTransitionWidthChange(event: Event): void {
+    this.transitionWidth = Number((event.target as HTMLSelectElement).value);
+  }
+
+  runLocalRefinement(): void {
+    // Stub: the local refinement run is not connected yet.
+  }
+
   onNudgeStepChange(event: Event): void {
     const value = Number((event.target as HTMLInputElement).value);
     if (Number.isFinite(value) && value > 0) this.nudgeStep = value;
@@ -468,12 +467,19 @@ export class MeshEditorControlsComponent {
     this.moveSelectedNode({ x: this.nodeCoord('x'), y: this.nodeCoord('y'), z: this.nodeCoord('z'), [axis]: value });
   }
 
+  // One step along an axis. A coarse step (multiplier above 1, the Shift key) first goes to the nearest whole number in its direction; from a whole
+  // number it is the step times the multiplier.
   nudge(axis: Axis, direction: 1 | -1, multiplier = 1): void {
+    const value = this.nodeCoord(axis);
+    let next = value + direction * this.nudgeStep * multiplier;
+    if (multiplier > 1 && Math.abs(value - Math.round(value)) > 1e-9) {
+      next = direction > 0 ? Math.floor(value) + 1 : Math.ceil(value) - 1;
+    }
     this.moveSelectedNode({
       x: this.nodeCoord('x'),
       y: this.nodeCoord('y'),
       z: this.nodeCoord('z'),
-      [axis]: this.nodeCoord(axis) + direction * this.nudgeStep * multiplier
+      [axis]: next
     });
   }
 
@@ -501,42 +507,6 @@ export class MeshEditorControlsComponent {
   redo(): void {
     if (this.sessionId !== null) this.editor.redo(this.sessionId);
   }
-
-  requestReset(): void {
-    this.isResetConfirming = true;
-  }
-
-  cancelReset(): void {
-    this.isResetConfirming = false;
-  }
-
-  requestRestart(): void {
-    this.isRestartConfirming = true;
-  }
-
-  cancelRestart(): void {
-    this.isRestartConfirming = false;
-  }
-
-  // "Start over": the whole session - cubes, undo history, imported reference,
-  // selection, camera - is replaced by a brand-new empty one.
-  confirmRestart(): void {
-    this.isRestartConfirming = false;
-    if (this.sessionId !== null) {
-      this.selection.clear(this.sessionId);
-      this.sessions.restartSession(this.sessionId);
-    }
-  }
-
-  confirmReset(): void {
-    this.isResetConfirming = false;
-    if (this.sessionId !== null) {
-      this.editor.reset(this.sessionId);
-      // the server drops the supports and loads set for the old cubes (their ids start again from 0)
-      this.solver.forget(this.sessionId);
-    }
-  }
-
   // --- numbering: local (inside one cube) <-> global (the mesh node) ---------------
 
   // The cube whose numbering is shown: the single picked cube, or the cube of the
@@ -571,18 +541,27 @@ export class MeshEditorControlsComponent {
     });
   }
 
-  // For the selected node: the local number it has in every cube that owns it
-  // (a shared node is a different local number in each cube).
-  nodeOwnersText(): string {
+  // For the selected node: every cube that owns it with the local number it has there (a shared node has a different one in each cube), and whether
+  // it is a corner or the midpoint of an edge.
+  nodeOwners(): { hex: number; local: number; kind: string }[] {
     const id = this.selectedNodeId();
     if (id === null) {
-      return '';
+      return [];
     }
-    const owners = (this.state?.hexes ?? [])
+    return (this.state?.hexes ?? [])
       .map(h => ({ hex: h.id, local: h.nodeIds.indexOf(id) }))
       .filter(o => o.local >= 0)
-      .map(o => `куб ${o.hex}: локальний №${o.local} (${o.local < 8 ? 'кут' : 'середина ребра'})`);
-    return owners.join('; ');
+      .map(o => ({ ...o, kind: o.local < 8 ? 'кут' : 'середина ребра' }));
+  }
+
+  // --- building with the mouse (the Ideal and the Real World each have their own) ---
+
+  isBuildOn(): boolean {
+    return this.sessionId !== null && this.worldIndex !== null && this.selection.buildMode(this.sessionId, this.worldIndex);
+  }
+
+  toggleBuild(): void {
+    if (this.sessionId !== null && this.worldIndex !== null) this.selection.setBuildMode(this.sessionId, this.worldIndex, !this.isBuildOn());
   }
 
   // --- keyboard shortcuts --------------------------------------------------
@@ -617,7 +596,9 @@ export class MeshEditorControlsComponent {
       return;
     }
 
-    if (mod || event.altKey) {                  // (Cmd/Ctrl+Z and +Shift+Z are the whole app's: GlobalShortcutsComponent)
+    if (!mod && event.altKey && (key === 'arrowup' || key === 'arrowdown')) {     // Alt + up/down: Y (a short keyboard has no PageUp/PageDown)
+      if (this.canMoveNode()) this.nudge('y', key === 'arrowup' ? 1 : -1, event.shiftKey ? 10 : 1);
+    } else if (mod || event.altKey) {            // (Cmd/Ctrl+Z and +Shift+Z are the whole app's: GlobalShortcutsComponent)
       handled = false;
     } else if (key === 'a') {
       if (this.canAttachActiveFace()) this.attachActiveFace();
@@ -635,6 +616,8 @@ export class MeshEditorControlsComponent {
       if (this.canAddFirst()) this.addFirst();
     } else if (key === 'escape') {
       this.clearSelection();
+    } else if (event.code === 'BracketRight' || event.code === 'BracketLeft') {   // ] up, [ down along Y, wherever the keys are on the layout
+      if (this.canMoveNode()) this.nudge('y', event.code === 'BracketRight' ? 1 : -1, event.shiftKey ? 10 : 1);
     } else if (NUDGE_KEYS[key]) {
       const [axis, direction] = NUDGE_KEYS[key];
       if (this.canMoveNode()) this.nudge(axis, direction, event.shiftKey ? 10 : 1);
@@ -644,39 +627,5 @@ export class MeshEditorControlsComponent {
     if (handled) {
       event.preventDefault();
     }
-  }
-
-  // --- mapping probe -------------------------------------------------------
-
-  onMappingInput(side: 'ideal' | 'real', axis: Axis, event: Event): void {
-    const value = Number((event.target as HTMLInputElement).value);
-    if (!Number.isFinite(value)) {
-      return;
-    }
-    if (side === 'ideal') {
-      this.mappingIdeal = { ...this.mappingIdeal, [axis]: value };
-    } else {
-      this.mappingReal = { ...this.mappingReal, [axis]: value };
-    }
-  }
-
-  probeIdealToReal(): void {
-    if (this.sessionId === null) return;
-    this.editor.mapIdealToReal(this.sessionId, this.mappingIdeal).subscribe({
-      next: result => (this.mappingResult = result.found && result.point ? `Real: ${this.format(result.point)}` : 'Поза тілом'),
-      error: () => (this.mappingResult = 'Сервер недоступний')
-    });
-  }
-
-  probeRealToIdeal(): void {
-    if (this.sessionId === null) return;
-    this.editor.mapRealToIdeal(this.sessionId, this.mappingReal).subscribe({
-      next: result => (this.mappingResult = result.found && result.point ? `Ideal: ${this.format(result.point)}` : 'Поза тілом'),
-      error: () => (this.mappingResult = 'Сервер недоступний')
-    });
-  }
-
-  private format(p: MeshPointDto): string {
-    return `(${p.x.toFixed(4)}, ${p.y.toFixed(4)}, ${p.z.toFixed(4)})`;
   }
 }

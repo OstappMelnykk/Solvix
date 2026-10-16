@@ -38,14 +38,14 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
     {
         if (!TryBuild(request, out var plan, out var error)) return new MeshTemplatePreviewDto(false, error, null, 0);
         var scratch = new HexMeshEditor();
-        scratch.AddBody(plan!);
+        scratch.AddTemplateBody(plan!);
         return new MeshTemplatePreviewDto(true, null, MeshStateMapper.ToDto(scratch), scratch.Mesh.InvalidHexes().Count);
     }
 
     public MeshCommandResultDto AddTemplate(int sessionId, MeshTemplateRequestDto request)
     {
         if (!TryBuild(request, out var plan, out var error)) return Reject(sessionId, error!);
-        return Command(sessionId, e => e.AddBody(plan!));
+        return Command(sessionId, e => e.AddTemplateBody(plan!));
     }
 
     // Unknown kinds, out-of-range values and impossible combinations come back as a message, not an exception.
@@ -104,9 +104,6 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
 
     public MeshCommandResultDto MoveNode(int sessionId, int nodeId, MeshPointDto position, bool carryEdgeMidpoints) =>
         Command(sessionId, e => e.MoveNode(nodeId, new Vec3(position.X, position.Y, position.Z), carryEdgeMidpoints));
-
-    public MeshCommandResultDto Smooth(int sessionId, int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true, double shapeTolerance = 0) =>
-        Command(sessionId, e => e.Smooth(iterations, relaxation, surface, density, featureAngle, untangle, straighten, shapeTolerance));
 
     public MeshCommandResultDto Undo(int sessionId) => sessions.With(sessionId, e =>
     {

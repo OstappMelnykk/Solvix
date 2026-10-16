@@ -2,10 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { QUALITY_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
-import { SectionCut, SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
+import { buildQualityView } from '../geometry/quality-view';
+import { SectionCut, SolverViewInput, buildHighlight } from '../geometry/solver-view';
 import { QualityExploreService, SectionSettings } from './quality-explore.service';
-import { GeometryOpacityService } from './geometry-opacity.service';
 import { MeshEditorService } from './mesh-editor.service';
+import { NodeSizeService } from './node-size.service';
 import { SolverService } from './solver.service';
 
 interface Cached {
@@ -20,8 +21,8 @@ interface Cached {
 export class QualityRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly solver = inject(SolverService);
-  private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly explore = inject(QualityExploreService);
+  private readonly nodeSize = inject(NodeSizeService);
   private readonly cache = new Map<number, Cached>();
 
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
@@ -32,9 +33,8 @@ export class QualityRenderService {
       return null;
     }
     const quality = this.solver.quality(sessionId);
-    const opacity = this.geometryOpacity.get(sessionId, worldIndex);
     const looking = this.explore.get(sessionId);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${opacity}:${this.explore.revision(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${this.explore.revision(sessionId)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -44,15 +44,21 @@ export class QualityRenderService {
       result: null,
       field: 'none',
       deformationScale: 0,
-      opacity,
-      quality,
-      qualityMetric: this.solver.qualityMetric(sessionId),
-      showFixed: this.solver.marks(sessionId, 'quality').fixed,
-      showLoads: this.solver.marks(sessionId, 'quality').loads,
-      onlyBad: looking.onlyBad,
-      section: looking.section.enabled ? sectionOf(state, looking.section) : undefined
+      opacity: 1
     };
-    const view = buildSolverView(input);
+    const marks = this.solver.marks(sessionId, 'quality');
+    const view = buildQualityView({
+      state,
+      setup: input.setup,
+      quality,
+      metric: this.solver.qualityMetric(sessionId),
+      look: looking.filled ? { kind: 'solid' } : { kind: 'edges' },
+      onlyBad: looking.onlyBad,
+      section: looking.section.enabled ? sectionOf(state, looking.section) : undefined,
+      nodeScale: { corner: this.nodeSize.get(sessionId, 'corner'), mid: this.nodeSize.get(sessionId, 'mid') },
+      showFixed: marks.fixed,
+      showLoads: marks.loads
+    });
     const picked = this.solver.qualityPick(sessionId);
     if (picked !== null && view.setHighlight) view.setHighlight(buildHighlight(input, { faces: [], elements: [picked], pointed: null }));
     this.cache.set(sessionId, { key, view });

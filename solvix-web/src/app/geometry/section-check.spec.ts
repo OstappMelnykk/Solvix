@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, disposeMeshView } from './mesh-editor-view';
-import { SectionCut, buildSolverView } from './solver-view';
+import { buildQualityView } from './quality-view';
+import { SectionCut } from './solver-view';
 import { ALL_FACES, cubeHex, cubeNodes } from './mesh-state.fixture.spec';
 
 // A row of n unit cubes along x, sharing the nodes of the faces between them.
@@ -34,6 +35,9 @@ const setupOf = (divisions: [number, number, number]): SolverSetupDto => ({
   version: 0, divisions, materials: [], defaultMaterial: 'steel', hexMaterials: {}, elementMaterials: [], fixed: [], loads: []
 });
 
+const build = (state: MeshStateDto, divisions: [number, number, number], section: SectionCut) =>
+  buildQualityView({ state, setup: setupOf(divisions), quality: null, metric: 'grade', look: { kind: 'solid' }, onlyBad: false, section, showFixed: false, showLoads: false });
+
 // the area of the cap of a cut: the sum of its triangles
 function capArea(cap: THREE.Mesh): { area: number; negative: number } {
   const p = cap.geometry.getAttribute('position');
@@ -56,7 +60,7 @@ describe('the cap of a section', () => {
         const at = 3 * k / 30;
         for (const keep of ['above', 'below'] as const) {
           const cut: SectionCut = { axis: 0, at, keep };
-          const view = buildSolverView({ state, setup: setupOf(divisions), result: null, field: 'none', deformationScale: 0, opacity: 1, section: cut });
+          const view = build(state, divisions, cut);
           const cap = view.root.children.find(c => c.userData['sectionCap']) as THREE.Mesh | undefined;
           const area = cap ? capArea(cap).area : 0;
           // when the plane lies exactly on the faces of elements the cap is not needed: the faces themselves are the cut
@@ -72,7 +76,7 @@ describe('the cap of a section', () => {
   it('shows the cut surface itself when the plane lies exactly on the faces of elements (it used to vanish: the faces were thrown out by rounding)', () => {
     const state = row(3);
     for (const keep of ['above', 'below'] as const) {
-      const view = buildSolverView({ state, setup: setupOf([2, 2, 2]), result: null, field: 'none', deformationScale: 0, opacity: 1, section: { axis: 0, at: 1.5, keep } });
+      const view = build(state, [2, 2, 2], { axis: 0, at: 1.5, keep });
       const body = (view.pickables as THREE.Mesh[]).map(m => m.geometry.getAttribute('position'));
       const xs = body.flatMap(p => Array.from({ length: p.count }, (_, i) => p.getX(i)));
       const onPlane = xs.filter(x => Math.abs(x - 1.5) < 1e-5);

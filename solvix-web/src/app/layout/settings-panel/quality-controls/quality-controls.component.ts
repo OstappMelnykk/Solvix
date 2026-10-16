@@ -11,12 +11,9 @@ import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 import { MeasureInfoComponent } from './measure-info/measure-info.component';
-import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-controls.component';
 import { sectionOf } from '../../../state/quality-render.service';
 import { ExploreSettings, QualityExploreService, SectionSettings } from '../../../state/quality-explore.service';
 import { elementCentreOf } from '../../../geometry/solver-view';
-import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
-import { QUALITY_WORLD_INDEX } from '../../../config/app-settings';
 
 interface Measure {
   // the tool whose measure it is (aspect ratio means different things in different tools)
@@ -33,7 +30,7 @@ interface Measure {
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
-  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent, SmoothingControlsComponent],
+  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent],
   templateUrl: './quality-controls.component.html',
   styleUrl: './quality-controls.component.scss'
 })
@@ -41,7 +38,6 @@ export class QualityControlsComponent implements DoCheck {
   private readonly solver = inject(SolverService);
   private readonly editor = inject(MeshEditorService);
   private readonly activeWorld = inject(ActiveWorldService);
-  private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly explore = inject(QualityExploreService);
 
   @Input({ required: true }) sessionId!: number;
@@ -140,13 +136,9 @@ export class QualityControlsComponent implements DoCheck {
     }
   }
 
-  // How opaque the body is (percent): lower it to see the bad elements inside.
-  opacityPercent(): number {
-    return Math.round(this.geometryOpacity.get(this.sessionId, QUALITY_WORLD_INDEX) * 100);
-  }
-
-  onOpacity(event: Event): void {
-    this.geometryOpacity.set(this.sessionId, QUALITY_WORLD_INDEX, Number((event.target as HTMLInputElement).value) / 100);
+  // The body filled, or wholly transparent with only its edges.
+  setFilled(filled: boolean): void {
+    this.explore.setFilled(this.sessionId, filled);
   }
 
   // The measure whose "i" popup is open (UI only).
@@ -225,11 +217,7 @@ export class QualityControlsComponent implements DoCheck {
     return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
   }
 
-  // The button to the solver is always there: it is the user who decides to go on. It only says what to expect.
-  goLabel(level: DecisionLevel): string {
-    return level === 'ok' ? 'Перейти до розрахунку' : level === 'bad' ? 'Все одно перейти до розрахунку' : 'Перейти до розрахунку (не запуститься)';
-  }
-
+  // The way to the solver is always open: it is the user who decides to go on; the verdict only says what to expect.
   goToSolver(): void {
     this.activeWorld.selectCurrentWorld(SOLVER_WORLD_INDEX);
   }
@@ -293,6 +281,17 @@ export class QualityControlsComponent implements DoCheck {
 
   showMark(kind: 'fixed' | 'loads'): boolean {
     return this.solver.marks(this.sessionId, 'quality')[kind];
+  }
+
+  marksShown(): boolean {
+    return this.showMark('fixed') || this.showMark('loads');
+  }
+
+  // one button for both kinds of marks
+  toggleMarks(): void {
+    const show = !this.marksShown();
+    this.solver.setMarks(this.sessionId, 'quality', 'fixed', show);
+    this.solver.setMarks(this.sessionId, 'quality', 'loads', show);
   }
 
   toggleMark(kind: 'fixed' | 'loads'): void {

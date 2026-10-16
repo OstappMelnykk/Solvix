@@ -39,6 +39,16 @@ public sealed class HexMeshEditor
     /// <summary>Adds a ready-made body (see <see cref="HexMesh.AddBody"/>) as one undo step.</summary>
     public EditResult AddBody(BodyPlan plan) => Apply(() => Run(() => Mesh.AddBody(plan)));
 
+    /// <summary>
+    /// Adds a template body as one undo step: the mesh keeps only one template body, so the one that was added
+    /// before is removed, and the new one is put with its centre at the origin.
+    /// </summary>
+    public EditResult AddTemplateBody(BodyPlan plan) => Apply(() => Run(() =>
+    {
+        foreach (int id in Mesh.Hexes.Where(h => h.IsTemplate).Select(h => h.Id).ToList()) Mesh.RemoveHex(id);
+        Mesh.AddBody(plan, centred: true, template: true);
+    }));
+
     public EditResult LinkFaces(FaceRef first, FaceRef second, LinkFit fit) => Apply(() =>
         Mesh.TryLinkFaces(first, second, fit, out var error) ? EditResult.Success : EditResult.Fail(error ?? "Link refused."));
 
@@ -103,27 +113,6 @@ public sealed class HexMeshEditor
         if (carryEdgeMidpoints) Mesh.DragNode(nodeId, position);
         else Mesh.SetNodePosition(nodeId, position);
         return EditResult.Success;
-    });
-
-    /// <summary>Laplacian smoothing that keeps the local density (see <see cref="HexMesh.Smooth"/>); with surface = true the smooth patches of the surface slide too.</summary>
-    public EditResult Smooth(int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true, double shapeTolerance = 0) => Apply(() =>
-    {
-        if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
-        if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
-        if (!(density >= 0 && density <= 1)) return EditResult.Fail("The density weight must be in [0, 1].");
-        if (!(shapeTolerance >= 0 && shapeTolerance <= 0.5)) return EditResult.Fail("The shape tolerance must be in [0, 0.5] of an edge.");
-        if (!(featureAngle > 0 && featureAngle <= 90)) return EditResult.Fail("The feature angle must be in (0, 90] degrees.");
-        var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle, untangle, straighten, shapeTolerance);
-        if (report.Moved > 0)
-        {
-            var c = System.Globalization.CultureInfo.InvariantCulture;
-            return EditResult.Done($"Згладжено за {report.Passes} проходів: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved} (з них середин ребер {report.EdgesStraightened}){(report.Reshaped > 0 ? $", форму підправлено в {report.Reshaped} вершинах" : "")}. Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.{(report.FoldedBefore > 0 ? $" Вивернутих кубів: було {report.FoldedBefore}, стало {report.FoldedAfter}." : "")}");
-        }
-        if (report.Interior + report.Surface == 0)
-            return EditResult.Fail(surface
-                ? "Nothing to smooth: every vertex is on a ridge or a corner of the body."
-                : "Nothing to smooth: every vertex lies on the surface (the body is too thin to have interior vertices). Turn on smoothing of the surface.");
-        return EditResult.Fail("Nothing to smooth: the mesh is already smooth, or each step would fold a cube.");
     });
 
     public EditResult Reset() => Apply(() =>
