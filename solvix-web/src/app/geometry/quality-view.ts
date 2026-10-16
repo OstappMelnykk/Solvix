@@ -114,12 +114,12 @@ function litFaceMaterial(options: { kind: QualityLook['kind']; opacity: number; 
         '#include <opaque_fragment>',
         `vec2 edgeD = 1.0 - abs(vFaceUv);
         vec2 edgeW = max(fwidth(vFaceUv), vec2(1e-6));
-        float edgeLine = 1.0 - smoothstep(${wire ? '0.9, 2.2' : '0.4, 1.3'}, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
+        float edgeLine = 1.0 - smoothstep(${wire ? '0.9, 2.2' : solid ? '0.4, 1.3' : '0.6, 1.9'}, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
         edgeLine *= mix(1.0, uFadeMin, clamp((vFadeDepth - uFadeNear) / max(uFadeFar - uFadeNear, 0.0001), 0.0, 1.0));
-        ${wire ? 'vec3 edgeColor = clamp(vColor.rgb * 1.7 + 0.12, 0.0, 1.0);' : `vec3 edgeColor = vec3(${EDGE_COLOR.join(', ')});`}
+        ${wire ? 'vec3 edgeColor = clamp(vColor.rgb * 1.7 + 0.12, 0.0, 1.0);' : solid ? `vec3 edgeColor = vec3(${EDGE_COLOR.join(', ')});` : 'vec3 edgeColor = vec3(1.0);'}
         edgeLine *= ${options.edges ? '1.0' : '0.0'};
         outgoingLight = mix(outgoingLight, edgeColor, edgeLine);
-        diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine * ${solid || wire ? '1.0' : '0.9'});
+        diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine);
         #include <opaque_fragment>`
       );
   };
