@@ -472,7 +472,7 @@ kbd {
 }
 
 .slider__range {
-  --fill: 22%;
+  --p: 0.2;
   display: block;
   width: 100%;
   height: 18px;
@@ -485,7 +485,7 @@ kbd {
   &::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    background: linear-gradient(to right, $accent-toggle var(--fill), #3a3d43 var(--fill));
+    background: linear-gradient(to right, $accent-toggle calc(7px + (100% - 14px) * var(--p)), #3a3d43 calc(7px + (100% - 14px) * var(--p)));
   }
 
   &::-moz-range-track {

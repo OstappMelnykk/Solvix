@@ -185,7 +185,7 @@
       max="100"
       step="1"
       [value]="opacityPercent()"
-      [style.--fill.%]="opacityPercent()"
+      [style.--p]="(opacityPercent() - 5) / 95"
       (input)="onOpacity($event)"
       aria-label="Непрозорість граней"
     />

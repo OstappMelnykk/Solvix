@@ -40,7 +40,7 @@
     <h5>Вигляд</h5>
     <div class="slider">
       <div class="slider__head"><span>Непрозорість тіла</span><b>{{ opacityPercent() }}%</b></div>
-      <input class="slider__range" type="range" min="5" max="100" step="1" [value]="opacityPercent()" [style.--fill.%]="opacityPercent()" (input)="onOpacity($event)" aria-label="Непрозорість тіла" />
+      <input class="slider__range" type="range" min="5" max="100" step="1" [value]="opacityPercent()" [style.--p]="(opacityPercent() - 5) / 95" (input)="onOpacity($event)" aria-label="Непрозорість тіла" />
       <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
     </div>
     <button type="button" class="tool" [class.tool--on]="marksShown()" (click)="toggleMarks()">Закріплення та навантаження: {{ marksShown() ? 'показано' : 'сховано' }}</button>
