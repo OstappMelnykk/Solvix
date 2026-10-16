@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
 import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
-import { createDepthFade } from '../rendering/depth-fade';
 import { markForWeightedOit } from '../rendering/weighted-oit';
 import { buildDisplacementArrows } from './displacement-arrows';
-import { QualityMetric, Result, measuredGrade, resultOf } from './quality-grading';
+import { Result, measuredGrade, resultOf } from './quality-grading';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
 // The Solver World's drawing of a body, the way the solver's own viewer shows its mesh: every cube cut into
@@ -29,10 +28,8 @@ export interface SolverViewInput {
   // Also draw the faces between visible elements (the grid inside the body).
   readonly showInner?: boolean;
   readonly showLabels?: boolean;
-  // When given, the small elements are coloured by their quality grade instead of by material.
+  // When given, the small elements are coloured by their quality grade instead of by material (the Solver World's "show on the scene").
   readonly quality?: SolverQualityDto | null;
-  // What the quality colours show: the overall grade (default) or the grade of one measure.
-  readonly qualityMetric?: QualityMetric;
   // The value that gets the last colour of the ramp (default: the largest value of the field); larger values are
   // painted the same, so one hot spot does not wash out the rest.
   readonly colorMax?: number | null;
@@ -44,16 +41,9 @@ export interface SolverViewInput {
   readonly showLoads?: boolean;
   // Draw the displacement vectors (default yes); the view can show and hide them later without a rebuild.
   readonly vectors?: boolean;
-  // Quality only: draw just the elements the chosen measure does not grade excellent, so the bad ones inside the body
-  // stand free of the good ones around them.
-  readonly onlyBad?: boolean;
-  // A cut through the body: the elements whose centre lies on the other side of the plane (the real coordinate `axis`
-  // equal to `at`) are not drawn, so the cut shows what is inside. `keep` is the side that stays.
-  readonly section?: SectionCut;
-  // Draw the dark edges of the small elements (default yes); the Quality World leaves them out when the Real World's own lines and nodes are laid over the faces.
-  readonly edges?: boolean;
 }
 
+// A cut through a body: the real coordinate `axis` equal to `at`, and the side that is kept.
 export interface SectionCut {
   readonly axis: 0 | 1 | 2;
   readonly at: number;
@@ -62,10 +52,8 @@ export interface SectionCut {
 
 const EDGE_SEGMENTS = 8;
 const EDGE_COLOR = 0x1a1d23;
-// the edges of a quality view: pale, like the Real World's, so they read on the dark scene
-const QUALITY_EDGE_COLOR = 0xd5d9e0;
-const FIXED_COLOR = 0x3388ff;
-const LOAD_COLOR = 0x44ff44;
+export const FIXED_COLOR = 0x3388ff;
+export const LOAD_COLOR = 0x44ff44;
 // One colour for the loads, in tones: the weaker the pressure, the paler the green; the strongest is the full one.
 export function pressureColor(all: readonly number[], pressure: number): number {
   const distinct = Array.from(new Set(all.map(Math.abs))).sort((a, b) => a - b);
@@ -75,7 +63,7 @@ export function pressureColor(all: readonly number[], pressure: number): number 
   return new THREE.Color(LOAD_COLOR).multiplyScalar(tone).getHex();
 }
 const HIGHLIGHT_COLOR = 0xffe14d;
-const OVERLAY_OPACITY = 0.62;
+export const OVERLAY_OPACITY = 0.62;
 const LIGHT = new THREE.Vector3(0.45, 0.8, 0.55).normalize();
 
 // Blue -> cyan -> green -> yellow -> red.
@@ -193,7 +181,7 @@ export function faceName(axis: number, plus: boolean): HexFaceName {
 // ---------------------------------------------------------------------------------------------------------------
 // the positions and values of the divided mesh
 
-interface SmallFace {
+export interface SmallFace {
   readonly positions: THREE.Vector3[];
   readonly values: number[];
 }
@@ -209,89 +197,9 @@ export function elementCentreOf(state: MeshStateDto, divisions: readonly number[
 
 const alongOf = (axis: 0 | 1 | 2, x: number, y: number, z: number): number => (axis === 0 ? x : axis === 1 ? y : z);
 
-// Everything that lies in the plane of a cut (the cut faces, the caps, the lines and dots on them, the sheet of the plane) is at
-// the same depth, and with the logarithmic depth buffer the canvas uses (which ignores the polygon offset) such things fight
-// for the pixel. So the lines, the dots and the sheet are moved a hair towards the viewer (towards the side that was cut away)
-// and the caps a hair into the body: each layer has a depth of its own. `by` is in the units of the body.
-export function shiftAlong(values: readonly number[], axis: 0 | 1 | 2, by: number): number[] {
-  const out = values.slice();
-  for (let i = axis; i < out.length; i += 3) out[i] += by;
-  return out;
-}
-
 // A face that lies exactly in the plane of a cut belongs to the kept side, however the float32 rounding of its coordinates
 // falls: the plane is moved this far out to the removed side.
-const planeSlack = (cut: SectionCut): number => 2e-6 * (1 + Math.abs(cut.at));
-
-// Cuts the triangles of a mesh by the plane of a section, keeping what is on the side that stays; a triangle the plane
-// runs through is cut (the kept part of it is one or two triangles, the colours interpolated). Also returns, for each
-// triangle that is left, the face it came from (so a click can still be traced back).
-export function clipMeshToPlane(source: THREE.BufferGeometry, trianglesPerFace: number, cut: SectionCut): { geometry: THREE.BufferGeometry; faceOfTriangle: number[] } {
-  const position = source.getAttribute('position');
-  const color = source.getAttribute('color');
-  const index = source.getIndex()!;
-  const sign = cut.keep === 'above' ? 1 : -1;
-  const slack = planeSlack(cut);
-  const outPositions: number[] = [];
-  const outColors: number[] = [];
-  const faceOfTriangle: number[] = [];
-  const vertex = (i: number) => ({
-    p: [position.getX(i), position.getY(i), position.getZ(i)] as const,
-    c: [color.getX(i), color.getY(i), color.getZ(i)] as const,
-    d: sign * (alongOf(cut.axis, position.getX(i), position.getY(i), position.getZ(i)) - cut.at) + slack
-  });
-  type Vertex = ReturnType<typeof vertex>;
-  const between = (a: Vertex, b: Vertex): Vertex => {
-    const t = a.d / (a.d - b.d);
-    return {
-      p: [a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, a.p[2] + (b.p[2] - a.p[2]) * t] as const,
-      c: [a.c[0] + (b.c[0] - a.c[0]) * t, a.c[1] + (b.c[1] - a.c[1]) * t, a.c[2] + (b.c[2] - a.c[2]) * t] as const,
-      d: 0
-    };
-  };
-  const emit = (face: number, ...corners: Vertex[]) => {
-    for (const v of corners) {
-      outPositions.push(...v.p);
-      outColors.push(...v.c);
-    }
-    faceOfTriangle.push(face);
-  };
-  for (let t = 0; t < index.count / 3; t++) {
-    const face = Math.floor(t / trianglesPerFace);
-    const corners = [vertex(index.getX(3 * t)), vertex(index.getX(3 * t + 1)), vertex(index.getX(3 * t + 2))];
-    // the polygon that stays: walk the three sides and keep what is on the right side of the plane
-    const polygon: Vertex[] = [];
-    for (let i = 0; i < 3; i++) {
-      const a = corners[i], b = corners[(i + 1) % 3];
-      if (a.d >= 0) polygon.push(a);
-      if ((a.d >= 0) !== (b.d >= 0)) polygon.push(between(a, b));
-    }
-    for (let i = 1; i + 1 < polygon.length; i++) emit(face, polygon[0], polygon[i], polygon[i + 1]);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(outPositions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(outColors, 3));
-  geometry.setIndex(Array.from({ length: outPositions.length / 3 }, (_, i) => i));
-  return { geometry, faceOfTriangle };
-}
-
-// The line segments (pairs of points, 6 numbers each) cut by the plane: the part on the kept side only.
-export function clipSegmentsToPlane(segments: readonly number[], cut: SectionCut): number[] {
-  const sign = cut.keep === 'above' ? 1 : -1;
-  const slack = planeSlack(cut);
-  const out: number[] = [];
-  for (let i = 0; i + 5 < segments.length; i += 6) {
-    const a = [segments[i], segments[i + 1], segments[i + 2]], b = [segments[i + 3], segments[i + 4], segments[i + 5]];
-    const da = sign * (alongOf(cut.axis, a[0], a[1], a[2]) - cut.at) + slack, db = sign * (alongOf(cut.axis, b[0], b[1], b[2]) - cut.at) + slack;
-    if (da < 0 && db < 0) continue;
-    if (da >= 0 && db >= 0) { out.push(...a, ...b); continue; }
-    const t = da / (da - db);
-    const cutPoint = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-    if (da >= 0) out.push(...a, ...cutPoint);
-    else out.push(...cutPoint, ...b);
-  }
-  return out;
-}
+export const planeSlack = (cut: SectionCut): number => 2e-6 * (1 + Math.abs(cut.at));
 
 // The outlines in which the plane cuts a small element: the segments in which it crosses the triangles of the element's six
 // faces, chained end to end into closed loops (a loop is a list of points). Usually one loop; none if the plane misses the
@@ -517,7 +425,7 @@ function pushEdge(out: number[], start: THREE.Vector3, mid: THREE.Vector3, end: 
 // ---------------------------------------------------------------------------------------------------------------
 // the faces that are drawn
 
-interface DrawnFace {
+export interface DrawnFace {
   // the cube whose grid gives the geometry
   readonly drawer: MeshHexDto;
   readonly axis: number;
@@ -544,14 +452,14 @@ const trianglesPerFace = (resolution: number) => 2 * resolution * resolution;
 
 // Appends the smooth surface of a small face (its 8 nodes through the face shape functions) to a vertex/index list.
 // A point of a small face at (u, v) in [-1, 1].
-function facePoint(face: SmallFace, u: number, v: number): THREE.Vector3 {
+export function facePoint(face: SmallFace, u: number, v: number): THREE.Vector3 {
   const point = new THREE.Vector3();
   for (let k = 0; k < 8; k++) point.addScaledVector(face.positions[k], faceShape(k, u, v));
   return point;
 }
 
 // A label with the pressure, drawn on the face: a sprite that always looks at the camera.
-function pressureLabel(text: string, position: THREE.Vector3, height: number): THREE.Sprite {
+export function pressureLabel(text: string, position: THREE.Vector3, height: number): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 96;
@@ -576,7 +484,7 @@ function pressureLabel(text: string, position: THREE.Vector3, height: number): T
   return sprite;
 }
 
-function appendSurface(positions: number[], indices: number[], face: SmallFace, resolution: number, onVertex?: (u: number, v: number, value: number) => void): void {
+export function appendSurface(positions: number[], indices: number[], face: SmallFace, resolution: number, onVertex?: (u: number, v: number, value: number) => void): void {
   const base = positions.length / 3;
   const stride = resolution + 1;
   for (let iv = 0; iv <= resolution; iv++) {
@@ -615,30 +523,14 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const hidden = input.hiddenMaterials ?? new Set<string>();
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
-  // the depth layers of a cut (see shiftAlong): one step is a thousandth of the body's size
-  const layer = (() => {
-    if (!input.section) return 0;
-    let low = Infinity, high = -Infinity;
-    for (const n of state.nodes) for (const c of [n.x, n.y, n.z]) { low = Math.min(low, c); high = Math.max(high, c); }
-    return Math.max(1e-9, (high - low) * 1e-3) * (input.section.keep === 'above' ? -1 : 1);       // towards the viewer, on the removed side
-  })();
-
   const values = result && !input.quality ? fieldValues(result, field) : null;
   const range: FieldRange = values ? { min: 0, max: input.colorMax && input.colorMax > 0 ? input.colorMax : fieldRange(values).max } : { min: 0, max: 0 };
   const span = range.max - range.min;
 
   // the elements the server flagged; any other small element is excellent
   const qualityColors = input.quality
-    ? new Map(input.quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, input.qualityMetric ?? 'grade', input.quality!.limits)]))
+    ? new Map(input.quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, 'grade', input.quality!.limits)]))
     : null;
-  // a flagged element that the chosen measure does not grade excellent
-  const isBad = (hex: number, ex: number, ey: number, ez: number): boolean => (qualityColors?.get(`${hex}:${ex}:${ey}:${ez}`) ?? 'excellent') !== 'excellent';
-  const seeThrough = qualityColors !== null && opacity < 1;
-  // the quality view's lines and dots are lifted a hair towards the camera, so the ones lying ON a face win over it (no fade: the body is not see-through here); so they are not moved along the axis of a cut either - that would sink the ones on the end faces into the body
-  const lift = <T extends THREE.Material>(material: T): T => {
-    if (qualityColors) createDepthFade(new THREE.Vector3(), 1, 1).patch(material);
-    return material;
-  };
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -646,26 +538,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const overrides = new Map((setup?.elementMaterials ?? []).map(m => [`${m.hex}:${m.ex}:${m.ey}:${m.ez}`, m.material]));
   const materialOf = (hex: number, ex: number, ey: number, ez: number): string =>
     overrides.get(`${hex}:${ex}:${ey}:${ez}`) ?? setup?.hexMaterials[hex] ?? setup?.defaultMaterial ?? 'default';
-  // an element is drawn unless its material is hidden, it is cut away, or only the bad ones are wanted and it is not
-  const shownCache = new Map<string, boolean>();
-  const visible = (hex: number, ex: number, ey: number, ez: number): boolean => {
-    const key = `${hex}:${ex}:${ey}:${ez}`;
-    let shown = shownCache.get(key);
-    if (shown === undefined) {
-      shown = !hidden.has(materialOf(hex, ex, ey, ez));
-      if (shown && input.onlyBad && qualityColors && !isBad(hex, ex, ey, ez)) shown = false;
-      const cut = input.section;
-      if (shown && cut) {
-        // an element stays while any part of it is on the kept side: the ones the plane runs through are cut by it
-        const { min, max } = geometry.elementExtent(hexById.get(hex)!, ex, ey, ez, cut.axis);
-        const slack = planeSlack(cut);
-        // one that only touches the plane from the far side is gone: its faces at the plane are then the cut itself
-        shown = cut.keep === 'above' ? max > cut.at + slack : min < cut.at - slack;
-      }
-      shownCache.set(key, shown);
-    }
-    return shown;
-  };
+  // an element is drawn unless its material is hidden
+  const visible = (hex: number, ex: number, ey: number, ez: number): boolean => !hidden.has(materialOf(hex, ex, ey, ez));
 
   const isFixed = new Set((setup?.fixed ?? []).map(f => `${f.hex}:${f.face}:${f.p}:${f.q}`));
   const pressureOf = new Map((setup?.loads ?? []).map(l => [`${l.hex}:${l.face}:${l.p}:${l.q}`, l.pressure]));
@@ -707,11 +581,9 @@ export function buildSolverView(input: SolverViewInput): MeshView {
             }
             const lowVisible = low !== null && visible(low.hex.id, ...low.element);
             const highVisible = high !== null && visible(high.hex.id, ...high.element);
-            // with the body see-through, the faces around a bad element are drawn even inside the body, so it can be seen
-            const lowBad = lowVisible && isBad(low!.hex.id, ...low!.element), highBad = highVisible && isBad(high!.hex.id, ...high!.element);
-            const keep = lowVisible !== highVisible || (lowVisible && highVisible && (input.showInner === true || (seeThrough && (lowBad || highBad))));
+            const keep = lowVisible !== highVisible || (lowVisible && highVisible && input.showInner === true);
             if (!keep) continue;
-            const ownerIsHigh = highVisible && !(lowVisible && lowBad && !highBad);   // with both visible: the high side, but the bad one wins
+            const ownerIsHigh = highVisible;                              // with both visible: the high side
             const owner = ownerIsHigh ? high! : low!;
             const entry: DrawnFace = {
               drawer: hex,
@@ -783,47 +655,22 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent')]) : materialColor(materialOf(face.owner.id, ...face.element));
     const addBody = (subset: readonly DrawnFace[], subsetOpacity: number): void => {
     const subsetSolid = subsetOpacity >= 1;
-    // The quality view is lit and matt like the Real World's body (the colours are the grades); the other views keep a light baked into their colours.
-    const lit = qualityColors !== null;
-    const material: THREE.Material = lit
-      // see-through, it blends with every face behind it (no depth test), as the Real World's faces do - one tone whatever the order
-      ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid, depthTest: subsetSolid })
-      : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
-    if (!lit) markForWeightedOit(material);
-    let bodyGeometry = faceGeometry(subset, colorOf, !lit, values !== null);
-    if (lit) bodyGeometry.computeVertexNormals();
-    let faceOfTriangle: number[] | null = null;
-    if (input.section) {
-      // the plane of a section cuts the faces it runs through: what is on the kept side stays, to the very plane
-      const clipped = clipMeshToPlane(bodyGeometry, triangles, input.section);
-      bodyGeometry.dispose();
-      bodyGeometry = clipped.geometry;
-      faceOfTriangle = clipped.faceOfTriangle;
-      if (lit) bodyGeometry.computeVertexNormals();             // the cut made a new geometry: a lit face needs its normals again
-    }
+    markForWeightedOit(material);
+    const bodyGeometry = faceGeometry(subset, colorOf, true, values !== null);
     const mesh = new THREE.Mesh(bodyGeometry, material);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
-    // (after a cut, the face each triangle came from was kept)
     mesh.userData['resolvePick'] = (triangle: number): PickedFace | null => {
-      const face = subset[faceOfTriangle ? (faceOfTriangle[triangle] ?? -1) : Math.floor(triangle / triangles)];
+      const face = subset[Math.floor(triangle / triangles)];
       return face
         ? { kind: 'face', hex: face.owner.id, face: face.face, p: face.p, q: face.q, element: face.element, inner: !face.outer }
         : null;
     };
     mesh.userData['pick'] = mesh.userData['resolvePick'](0);
-    if (lit) mesh.renderOrder = 1;
-    // a translucent outside also writes depth, invisibly, so the lines laid over it are full strength only where nothing of the body is in front of them
-    if (lit && !subsetSolid && (input.section || subset.some(f => f.outer))) {
-      const outside = input.section || subset.every(f => f.outer) ? bodyGeometry : faceGeometry(subset.filter(f => f.outer), colorOf, false);
-      const depthOnly = new THREE.Mesh(outside, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
-      depthOnly.renderOrder = 0;
-      root.add(depthOnly);
-    }
     root.add(mesh);
     pickables.push(mesh);
     };
-    // one opacity for every face, so the whole body is one tone (the faces round a bad element inside are drawn too, so it can be seen)
     addBody(faces, opacity);
 
     for (const face of faces) {
@@ -890,41 +737,13 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     root.add(overlay);
   }
 
-  if (lines.length > 0 && input.edges !== false) {
+  if (lines.length > 0) {
     const buffer = new THREE.BufferGeometry();
-    const shownLines = input.section ? clipSegmentsToPlane(lines, input.section) : lines;
-    buffer.setAttribute('position', new THREE.Float32BufferAttribute(input.section && !qualityColors ? shiftAlong(shownLines, input.section.axis, layer) : shownLines, 3));
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
     if (displaced) deformables.push(deformable(buffer, lines, movedLines));
-    const edges = new THREE.LineSegments(buffer, lift(new THREE.LineBasicMaterial({ color: qualityColors ? QUALITY_EDGE_COLOR : EDGE_COLOR })));
+    const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
     edges.userData['edges'] = true;
     root.add(edges);
-  }
-
-  // only the bad elements: their vertices are drawn like the cut's (cube corners white, midpoints yellow), so they can be seen and counted
-  if (qualityColors && input.onlyBad && !input.section) {
-    const cornerKeys = new Set<string>();
-    const found = new Map<string, { at: THREE.Vector3; corner: boolean }>();
-    const keyOf = (v: THREE.Vector3) => `${v.x.toFixed(5)},${v.y.toFixed(5)},${v.z.toFixed(5)}`;
-    for (const hexNodeId of state.hexes.flatMap(h => h.nodeIds.slice(0, 8))) {
-      const n = state.nodes.find(x => x.id === hexNodeId);
-      if (n) cornerKeys.add(keyOf(new THREE.Vector3(n.x, n.y, n.z)));
-    }
-    for (const faces of drawn.values()) {
-      for (const face of faces) {
-        const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
-        small.positions.forEach((v: THREE.Vector3) => {
-          const key = keyOf(v);
-          if (!found.has(key)) found.set(key, { at: v, corner: cornerKeys.has(key) });
-        });
-      }
-    }
-    for (const [wanted, colour, size] of [[true, 0xffffff, 7], [false, 0xf0b429, 5]] as const) {
-      const points = Array.from(found.values()).filter(f => f.corner === wanted);
-      if (points.length === 0) continue;
-      const pointGeometry = new THREE.BufferGeometry();
-      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(f => [f.at.x, f.at.y, f.at.z]), 3));
-      root.add(new THREE.Points(pointGeometry, lift(new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false }))));
-    }
   }
 
   // the displacement vectors: arrows at the nodes, shown or hidden without a rebuild (userData.vectors)
@@ -938,122 +757,6 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     vectors.userData['vectors'] = true;
     vectors.visible = input.vectors !== false;
     root.add(vectors);
-  }
-
-  // the cut itself: for every element the plane runs through, the polygon in which it cuts it, in the colour of the element
-  if (input.section) {
-    const cut = input.section;
-    const capPositions: number[] = [];
-    const capColors: number[] = [];
-    const stats = { straddlers: 0, withoutOutline: 0, openChains: 0 };       // for checking the cut, not for drawing
-    const outline: number[] = [];                  // the edge of every cap, drawn dark over it
-    const interior: number[] = [];                 // the edges of the elements inside the body, so its structure shows
-    const wantInterior = state.hexes.length * counts[0] * counts[1] * counts[2] <= 8000;
-    const resolutionCap = faceResolution(counts);
-    for (const hex of state.hexes) {
-      for (let ex = 0; ex < counts[0]; ex++)
-        for (let ey = 0; ey < counts[1]; ey++)
-          for (let ez = 0; ez < counts[2]; ez++) {
-            if (!visible(hex.id, ex, ey, ez)) continue;
-            const { min, max } = geometry.elementExtent(hex, ex, ey, ez, cut.axis);
-            if (wantInterior) interior.push(...clipSegmentsToPlane(geometry.elementEdges(hex, ex, ey, ez, 3), cut));
-            const slack = planeSlack(cut);
-            if (!(min < cut.at - slack && max > cut.at + slack)) continue;
-            const e = [ex, ey, ez];
-            const sixFaces: { positions: number[]; indices: number[] }[] = [];
-            for (let axis = 0; axis < 3; axis++) {
-              const [t0, t1] = [0, 1, 2].filter(d => d !== axis);
-              for (const t of [e[axis], e[axis] + 1]) {
-                const positions: number[] = [];
-                const indices: number[] = [];
-                appendSurface(positions, indices, geometry.smallFace(hex, axis, t, e[t0], e[t1]), resolutionCap);
-                sixFaces.push({ positions, indices });
-              }
-            }
-            const report = { open: 0 };
-            const loops = elementSectionLoops(sixFaces, cut, report);
-            stats.straddlers++;
-            stats.openChains += report.open;
-            if (loops.length === 0) { stats.withoutOutline++; continue; }
-            const rgb = new THREE.Color(
-              qualityColors
-                ? RESULT_COLORS[resultOf(qualityColors.get(`${hex.id}:${ex}:${ey}:${ez}`) ?? 'excellent')]
-                : materialColor(materialOf(hex.id, ex, ey, ez))
-            );
-            for (const loop of loops) {
-              for (const [i, j, k] of triangulateLoop(loop, cut.axis)) {
-                for (const p of [loop[i], loop[j], loop[k]]) {
-                  capPositions.push(p.x, p.y, p.z);
-                  capColors.push(rgb.r, rgb.g, rgb.b);
-                }
-              }
-              for (let i = 0; i < loop.length; i++) {
-                const a = loop[i], b = loop[(i + 1) % loop.length];
-                outline.push(a.x, a.y, a.z, b.x, b.y, b.z);
-              }
-            }
-          }
-    }
-    root.userData['sectionStats'] = stats;
-    if (capPositions.length > 0) {
-      const capGeometry = new THREE.BufferGeometry();
-      capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(capPositions, cut.axis, -layer), 3));
-      capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
-      // in the quality view the cut is lit like the faces around it (its normal is the plane's)
-      const capMaterial: THREE.MeshBasicMaterial | THREE.MeshLambertMaterial = qualityColors
-        ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
-        : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
-      if (qualityColors) {
-        // the cut looks to the open side. A two-sided material turns the normal of a triangle seen from behind, so a triangle wound the other way gets the opposite normal.
-        const open = cut.keep === 'below' ? 1 : -1;
-        const normals: number[] = [];
-        const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3();
-        for (let i = 0; i < capPositions.length; i += 9) {
-          pa.fromArray(capPositions, i); pb.fromArray(capPositions, i + 3); pc.fromArray(capPositions, i + 6);
-          const wound = [0, 0, 0];
-          wound[cut.axis] = pb.sub(pa).cross(pc.sub(pa)).getComponent(cut.axis) >= 0 ? open : -open;
-          for (let k = 0; k < 3; k++) normals.push(wound[0], wound[1], wound[2]);
-        }
-        capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-      } else markForWeightedOit(capMaterial);
-      capMaterial.polygonOffset = true;               // behind its own outline, which lies in the same plane
-      capMaterial.polygonOffsetFactor = 1;
-      capMaterial.polygonOffsetUnits = 1;
-      const cap = new THREE.Mesh(capGeometry, capMaterial);
-      cap.userData['sectionCap'] = true;
-      root.add(cap);
-    }
-    // the structure of the body that is left: where the elements meet (their edges), and the vertices of the cubes
-    const structure = [...interior, ...outline];
-    if (structure.length > 0) {
-      const lineGeometry = new THREE.BufferGeometry();
-      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(structure, cut.axis, qualityColors ? 0 : layer), 3));
-      const inside = new THREE.LineSegments(lineGeometry, lift(new THREE.LineBasicMaterial({ color: qualityColors ? QUALITY_EDGE_COLOR : EDGE_COLOR })));
-      inside.userData['sectionStructure'] = true;
-      root.add(inside);
-    }
-    const kept = (n: { x: number; y: number; z: number }) => {
-      const d = alongOf(cut.axis, n.x, n.y, n.z) - cut.at;
-      return cut.keep === 'above' ? d >= -planeSlack(cut) : d <= planeSlack(cut);
-    };
-    const cornerNodes = new Set(state.hexes.flatMap(h => h.nodeIds.slice(0, 8)));
-    for (const [wanted, colour, size] of [[true, 0xffffff, 7], [false, 0xf0b429, 5]] as const) {
-      const points = state.nodes.filter(n => cornerNodes.has(n.id) === wanted && kept(n));
-      if (points.length === 0) continue;
-      const pointGeometry = new THREE.BufferGeometry();
-      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(points.flatMap(n => [n.x, n.y, n.z]), cut.axis, qualityColors ? 0 : 2 * layer), 3));
-      const dots = new THREE.Points(pointGeometry, lift(new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false, depthTest: true })));
-      dots.userData['sectionNodes'] = wanted ? 'corners' : 'midpoints';
-      root.add(dots);
-    }
-  }
-
-  // the plane of the cut, drawn as a pale sheet with an outline, so it is plain where it passes through the body
-  if (input.section) {
-    // the sheet lies behind the cut itself (which is shifted by one layer into the body), so it never tints the cut seen from the open side
-    const plane = sectionPlane(state, { ...input.section, at: input.section.at - 2 * layer });
-    plane.userData['sectionPlane'] = true;
-    root.add(plane);
   }
 
   // what a click would act on is drawn into the view without rebuilding it
@@ -1193,7 +896,7 @@ export function buildHighlight(input: SolverViewInput, targets: HighlightTargets
   return group;
 }
 
-function disposeObject(object: THREE.Object3D): void {
+export function disposeObject(object: THREE.Object3D): void {
   object.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
       child.geometry.dispose();

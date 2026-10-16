@@ -472,6 +472,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    // the Quality World's section cuts with the clipping planes of its materials
+    this.renderer.localClippingEnabled = true;
     this.oitRenderer = new WeightedOitRenderer(this.renderer);
     this.oitRenderer.setSize(width, height);
 

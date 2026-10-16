@@ -1,8 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { QUALITY_WORLD_INDEX } from '../config/app-settings';
-import { MeshView, buildMeshView } from '../geometry/mesh-editor-view';
+import { MeshView } from '../geometry/mesh-editor-view';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
-import { SectionCut, SolverViewInput, buildHighlight, buildSolverView } from '../geometry/solver-view';
+import { buildQualityView } from '../geometry/quality-view';
+import { SectionCut, SolverViewInput, buildHighlight } from '../geometry/solver-view';
 import { QualityExploreService, SectionSettings } from './quality-explore.service';
 import { GeometryOpacityService } from './geometry-opacity.service';
 import { MeshEditorService } from './mesh-editor.service';
@@ -38,33 +39,26 @@ export class QualityRenderService {
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
-    // The whole body, as the Real World draws it: its lines and nodes are laid over the coloured faces. A cut or only the bad elements keep the small elements' own edges.
-    const lookedAtWhole = !looking.section.enabled && !looking.onlyBad;
     const input: SolverViewInput = {
       state,
       setup: this.solver.setup(sessionId),
       result: null,
       field: 'none',
       deformationScale: 0,
-      opacity,
+      opacity
+    };
+    const marks = this.solver.marks(sessionId, 'quality');
+    const view = buildQualityView({
+      state,
+      setup: input.setup,
       quality,
-      qualityMetric: this.solver.qualityMetric(sessionId),
-      showFixed: this.solver.marks(sessionId, 'quality').fixed,
-      showLoads: this.solver.marks(sessionId, 'quality').loads,
+      metric: this.solver.qualityMetric(sessionId),
+      opacity,
       onlyBad: looking.onlyBad,
       section: looking.section.enabled ? sectionOf(state, looking.section) : undefined,
-      edges: !lookedAtWhole
-    };
-    const view = buildSolverView(input);
-    if (lookedAtWhole) {
-      const lines = buildMeshView(
-        state,
-        'real',
-        { hexes: [], face: null, hoverFace: null, nodeId: null },
-        { subdivisions: this.solver.divisions(sessionId) as [number, number, number], faces: false, pickable: false, faceOpacity: opacity }
-      );
-      view.root.add(lines.root);
-    }
+      showFixed: marks.fixed,
+      showLoads: marks.loads
+    });
     const picked = this.solver.qualityPick(sessionId);
     if (picked !== null && view.setHighlight) view.setHighlight(buildHighlight(input, { faces: [], elements: [picked], pointed: null }));
     this.cache.set(sessionId, { key, view });
