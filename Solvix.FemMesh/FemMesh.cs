@@ -9,7 +9,8 @@ public sealed class FemMesh : IFemMesh
 {
     private readonly int[] _root;
     private readonly string[] _key;
-    private readonly ParametricBox[] _box;
+    private readonly ParametricPoint[] _centre;
+    private readonly ParametricPoint[] _faceCentre;        // [element * 6 + face]
     private readonly Dictionary<int, List<int>> _elementsOfRoot = new();
     private readonly Dictionary<(int Root, int Side), List<ElementFace>> _facesOnSide = new();
     private readonly ElementFace?[] _neighbour;            // [element * 6 + face]
@@ -18,17 +19,20 @@ public sealed class FemMesh : IFemMesh
     private static readonly string[] SideNames = { "XMinus", "XPlus", "YMinus", "YPlus", "ZMinus", "ZPlus" };
 
     /// <param name="side">For every face of every element ([element, solver face]): the side of the editor cube it lies on (as the editor names it), or null.</param>
-    public FemMesh(double[,] positions, int[,] connectivity, int[] root, string[] key, ParametricBox[] box, string?[,] side)
+    public FemMesh(double[,] positions, int[,] connectivity, int[] root, string[] key, ParametricPoint[] centre, ParametricPoint[,] faceCentre, string?[,] side)
     {
         Positions = positions;
         Connectivity = connectivity;
         NodeCount = positions.GetLength(0);
         ElementCount = connectivity.GetLength(0);
-        if (root.Length != ElementCount || key.Length != ElementCount || box.Length != ElementCount || side.GetLength(0) != ElementCount)
-            throw new ArgumentException("Every element needs its cube, its key, its box and its sides.");
+        if (root.Length != ElementCount || key.Length != ElementCount || centre.Length != ElementCount || faceCentre.GetLength(0) != ElementCount || side.GetLength(0) != ElementCount)
+            throw new ArgumentException("Every element needs its cube, its key, its centres and its sides.");
         _root = root;
         _key = key;
-        _box = box;
+        _centre = centre;
+        _faceCentre = new ParametricPoint[ElementCount * 6];
+        for (int e = 0; e < ElementCount; e++)
+            for (int f = 0; f < 6; f++) _faceCentre[e * 6 + f] = faceCentre[e, f];
         _side = new int[ElementCount * 6];
         for (int e = 0; e < ElementCount; e++)
             for (int f = 0; f < 6; f++) _side[e * 6 + f] = side[e, f] is { } name ? Array.IndexOf(SideNames, name) : -1;
@@ -56,7 +60,9 @@ public sealed class FemMesh : IFemMesh
 
     public string KeyOf(int element) => _key[element];
 
-    public ParametricBox BoxOf(int element) => _box[element];
+    public ParametricPoint CentreOf(int element) => _centre[element];
+
+    public ParametricPoint FaceCentreOf(ElementFace face) => _faceCentre[face.Element * 6 + face.Face];
 
     public IReadOnlyList<int> ElementsOf(int root) => _elementsOfRoot.TryGetValue(root, out var list) ? list : Array.Empty<int>();
 

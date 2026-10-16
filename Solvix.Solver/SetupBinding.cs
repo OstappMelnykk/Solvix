@@ -14,7 +14,7 @@ namespace Solvix.Solver;
 internal static class SetupBinding
 {
     /// <summary>The region of a side of a cube that cell (p, q) of its grid covers: the side's end along its axis, the cell along the two tangent axes.</summary>
-    public static ParametricBox RegionOf(string side, int p, int q, int[] counts)
+    public static ParametricRegion RegionOf(string side, int p, int q, int[] counts)
     {
         int axis = side[0] - 'X';
         var (t0, t1) = Tangents(axis);
@@ -24,11 +24,11 @@ internal static class SetupBinding
         lo[axis] = hi[axis] = end;
         (lo[t0], hi[t0]) = (UniformRefinement.Edge(p, counts[t0]), UniformRefinement.Edge(p + 1, counts[t0]));
         (lo[t1], hi[t1]) = (UniformRefinement.Edge(q, counts[t1]), UniformRefinement.Edge(q + 1, counts[t1]));
-        return new ParametricBox(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+        return new ParametricRegion(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
     }
 
     /// <summary>The region of a cube that cell (ex, ey, ez) of its grid covers.</summary>
-    public static ParametricBox RegionOf(ElementKey e, int[] counts) => new(
+    public static ParametricRegion RegionOf(ElementKey e, int[] counts) => new(
         UniformRefinement.Edge(e.Ex, counts[0]), UniformRefinement.Edge(e.Ey, counts[1]), UniformRefinement.Edge(e.Ez, counts[2]),
         UniformRefinement.Edge(e.Ex + 1, counts[0]), UniformRefinement.Edge(e.Ey + 1, counts[1]), UniformRefinement.Edge(e.Ez + 1, counts[2]));
 
@@ -41,9 +41,8 @@ internal static class SetupBinding
         var region = RegionOf(side, p, q, counts);
         foreach (var face in mesh.FacesOnSide(cube, side))
         {
-            var (faceAxis, sign) = ElementLocal.FaceAxis(face.Face);
-            if (faceAxis != axis) continue;
-            if (mesh.BoxOf(face.Element).Face(axis, sign).CentreInside(region, new[] { t0, t1 })) yield return new FemFace(face.Element, face.Face);
+            if (ElementLocal.FaceAxis(face.Face).Axis != axis) continue;
+            if (region.Owns(mesh.FaceCentreOf(face), new[] { t0, t1 })) yield return new FemFace(face.Element, face.Face);
         }
     }
 
@@ -52,29 +51,29 @@ internal static class SetupBinding
     {
         var region = RegionOf(cell, counts);
         foreach (int e in mesh.ElementsOf(cube))
-            if (mesh.BoxOf(e).CentreInside(region, new[] { 0, 1, 2 })) yield return e;
+            if (region.Owns(mesh.CentreOf(e), new[] { 0, 1, 2 })) yield return e;
     }
 
     /// <summary>The cell of a cube's grid that an element lies in (the one that owns its centre).</summary>
     public static ElementKey CellOf(IFemMesh mesh, int element, int hexId, int[] counts)
     {
-        var box = mesh.BoxOf(element);
+        var centre = mesh.CentreOf(element);
         int Index(int axis)
         {
             for (int i = 0; i < counts[axis]; i++)
-                if (InCell(box, axis, i, counts[axis])) return i;
+                if (InCell(centre, axis, i, counts[axis])) return i;
             return counts[axis] - 1;
         }
         return new ElementKey(hexId, Index(0), Index(1), Index(2));
     }
 
-    private static bool InCell(ParametricBox box, int axis, int i, int n)
+    private static bool InCell(ParametricPoint centre, int axis, int i, int n)
     {
         var lo = new double[3]; var hi = new double[3];
         lo[0] = lo[1] = lo[2] = -1; hi[0] = hi[1] = hi[2] = 1;
         lo[axis] = UniformRefinement.Edge(i, n);
         hi[axis] = UniformRefinement.Edge(i + 1, n);
-        return box.CentreInside(new ParametricBox(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]), new[] { axis });
+        return new ParametricRegion(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]).Owns(centre, new[] { axis });
     }
 
     private static (int, int) Tangents(int axis)

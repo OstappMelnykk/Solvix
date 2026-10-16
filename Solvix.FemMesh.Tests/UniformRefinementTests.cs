@@ -87,7 +87,7 @@ public class UniformRefinementTests
     }
 }
 
-public class ParametricBoxTests
+public class ParametricPlacesTests
 {
     private static IFemMesh Build(int cubes, int nx, int ny, int nz) => new UniformRefinement(nx, ny, nz).Build(Support.Export(Support.Bar(cubes)));
 
@@ -95,65 +95,53 @@ public class ParametricBoxTests
     [TestCase(1, 3, 3, 3)]
     [TestCase(2, 2, 5, 3)]
     [TestCase(3, 8, 1, 2)]
-    public void The_boxes_of_the_elements_of_a_cube_tile_it_exactly(int cubes, int nx, int ny, int nz)
+    public void The_centres_of_the_elements_of_a_cube_are_inside_it_and_are_different_places(int cubes, int nx, int ny, int nz)
     {
         var mesh = Build(cubes, nx, ny, nz);
 
         for (int cube = 0; cube < cubes; cube++)
         {
-            double volume = 0;
-            foreach (int e in mesh.ElementsOf(cube))
-            {
-                var box = mesh.BoxOf(e);
-                volume += (box.X1 - box.X0) * (box.Y1 - box.Y0) * (box.Z1 - box.Z0);
-                for (int axis = 0; axis < 3; axis++)
-                {
-                    Assert.That(box.Lo(axis), Is.GreaterThanOrEqualTo(-1.0));
-                    Assert.That(box.Hi(axis), Is.LessThanOrEqualTo(1.0));
-                    Assert.That(box.Hi(axis), Is.GreaterThan(box.Lo(axis)));
-                }
-            }
-            Assert.That(volume, Is.EqualTo(8.0).Within(1e-9), "a cube is [-1,1]^3, volume 8");
-            Assert.That(mesh.ElementsOf(cube).Count, Is.EqualTo(nx * ny * nz));
+            var centres = mesh.ElementsOf(cube).Select(mesh.CentreOf).ToList();
+            Assert.That(centres.Count, Is.EqualTo(nx * ny * nz));
+            Assert.That(centres.Distinct().Count(), Is.EqualTo(centres.Count));
+            Assert.That(centres.All(c => Enumerable.Range(0, 3).All(a => c[a] > -1 && c[a] < 1)), Is.True);
+            // the middle of all the centres of an evenly cut cube is the middle of the cube
+            for (int axis = 0; axis < 3; axis++) Assert.That(centres.Average(c => c[axis]), Is.EqualTo(0).Within(1e-9));
         }
     }
 
     [Test]
-    public void The_faces_on_a_side_tile_that_side_and_lie_at_its_end()
+    public void The_centre_of_a_face_is_the_centre_of_its_element_moved_to_the_end_of_the_face_and_the_faces_on_a_side_lie_at_its_end()
     {
         var mesh = Build(1, 3, 2, 4);
 
         foreach (var (side, axis, sign) in new[] { ("XMinus", 0, -1), ("XPlus", 0, 1), ("YMinus", 1, -1), ("YPlus", 1, 1), ("ZMinus", 2, -1), ("ZPlus", 2, 1) })
         {
-            double area = 0;
-            foreach (var face in mesh.FacesOnSide(0, side))
+            var faces = mesh.FacesOnSide(0, side).ToList();
+            Assert.That(faces.Count, Is.EqualTo(new[] { 3 * 2 * 4 / new[] { 3, 2, 4 }[axis] }[0]), side);
+            foreach (var face in faces)
             {
-                var flat = mesh.BoxOf(face.Element).Face(axis, sign);
-                Assert.That(flat.Lo(axis), Is.EqualTo(sign), side);
-                Assert.That(flat.Hi(axis), Is.EqualTo(sign), side);
-                double w = 1;
-                for (int a = 0; a < 3; a++) if (a != axis) w *= flat.Hi(a) - flat.Lo(a);
-                area += w;
+                var centre = mesh.FaceCentreOf(face);
+                Assert.That(centre[axis], Is.EqualTo(sign), side);
+                for (int other = 0; other < 3; other++)
+                    if (other != axis) Assert.That(centre[other], Is.EqualTo(mesh.CentreOf(face.Element)[other]).Within(1e-12), side);
             }
-            Assert.That(area, Is.EqualTo(4.0).Within(1e-9), $"{side}: the side of the cube is [-1,1]^2");
         }
     }
 
     [Test]
-    public void A_cell_of_a_grid_owns_the_centres_inside_it_and_each_centre_has_exactly_one_owner_even_on_the_borders()
+    public void A_cell_of_a_grid_owns_the_points_inside_it_and_each_point_has_exactly_one_owner_even_on_the_borders()
     {
         foreach (int n in new[] { 1, 2, 3, 5, 7, 8 })
             for (int m = 1; m <= 8; m++)
-            {
-                // centres of the cells of a finer or coarser grid m, against the cells of grid n
                 for (int j = 0; j < m; j++)
                 {
-                    var centre = new ParametricBox(UniformRefinement.Edge(j, m), 0, 0, UniformRefinement.Edge(j + 1, m), 0, 0);
+                    // the centres of the cells of a finer or coarser grid m, against the cells of grid n
+                    var point = new ParametricPoint(0.5 * (UniformRefinement.Edge(j, m) + UniformRefinement.Edge(j + 1, m)), 0, 0);
                     int owners = 0;
                     for (int i = 0; i < n; i++)
-                        if (centre.CentreInside(new ParametricBox(UniformRefinement.Edge(i, n), -1, -1, UniformRefinement.Edge(i + 1, n), 1, 1), new[] { 0 })) owners++;
+                        if (new ParametricRegion(UniformRefinement.Edge(i, n), -1, -1, UniformRefinement.Edge(i + 1, n), 1, 1).Owns(point, new[] { 0 })) owners++;
                     Assert.That(owners, Is.EqualTo(1), $"cell {j} of {m} against grid {n}");
                 }
-            }
     }
 }
