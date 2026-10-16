@@ -48,8 +48,8 @@ describe('MeshEditorControlsComponent', () => {
   });
 
   describe('the panel as a page', () => {
-    const render = (world: number) => {
-      state = singleCubeState();
+    const render = (world: number, shown: MeshStateDto = singleCubeState()) => {
+      state = shown;
       const fixture = TestBed.createComponent(MeshEditorControlsComponent);
       fixture.componentInstance.sessionId = 1;
       fixture.componentInstance.worldIndex = world;
@@ -69,6 +69,30 @@ describe('MeshEditorControlsComponent', () => {
 
       const text = root.textContent ?? '';
       for (const gone of ['Скасувати', 'Повернути', 'Клік по грані', 'Перевірка мапінгу', 'Вузли видно', 'Внутрішня сітка', 'Куби:']) expect(text).not.toContain(gone);
+    });
+
+    it('explains the node in short points: which cubes own it, and how to move it', () => {
+      selection.selectNode(1, linkedPairState().hexes[0].nodeIds[1]);
+      const root = render(REAL_WORLD_INDEX, linkedPairState());
+
+      const points = Array.from(root.querySelectorAll('.points li')).map(e => e.textContent!.trim());
+      expect(points).toContain('куб 0 — №1, кут');
+      expect(points).toContain('куб 1 — №0, кут');
+      expect(points).toContain('Shift — крок ×10');
+      expect(root.textContent).not.toContain('глобальний id');
+    });
+
+    it('has building with the mouse in the start block, one per World, and the slider of the opacity with its value', () => {
+      const root = render(IDEAL_WORLD_INDEX);
+      const start = root.querySelector('.group')!;
+      const button = Array.from(start.querySelectorAll('button')).find(b => b.textContent!.includes('Будувати мишею'))!;
+      expect(button.textContent).toContain('вимкнено');
+      button.click();
+      expect(selection.buildMode(1, IDEAL_WORLD_INDEX)).toBeTrue();
+      expect(selection.buildMode(1, REAL_WORLD_INDEX)).toBeFalse();
+
+      expect(root.querySelector('.slider__head b')?.textContent).toContain('%');
+      expect(root.querySelector('input.slider__range')).not.toBeNull();
     });
 
     it('has the block of the node only in the Real World, where the nodes are moved', () => {
@@ -685,15 +709,15 @@ describe('MeshEditorControlsComponent', () => {
       const shared = linkedPairState().hexes[0].nodeIds[1];
       selection.selectNode(1, shared);
 
-      expect(component.nodeOwnersText()).toBe('куб 0: локальний №1 (кут); куб 1: локальний №0 (кут)');
+      expect(component.nodeOwners()).toEqual([{ hex: 0, local: 1, kind: 'кут' }, { hex: 1, local: 0, kind: 'кут' }]);
     });
 
-    it('a node owned by one cube has one entry, and no node selected gives an empty text', () => {
+    it('a node owned by one cube has one entry, and no node selected gives none', () => {
       state = singleCubeState();
-      expect(component.nodeOwnersText()).toBe('');
+      expect(component.nodeOwners()).toEqual([]);
 
       selection.selectNode(1, 8);
-      expect(component.nodeOwnersText()).toBe('куб 0: локальний №8 (середина ребра)');
+      expect(component.nodeOwners()).toEqual([{ hex: 0, local: 8, kind: 'середина ребра' }]);
     });
   });
 });

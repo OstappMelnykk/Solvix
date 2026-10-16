@@ -489,18 +489,27 @@ export class MeshEditorControlsComponent {
     });
   }
 
-  // For the selected node: the local number it has in every cube that owns it
-  // (a shared node is a different local number in each cube).
-  nodeOwnersText(): string {
+  // For the selected node: every cube that owns it with the local number it has there (a shared node has a different one in each cube), and whether
+  // it is a corner or the midpoint of an edge.
+  nodeOwners(): { hex: number; local: number; kind: string }[] {
     const id = this.selectedNodeId();
     if (id === null) {
-      return '';
+      return [];
     }
-    const owners = (this.state?.hexes ?? [])
+    return (this.state?.hexes ?? [])
       .map(h => ({ hex: h.id, local: h.nodeIds.indexOf(id) }))
       .filter(o => o.local >= 0)
-      .map(o => `куб ${o.hex}: локальний №${o.local} (${o.local < 8 ? 'кут' : 'середина ребра'})`);
-    return owners.join('; ');
+      .map(o => ({ ...o, kind: o.local < 8 ? 'кут' : 'середина ребра' }));
+  }
+
+  // --- building with the mouse (the Ideal and the Real World each have their own) ---
+
+  isBuildOn(): boolean {
+    return this.sessionId !== null && this.worldIndex !== null && this.selection.buildMode(this.sessionId, this.worldIndex);
+  }
+
+  toggleBuild(): void {
+    if (this.sessionId !== null && this.worldIndex !== null) this.selection.setBuildMode(this.sessionId, this.worldIndex, !this.isBuildOn());
   }
 
   // --- keyboard shortcuts --------------------------------------------------

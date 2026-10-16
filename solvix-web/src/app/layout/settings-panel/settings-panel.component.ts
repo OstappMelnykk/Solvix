@@ -17,6 +17,7 @@ import { MeshEditorControlsComponent } from './mesh-editor-controls/mesh-editor-
 import { QualityControlsComponent } from './quality-controls/quality-controls.component';
 import { SolverControlsComponent } from './solver-controls/solver-controls.component';
 import { SessionStateControlsComponent } from './session-state-controls/session-state-controls.component';
+import { StlSnapControlsComponent } from './stl-snap-controls/stl-snap-controls.component';
 
 type ImportDisplayStatus =
   | { kind: 'loading' }
@@ -35,7 +36,7 @@ type UploadDisplayStatus = { kind: 'idle' } | { kind: 'uploading' } | { kind: 'e
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [NgIf, SessionStateControlsComponent, ImportedReferenceControlsComponent, ModelLibraryPickerComponent, MeshEditorControlsComponent, SolverControlsComponent, QualityControlsComponent],
+  imports: [NgIf, SessionStateControlsComponent, StlSnapControlsComponent, ImportedReferenceControlsComponent, ModelLibraryPickerComponent, MeshEditorControlsComponent, SolverControlsComponent, QualityControlsComponent],
   templateUrl: './settings-panel.component.html',
   styleUrl: './settings-panel.component.scss'
 })

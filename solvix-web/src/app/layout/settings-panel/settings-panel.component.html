@@ -50,6 +50,11 @@
   (closed)="onLibraryPickerClosed()"
 />
 
-<app-imported-reference-controls *ngIf="showsImport()" [sessionId]="sessionId()" [realWorld]="showsSnap()" />
+<div class="group" *ngIf="showsSnap()">
+  <div class="group-label">Прилипання до STL</div>
+  <app-stl-snap-controls [sessionId]="sessionId()" />
+</div>
+
+<app-imported-reference-controls *ngIf="showsImport()" [sessionId]="sessionId()" />
 
 <app-session-state-controls *ngIf="showsMeshEditor()" [sessionId]="sessionId()" />

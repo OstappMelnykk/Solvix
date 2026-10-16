@@ -24,6 +24,17 @@
     <button class="tool tool--primary" type="button" [disabled]="!canAddFirst()" title="Шорткат: N" (click)="addFirst()">Перший куб <kbd>N</kbd></button>
     <button class="tool" type="button" [disabled]="sessionId === null" title="Шорткат: C" (click)="openConstructor()">Конструктор куба… <kbd>C</kbd></button>
   </div>
+  <button
+    class="tool"
+    [class.tool--on]="isBuildOn()"
+    type="button"
+    [disabled]="sessionId === null"
+    title="Мишею: права кнопка — додати куб (на грань під курсором; на землі — перший куб у клітинку); ліва — видалити куб під курсором. Скасувати можна Ctrl+Z."
+    (click)="toggleBuild()"
+  >
+    Будувати мишею: {{ isBuildOn() ? 'увімкнено' : 'вимкнено' }}
+  </button>
+  <div class="hint" *ngIf="isBuildOn()">ПКМ — додати · ЛКМ — видалити</div>
 </div>
 
 <div class="group">
@@ -121,10 +132,19 @@
 <div class="group" *ngIf="isRealWorld">
   <div class="group-label">Вузол</div>
   <ng-container *ngIf="selectedNodeId() !== null; else noNode">
-    <div class="selected"><b>Вузол {{ selectedNodeId() }}</b> (глобальний id)</div>
-    <div class="hint">{{ nodeOwnersText() }}</div>
+    <div class="selected"><b>Вузол {{ selectedNodeId() }}</b></div>
+    <div class="sub-label">Належить</div>
+    <ul class="points">
+      <li *ngFor="let owner of nodeOwners()">куб {{ owner.hex }} — №{{ owner.local }}, {{ owner.kind }}</li>
+    </ul>
+    <div class="sub-label">Рухати</div>
+    <ul class="points">
+      <li>тягти стрілки на сцені</li>
+      <li>ввести число в полі</li>
+      <li>← → — X · ↑ ↓ — Z · PgUp/PgDn — Y</li>
+      <li>Shift — крок ×10</li>
+    </ul>
     <ng-container>
-      <div class="hint">Тягніть стрілки на сцені, вводьте число або тисніть клавіші: ← → (X), ↑ ↓ (Z), PageUp/PageDown (Y); Shift — ×10.</div>
       <label class="row" *ngFor="let axis of axes">
         <span>{{ axis.toUpperCase() }}</span>
         <input type="number" step="0.01" [value]="nodeCoord(axis)" [disabled]="!canMoveNode()" (change)="onCoordChange(axis, $event)" />
@@ -152,10 +172,24 @@
 
 <div class="group">
   <div class="group-label">Налаштування сітки</div>
-  <label class="opacity" title="Менше — грані прозоріші, видно вузли й лінії всередині тіла; 100% — суцільні грані. Окремо для Ideal і Real World.">
-    <span>Непрозорість граней, {{ opacityPercent() }}%</span>
-    <input type="range" min="2" max="100" step="2" [value]="opacityPercent()" (input)="onOpacity($event)" />
-  </label>
+  <div class="slider">
+    <div class="slider__head">
+      <span>Непрозорість граней</span>
+      <b>{{ opacityPercent() }}%</b>
+    </div>
+    <input
+      class="slider__range"
+      type="range"
+      min="2"
+      max="100"
+      step="2"
+      [value]="opacityPercent()"
+      [style.--fill.%]="opacityPercent()"
+      (input)="onOpacity($event)"
+      aria-label="Непрозорість граней"
+    />
+    <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
+  </div>
 </div>
 
 <div class="group">
