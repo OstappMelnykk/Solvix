@@ -455,21 +455,32 @@ export class MeshEditorControlsComponent {
   // Cuts the picked cubes. "By steps" lays the step on top of the ones made before; "at once" starts from the even cubes again.
   runLocalRefinement(): void {
     if (this.sessionId === null) return;
+    // the elements chosen with the Refinement tool of the Solver World (children included), else the picked cubes
+    const chosen = [...this.solver.refineSelection(this.sessionId)];
     const hexes = this.selectedHexes();
-    if (hexes.length === 0) {
-      this.notifications.warning('Виберіть куби, які треба згустити (Shift + клік).');
+    if (chosen.length === 0 && hexes.length === 0) {
+      this.notifications.warning('Виберіть куби (Shift + клік) або, у світі солвера, елементи інструментом «Згущення».');
       return;
     }
     const sessionId = this.sessionId;
     const step = {
-      leaves: hexes.map(id => `hex:${id}`),
+      leaves: chosen.length > 0 ? chosen : hexes.map(id => `hex:${id}`),
       ni: this.localDivisions[0],
       nj: this.localDivisions[1],
       nk: this.localDivisions[2],
       transitionDepth: this.transitionWidth
     };
-    if (this.localRunMode === 'at-once' && this.isLocalRefined()) this.solver.clearRefinement(sessionId, () => this.solver.addRefinement(sessionId, step));
+    if (this.localRunMode === 'at-once' && this.isLocalRefined() && chosen.length === 0) this.solver.clearRefinement(sessionId, () => this.solver.addRefinement(sessionId, step));
     else this.solver.addRefinement(sessionId, step);
+  }
+
+  // How many elements are chosen with the Refinement tool.
+  chosenCount(): number {
+    return this.sessionId === null ? 0 : this.solver.refineSelection(this.sessionId).size;
+  }
+
+  clearChosen(): void {
+    if (this.sessionId !== null) this.solver.clearRefineSelection(this.sessionId);
   }
 
   isLocalRefined(): boolean {

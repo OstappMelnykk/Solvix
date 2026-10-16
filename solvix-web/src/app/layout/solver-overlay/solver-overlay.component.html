@@ -3,7 +3,7 @@
   <label class="box-title" title="Показати або згорнути вікно"><input type="checkbox" [checked]="open('tools')" (change)="toggleOpen('tools')" />Інструменти</label>
   <div class="segmented" *ngIf="open('tools')" role="tablist" aria-label="Інструмент">
     <button
-      *ngFor="let item of tools"
+      *ngFor="let item of visibleTools()"
       type="button"
       role="tab"
       class="segment"

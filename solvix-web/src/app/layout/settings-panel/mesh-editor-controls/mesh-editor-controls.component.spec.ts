@@ -35,8 +35,9 @@ describe('MeshEditorControlsComponent', () => {
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
-    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement']);
+    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement', 'refineSelection', 'clearRefineSelection']);
     solver.divisions.and.returnValue([1, 2, 3]);
+    solver.refineSelection.and.returnValue(new Set<string>());
     TestBed.configureTestingModule({
       providers: [
         { provide: MeshEditorService, useValue: editor },
@@ -799,6 +800,14 @@ describe('MeshEditorControlsComponent', () => {
 
       expect(solver.addRefinement).toHaveBeenCalledWith(1, { leaves: ['hex:0', 'hex:1'], ni: 2, nj: 3, nk: 4, transitionDepth: 1 });
       expect(solver.clearRefinement).not.toHaveBeenCalled();
+    });
+
+    it('refines the elements chosen with the Refinement tool, children included, instead of the cubes', () => {
+      selection.toggleHex(1, 0);
+      solver.refineSelection.and.returnValue(new Set(['0|2|k1', '0|2|k2']));
+      component.runLocalRefinement();
+
+      expect(solver.addRefinement).toHaveBeenCalledWith(1, jasmine.objectContaining({ leaves: ['0|2|k1', '0|2|k2'] }));
     });
 
     it('"at once" starts again from the even cubes when the body is refined already, "by steps" lays a step on top', () => {

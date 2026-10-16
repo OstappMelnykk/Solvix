@@ -31,7 +31,7 @@ describe('SolverOverlayComponent', () => {
     result = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'tool', 'setTool', 'scopesOf', 'scope', 'setScope', 'depth', 'setDepth', 'divisions', 'setup', 'activeMaterial', 'setActiveMaterial',
-      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures', 
+      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures', 'isLocal'
     ]);
     solver.tool.and.callFake(() => tool);
     solver.brush.and.callFake(() => brush);
@@ -100,7 +100,10 @@ describe('SolverOverlayComponent', () => {
 
   describe('the tool', () => {
     it('offers View, Load, Fix, Eraser and Material, and switches between them', () => {
-      expect(component.tools.map(t => t.tool)).toEqual(['view', 'load', 'fix', 'erase', 'material']);
+      expect(component.visibleTools().map(t => t.tool)).toEqual(['view', 'load', 'fix', 'erase', 'material']);
+      solver.isLocal.and.returnValue(true);
+      expect(component.visibleTools().map(t => t.tool)).toContain('refine');
+      solver.isLocal.and.returnValue(false);
       expect(TOOLS.every(t => t.label.length > 0 && t.title.length > 0)).toBeTrue();
       expect(component.tool()).toBe('view');
 

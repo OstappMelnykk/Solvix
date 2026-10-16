@@ -10,7 +10,7 @@ import { PickedFace, faceAxis, faceSign } from './mesh-editor-view';
 // all elements below the small face, `layer` = the slab of the cube at the chosen depth, `cube` = the whole cube.
 export type Scope = 'cell' | 'column' | 'layer' | 'cube' | 'side';
 
-export type Tool = 'view' | 'load' | 'fix' | 'material' | 'erase';
+export type Tool = 'view' | 'load' | 'fix' | 'material' | 'erase' | 'refine';
 
 export const FACE_SCOPES: readonly Scope[] = ['cell', 'cube', 'side'];
 export const MATERIAL_SCOPES: readonly Scope[] = ['cell', 'column', 'layer', 'cube'];

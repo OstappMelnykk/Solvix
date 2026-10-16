@@ -253,6 +253,8 @@
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'steps'" [attr.aria-checked]="localRunMode === 'steps'" (click)="localRunMode = 'steps'">По кроках</button>
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'at-once'" [attr.aria-checked]="localRunMode === 'at-once'" (click)="localRunMode = 'at-once'">Одразу</button>
   </div>
+  <div class="hint" *ngIf="chosenCount() > 0">Вибрано елементів: {{ chosenCount() }}
+    <button class="tool" type="button" (click)="clearChosen()">Зняти вибір</button></div>
   <button class="tool tool--primary" type="button" (click)="runLocalRefinement()">Запустити</button>
   <button *ngIf="isLocalRefined()" class="tool" type="button" (click)="clearLocalRefinement()">Скинути згущення</button>
 </div>
