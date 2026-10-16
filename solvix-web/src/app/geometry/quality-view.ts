@@ -484,7 +484,8 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     buffer.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     buffer.setIndex(indices);
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: OVERLAY_OPACITY, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip });
+    // a see-through body shows the clamps and the pressures on all its sides alike, the far ones through it
+    const material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: OVERLAY_OPACITY, depthWrite: false, depthTest: solid, side: THREE.DoubleSide, clippingPlanes: clip });
     createDepthFade(new THREE.Vector3(), 1, 1).patch(material);
     const coat = new THREE.Mesh(buffer, material);
     coat.renderOrder = 5;
