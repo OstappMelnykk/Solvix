@@ -14,7 +14,7 @@ import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withNodeMoved } from '../geometry/mesh-editor-view';
 
 // The width of the refined mesh's edges, in CSS pixels: a plain line is one device pixel (half of this on a Retina screen), so this is a little thicker, not a lot.
-const EDGE_WIDTH = 1.25;
+const EDGE_WIDTH = 1.8;
 
 interface Cached {
   readonly key: string;

@@ -80,7 +80,7 @@ export class SolverRenderService {
             showFixed: input.showFixed,
             showLoads: input.showLoads,
             edges: display.edges,
-            edgeWidth: 1.25,
+            edgeWidth: 1.8,
             result: input.result,
             field: input.field,
             deformationScale: input.deformationScale,

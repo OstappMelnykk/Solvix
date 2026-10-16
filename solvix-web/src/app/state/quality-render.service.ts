@@ -90,7 +90,7 @@ export class QualityRenderService {
       bodyColor: 0x4a8fe3,
       opacity: 1,
       look,
-      edgeWidth: 1.25,
+      edgeWidth: 1.8,
       showFixed: marks.fixed,
       showLoads: marks.loads,
       elementColor: element => (grades ? RESULT_COLORS[rejected(element) ? 'rejected' : 'accepted'] : null),
