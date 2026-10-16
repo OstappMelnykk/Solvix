@@ -18,24 +18,49 @@ internal static class SolverValidator
             Error("Немає жодного куба.");
             return new SolverValidationDto(false, issues);
         }
-        int elements = mesh.ElementCount * setup.Divisions.Nx * setup.Divisions.Ny * setup.Divisions.Nz;
-        if (elements > MaxElements) Error($"Забагато елементів для розрахунку: {elements} ({mesh.ElementCount} кубів × {setup.Divisions.Nx * setup.Divisions.Ny * setup.Divisions.Nz}; ліміт {MaxElements}). Зменште поділ або кількість кубів.");
+        // how many elements the rule would make: an even cut is counted before anything is built, a refinement has to be replayed to know
+        BuiltMesh? built = null;
+        int elements;
+        if (setup.Refinements.Count == 0)
+        {
+            elements = mesh.ElementCount * setup.Divisions.Nx * setup.Divisions.Ny * setup.Divisions.Nz;
+            if (elements > MaxElements) Error($"Забагато елементів для розрахунку: {elements} ({mesh.ElementCount} кубів × {setup.Divisions.Nx * setup.Divisions.Ny * setup.Divisions.Nz}; ліміт {MaxElements}). Зменште поділ або кількість кубів.");
+            else built = SolverMeshes.Build(setup, mesh);
+        }
+        else
+        {
+            try { built = SolverMeshes.Build(setup, mesh); }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            {
+                Error($"Локальне згущення не вдалося: {exception.Message}");
+                return new SolverValidationDto(false, issues);
+            }
+            elements = built.Mesh.ElementCount;
+            if (elements > MaxElements)
+            {
+                Error($"Забагато елементів для розрахунку: {elements} (ліміт {MaxElements}). Приберіть частину згущення або зменште кількість кубів.");
+                built = null;
+            }
+        }
 
         var alive = new HashSet<int>(mesh.ElementIds);
         if (mesh.FoldedHexes.Count > 0)
             Warning($"Вивернуті або вироджені куби (розрахунок біля них може бути хибним або не запуститися): {string.Join(", ", mesh.FoldedHexes.Take(12))}{(mesh.FoldedHexes.Count > 12 ? "…" : "")}.");
 
-        // materials in use
-        var used = mesh.ElementIds.Select(setup.MaterialOf).Concat(setup.ElementMaterials.Where(m => alive.Contains(m.Key.Hex)).Select(m => setup.MaterialOf(m.Key))).Distinct().ToList();
+        // what the setup means on this mesh: which material each element has, which faces are clamped and which are pressed
+        var problem = built is null ? null : SolverFacade.BuildInput(setup, mesh, built);
+        var used = problem is null
+            ? new List<string> { setup.DefaultMaterial }
+            : problem.Model.Materials.Select(m => m.Name).Distinct().ToList();
         foreach (var name in used)
         {
             if (!setup.MaterialsByName.TryGetValue(name, out var material)) { Error($"Невідомий матеріал «{name}»."); continue; }
-            var problem = Materials.Problem(material);
-            if (problem is not null) Error(problem);
+            var materialProblem = Materials.Problem(material);
+            if (materialProblem is not null) Error(materialProblem);
         }
 
         // elements that can be integrated but badly, and materials so different that the iterative solve struggles
-        var quality = elements > MaxElements ? null : MeshQuality.Evaluate(setup, mesh).Profiles.First(p => p.Id == "solvix");
+        var quality = built is null ? null : MeshQuality.Evaluate(setup, mesh, built.Mesh).Profiles.First(p => p.Id == "solvix");
         int invalid = quality?.Grades["invalid"] ?? 0;
         if (invalid > 0 && mesh.FoldedHexes.Count == 0)
             Warning($"{invalid} малих елементів вивернуті або вироджені після поділу кубів: розрахунок біля них може бути хибним або не запуститися. Перегляньте їх у Quality World.");
@@ -45,26 +70,32 @@ internal static class SolverValidator
         if (moduli.Count > 1 && moduli.Max() / moduli.Min() > 1e4)
             Warning($"Жорсткості матеріалів відрізняються у {moduli.Max() / moduli.Min():0e0} разів: ітераційний розв'язок може збігатися повільно або не збігтися.");
 
-        var fixedFaces = setup.Fixed.Where(f => alive.Contains(f.Hex) && SolverFaces.IsValid(f.Face)).ToList();
-        var loads = setup.Loads.Where(l => alive.Contains(l.Key.Hex) && SolverFaces.IsValid(l.Key.Face)).ToList();
-        int stale = setup.Fixed.Count + setup.Loads.Count - fixedFaces.Count - loads.Count;
-        if (stale > 0) Warning($"{stale} закріплень/навантажень посилаються на видалені куби або невідомі грані й будуть проігноровані.");
+        // what the setup says about cubes that are gone
+        int stale = setup.Fixed.Count(f => !alive.Contains(f.Hex)) + setup.Loads.Count(l => !alive.Contains(l.Key.Hex));
+        if (stale > 0) Warning($"{stale} закріплень/навантажень посилаються на видалені куби й будуть проігноровані.");
 
-        if (fixedFaces.Count == 0) Error("Закріпіть хоча б одну грань: без опори тіло не має єдиного розв'язку.");
-        if (loads.Count == 0) Warning("Немає навантаження: результат буде нульовим.");
-        if (loads.Any(l => !double.IsFinite(l.Value))) Error("Тиск має бути скінченним числом.");
-        if (loads.Any(l => fixedFaces.Any(f => f == l.Key)))
-            Warning("Деякі грані одночасно закріплені й навантажені: тиск на закріплених вузлах нічого не змінює.");
+        var clamped = problem?.Loads.Fixed ?? new List<Solvix.Fem.ElementFace>();
+        var pressed = problem?.Loads.Pressures ?? new List<Solvix.Fem.FacePressure>();
+        if (built is not null || problem is not null)
+        {
+            if (clamped.Count == 0) Error("Закріпіть хоча б одну грань: без опори тіло не має єдиного розв'язку.");
+            if (pressed.Count == 0) Warning("Немає навантаження: результат буде нульовим.");
+            if (pressed.Any(l => !double.IsFinite(l.Pn))) Error("Тиск має бути скінченним числом.");
+            var clampedSet = clamped.ToHashSet();
+            if (pressed.Any(l => clampedSet.Contains(l.Face)))
+                Warning("Деякі грані одночасно закріплені й навантажені: тиск на закріплених вузлах нічого не змінює.");
+        }
+        else if (setup.Fixed.Count == 0) Error("Закріпіть хоча б одну грань: без опори тіло не має єдиного розв'язку.");
 
         // every separate part needs a support of its own, or it can float away
         var parts = Parts(mesh);
-        var supported = new HashSet<int>(fixedFaces.Select(f => f.Hex));
+        var supported = new HashSet<int>(clamped.Select(f => mesh.ElementIds[built!.Mesh.RootOf(f.Element)]));
         for (int i = 0; i < parts.Count; i++)
         {
-            if (!parts[i].Any(supported.Contains))
+            if (built is not null && !parts[i].Any(supported.Contains))
                 Error($"Частина тіла {i + 1} із {parts.Count} (куби {string.Join(", ", parts[i].Take(6))}{(parts[i].Count > 6 ? "…" : "")}) не закріплена: закріпіть у ній грань.");
         }
-        if (parts.Count > 1 && parts.All(p => p.Any(supported.Contains))) Warning($"Тіло складається з {parts.Count} окремих частин; вони не взаємодіють.");
+        if (built is not null && parts.Count > 1 && parts.All(p => p.Any(supported.Contains))) Warning($"Тіло складається з {parts.Count} окремих частин; вони не взаємодіють.");
 
         return new SolverValidationDto(issues.All(i => i.Severity != "error"), issues);
     }

@@ -32,6 +32,12 @@ public sealed record SolverElementMaterialDto(int Hex, int Ex, int Ey, int Ez, s
 /// <param name="Pressure">Uniform normal pressure Pn in Pa along the outward normal, as in the solver: negative = pressing into the body (compression), positive = pulling out.</param>
 public sealed record SolverLoadDto(int Hex, string Face, double Pressure, int? P = null, int? Q = null);
 
+/// <summary>
+/// One local refinement: the leaves (by their keys, which do not change as the mesh gets finer; a whole cube is named by <c>"&lt;cube number&gt;|1|0,0,0;..."</c> as the mesh says),
+/// the number of parts along each axis (at least 2) and the width of the transition zone round them (0, 1 or 2).
+/// </summary>
+public sealed record RefinementStepDto(IReadOnlyList<string> Leaves, int NI, int NJ, int NK, int TransitionDepth = 0);
+
 /// <summary>Everything the user sets for a solve: materials (a library, one per cube), supports and pressures on faces.</summary>
 /// <param name="Divisions">How many small elements each cube is cut into along its three axes (the solver's Nx, Ny, Nz).</param>
 public sealed record SolverSetupDto(
@@ -44,7 +50,9 @@ public sealed record SolverSetupDto(
     IReadOnlyList<SolverFaceDto> Fixed,
     IReadOnlyList<SolverLoadDto> Loads,
     bool CanUndo = false,
-    bool CanRedo = false);
+    bool CanRedo = false,
+    // The local refinement, one step after another; empty means the cubes are cut evenly by Divisions. With refinement, Divisions is 1 x 1 x 1.
+    IReadOnlyList<RefinementStepDto>? Refinements = null);
 
 /// <param name="Severity">"error" blocks the solve; "warning" does not.</param>
 public sealed record SolverIssueDto(string Severity, string Message);
@@ -108,7 +116,8 @@ public sealed record SolverQualityDto(
 /// One small element that is not excellent by a profile: the cube it lies in, its place (Ex, Ey, Ez) in that cube,
 /// its grade and its value of every measure of the profile (by key).
 /// </summary>
-public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, IReadOnlyDictionary<string, double> Values);
+/// <param name="Key">The key of the element in the mesh (the one thing that names it whatever the rule that made the mesh); Hex, Ex, Ey, Ez name the cell of the setup's grid it lies in.</param>
+public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, IReadOnlyDictionary<string, double> Values, string? Key = null);
 
 /// <summary>One standard's judgement of a single small element: its grade and its value of every measure of the standard.</summary>
 public sealed record SolverElementProfileDto(string Id, string Grade, IReadOnlyDictionary<string, double> Values);

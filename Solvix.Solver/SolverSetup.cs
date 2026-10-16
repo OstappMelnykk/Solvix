@@ -1,5 +1,6 @@
 using Solvix.Contracts.Facades;
 using Solvix.FemMesh;
+using Solvix.FemMesh.Local;
 using Solvix.Solver.Selections;
 
 namespace Solvix.Solver;
@@ -29,6 +30,7 @@ internal sealed class SolverSetup
     private readonly Dictionary<int, RegionMap<string>> _elementMaterials = new();
     private readonly Dictionary<(int Hex, string Side), RegionMap<bool>> _fixed = new();
     private readonly Dictionary<(int Hex, string Side), RegionMap<double>> _loads = new();
+    private List<RefinementStep> _refinements = new();
 
     public int Version { get; private set; }
     public string DefaultMaterial { get; private set; } = Materials.DefaultName;
@@ -38,6 +40,12 @@ internal sealed class SolverSetup
 
     public IReadOnlyDictionary<string, SolverMaterialDto> MaterialsByName => _materials;
     public IReadOnlyDictionary<int, string> HexMaterials => _hexMaterials;
+
+    /// <summary>The local refinement, one step after another (empty: the cubes are cut evenly by <see cref="Divisions"/>).</summary>
+    public IReadOnlyList<RefinementStep> Refinements => _refinements;
+
+    /// <summary>The rule that turns the cubes into the mesh of finite elements: the local refinement when there is one, else the even cut.</summary>
+    public IMeshRefinement Rule() => _refinements.Count > 0 ? new LocalRefinement(_refinements) : new UniformRefinement(Divisions.Nx, Divisions.Ny, Divisions.Nz);
 
     /// <summary>The cells of the current division that have a material of their own (the cell whose centre lies in a region).</summary>
     public IReadOnlyDictionary<ElementKey, string> ElementMaterials
@@ -106,12 +114,17 @@ internal sealed class SolverSetup
     /// <summary>Everything the user can set here, as it was at one moment (the version is not part of it).</summary>
     private sealed record Snapshot(
         Dictionary<string, SolverMaterialDto> Materials, Dictionary<int, string> HexMaterials, Dictionary<int, RegionMap<string>> ElementMaterials,
-        Dictionary<(int, string), RegionMap<bool>> Fixed, Dictionary<(int, string), RegionMap<double>> Loads, string DefaultMaterial, (int, int, int) Divisions)
+        Dictionary<(int, string), RegionMap<bool>> Fixed, Dictionary<(int, string), RegionMap<double>> Loads, string DefaultMaterial, (int, int, int) Divisions,
+        List<RefinementStep> Refinements)
     {
         public bool SameAs(Snapshot other) =>
-            DefaultMaterial == other.DefaultMaterial && Divisions == other.Divisions
+            DefaultMaterial == other.DefaultMaterial && Divisions == other.Divisions && SameSteps(Refinements, other.Refinements)
             && SameMaps(Fixed, other.Fixed) && SameMaps(ElementMaterials, other.ElementMaterials) && SameMaps(Loads, other.Loads)
             && SameDictionary(HexMaterials, other.HexMaterials) && SameDictionary(Materials, other.Materials);
+
+        private static bool SameSteps(List<RefinementStep> a, List<RefinementStep> b) =>
+            a.Count == b.Count && a.Zip(b).All(p => p.First.NI == p.Second.NI && p.First.NJ == p.Second.NJ && p.First.NK == p.Second.NK
+                && p.First.TransitionDepth == p.Second.TransitionDepth && p.First.Leaves.SequenceEqual(p.Second.Leaves));
 
         private static bool SameDictionary<TKey, TValue>(Dictionary<TKey, TValue> a, Dictionary<TKey, TValue> b) where TKey : notnull =>
             a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var v) && EqualityComparer<TValue>.Default.Equals(p.Value, v));
@@ -123,7 +136,7 @@ internal sealed class SolverSetup
     private static Dictionary<TKey, RegionMap<TValue>> CopyMaps<TKey, TValue>(Dictionary<TKey, RegionMap<TValue>> maps) where TKey : notnull where TValue : notnull =>
         maps.ToDictionary(p => p.Key, p => p.Value.Copy());
 
-    private Snapshot Take() => new(new(_materials), new(_hexMaterials), CopyMaps(_elementMaterials), CopyMaps(_fixed), CopyMaps(_loads), DefaultMaterial, Divisions);
+    private Snapshot Take() => new(new(_materials), new(_hexMaterials), CopyMaps(_elementMaterials), CopyMaps(_fixed), CopyMaps(_loads), DefaultMaterial, Divisions, new(_refinements));
 
     private void Restore(Snapshot snapshot)
     {
@@ -139,6 +152,7 @@ internal sealed class SolverSetup
         foreach (var (k, v) in snapshot.Loads) _loads[k] = v.Copy();
         DefaultMaterial = snapshot.DefaultMaterial;
         Divisions = snapshot.Divisions;
+        _refinements = new(snapshot.Refinements);
         Version++;
     }
 
@@ -215,12 +229,32 @@ internal sealed class SolverSetup
         if (new[] { nx, ny, nz }.Any(n => n < 1 || n > MaxDivision)) return false;
         Edit(() =>
         {
-            if (Divisions == (nx, ny, nz)) return;
+            // the even cut and the local refinement are two rules for one mesh: choosing the even cut drops the refinement
+            if (Divisions == (nx, ny, nz) && _refinements.Count == 0) return;
             Divisions = (nx, ny, nz);
+            _refinements = new();
             Version++;
         });
         return true;
     }
+
+    // ---- the local refinement -----------------------------------------------------------------------
+
+    /// <summary>Adds a local refinement to the end of the history. The even cut gives way to it (the division goes back to 1 x 1 x 1: what is set stays, as it is stored in regions).</summary>
+    public void AddRefinement(RefinementStep step) => Edit(() =>
+    {
+        Divisions = (1, 1, 1);
+        _refinements.Add(step);
+        Version++;
+    });
+
+    /// <summary>Takes the whole local refinement away.</summary>
+    public void ClearRefinements() => Edit(() =>
+    {
+        if (_refinements.Count == 0) return;
+        _refinements = new();
+        Version++;
+    });
 
     // ---- materials ---------------------------------------------------------------------------------
 
@@ -363,6 +397,7 @@ internal sealed class SolverSetup
             fixedNow.OrderBy(f => f.Hex).ThenBy(f => f.Face).ThenBy(f => f.P).ThenBy(f => f.Q).Select(f => new SolverFaceDto(f.Hex, f.Face, f.P, f.Q)).ToList(),
             loadsNow.OrderBy(l => l.Key.Hex).ThenBy(l => l.Key.Face).ThenBy(l => l.Key.P).ThenBy(l => l.Key.Q)
                 .Select(l => new SolverLoadDto(l.Key.Hex, l.Key.Face, l.Value, l.Key.P, l.Key.Q)).ToList(),
-            CanUndo, CanRedo);
+            CanUndo, CanRedo,
+            _refinements.Count == 0 ? null : _refinements.Select(r => new RefinementStepDto(r.Leaves.ToList(), r.NI, r.NJ, r.NK, r.TransitionDepth)).ToList());
     }
 }

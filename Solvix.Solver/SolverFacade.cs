@@ -157,7 +157,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
                 Publish(sessionId, ticket, new SolverJobDto("failed", 1, "", $"Ітерації не збіглися (нев'язка {output.Residual:E1}): система погано обумовлена, спробуйте менший контраст матеріалів або менше кубів.", ticket));
                 return;
             }
-            var fine = input.Fine ?? throw new NotSupportedException("The result of a mesh that is not cut evenly cannot be shown yet.");
+            var fine = input.Mesh;
             int n = fine.NodeCount;
             var ux = new double[n]; var uy = new double[n]; var uz = new double[n]; var positions = new double[3 * n];
             for (int i = 0; i < n; i++)
@@ -166,7 +166,9 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
                 for (int c = 0; c < 3; c++) positions[3 * i + c] = fine.Positions[i, c];
             }
             double maxDisplacement = Enumerable.Range(0, n).Max(i => Math.Sqrt(ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]));
-            var result = new SolverResultDto(ticket, new[] { fine.Divisions.Nx, fine.Divisions.Ny, fine.Divisions.Nz }, positions, mesh.ElementIds, fine.GridNodes,
+            // an evenly cut body also says which node sits at each grid point of each cube (what the cube-by-cube view draws from); any other mesh is shown from the mesh itself
+            var even = input.Fine;
+            var result = new SolverResultDto(ticket, even is null ? new[] { 1, 1, 1 } : new[] { even.Divisions.Nx, even.Divisions.Ny, even.Divisions.Nz }, positions, mesh.ElementIds, even?.GridNodes ?? Array.Empty<int>(),
                 ux, uy, uz, output.VonMises, maxDisplacement, output.VonMises.Max(), clock.Elapsed.TotalSeconds);
             sessions.With(sessionId, s =>
             {
@@ -199,16 +201,11 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     // ---- set-up + mesh -> solver input ------------------------------------------------------
 
-    internal static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh)
-    {
-        // every cube cut into nx*ny*nz small elements, as the solver's own mesh does
-        var (nx, ny, nz) = setup.Divisions;
-        var fine = FineMesh.Build(mesh, nx, ny, nz);
+    internal static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh) => BuildInput(setup, mesh, SolverMeshes.Build(setup, mesh));
 
-        // From here on the solver works on the mesh of finite elements (IFemMesh): the setup's cells are bound to its elements and faces by
-        // SetupBinding, and nothing below asks which cube an element came from or how it was cut.
-        return BuildProblem(setup, mesh, fine.Mesh, fine);
-    }
+    // From here on the solver works on the mesh of finite elements (IFemMesh): the setup's regions are bound to its elements and faces by what is at their centres,
+    // and nothing below asks which cube an element came from or how it was cut.
+    internal static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh, BuiltMesh built) => BuildProblem(setup, mesh, built.Mesh, built.Uniform);
 
     /// <summary>
     /// The solver's input on ANY mesh of finite elements: what the setup says (materials, clamps, pressures, set on regions of the cubes) is bound to the
