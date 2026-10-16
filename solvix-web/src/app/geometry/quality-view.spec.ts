@@ -312,3 +312,27 @@ describe('the Quality World view', () => {
     disposeMeshView(view);
   });
 });
+
+describe('the sides of the Quality World view', () => {
+  it('all turn outwards from their body, so a one-sided (see-through) body tints every side that faces the viewer', () => {
+    const view = buildQualityView({
+      state: singleCubeState(), setup: setup({ divisions: [2, 2, 2] }), quality: null, metric: 'grade', look: { kind: 'translucent', opacity: 0.5 },
+      onlyBad: false, showFixed: false, showLoads: false
+    });
+    const mesh = view.pickables[0] as THREE.Mesh;
+    const p = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex()!;
+    const centre = new THREE.Vector3(0.5, 0.5, 0.5);
+    let inward = 0;
+    for (let i = 0; i < index.count; i += 3) {
+      const a = new THREE.Vector3().fromBufferAttribute(p, index.getX(i));
+      const b = new THREE.Vector3().fromBufferAttribute(p, index.getX(i + 1));
+      const c = new THREE.Vector3().fromBufferAttribute(p, index.getX(i + 2));
+      const normal = b.clone().sub(a).cross(c.clone().sub(a));
+      if (normal.dot(a.clone().sub(centre)) < -1e-9) inward++;
+    }
+
+    expect(inward).toBe(0);
+    disposeMeshView(view);
+  });
+});

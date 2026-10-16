@@ -274,10 +274,20 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     const uvs: number[] = [];
     for (const face of subset) {
       const colour = colorOf(face.owner.id, ...face.element);
+      const first = indices.length;
       appendSurface(positions, indices, geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q), resolution, (u, v) => {
         colors.push(colour.r, colour.g, colour.b);
         uvs.push(u, v);
       });
+      // every face turns outwards from its element (so a one-sided body tints the sides turned to the viewer, whatever the order of the corners):
+      // if the first triangle looks the other way along the axis of the face, all its triangles are turned over
+      const at = (i: number) => new THREE.Vector3(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]);
+      const normal = at(indices[first + 1]).sub(at(indices[first])).cross(at(indices[first + 2]).sub(at(indices[first])));
+      const outward = face.face.endsWith('Plus') ? 1 : -1;
+      if (normal.getComponent(face.axis) * outward < 0) {
+        for (let k = first; k < indices.length; k += 3) [indices[k + 1], indices[k + 2]] = [indices[k + 2], indices[k + 1]];
+      }
+
     }
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
