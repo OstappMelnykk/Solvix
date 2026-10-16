@@ -13,6 +13,8 @@ import { QualityPick, SolverService, sameElement } from '../../../state/solver.s
 import { MeasureInfoComponent } from './measure-info/measure-info.component';
 import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-controls.component';
 import { sectionOf } from '../../../state/quality-render.service';
+import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { QUALITY_WORLD_INDEX } from '../../../config/app-settings';
 import { ExploreSettings, QualityExploreService, SectionSettings } from '../../../state/quality-explore.service';
 import { elementCentreOf } from '../../../geometry/solver-view';
 
@@ -40,6 +42,7 @@ export class QualityControlsComponent implements DoCheck {
   private readonly editor = inject(MeshEditorService);
   private readonly activeWorld = inject(ActiveWorldService);
   private readonly explore = inject(QualityExploreService);
+  private readonly geometryOpacity = inject(GeometryOpacityService);
 
   @Input({ required: true }) sessionId!: number;
 
@@ -135,6 +138,15 @@ export class QualityControlsComponent implements DoCheck {
         this.explore.setSection(this.sessionId, { position: high > low ? (along(centre) - low) / (high - low) : 0.5 });
       }
     }
+  }
+
+  // How opaque the bad elements are when they alone are shown (percent).
+  opacityPercent(): number {
+    return Math.round(this.geometryOpacity.get(this.sessionId, QUALITY_WORLD_INDEX) * 100);
+  }
+
+  onOpacity(event: Event): void {
+    this.geometryOpacity.set(this.sessionId, QUALITY_WORLD_INDEX, Number((event.target as HTMLInputElement).value) / 100);
   }
 
   // The body filled, or wholly transparent with only its edges.
