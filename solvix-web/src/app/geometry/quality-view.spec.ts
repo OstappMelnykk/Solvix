@@ -16,7 +16,7 @@ const quality = (bad: { hex: number; ex: number; ey?: number; ez?: number }[]): 
 });
 
 const input = (over: Partial<QualityViewInput> = {}): QualityViewInput => ({
-  state: singleCubeState(), setup: setup({ divisions: [3, 1, 1] }), quality: quality([{ hex: 0, ex: 1 }]), metric: 'grade', filled: true, onlyBad: false, showFixed: false, showLoads: false, ...over
+  state: singleCubeState(), setup: setup({ divisions: [3, 1, 1] }), quality: quality([{ hex: 0, ex: 1 }]), metric: 'grade', look: { kind: 'solid' }, onlyBad: false, showFixed: false, showLoads: false, ...over
 });
 
 const faceMesh = (view: ReturnType<typeof buildQualityView>) => view.pickables[0] as THREE.Mesh;
@@ -63,7 +63,7 @@ describe('the Quality World view', () => {
 
   it('has two looks only: filled and solid, or wholly transparent so that nothing but the edges shows', () => {
     const filled = buildQualityView(input());
-    const wire = buildQualityView(input({ filled: false }));
+    const wire = buildQualityView(input({ look: { kind: 'edges' } }));
 
     expect(material(faceMesh(filled)).transparent).toBeFalse();
     expect(material(faceMesh(filled)).opacity).toBe(1);
@@ -77,10 +77,68 @@ describe('the Quality World view', () => {
     disposeMeshView(wire);
   });
 
+  describe('see-through to an opacity', () => {
+    const translucent = (opacity: number, over: Partial<QualityViewInput> = {}) => buildQualityView(input({ look: { kind: 'translucent', opacity }, ...over }));
+
+    it('is one opacity for every face, blending with all the others (no depth test, so no order to go wrong)', () => {
+      const see = translucent(0.4);
+
+      expect(see.pickables.length).toBe(1);
+      expect(material(faceMesh(see)).opacity).toBeCloseTo(0.4, 6);
+      expect(material(faceMesh(see)).transparent).toBeTrue();
+      expect(material(faceMesh(see)).depthTest).toBeFalse();
+      expect(material(faceMesh(see)).depthWrite).toBeFalse();
+      disposeMeshView(see);
+    });
+
+    it('never goes fully invisible, nor beyond solid', () => {
+      const none = translucent(0);
+      const over = translucent(3);
+
+      expect(material(faceMesh(none)).opacity).toBeGreaterThanOrEqual(0.05);
+      expect(material(faceMesh(over)).opacity).toBe(1);
+      disposeMeshView(none);
+      disposeMeshView(over);
+    });
+
+    it('also draws the faces around a bad element inside the body', () => {
+      const solid = buildQualityView(input());
+      const see = translucent(0.5);
+      const none = translucent(0.5, { quality: quality([]) });
+
+      expect(vertices(see)).toBeGreaterThan(vertices(solid));
+      expect(vertices(see)).toBeGreaterThan(vertices(none));
+      disposeMeshView(solid);
+      disposeMeshView(see);
+      disposeMeshView(none);
+    });
+
+    it('writes the depth of the outside invisibly, so the dots know what is in front of them', () => {
+      const see = translucent(0.5);
+      const depthOnly = see.root.children.filter(c => c instanceof THREE.Mesh && (c.material as THREE.Material).colorWrite === false);
+
+      expect(depthOnly.length).toBe(1);
+      disposeMeshView(see);
+    });
+
+    it('shows the cubes\' corners hidden by the body again (only those), weaker the more opaque the body is', () => {
+      const solid = buildQualityView(input());
+      const see = translucent(0.5);
+      const count = (v: ReturnType<typeof buildQualityView>) => v.root.children.filter(c => c instanceof THREE.InstancedMesh).length;
+
+      expect(count(see)).toBe(count(solid) + 1);
+      const hidden = see.root.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh).filter(m => !(m.material as THREE.MeshBasicMaterial).depthTest);
+      expect(hidden.length).toBe(1);
+      expect((hidden[0].material as THREE.MeshBasicMaterial).opacity).toBeGreaterThan(0);
+      disposeMeshView(solid);
+      disposeMeshView(see);
+    });
+  });
+
   it('in the edges-only look, also draws the faces around a bad element inside the body, so its edges show', () => {
     const filled = buildQualityView(input());
-    const wire = buildQualityView(input({ filled: false }));
-    const none = buildQualityView(input({ filled: false, quality: quality([]) }));
+    const wire = buildQualityView(input({ look: { kind: 'edges' } }));
+    const none = buildQualityView(input({ look: { kind: 'edges' }, quality: quality([]) }));
 
     expect(vertices(wire)).toBeGreaterThan(vertices(filled));
     expect(vertices(wire)).toBeGreaterThan(vertices(none));
@@ -90,7 +148,7 @@ describe('the Quality World view', () => {
   });
 
   it('does not fill the cut in the edges-only look', () => {
-    const wire = buildQualityView(input({ filled: false, section: { axis: 0, at: 0.5, keep: 'above' } }));
+    const wire = buildQualityView(input({ look: { kind: 'edges' }, section: { axis: 0, at: 0.5, keep: 'above' } }));
 
     expect(wire.root.children.some(c => c.userData['sectionCap'])).toBeFalse();
     expect(wire.root.children.some(c => c.userData['sectionStructure'])).toBeTrue();
@@ -133,7 +191,7 @@ describe('the Quality World view', () => {
 
   it('in the edges-only look, draws the cubes\' corners and midpoints over everything, and not the small elements\' nodes', () => {
     const filled = buildQualityView(input({ setup: setup({ divisions: [2, 2, 2] }), quality: quality([]) }));
-    const wire = buildQualityView(input({ setup: setup({ divisions: [2, 2, 2] }), quality: quality([]), filled: false }));
+    const wire = buildQualityView(input({ setup: setup({ divisions: [2, 2, 2] }), quality: quality([]), look: { kind: 'edges' } }));
     const spheres = (v: ReturnType<typeof buildQualityView>) => v.root.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh);
 
     expect(spheres(wire).length).toBe(2);

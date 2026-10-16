@@ -50,7 +50,7 @@ export class QualityRenderService {
       setup: input.setup,
       quality,
       metric: this.solver.qualityMetric(sessionId),
-      filled: looking.filled,
+      look: looking.filled ? { kind: 'solid' } : { kind: 'edges' },
       onlyBad: looking.onlyBad,
       section: looking.section.enabled ? sectionOf(state, looking.section) : undefined,
       showFixed: marks.fixed,

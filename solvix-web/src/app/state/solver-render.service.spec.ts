@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -42,13 +43,14 @@ describe('SolverRenderService', () => {
     expect(render.getView(sessionId, SOLVER_WORLD_INDEX)).toBeNull();
   });
 
-  it('draws the body in the Solver World, one mesh per cube, and keeps the same view until something changes', () => {
+  it('draws the body in the Solver World as the Real World draws it (one mesh of all its faces), and keeps the same view until something changes', () => {
     loadMesh();
 
     const view = render.getView(sessionId, SOLVER_WORLD_INDEX);
 
     expect(view).not.toBeNull();
-    expect(view!.pickables.length).toBe(2);
+    expect(view!.pickables.length).toBe(1);
+    expect(view!.root.children.some(c => c instanceof THREE.Points || c instanceof THREE.InstancedMesh)).toBeFalse();       // no dots of the nodes
     expect(render.getView(sessionId, SOLVER_WORLD_INDEX)).toBe(view);
   });
 

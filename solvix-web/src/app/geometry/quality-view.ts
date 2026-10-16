@@ -21,22 +21,35 @@ import {
 //  - the cut itself (the cap of every small element the plane runs through) is the one thing built by hand, and it is lit like the faces.
 // The canvas's renderer must have localClippingEnabled for the section to cut.
 
+export type QualityLook = { readonly kind: 'solid' } | { readonly kind: 'edges' } | { readonly kind: 'translucent'; readonly opacity: number };
+
 export interface QualityViewInput {
   readonly state: MeshStateDto;
   readonly setup: SolverSetupDto | null;
   readonly quality: SolverQualityDto | null;
   // what the colours show: the overall grade or one measure
   readonly metric: QualityMetric;
-  // true: the body is filled; false: it is wholly transparent and only its edges show (the edges of a bad element in red)
-  readonly filled: boolean;
+  // how the body is drawn: filled; wholly transparent with only its edges (the edges of a bad element red); or see-through to the opacity given
+  readonly look: QualityLook;
   // draw just the elements the metric does not grade excellent
   readonly onlyBad: boolean;
   readonly section?: SectionCut;
   readonly showFixed: boolean;
   readonly showLoads: boolean;
+  // The same view also draws the body of the Solver World while it is being set up (nothing coloured by grade, no dots of the nodes):
+  // the colour of a body without grades (default the blue of the Real World), what colours an element of its own (a material), the elements
+  // not drawn (a hidden material), the faces between the elements drawn too, the dots of the nodes (default yes), the labels of the pressures
+  // (default yes) and the edges (default yes).
+  readonly bodyColor?: number;
+  readonly colorOfElement?: (hex: number, ex: number, ey: number, ez: number) => number | null;
+  readonly hidden?: (hex: number, ex: number, ey: number, ez: number) => boolean;
+  readonly showInner?: boolean;
+  readonly dots?: boolean;
+  readonly labels?: boolean;
+  readonly edges?: boolean;
 }
 
-// Two looks only: the body filled, or wholly transparent with just its edges. The look is the Real World's.
+// Three looks: filled; wholly transparent with just the edges; or see-through to an opacity, as the Real World's body is. The look is the Real World's.
 const BODY_COLOR = 0x4a8fe3;
 const EDGE_COLOR = [0.9, 0.91, 0.93];
 const CORNER_COLOR = 0xffffff;
@@ -48,7 +61,11 @@ const SUB_NODE_SIZE = 0.035;
 const CAP_OUTLINE_COLOR = 0xe6e8ec;
 const DOT_SPHERE_SEGMENTS = [10, 8] as const;
 // how visible the farthest edges and dots of a see-through body are (the nearest are fully visible), as in the Real World
-const FAR_ALPHA = 0.4;
+const FAR_ALPHA = 0.15;
+// ... and of a body drawn as its edges alone: they are all there is to see
+const WIRE_FAR_ALPHA = 0.4;
+// the opacity from which the dots hidden by a see-through body begin to fade away (as in the Real World)
+const GHOST_FULL_AT = 0.7;
 
 // The depth range of the body as the camera sees it, shared by the shaders that fade with depth: refreshed from the camera before the object is drawn.
 interface FadeUniforms {
@@ -68,18 +85,21 @@ function trackFade(object: THREE.Object3D, uniforms: FadeUniforms, centre: THREE
 
 // A matt lit material whose faces draw their own edges: where the position inside a small face (u, v in [-1, 1]) is within a
 // pixel or so of its border, the colour goes to the edge colour (and the face to opaque, so the edge of a see-through body still reads).
-function litFaceMaterial(options: { solid: boolean; clip: THREE.Plane[] }, fade: FadeUniforms): THREE.MeshLambertMaterial {
+function litFaceMaterial(options: { kind: QualityLook['kind']; opacity: number; clip: THREE.Plane[]; edges: boolean }, fade: FadeUniforms): THREE.MeshLambertMaterial {
+  const solid = options.kind === 'solid';
+  const wire = options.kind === 'edges';
   const material = new THREE.MeshLambertMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
-    // wholly transparent: the faces draw nothing but their edges, and nothing hides anything
-    transparent: !options.solid,
-    opacity: options.solid ? 1 : 0,
-    depthWrite: options.solid,
-    depthTest: options.solid,
+    // see-through, every face blends with all the others (no depth test), so the tone does not depend on the order they are drawn in; wholly transparent, the faces draw nothing but their edges
+    transparent: !solid,
+    opacity: solid ? 1 : wire ? 0 : options.opacity,
+    depthWrite: solid,
+    depthTest: solid,
     clippingPlanes: options.clip
   });
-  material.customProgramCacheKey = () => 'quality-face-edges';
+  // the shader differs with the look, so each look is a program of its own
+  material.customProgramCacheKey = () => `quality-face-edges:${options.kind}:${options.edges}`;
   material.onBeforeCompile = shader => {
     shader.uniforms['uFadeNear'] = fade.uFadeNear;
     shader.uniforms['uFadeFar'] = fade.uFadeFar;
@@ -94,11 +114,12 @@ function litFaceMaterial(options: { solid: boolean; clip: THREE.Plane[] }, fade:
         '#include <opaque_fragment>',
         `vec2 edgeD = 1.0 - abs(vFaceUv);
         vec2 edgeW = max(fwidth(vFaceUv), vec2(1e-6));
-        float edgeLine = 1.0 - smoothstep(${options.solid ? '0.4, 1.3' : '0.9, 2.2'}, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
+        float edgeLine = 1.0 - smoothstep(${wire ? '0.9, 2.2' : '0.4, 1.3'}, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
         edgeLine *= mix(1.0, uFadeMin, clamp((vFadeDepth - uFadeNear) / max(uFadeFar - uFadeNear, 0.0001), 0.0, 1.0));
-        ${options.solid ? `vec3 edgeColor = vec3(${EDGE_COLOR.join(', ')});` : 'vec3 edgeColor = clamp(vColor.rgb * 1.7 + 0.12, 0.0, 1.0);'}
+        ${wire ? 'vec3 edgeColor = clamp(vColor.rgb * 1.7 + 0.12, 0.0, 1.0);' : `vec3 edgeColor = vec3(${EDGE_COLOR.join(', ')});`}
+        edgeLine *= ${options.edges ? '1.0' : '0.0'};
         outgoingLight = mix(outgoingLight, edgeColor, edgeLine);
-        diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine);
+        diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine * ${solid || wire ? '1.0' : '0.9'});
         #include <opaque_fragment>`
       );
   };
@@ -112,7 +133,8 @@ function drawnFaces(
   geometry: SolverGeometry,
   visible: (hex: number, ex: number, ey: number, ez: number) => boolean,
   isBad: (hex: number, ex: number, ey: number, ez: number) => boolean,
-  seeThrough: boolean
+  seeThrough: boolean,
+  showInner: boolean
 ): DrawnFace[] {
   const counts = geometry.counts;
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
@@ -151,7 +173,7 @@ function drawnFaces(
             const lowVisible = low !== null && visible(low.hex.id, ...low.element);
             const highVisible = high !== null && visible(high.hex.id, ...high.element);
             const lowBad = lowVisible && isBad(low!.hex.id, ...low!.element), highBad = highVisible && isBad(high!.hex.id, ...high!.element);
-            const keep = lowVisible !== highVisible || (lowVisible && highVisible && seeThrough && (lowBad || highBad));
+            const keep = lowVisible !== highVisible || (lowVisible && highVisible && (showInner || (seeThrough && (lowBad || highBad))));
             if (!keep) continue;
             const ownerIsHigh = highVisible && !(lowVisible && lowBad && !highBad);   // with both visible: the high side, but the bad one wins
             const owner = ownerIsHigh ? high! : low!;
@@ -179,15 +201,19 @@ export function buildQualityView(input: QualityViewInput): MeshView {
   const counts = geometry.counts;
   const resolution = faceResolution(counts);
   const trianglesPerFace = 2 * resolution * resolution;
-  const solid = input.filled;
+  const solid = input.look.kind === 'solid';
+  const wire = input.look.kind === 'edges';
   const seeThrough = !solid;
+  const opacity = input.look.kind === 'translucent' ? Math.min(1, Math.max(0.05, input.look.opacity)) : 1;
+  // how much of what a see-through body hides is seen: everything at GHOST_FULL_AT and below
+  const ghost = input.look.kind === 'translucent' ? Math.min(1, Math.max(0, (1 - opacity) / (1 - GHOST_FULL_AT))) : 0;
 
   // ---- grades ----
   const grades = quality ? new Map(quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, input.metric, quality.limits)])) : null;
   const gradeOf = (hex: number, ex: number, ey: number, ez: number) => grades?.get(`${hex}:${ex}:${ey}:${ez}`) ?? 'excellent';
   const isBad = (hex: number, ex: number, ey: number, ez: number): boolean => gradeOf(hex, ex, ey, ez) !== 'excellent';
   const colorOf = (hex: number, ex: number, ey: number, ez: number): THREE.Color =>
-    new THREE.Color(grades ? RESULT_COLORS[resultOf(gradeOf(hex, ex, ey, ez))] : BODY_COLOR);
+    new THREE.Color(grades ? RESULT_COLORS[resultOf(gradeOf(hex, ex, ey, ez))] : (input.colorOfElement?.(hex, ex, ey, ez) ?? input.bodyColor ?? BODY_COLOR));
 
   // ---- the cut: a clipping plane and the side of it that is kept ----
   const cut = input.section;
@@ -215,7 +241,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     const key = `${hex}:${ex}:${ey}:${ez}`;
     let result = shown.get(key);
     if (result === undefined) {
-      result = true;
+      result = !(input.hidden?.(hex, ex, ey, ez) ?? false);
       if (input.onlyBad && grades && !isBad(hex, ex, ey, ez)) result = false;
       if (result && cut) {
         // an element stays while any part of it is on the kept side: the ones the plane runs through are cut by it
@@ -233,10 +259,10 @@ export function buildQualityView(input: QualityViewInput): MeshView {
   for (const n of state.nodes) bounds.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
   const sphere = bounds.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : bounds.getBoundingSphere(new THREE.Sphere());
   const radius = Math.max(sphere.radius, 1e-3);
-  const fadeUniforms: FadeUniforms = { uFadeNear: { value: 0 }, uFadeFar: { value: 1 }, uFadeMin: { value: seeThrough ? FAR_ALPHA : 1 } };
-  const fade = createDepthFade(sphere.center, radius, seeThrough ? FAR_ALPHA : 1);
+  const fadeUniforms: FadeUniforms = { uFadeNear: { value: 0 }, uFadeFar: { value: 1 }, uFadeMin: { value: wire ? WIRE_FAR_ALPHA : seeThrough ? FAR_ALPHA : 1 } };
+  const fade = createDepthFade(sphere.center, radius, wire ? WIRE_FAR_ALPHA : seeThrough ? FAR_ALPHA : 1);
 
-  const faces = drawnFaces(state, geometry, visible, isBad, seeThrough);
+  const faces = drawnFaces(state, geometry, visible, isBad, seeThrough, input.showInner === true);
   const pickables: THREE.Object3D[] = [];
 
   // ---- the faces ----
@@ -263,7 +289,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
 
   if (faces.length > 0) {
     const faceGeometry = surface(faces, true);
-    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ solid, clip }, fadeUniforms));
+    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ kind: input.look.kind, opacity, clip, edges: input.edges !== false }, fadeUniforms));
     faceMesh.renderOrder = 1;
     trackFade(faceMesh, fadeUniforms, sphere.center, radius);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
@@ -283,6 +309,19 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     }
     root.add(faceMesh);
     pickables.push(faceMesh);
+
+    // a see-through outside also writes depth, invisibly, before the dots: what is in front of them is then known
+    if (!solid && !wire) {
+      const outer = faces.filter(f => f.outer);
+      if (outer.length > 0) {
+        const depthOnly = new THREE.Mesh(
+          outer.length === faces.length ? faceGeometry : surface(outer, false),
+          new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide, clippingPlanes: clip })
+        );
+        depthOnly.renderOrder = 0;
+        root.add(depthOnly);
+      }
+    }
   }
 
   // ---- the nodes: the cube's corners (white) and midpoints (yellow) as dots, the nodes of the small elements between them as small dots ----
@@ -302,22 +341,32 @@ export function buildQualityView(input: QualityViewInput): MeshView {
       if (!found.has(key)) found.set(key, { at: v, kind: cubeNodes.get(key) ?? 'sub' });
     }
   }
-  // a solid body shows the dots on its surface (the small elements' nodes as small ones); a transparent one only the cubes' corners and midpoints, over everything
-  const dotSet = (kind: 'corner' | 'mid' | 'sub'): THREE.Object3D | null => {
-    if (seeThrough && kind === 'sub') return null;
+  // A filled body shows the dots on its surface (the small elements' nodes as small ones). Edges only: the cubes' corners and midpoints, over everything.
+  // See-through: the dots in front of the body as for a filled one, and again over everything, only the cubes' corners, weaker the more opaque the body is.
+  const dotSet = (kind: 'corner' | 'mid' | 'sub', ghosted: boolean): THREE.Object3D | null => {
+    if (input.dots === false) return null;
+    if (ghosted && kind !== 'corner') return null;
+    if (wire && kind === 'sub') return null;
     const points = Array.from(found.values()).filter(f => f.kind === kind);
     if (points.length === 0) return null;
+    const overEverything = wire || ghosted;
     if (kind === 'sub') {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(f => [f.at.x, f.at.y, f.at.z]), 3));
-      const pointMaterial = new THREE.PointsMaterial({ color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true, clippingPlanes: clip });
+      const pointMaterial = new THREE.PointsMaterial({ color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true, transparent: seeThrough, opacity: 1, clippingPlanes: clip });
       fade.patch(pointMaterial);
       const dots = new THREE.Points(g, pointMaterial);
       dots.renderOrder = 3;
       fade.track(dots);
       return dots;
     }
-    const sphereMaterial = new THREE.MeshBasicMaterial({ color: kind === 'corner' ? CORNER_COLOR : MIDPOINT_COLOR, transparent: seeThrough, depthTest: solid, clippingPlanes: clip });
+    const sphereMaterial = new THREE.MeshBasicMaterial({
+      color: kind === 'corner' ? CORNER_COLOR : MIDPOINT_COLOR,
+      transparent: seeThrough,
+      opacity: ghosted ? ghost : 1,
+      depthTest: !overEverything,
+      clippingPlanes: clip
+    });
     fade.patch(sphereMaterial);
     const spheres = new THREE.InstancedMesh(new THREE.SphereGeometry(kind === 'corner' ? CORNER_RADIUS : MIDPOINT_RADIUS, ...DOT_SPHERE_SEGMENTS), sphereMaterial, points.length);
     fade.track(spheres);
@@ -328,12 +377,16 @@ export function buildQualityView(input: QualityViewInput): MeshView {
       spheres.setMatrixAt(i, placed.matrix);
     });
     spheres.instanceMatrix.needsUpdate = true;
-    spheres.renderOrder = 3;
+    spheres.renderOrder = ghosted ? 4 : 3;
     return spheres;
   };
   for (const kind of ['corner', 'mid', 'sub'] as const) {
-    const dots = dotSet(kind);
-    if (dots) root.add(dots);
+    const front = dotSet(kind, false);
+    if (front) root.add(front);
+    if (ghost > 0.01) {
+      const behind = dotSet(kind, true);
+      if (behind) root.add(behind);
+    }
   }
 
   // ---- the cut itself: for every element the plane runs through, the polygon in which it cuts it, in the colour of the element ----
@@ -377,14 +430,14 @@ export function buildQualityView(input: QualityViewInput): MeshView {
             }
           }
     }
-    if (solid && capPositions.length > 0) {
+    if (!wire && capPositions.length > 0) {
       // a hair into the body: the outline and the sheet of the plane lie in front of it
       const into = (values: number[], by: number) => values.map((v, i) => (i % 3 === cut.axis ? v + by : v));
       const capGeometry = new THREE.BufferGeometry();
       capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(into(capPositions, -layer), 3));
       capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
       capGeometry.computeVertexNormals();
-      const capMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      const capMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, depthTest: solid });
       const cap = new THREE.Mesh(capGeometry, capMaterial);
       cap.renderOrder = 1;
       cap.userData['sectionCap'] = true;
@@ -439,7 +492,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
   }
 
   // the pressure written on the pressed faces: one label per cube side and pressure
-  if (input.showLoads && !cut && pressure.size > 0) {
+  if (input.showLoads && input.labels !== false && !cut && pressure.size > 0) {
     const groups = new Map<string, { text: string; points: THREE.Vector3[]; normals: THREE.Vector3[]; area: number }>();
     const everyPoint: THREE.Vector3[] = [];
     for (const face of faces) {
