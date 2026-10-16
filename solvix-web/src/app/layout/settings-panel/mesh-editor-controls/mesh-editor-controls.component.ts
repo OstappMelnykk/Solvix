@@ -4,7 +4,6 @@ import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
-import { SessionsService } from '../../../state/sessions.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { SolverService } from '../../../state/solver.service';
@@ -68,7 +67,6 @@ const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
 export class MeshEditorControlsComponent {
   private readonly editor = inject(MeshEditorService);
   private readonly selection = inject(MeshEditorSelectionService);
-  private readonly sessions = inject(SessionsService);
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
   private readonly attachments = inject(SurfaceAttachmentService);
@@ -79,15 +77,9 @@ export class MeshEditorControlsComponent {
 
   adaptSecond = true;
   nudgeStep = 0.1;
-  isResetConfirming = false;
-  isRestartConfirming = false;
   isHelpOpen = false;
   readonly shortcuts = SHORTCUTS;
   readonly axes: readonly Axis[] = ['x', 'y', 'z'];
-
-  mappingIdeal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
-  mappingReal: MeshPointDto = { x: 0.5, y: 0.5, z: 0.5 };
-  mappingResult: string | null = null;
 
   // Shared with the on-canvas drag gizmo (MeshEditorService.carryEdgeMidpoints).
   get carryEdgeMidpoints(): boolean {
@@ -127,54 +119,16 @@ export class MeshEditorControlsComponent {
   onOpacity(event: Event): void {
     if (this.sessionId !== null && this.worldIndex !== null) this.geometryOpacity.set(this.sessionId, this.worldIndex, Number((event.target as HTMLInputElement).value) / 100);
   }
-
-  // --- reaching the nodes inside the body ---
-
-  xrayNodes(): boolean {
-    return this.sessionId !== null && this.selection.xrayNodes(this.sessionId);
-  }
-
-  onXrayNodes(event: Event): void {
-    if (this.sessionId !== null) this.selection.setXrayNodes(this.sessionId, (event.target as HTMLInputElement).checked);
-  }
-
   // --- nodes stuck to the imported surface ---
 
   isNodeAttached(): boolean {
     const id = this.selectedNodeId();
     return this.sessionId !== null && id !== null && this.attachments.isAttached(this.sessionId, id);
   }
-
-  snapEnabled(): boolean {
-    return this.attachments.snapEnabled();
-  }
-
-  onSnapEnabled(event: Event): void {
-    this.attachments.setSnapEnabled((event.target as HTMLInputElement).checked);
-  }
-
-  // The sensitivity: how close to the STL (in % of its size) a dragged vertex sticks.
-  snapPercent(): number {
-    return Math.round(this.attachments.snapShare() * 1000) / 10;
-  }
-
-  onSnapPercent(event: Event): void {
-    this.attachments.setSnapShare(Number((event.target as HTMLInputElement).value) / 100);
-  }
-
-  attachedCount(): number {
-    return this.sessionId === null ? 0 : this.attachments.count(this.sessionId);
-  }
-
   detachNode(): void {
     const id = this.selectedNodeId();
     if (this.sessionId !== null && id !== null) this.attachments.detach(this.sessionId, id);
   }
-
-  detachAllNodes(): void {
-    if (this.sessionId !== null) this.attachments.detachAll(this.sessionId);
-  }
-
   canUndo(): boolean {
     return !this.busy && (this.state?.canUndo ?? false);
   }
@@ -501,42 +455,6 @@ export class MeshEditorControlsComponent {
   redo(): void {
     if (this.sessionId !== null) this.editor.redo(this.sessionId);
   }
-
-  requestReset(): void {
-    this.isResetConfirming = true;
-  }
-
-  cancelReset(): void {
-    this.isResetConfirming = false;
-  }
-
-  requestRestart(): void {
-    this.isRestartConfirming = true;
-  }
-
-  cancelRestart(): void {
-    this.isRestartConfirming = false;
-  }
-
-  // "Start over": the whole session - cubes, undo history, imported reference,
-  // selection, camera - is replaced by a brand-new empty one.
-  confirmRestart(): void {
-    this.isRestartConfirming = false;
-    if (this.sessionId !== null) {
-      this.selection.clear(this.sessionId);
-      this.sessions.restartSession(this.sessionId);
-    }
-  }
-
-  confirmReset(): void {
-    this.isResetConfirming = false;
-    if (this.sessionId !== null) {
-      this.editor.reset(this.sessionId);
-      // the server drops the supports and loads set for the old cubes (their ids start again from 0)
-      this.solver.forget(this.sessionId);
-    }
-  }
-
   // --- numbering: local (inside one cube) <-> global (the mesh node) ---------------
 
   // The cube whose numbering is shown: the single picked cube, or the cube of the
@@ -644,39 +562,5 @@ export class MeshEditorControlsComponent {
     if (handled) {
       event.preventDefault();
     }
-  }
-
-  // --- mapping probe -------------------------------------------------------
-
-  onMappingInput(side: 'ideal' | 'real', axis: Axis, event: Event): void {
-    const value = Number((event.target as HTMLInputElement).value);
-    if (!Number.isFinite(value)) {
-      return;
-    }
-    if (side === 'ideal') {
-      this.mappingIdeal = { ...this.mappingIdeal, [axis]: value };
-    } else {
-      this.mappingReal = { ...this.mappingReal, [axis]: value };
-    }
-  }
-
-  probeIdealToReal(): void {
-    if (this.sessionId === null) return;
-    this.editor.mapIdealToReal(this.sessionId, this.mappingIdeal).subscribe({
-      next: result => (this.mappingResult = result.found && result.point ? `Real: ${this.format(result.point)}` : 'Поза тілом'),
-      error: () => (this.mappingResult = 'Сервер недоступний')
-    });
-  }
-
-  probeRealToIdeal(): void {
-    if (this.sessionId === null) return;
-    this.editor.mapRealToIdeal(this.sessionId, this.mappingReal).subscribe({
-      next: result => (this.mappingResult = result.found && result.point ? `Ideal: ${this.format(result.point)}` : 'Поза тілом'),
-      error: () => (this.mappingResult = 'Сервер недоступний')
-    });
-  }
-
-  private format(p: MeshPointDto): string {
-    return `(${p.x.toFixed(4)}, ${p.y.toFixed(4)}, ${p.z.toFixed(4)})`;
   }
 }

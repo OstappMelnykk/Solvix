@@ -18,20 +18,16 @@
   </div>
 </div>
 
-<div class="stats">Куби: {{ hexCount() }} · Вузли: {{ nodeCount() }}</div>
-
 <div class="group">
+  <div class="group-label">Початок</div>
   <div class="pair">
-    <button class="tool" type="button" [disabled]="!canUndo()" title="Шорткат: Ctrl/Cmd+Z" (click)="undo()">Скасувати</button>
-    <button class="tool" type="button" [disabled]="!canRedo()" title="Шорткат: Ctrl/Cmd+Shift+Z" (click)="redo()">Повернути</button>
+    <button class="tool tool--primary" type="button" [disabled]="!canAddFirst()" title="Шорткат: N" (click)="addFirst()">Перший куб <kbd>N</kbd></button>
+    <button class="tool" type="button" [disabled]="sessionId === null" title="Шорткат: C" (click)="openConstructor()">Конструктор куба… <kbd>C</kbd></button>
   </div>
-  <button class="tool tool--primary" type="button" [disabled]="!canAddFirst()" title="Шорткат: N" (click)="addFirst()">Перший куб <kbd>N</kbd></button>
-  <button class="tool" type="button" [disabled]="sessionId === null" title="Шорткат: C" (click)="openConstructor()">Конструктор куба… <kbd>C</kbd></button>
 </div>
 
 <div class="group">
-  <div class="group-label">Вибір на сцені</div>
-  <div class="hint">Клік по грані — вибрати грань. <b>Shift + клік</b> — вибрати куб (перший — основа, другий приєднується до нього).</div>
+  <div class="group-label">Робота з шестигранником</div>
 
   <div class="pick pick--face" *ngIf="activeFace()">
     <b>Грань</b>
@@ -124,14 +120,6 @@
 
 <div class="group">
   <div class="group-label">Вузол</div>
-  <label class="opacity" title="Менше — грані прозоріші, видно вузли й лінії всередині тіла; 100% — суцільні грані. Окремо для Ideal і Real World.">
-    <span>Непрозорість граней, {{ opacityPercent() }}%</span>
-    <input type="range" min="2" max="100" step="2" [value]="opacityPercent()" (input)="onOpacity($event)" />
-  </label>
-  <label class="row" title="Усі вузли малюються поверх кубів, і клік по вузлу має перевагу над гранню, що перекриває його: так можна дістатися до вузлів усередині тіла">
-    <span>Вузли видно крізь куби</span>
-    <input type="checkbox" [checked]="xrayNodes()" (change)="onXrayNodes($event)" />
-  </label>
   <ng-container *ngIf="selectedNodeId() !== null; else noNode">
     <div class="selected"><b>Вузол {{ selectedNodeId() }}</b> (глобальний id)</div>
     <div class="hint">{{ nodeOwnersText() }}</div>
@@ -163,71 +151,20 @@
   <ng-template #noNode><div class="hint">Клік по вузлу (точці) на сцені. Рухати вузли можна у вкладці Real World.</div></ng-template>
 </div>
 
-<div class="group" *ngIf="isRealWorld">
-  <div class="group-label">Прикріплення до STL</div>
-  <div class="hint">Перетягніть вершину до STL (на відстань кількох відсотків його розміру) — вона прилипне й надалі їздитиме лише по поверхні. Утримуйте <b>Alt</b> під час перетягування, щоб відірвати.</div>
-  <label class="row" title="Вимкніть, щоб вершини рухались вільно й ніколи не прилипали до STL">
-    <span>Прилипання до STL увімкнено</span>
-    <input type="checkbox" [checked]="snapEnabled()" (change)="onSnapEnabled($event)" />
+<div class="group">
+  <div class="group-label">Налаштування сітки</div>
+  <label class="opacity" title="Менше — грані прозоріші, видно вузли й лінії всередині тіла; 100% — суцільні грані. Окремо для Ideal і Real World.">
+    <span>Непрозорість граней, {{ opacityPercent() }}%</span>
+    <input type="range" min="2" max="100" step="2" [value]="opacityPercent()" (input)="onOpacity($event)" />
   </label>
-  <label class="row" title="На якій відстані від STL вершина прилипає, у відсотках від розміру STL. Менше — менш чутливо.">
-    <span>Чутливість, % розміру</span>
-    <input type="number" min="0.1" max="5" step="0.1" [value]="snapPercent()" (change)="onSnapPercent($event)" />
-  </label>
-  <div class="selected">Прикріплено вершин: <b>{{ attachedCount() }}</b></div>
-  <button class="tool" type="button" [disabled]="attachedCount() === 0" (click)="detachAllNodes()">Відкріпити всі</button>
 </div>
 
 <div class="group">
-  <div class="group-label">Внутрішня сітка (як у солвері)</div>
-  <div class="hint">Ділить кожен куб на Nx×Ny×Nz елементів, як сітка солвера: лінії α,β,γ = const проходять через функції форми, а крапки — вузли поділеної сітки (усі, що існують в 20-вузловому елементі). Ті самі числа задають поділ у розрахунку. 1 — вимкнено.</div>
+  <div class="group-label">Згущення</div>
+  <div class="sub-label">Рівномірне</div>
   <div class="row row--coords">
-    <span>Nx · Ny · Nz</span>
-    <input *ngFor="let i of [0, 1, 2]" type="number" min="1" max="8" step="1" [value]="divisions()[i]" (change)="onDivisionChange(i, $event)" />
+    <span>X</span><input type="number" min="1" max="8" step="1" [value]="divisions()[0]" (change)="onDivisionChange(0, $event)" />
+    <span>Y</span><input type="number" min="1" max="8" step="1" [value]="divisions()[1]" (change)="onDivisionChange(1, $event)" />
+    <span>Z</span><input type="number" min="1" max="8" step="1" [value]="divisions()[2]" (change)="onDivisionChange(2, $event)" />
   </div>
-</div>
-
-<div class="group">
-  <div class="group-label">Перевірка мапінгу</div>
-  <div class="row row--coords">
-    <span>Ideal</span>
-    <input type="number" step="0.1" [value]="mappingIdeal.x" (change)="onMappingInput('ideal', 'x', $event)" />
-    <input type="number" step="0.1" [value]="mappingIdeal.y" (change)="onMappingInput('ideal', 'y', $event)" />
-    <input type="number" step="0.1" [value]="mappingIdeal.z" (change)="onMappingInput('ideal', 'z', $event)" />
-  </div>
-  <button class="tool" type="button" [disabled]="hexCount() === 0" (click)="probeIdealToReal()">Ideal → Real</button>
-  <div class="row row--coords">
-    <span>Real</span>
-    <input type="number" step="0.1" [value]="mappingReal.x" (change)="onMappingInput('real', 'x', $event)" />
-    <input type="number" step="0.1" [value]="mappingReal.y" (change)="onMappingInput('real', 'y', $event)" />
-    <input type="number" step="0.1" [value]="mappingReal.z" (change)="onMappingInput('real', 'z', $event)" />
-  </div>
-  <button class="tool" type="button" [disabled]="hexCount() === 0" (click)="probeRealToIdeal()">Real → Ideal</button>
-  <div class="result" *ngIf="mappingResult">{{ mappingResult }}</div>
-</div>
-
-<div class="group">
-  <button class="tool" type="button" *ngIf="!isResetConfirming; else confirmBlock" [disabled]="hexCount() === 0 || busy" (click)="requestReset()">
-    Очистити сітку (можна скасувати)
-  </button>
-  <ng-template #confirmBlock>
-    <div class="selected">Видалити всі куби цієї сесії?</div>
-    <div class="pair">
-      <button class="tool" type="button" (click)="confirmReset()">Так</button>
-      <button class="tool" type="button" (click)="cancelReset()">Ні</button>
-    </div>
-  </ng-template>
-</div>
-
-<div class="group">
-  <button class="tool tool--danger" type="button" *ngIf="!isRestartConfirming; else restartConfirm" [disabled]="sessionId === null" (click)="requestRestart()">
-    Почати спочатку (вся сесія)
-  </button>
-  <ng-template #restartConfirm>
-    <div class="selected">Видалити в цій сесії все (куби, історію, STL, камеру) і почати з чистого листа? Скасувати не можна.</div>
-    <div class="pair">
-      <button class="tool tool--danger" type="button" (click)="confirmRestart()">Так, видалити</button>
-      <button class="tool" type="button" (click)="cancelRestart()">Ні</button>
-    </div>
-  </ng-template>
 </div>

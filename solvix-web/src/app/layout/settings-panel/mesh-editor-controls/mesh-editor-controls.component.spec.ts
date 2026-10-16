@@ -26,7 +26,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset', 'mapIdealToReal', 'mapRealToIdeal'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'undo', 'redo', 'reset'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
@@ -45,6 +45,40 @@ describe('MeshEditorControlsComponent', () => {
     component = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
     component.sessionId = 1;
     component.worldIndex = REAL_WORLD_INDEX;
+  });
+
+  describe('the panel as a page', () => {
+    const render = (world: number) => {
+      state = singleCubeState();
+      const fixture = TestBed.createComponent(MeshEditorControlsComponent);
+      fixture.componentInstance.sessionId = 1;
+      fixture.componentInstance.worldIndex = world;
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('has the sections in the order of work, the first cube and the constructor in one row, and no undo, redo, hint, mapping check or x-ray option', () => {
+      const root = render(IDEAL_WORLD_INDEX);
+      const labels = Array.from(root.querySelectorAll('.group-label')).map(e => e.textContent!.trim());
+      expect(labels.slice(0, 2)).toEqual(['Початок', 'Робота з шестигранником']);
+      expect(labels).toContain('Налаштування сітки');
+      expect(labels[labels.length - 1]).toBe('Згущення');
+
+      const start = root.querySelector('.group')!;
+      expect(Array.from(start.querySelectorAll('.pair button')).map(b => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['Перший куб N', 'Конструктор куба… C']);
+
+      const text = root.textContent ?? '';
+      for (const gone of ['Скасувати', 'Повернути', 'Клік по грані', 'Перевірка мапінгу', 'Вузли видно', 'Внутрішня сітка', 'Куби:']) expect(text).not.toContain(gone);
+    });
+
+    it('has the uniform division as a header and three bare fields X Y Z, with no explanation', () => {
+      const root = render(REAL_WORLD_INDEX);
+      const group = Array.from(root.querySelectorAll('.group')).find(g => g.querySelector('.group-label')?.textContent?.trim() === 'Згущення')!;
+      expect(group.querySelector('.sub-label')?.textContent?.trim()).toBe('Рівномірне');
+      expect(Array.from(group.querySelectorAll('.row span')).map(e => e.textContent!.trim())).toEqual(['X', 'Y', 'Z']);
+      expect(group.querySelectorAll('input').length).toBe(3);
+      expect(group.querySelector('.hint')).toBeNull();
+    });
   });
 
   it('offers "first cube" only for an empty mesh that has been loaded', () => {
@@ -329,30 +363,6 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.nudgeStep).toBe(0.5);
   });
 
-  it('asks twice before resetting the mesh', () => {
-    state = singleCubeState();
-
-    component.requestReset();
-    expect(editor.reset).not.toHaveBeenCalled();
-    component.cancelReset();
-    expect(component.isResetConfirming).toBeFalse();
-
-    component.requestReset();
-    component.confirmReset();
-    expect(editor.reset).toHaveBeenCalledWith(1);
-    expect(solver.forget).toHaveBeenCalledWith(1);     // the old cubes' supports and loads are gone on the server
-  });
-
-  it('reports the mapping probe result, and "outside" when nothing was found', () => {
-    editor.mapIdealToReal.and.returnValue(of({ found: true, point: { x: 1, y: 2, z: 3 } }));
-    editor.mapRealToIdeal.and.returnValue(of({ found: false, point: null }));
-
-    component.probeIdealToReal();
-    expect(component.mappingResult).toBe('Real: (1.0000, 2.0000, 3.0000)');
-    component.probeRealToIdeal();
-    expect(component.mappingResult).toBe('Поза тілом');
-  });
-
   it('forwards undo/redo and exposes their availability', () => {
     state = { ...singleCubeState(), canUndo: true, canRedo: false };
 
@@ -370,12 +380,9 @@ describe('MeshEditorControlsComponent', () => {
 
     component.addFirst();
     component.undo();
-    component.confirmReset();
 
     expect(editor.addFirstHex).not.toHaveBeenCalled();
     expect(editor.undo).not.toHaveBeenCalled();
-    expect(editor.reset).not.toHaveBeenCalled();
-    expect(solver.forget).not.toHaveBeenCalled();
     expect(component.hexCount()).toBe(0);
   });
 
@@ -561,49 +568,6 @@ describe('MeshEditorControlsComponent', () => {
 
       expect(press('n').defaultPrevented).toBeFalse();
       expect(editor.addFirstHex).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('start over (whole session)', () => {
-    it('asks first, and cancelling changes nothing', () => {
-      const sessions = TestBed.inject(SessionsService);
-      const before = sessions.sessions().map(s => s.id);
-      component.sessionId = before[0];
-
-      component.requestRestart();
-      expect(component.isRestartConfirming).toBeTrue();
-      component.cancelRestart();
-
-      expect(component.isRestartConfirming).toBeFalse();
-      expect(sessions.sessions().map(s => s.id)).toEqual(before);
-    });
-
-    it('confirming replaces the session with a fresh one and clears the selection', () => {
-      const sessions = TestBed.inject(SessionsService);
-      const old = sessions.sessions()[0].id;
-      component.sessionId = old;
-      selection.toggleHex(old, 3);
-      selection.selectNode(old, 7);
-
-      component.requestRestart();
-      component.confirmRestart();
-
-      expect(component.isRestartConfirming).toBeFalse();
-      expect(sessions.sessions().map(s => s.id)).not.toContain(old);
-      expect(sessions.sessions().length).toBe(1);
-      expect(sessions.activeSessionId()).toBe(sessions.sessions()[0].id);
-      expect(selection.hexes(old)).toEqual([]);
-      expect(selection.nodeId(old)).toBeNull();
-    });
-
-    it('does nothing without a session', () => {
-      const sessions = TestBed.inject(SessionsService);
-      const before = sessions.sessions().map(s => s.id);
-      component.sessionId = null;
-
-      component.confirmRestart();
-
-      expect(sessions.sessions().map(s => s.id)).toEqual(before);
     });
   });
 

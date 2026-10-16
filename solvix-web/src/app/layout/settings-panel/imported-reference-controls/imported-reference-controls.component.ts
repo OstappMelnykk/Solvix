@@ -3,6 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { ImportedGeometryService } from '../../../state/imported-geometry.service';
 import { ImportedReferenceDisplayService, ImportedReferenceMode } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
+import { StlSnapControlsComponent } from '../stl-snap-controls/stl-snap-controls.component';
 
 interface GeometryInfoEntry {
   readonly label: string;
@@ -20,7 +21,7 @@ const AXIS_NAMES = ['X', 'Y', 'Z'] as const;
 @Component({
   selector: 'app-imported-reference-controls',
   standalone: true,
-  imports: [NgIf, NgFor],
+  imports: [NgIf, NgFor, StlSnapControlsComponent],
   templateUrl: './imported-reference-controls.component.html',
   styleUrl: './imported-reference-controls.component.scss'
 })
@@ -30,6 +31,8 @@ export class ImportedReferenceControlsComponent {
   private readonly referenceRender = inject(ImportedReferenceRenderService);
 
   @Input({ required: true }) sessionId!: number | null;
+  // The Real World: the measuring and the sticking of the vertices to the STL are there (the Ideal World has neither).
+  @Input() realWorld = false;
 
   // How the imported reference geometry is currently drawn (ImportedReferenceDisplayService)
   // - read fresh from the template each CD cycle (ImportedGeometryService/

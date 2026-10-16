@@ -1,0 +1,25 @@
+<div class="group">
+  <div class="stats">Куби: {{ hexCount() }} · Вузли: {{ nodeCount() }}</div>
+
+  <button class="tool" type="button" *ngIf="!isResetConfirming; else confirmBlock" [disabled]="hexCount() === 0 || busy" (click)="requestReset()">
+    Очистити сітку (можна скасувати)
+  </button>
+  <ng-template #confirmBlock>
+    <div class="selected">Видалити всі куби цієї сесії?</div>
+    <div class="pair">
+      <button class="tool" type="button" (click)="confirmReset()">Так</button>
+      <button class="tool" type="button" (click)="cancelReset()">Ні</button>
+    </div>
+  </ng-template>
+
+  <button class="tool tool--danger" type="button" *ngIf="!isRestartConfirming; else restartConfirm" [disabled]="sessionId === null" (click)="requestRestart()">
+    Почати спочатку (вся сесія)
+  </button>
+  <ng-template #restartConfirm>
+    <div class="selected">Видалити в цій сесії все (куби, історію, STL, камеру) і почати з чистого листа? Скасувати не можна.</div>
+    <div class="pair">
+      <button class="tool tool--danger" type="button" (click)="confirmRestart()">Так, видалити</button>
+      <button class="tool" type="button" (click)="cancelRestart()">Ні</button>
+    </div>
+  </ng-template>
+</div>

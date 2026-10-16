@@ -204,7 +204,22 @@ h4 {
 // checkbox/range controls above, just for a plain click action instead of a
 // persistent value.
 .multiplier-buttons {
-  display: flex;
+  // six equal buttons across the whole width of the block: they never spill out of the panel
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+
+  .chip {
+    padding: 2px 0;
+    text-align: center;
+  }
+}
+
+// the label on its own line, the buttons under it
+.row--quick {
+  flex-direction: column;
+  align-items: stretch;
   gap: 4px;
 }
 
