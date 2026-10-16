@@ -11,7 +11,6 @@ import { ActiveWorldService } from '../../../state/active-world.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { QualityPick, SolverService, sameElement } from '../../../state/solver.service';
 import { MeasureInfoComponent } from './measure-info/measure-info.component';
-import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-controls.component';
 import { sectionOf } from '../../../state/quality-render.service';
 import { ExploreSettings, QualityExploreService, SectionSettings } from '../../../state/quality-explore.service';
 import { elementCentreOf } from '../../../geometry/solver-view';
@@ -31,7 +30,7 @@ interface Measure {
 @Component({
   selector: 'app-quality-controls',
   standalone: true,
-  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent, SmoothingControlsComponent],
+  imports: [NgIf, NgFor, NgTemplateOutlet, DecimalPipe, MeasureInfoComponent],
   templateUrl: './quality-controls.component.html',
   styleUrl: './quality-controls.component.scss'
 })

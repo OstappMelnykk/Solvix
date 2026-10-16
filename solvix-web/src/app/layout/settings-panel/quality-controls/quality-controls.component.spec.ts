@@ -47,7 +47,7 @@ describe('QualityControlsComponent', () => {
     solver.divisions.and.returnValue([1, 1, 1]);
     solver.setQualityCompare.and.callFake((_s, id) => (compare = id));
     solver.setQualityPick.and.callFake((_s, p) => (picked = p));
-    const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState', 'smooth']);
+    const editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', ['getState']);
     Object.defineProperty(editor, 'busy', { get: () => signal(false) });
     editor.getState.and.callFake(() => linkedPairState());
     world = jasmine.createSpyObj<ActiveWorldService>('ActiveWorldService', ['selectCurrentWorld']);
@@ -139,12 +139,6 @@ describe('QualityControlsComponent', () => {
     expect(component.sectionText()).toMatch(/^Y = /);
     component.onSectionPosition({ target: { value: '70' } } as unknown as Event);
     expect(component.looking().section.position).toBeCloseTo(0.7, 6);
-  });
-
-  it('has the smoothing on this page', () => {
-    const root = render().nativeElement as HTMLElement;
-
-    expect(root.querySelector('app-smoothing-controls')).not.toBeNull();
   });
 
   it('offers two looks of the body, filled or only its edges', () => {

@@ -91,25 +91,13 @@ describe('MeshEditorService', () => {
     expect(editor.getState(sessionId)!.version).toBe(5);
   });
 
-  it('smooths through the server and takes the new state', () => {
-    loadInitialState(singleCubeState());
-
-    const options = { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true, shapeTolerance: 0 };
-    editor.smooth(sessionId, options);
-    const request = http.expectOne(url('smooth'));
-    expect(request.request.body).toEqual(options);
-    request.flush({ ok: true, error: null, state: singleCubeState(7) });
-
-    expect(editor.getState(sessionId)!.version).toBe(7);
-  });
-
   it('tells what a command did when the server has something to say about it', () => {
     loadInitialState(singleCubeState());
 
-    editor.smooth(sessionId, { iterations: 10, relaxation: 0.5, surface: false, density: 1, featureAngle: 25, untangle: true, straighten: true, shapeTolerance: 0 });
-    http.expectOne(url('smooth')).flush({ ok: true, error: null, info: 'Згладжено: вільних вершин 8 із 64', state: singleCubeState(7) });
+    editor.undo(sessionId);
+    http.expectOne(url('undo')).flush({ ok: true, error: null, info: 'Скасовано: додавання куба', state: singleCubeState(7) });
 
-    expect(notifications.toasts().map(t => [t.kind, t.message])).toEqual([['info', 'Згладжено: вільних вершин 8 із 64']]);
+    expect(notifications.toasts().map(t => [t.kind, t.message])).toEqual([['info', 'Скасовано: додавання куба']]);
   });
 
   it('reports an unreachable server as an error toast and does not stay busy', () => {

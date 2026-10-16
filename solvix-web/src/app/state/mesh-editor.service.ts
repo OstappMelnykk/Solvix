@@ -11,7 +11,6 @@ import {
   MeshMappingResultDto,
   MeshPointDto,
   MeshShapeDto,
-  MeshSmoothOptions,
   MeshStateDto,
   MeshTemplateRequestDto
 } from '../api/mesh-editor-api.service';
@@ -122,12 +121,6 @@ export class MeshEditorService {
 
   moveNode(sessionId: number, nodeId: number, position: MeshPointDto, carryEdgeMidpoints: boolean, then?: () => void): void {
     this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints), then);
-  }
-
-  // Laplacian smoothing with the user's settings (see MeshSmoothOptions).
-  // `then` runs after the smoothed mesh has arrived.
-  smooth(sessionId: number, options: MeshSmoothOptions, then?: () => void): void {
-    this.run(sessionId, this.api.smooth(sessionId, options), then);
   }
 
   undo(sessionId: number): void {

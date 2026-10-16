@@ -68,10 +68,6 @@
     <ng-template #noBad><div class="hint">Проблемних елементів немає.</div></ng-template>
   </section>
 
-  <!-- Згладжування -->
-  <section class="part">
-    <app-smoothing-controls [sessionId]="sessionId" [bad]="badElements()"></app-smoothing-controls>
-  </section>
 
   <!-- 4. Вибраний елемент -->
   <section class="part" *ngIf="pickedElement() as p">
