@@ -197,6 +197,15 @@ internal sealed class SolverSetup
         Version++;
     });
 
+    /// <summary>Removes a material from the library: what had it goes back to the default one. The default material cannot be removed.</summary>
+    public void Remove(string name) => Edit(() =>
+    {
+        if (name == DefaultMaterial || !_materials.Remove(name)) return;
+        foreach (int hex in _hexMaterials.Where(h => h.Value == name).Select(h => h.Key).ToList()) _hexMaterials.Remove(hex);
+        foreach (var key in _elementMaterials.Where(e => e.Value == name).Select(e => e.Key).ToList()) _elementMaterials.Remove(key);
+        Version++;
+    });
+
     public void SetDefault(string name) => Edit(() =>
     {
         DefaultMaterial = name;

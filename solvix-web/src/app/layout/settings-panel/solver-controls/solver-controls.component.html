@@ -44,6 +44,7 @@
       <button class="btn" type="button" [disabled]="!canAddMaterial()" (click)="addMaterial()">{{ editingName ? 'Зберегти' : 'Додати матеріал' }}</button>
       <button class="btn" type="button" *ngIf="editingName" (click)="cancelEdit()">Скасувати</button>
     </div>
+    <button class="btn" type="button" *ngIf="editingName && canRemoveEdited()" title="Елементи з цим матеріалом повернуться до основного" (click)="removeEdited()">Видалити матеріал</button>
   </div>
 </div>
 
@@ -79,7 +80,6 @@
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
     Pn — тиск для нових граней (Па)
     <input type="number" step="100000" [value]="pressure()" (change)="onPressure($event)" />
-    <span class="hint">{{ pressureHint() }} · від'ємне = стиск</span>
   </label>
 
   <button class="btn" type="button" (click)="applyPressureToAll()" title="Усі вже навантажені грані отримають поточний Pn">Застосувати Pn до всіх навантажених</button>

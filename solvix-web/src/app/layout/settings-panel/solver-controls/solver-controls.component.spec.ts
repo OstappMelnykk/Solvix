@@ -45,7 +45,7 @@ describe('SolverControlsComponent', () => {
       'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'applyPressureToAll', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
-      'clearSetup', 'solve', 'cancel', 'setField', 'clearResult'
+      'clearSetup', 'removeMaterial', 'solve', 'cancel', 'setField', 'clearResult'
     ]);
     solver.setup.and.callFake(() => setup);
     solver.job.and.callFake(() => job);
@@ -193,6 +193,20 @@ describe('SolverControlsComponent', () => {
         expect(component.isMaterialFormOpen).toBeFalse();
       });
 
+      it('a material is deleted from its edit form, except the default one', () => {
+        component.startEdit({ name: 'rubber', label: 'Гума', e: 1e7, nu: 0.45 }, new Event('click'));
+        expect(component.canRemoveEdited()).toBeTrue();
+        component.removeEdited();
+        expect(solver.removeMaterial).toHaveBeenCalledWith(1, 'rubber');
+        expect(component.editingName).toBeNull();
+
+        solver.removeMaterial.calls.reset();
+        component.startEdit({ name: component.defaultMaterial(), label: 'Основний', e: 1e9, nu: 0.3 }, new Event('click'));
+        expect(component.canRemoveEdited()).toBeFalse();
+        component.removeEdited();
+        expect(solver.removeMaterial).not.toHaveBeenCalled();
+      });
+
       it('editing can be cancelled without sending anything', () => {
         component.startEdit({ name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3 }, new Event('click'));
         component.cancelEdit();
@@ -223,14 +237,6 @@ describe('SolverControlsComponent', () => {
 
       expect(solver.setPressure.calls.allArgs()).toEqual([[1, -2.5e6]]);
       expect(component.pressure()).toBe(-1e6);
-    });
-
-    it('describes Pn: compression, tension or nothing', () => {
-      expect(component.pressureHint()).toContain('стиск');
-      pressure = 2e6;
-      expect(component.pressureHint()).toContain('розтяг');
-      pressure = 0;
-      expect(component.pressureHint()).toBe('немає навантаження');
     });
 
     it('resets the set-up', () => {

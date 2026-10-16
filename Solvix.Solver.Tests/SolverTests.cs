@@ -176,6 +176,21 @@ public class SolverTests
     }
 
     [Test]
+    public void A_removed_material_goes_and_what_had_it_returns_to_the_default_one_but_the_default_stays()
+    {
+        var facade = NewFacade();
+        facade.SetHexMaterial(Session, new[] { 0 }, "rubber");
+        facade.SetElementMaterial(Session, new[] { new SolverElementDto(1, 0, 0, 0) }, "rubber");
+
+        var after = facade.RemoveMaterial(Session, "rubber");
+
+        Assert.That(after.Materials.Select(m => m.Name), Does.Not.Contain("rubber"));
+        Assert.That(after.HexMaterials.ContainsKey(0), Is.False);
+        Assert.That(after.ElementMaterials, Is.Empty);
+        Assert.That(facade.RemoveMaterial(Session, "steel").Materials.Select(m => m.Name), Does.Contain("steel"));
+    }
+
+    [Test]
     public void A_material_can_be_replaced_and_the_default_changed()
     {
         var facade = NewFacade();

@@ -602,6 +602,10 @@ export class SolverService {
     this.apply(sessionId, this.api.upsertMaterial(sessionId, material));
   }
 
+  removeMaterial(sessionId: number, name: string): void {
+    this.apply(sessionId, this.api.removeMaterial(sessionId, name));
+  }
+
   setDefaultMaterial(sessionId: number, material: string): void {
     this.apply(sessionId, this.api.setDefaultMaterial(sessionId, material));
   }

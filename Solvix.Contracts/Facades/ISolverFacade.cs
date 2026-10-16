@@ -11,6 +11,9 @@ public interface ISolverFacade
     /// <summary>Adds or replaces a material of the session's library by name.</summary>
     SolverSetupDto UpsertMaterial(int sessionId, SolverMaterialDto material);
 
+    /// <summary>Removes a material from the library; what had it returns to the default material. The default material stays.</summary>
+    SolverSetupDto RemoveMaterial(int sessionId, string name);
+
     /// <summary>Gives cubes a material (an empty or null name returns them to the default one).</summary>
     SolverSetupDto SetHexMaterial(int sessionId, IReadOnlyList<int> hexIds, string? material);
 

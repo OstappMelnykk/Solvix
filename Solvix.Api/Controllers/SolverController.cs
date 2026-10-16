@@ -32,6 +32,9 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     [HttpPut("materials")]
     public ActionResult<SolverSetupDto> UpsertMaterial(int sessionId, [FromBody] SolverMaterialDto material) => solver.UpsertMaterial(sessionId, material);
 
+    [HttpDelete("materials/{name}")]
+    public ActionResult<SolverSetupDto> RemoveMaterial(int sessionId, string name) => solver.RemoveMaterial(sessionId, name);
+
     [HttpPut("default-material")]
     public ActionResult<SolverSetupDto> SetDefaultMaterial(int sessionId, [FromBody] DefaultMaterialRequest request) =>
         solver.SetDefaultMaterial(sessionId, request.Material);

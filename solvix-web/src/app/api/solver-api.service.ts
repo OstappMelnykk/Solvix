@@ -186,6 +186,10 @@ export class SolverApiService {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'materials'), material);
   }
 
+  removeMaterial(sessionId: number, name: string): Observable<SolverSetupDto> {
+    return this.http.delete<SolverSetupDto>(this.url(sessionId, `materials/${encodeURIComponent(name)}`));
+  }
+
   setDefaultMaterial(sessionId: number, material: string): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'default-material'), { material });
   }

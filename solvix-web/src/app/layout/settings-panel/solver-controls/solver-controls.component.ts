@@ -133,6 +133,17 @@ export class SolverControlsComponent implements DoCheck {
     this.isMaterialFormOpen = true;
   }
 
+  // The default material cannot be removed (change the default first).
+  canRemoveEdited(): boolean {
+    return this.editingName !== null && this.editingName !== this.defaultMaterial();
+  }
+
+  removeEdited(): void {
+    if (!this.canRemoveEdited()) return;
+    this.solver.removeMaterial(this.sessionId, this.editingName!);
+    this.cancelEdit();
+  }
+
   cancelEdit(): void {
     this.editingName = null;
     this.newLabel = '';
@@ -321,11 +332,5 @@ export class SolverControlsComponent implements DoCheck {
       { label: 'Вузлів СЕ', value: String(result.ux.length), title: 'Вузли сітки, на якій розв\'язано задачу' },
       { label: 'Час', value: `${result.elapsedSeconds.toFixed(2)} с`, title: 'Час розрахунку' }
     ];
-  }
-
-  // The pressure of a MPa value, for the hint under the Pn field.
-  pressureHint(): string {
-    const p = this.pressure();
-    return p < 0 ? `стиск, ${(-p / MPA).toPrecision(3)} МПа` : p > 0 ? `розтяг, ${(p / MPA).toPrecision(3)} МПа` : 'немає навантаження';
   }
 }
