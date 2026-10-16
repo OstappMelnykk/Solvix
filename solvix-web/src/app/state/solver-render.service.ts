@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { SOLVER_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
-import { buildFemMeshView } from '../geometry/fem-mesh-view';
+import { buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
 import { buildQualityView } from '../geometry/quality-view';
 import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValues, materialColor } from '../geometry/solver-view';
 import { MeshEditorService } from './mesh-editor.service';
@@ -166,6 +166,13 @@ export class SolverRenderService {
   private applyHighlight(sessionId: number): void {
     const cached = this.cache.get(sessionId);
     if (!cached?.view?.setHighlight) return;
+    if (this.solver.isLocal(sessionId)) {
+      const mesh = this.solver.mesh(sessionId);
+      const index = this.solver.meshIndex(sessionId);
+      const wanted = this.solver.femHighlight(sessionId);
+      cached.view.setHighlight(mesh && index && wanted ? buildFemHighlight(mesh, index, wanted, this.solver.isPainting(sessionId) ? 6000 : 400) : null);
+      return;
+    }
     const targets = this.solver.highlightTargets(sessionId);
     // a stroke can reach far more small faces than a click does
     cached.view.setHighlight(targets ? buildHighlight(cached.input, targets, this.solver.isPainting(sessionId) ? 6000 : 400) : null);

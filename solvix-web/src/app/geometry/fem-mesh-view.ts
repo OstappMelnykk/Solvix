@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { SolverMeshDto } from '../api/solver-api.service';
+import { ElementFaceRefDto, SolverMeshDto } from '../api/solver-api.service';
 import { disposeObject3D } from './dispose-object3d';
 import { markForWeightedOit } from '../rendering/weighted-oit';
+import { FemHighlightInput, FemIndex } from './fem-targets';
 import { LOCAL_COORDS, MeshView, PickedFace, faceAxis, faceSlots } from './mesh-editor-view';
 import { FIXED_COLOR, OVERLAY_OPACITY, materialColor, pressureColor } from './solver-view';
 
@@ -207,3 +208,76 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   return { root, pickables, nodeMeshes: new Map(), setHighlight };
 }
 
+
+// The 12 edges of an element as (corner, corner) of its 20 nodes; edge k has its midpoint at slot 8 + k.
+const ELEMENT_EDGES: readonly (readonly [number, number])[] = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+const HIGHLIGHT_COLOR = 0xffe14d;
+
+// What a click would act on, drawn over the view: the faces as a coat, the elements as their edges, the face under the pointer on its own.
+export function buildFemHighlight(mesh: SolverMeshDto, index: FemIndex, target: FemHighlightInput, limit = 400): THREE.Group {
+  const group = new THREE.Group();
+  const quads: number[] = [];
+  const quadIndices: number[] = [];
+  const lines: number[] = [];
+  const p = new THREE.Vector3();
+  const stride = RESOLUTION + 1;
+  let used = 0;
+
+  const addFace = (ref: ElementFaceRefDto) => {
+    const element = index.element.get(ref.key);
+    if (element === undefined) return;
+    const base = quads.length / 3;
+    for (let iv = 0; iv <= RESOLUTION; iv++)
+      for (let iu = 0; iu <= RESOLUTION; iu++) {
+        pointOn(mesh, element, ref.face, -1 + (2 * iu) / RESOLUTION, -1 + (2 * iv) / RESOLUTION, p);
+        quads.push(p.x, p.y, p.z);
+      }
+    for (let iv = 0; iv < RESOLUTION; iv++)
+      for (let iu = 0; iu < RESOLUTION; iu++) {
+        const first = base + iv * stride + iu;
+        quadIndices.push(first, first + 1, first + stride, first + 1, first + stride + 1, first + stride);
+      }
+  };
+
+  const node = (element: number, slot: number, out: THREE.Vector3) => {
+    const at = mesh.connectivity[element * 20 + slot] * 3;
+    return out.set(mesh.positions[at], mesh.positions[at + 1], mesh.positions[at + 2]);
+  };
+  const addElement = (key: string) => {
+    const element = index.element.get(key);
+    if (element === undefined) return;
+    const [a, m, b] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    ELEMENT_EDGES.forEach(([c0, c1], k) => {
+      node(element, c0, a);
+      node(element, 8 + k, m);
+      node(element, c1, b);
+      let last = a.clone();
+      for (let s = 1; s <= 4; s++) {
+        const t = -1 + (2 * s) / 4;
+        // the curve through the edge's three nodes
+        const next = a.clone().multiplyScalar((t * (t - 1)) / 2).addScaledVector(m, 1 - t * t).addScaledVector(b, (t * (t + 1)) / 2);
+        lines.push(last.x, last.y, last.z, next.x, next.y, next.z);
+        last = next;
+      }
+    });
+  };
+
+  for (const f of target.faces) if (used++ < limit) addFace(f);
+  for (const key of target.elements) if (used++ < limit) addElement(key);
+  if (target.pointed) addFace(target.pointed);
+
+  if (quads.length > 0) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(quads, 3));
+    buffer.setIndex(quadIndices);
+    group.add(new THREE.Mesh(buffer, new THREE.MeshBasicMaterial({ color: HIGHLIGHT_COLOR, transparent: true, opacity: 0.45, depthWrite: false, depthTest: false, side: THREE.DoubleSide })));
+  }
+  if (lines.length > 0) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    group.add(new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: HIGHLIGHT_COLOR, depthTest: false })));
+  }
+  group.renderOrder = 10;
+  group.traverse(o => (o.frustumCulled = false));
+  return group;
+}

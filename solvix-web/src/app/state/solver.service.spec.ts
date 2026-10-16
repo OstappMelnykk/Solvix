@@ -125,10 +125,75 @@ describe('SolverService', () => {
       expect(solver.mesh(sessionId)).toBeNull();
       expect(solver.mesh(sessionId)).toBeNull();
       const request = http.expectOne(`${api}/${sessionId}/mesh`);
-      request.flush({ rule: 'local', nodeCount: 0, elementCount: 0 });
+      request.flush({ rule: 'local', nodeCount: 0, elementCount: 0, keys: [] });
 
       expect(solver.mesh(sessionId)?.rule).toBe('local');
       http.expectNone(`${api}/${sessionId}/mesh`);
+    });
+
+    // two elements of cube 0 side by side, both with a face on the XPlus side (the mesh the picks refer to)
+    function loadMesh(more: Record<string, unknown> = {}): void {
+      loadSetup(refined);
+      solver.mesh(sessionId);
+      http.expectOne(`${api}/${sessionId}/mesh`).flush({
+        rule: 'local', nodeCount: 0, elementCount: 2, positions: [], connectivity: [], hexIds: [0, 0], keys: ['a', 'b'], materials: ['', ''],
+        surfaceFaces: [0, 5, 1, 5], fixedFaces: [], loadedFaces: [], pressures: [], ...more
+      });
+    }
+    const pointAt = (key: string, localFace = 5) => ({ kind: 'face' as const, hex: 0, face: 'XPlus' as const, elementKey: key, localFace });
+
+    it('clamps exactly the face that was pointed at, by the key of its element', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'fix');
+      solver.pick(sessionId, pointAt('b'));
+
+      const request = http.expectOne(`${api}/${sessionId}/mesh/faces`);
+      expect(request.request.body).toEqual(jasmine.objectContaining({ faces: [{ key: 'b', face: 5 }], action: 'fix' }));
+    });
+
+    it('takes the clamping off when the face already has it', () => {
+      loadMesh({ fixedFaces: [1, 5] });
+      solver.setTool(sessionId, 'fix');
+      solver.pick(sessionId, pointAt('b'));
+
+      expect(http.expectOne(`${api}/${sessionId}/mesh/faces`).request.body.action).toBe('unfix');
+    });
+
+    it('presses the whole side of the cube with the chosen pressure', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'load');
+      solver.setScope(sessionId, 'cube');
+      solver.pick(sessionId, pointAt('a'));
+
+      const body = http.expectOne(`${api}/${sessionId}/mesh/faces`).request.body;
+      expect(body.action).toBe('load');
+      expect(body.faces).toEqual([{ key: 'a', face: 5 }, { key: 'b', face: 5 }]);
+      expect(body.pressure).toBe(-1e6);
+    });
+
+    it('gives a material to one element by key, and a stroke gathers its elements into one request', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'material');
+      solver.setActiveMaterial(sessionId, 'rubber');
+      solver.pick(sessionId, pointAt('a'));
+      expect(http.expectOne(`${api}/${sessionId}/mesh/elements/material`).request.body).toEqual({ elementKeys: ['a'], material: 'rubber' });
+
+      solver.setBrush(sessionId, true);
+      solver.paintStart(sessionId, pointAt('a'));
+      solver.paintTo(sessionId, pointAt('b'));
+      expect(solver.isPainting(sessionId)).toBeTrue();
+      expect(solver.femHighlight(sessionId)?.elements).toEqual(['a', 'b']);
+      solver.paintEnd(sessionId);
+      expect(http.expectOne(`${api}/${sessionId}/mesh/elements/material`).request.body.elementKeys).toEqual(['a', 'b']);
+    });
+
+    it('highlights what a click would reach, and offers the scopes a refined body has', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'fix');
+      solver.setHover(sessionId, pointAt('b'));
+
+      expect(solver.femHighlight(sessionId)).toEqual({ faces: [{ key: 'b', face: 5 }], elements: [], pointed: { key: 'b', face: 5 } });
+      expect(solver.scopesOf('material', sessionId)).toEqual(['cell', 'cube']);
     });
 
     it('goes back to the even division when the refinement is cleared', () => {

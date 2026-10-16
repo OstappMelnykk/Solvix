@@ -87,7 +87,7 @@ export class SolverOverlayComponent {
   }
 
   scopes(): { scope: Scope; label: string; title: string }[] {
-    return this.solver.scopesOf(this.tool()).map(scope => ({ scope, ...SCOPE_LABELS[scope] }));
+    return this.solver.scopesOf(this.tool(), this.sessionId).map(scope => ({ scope, ...SCOPE_LABELS[scope] }));
   }
 
   scope(): Scope {

@@ -7,9 +7,11 @@ import { NotificationService } from './notification.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
 import { PickedFace } from '../geometry/mesh-editor-view';
+import { FEM_FACE_SCOPES, FEM_MATERIAL_SCOPES, FemHighlightInput, FemIndex, femAllMarked, femElementTargets, femFaceTargets, femIndex, isFemPick } from '../geometry/fem-targets';
 import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, elementTargets, faceTargets, sameFace, smallFacesOf } from '../geometry/solver-targets';
 import { QualityMetric, SOLVIX_ID } from '../geometry/quality-grading';
 import {
+  ElementFaceRefDto,
   RefinementStepDto,
   SolverApiService,
   SolverElementDto,
@@ -81,6 +83,7 @@ interface SessionSolver {
   // The mesh of finite elements of a locally refined body (what the Solver World draws and is pointed at), the state of the set-up and of the cubes it was fetched for,
   // and the state a fetch is under way (or failed) for, so that one state is asked for once.
   mesh: SolverMeshDto | null;
+  meshIndex: FemIndex | null;
   meshKey: string | null;
   meshAsked: string | null;
   validation: SolverValidationDto | null;
@@ -121,6 +124,8 @@ interface SessionSolver {
   // The stroke being drawn: whether it erases (it began on a face that was already marked) and the faces it reached.
   // With the Material tool the stroke gathers elements (or whole cubes for the cube scope) instead of faces.
   stroke: { erase: boolean; faces: Map<string, SolverFaceDto>; elements: Map<string, SolverElementDto>; hexes: Set<number> } | null;
+  // The same in a locally refined body, where faces and elements are named by key.
+  femStroke: { erase: boolean; faces: Map<string, ElementFaceRefDto>; elements: Set<string>; hexes: Set<number> } | null;
   // The small face under the mouse.
   hover: PickedFace | null;
   // Pn, Pa (the solver's convention: negative = compression).
@@ -168,6 +173,7 @@ export class SolverService {
     return this.store.getOrCreate(sessionId, () => ({
       setup: null,
       mesh: null,
+      meshIndex: null,
       meshKey: null,
       meshAsked: null,
       validation: null,
@@ -191,6 +197,7 @@ export class SolverService {
       qualityKey: null,
       brush: false,
       stroke: null,
+      femStroke: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
       loadSide: null,
@@ -221,6 +228,7 @@ export class SolverService {
     const entry = this.entry(sessionId);
     if (!this.isLocal(sessionId)) {
       entry.mesh = null;
+      entry.meshIndex = null;
       entry.meshKey = null;
       entry.meshAsked = null;
       return null;
@@ -232,6 +240,7 @@ export class SolverService {
       this.api.getMesh(sessionId).subscribe({
         next: mesh => {
           entry.mesh = mesh;
+          entry.meshIndex = femIndex(mesh);
           entry.meshKey = key;
           this.touch(sessionId);
         },
@@ -239,6 +248,11 @@ export class SolverService {
       });
     }
     return entry.mesh;
+  }
+
+  // The keys of the mesh's elements, for finding one by key.
+  meshIndex(sessionId: number): FemIndex | null {
+    return this.entry(sessionId).meshIndex;
   }
 
   // Refines locally. The server refuses a step that cannot be done, and says why.
@@ -366,7 +380,8 @@ export class SolverService {
     this.touch(sessionId);
   }
 
-  scopesOf(tool: Tool): readonly Scope[] {
+  scopesOf(tool: Tool, sessionId?: number): readonly Scope[] {
+    if (sessionId !== undefined && this.isLocal(sessionId)) return tool === 'material' ? FEM_MATERIAL_SCOPES : tool === 'view' ? [] : FEM_FACE_SCOPES;
     return tool === 'material' ? MATERIAL_SCOPES : tool === 'view' ? [] : FACE_SCOPES;
   }
 
@@ -556,10 +571,26 @@ export class SolverService {
   setHover(sessionId: number, pick: PickedFace | null): boolean {
     const entry = this.entry(sessionId);
     const same = entry.hover === pick || (entry.hover !== null && pick !== null && entry.hover.hex === pick.hex && entry.hover.face === pick.face
-      && entry.hover.p === pick.p && entry.hover.q === pick.q && entry.hover.inner === pick.inner && entry.hover.element?.join() === pick.element?.join());
+      && entry.hover.p === pick.p && entry.hover.q === pick.q && entry.hover.elementKey === pick.elementKey && entry.hover.localFace === pick.localFace && entry.hover.inner === pick.inner && entry.hover.element?.join() === pick.element?.join());
     if (same) return false;
     entry.hover = pick;
     return true;
+  }
+
+  // The same in a locally refined body: the faces and elements (by key) a click, or the stroke so far, reaches. Null when there is none (or it is not local).
+  femHighlight(sessionId: number): FemHighlightInput | null {
+    const entry = this.entry(sessionId);
+    if (!entry.mesh || !entry.meshIndex) return null;
+    if (entry.femStroke) {
+      const stroke = entry.femStroke;
+      const wholeCubes = entry.mesh.keys.filter((_, i) => stroke.hexes.has(entry.mesh!.hexIds[i]));
+      return { faces: [...stroke.faces.values()], elements: [...stroke.elements, ...wholeCubes], pointed: null };
+    }
+    const pick = entry.hover;
+    if (!isFemPick(pick) || entry.tool === 'view') return null;
+    const pointed = { key: pick.elementKey, face: pick.localFace };
+    if (entry.tool === 'material') return { faces: [], elements: femElementTargets(pick, entry.scope, entry.mesh), pointed };
+    return { faces: femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex), elements: [], pointed };
   }
 
   // What a click on the small face under the mouse would act on, for the highlight.
@@ -781,6 +812,10 @@ export class SolverService {
     if (pick === null || pick.kind !== 'face') return;
     const entry = this.entry(sessionId);
     if (entry.tool === 'view') return;
+    if (this.isLocal(sessionId)) {
+      this.pickInMesh(sessionId, pick);
+      return;
+    }
     const divisions = this.divisions(sessionId);
 
     if (entry.tool === 'material') {
@@ -820,6 +855,38 @@ export class SolverService {
     }
   }
 
+  // A click on a locally refined body: the same tools, on the faces and elements of the solver's mesh named by key.
+  private pickInMesh(sessionId: number, pick: PickedFace): void {
+    const entry = this.entry(sessionId);
+    if (!entry.mesh || !entry.meshIndex || !isFemPick(pick)) return;
+    if (entry.tool === 'material') {
+      if (entry.scope === 'cube') this.apply(sessionId, this.api.setHexMaterial(sessionId, [pick.hex], entry.activeMaterial));
+      else this.apply(sessionId, this.api.paintElements(sessionId, femElementTargets(pick, entry.scope, entry.mesh), entry.activeMaterial));
+      return;
+    }
+    const faces = femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex);
+    if (entry.tool === 'erase') {
+      this.eraseMeshFaces(sessionId, faces);
+    } else if (entry.tool === 'load') {
+      const marked = femAllMarked(entry.mesh, entry.meshIndex, faces, 'loaded', entry.pressure);
+      entry.loadSide = null;
+      this.apply(sessionId, marked ? this.api.selectFaces(sessionId, faces, 'unload') : this.api.selectFaces(sessionId, faces, 'load', entry.pressure));
+    } else {
+      const marked = femAllMarked(entry.mesh, entry.meshIndex, faces, 'fixed');
+      entry.fixedChosen = true;
+      entry.fixedSide = null;
+      this.apply(sessionId, this.api.selectFaces(sessionId, faces, marked ? 'unfix' : 'fix'));
+    }
+  }
+
+  private eraseMeshFaces(sessionId: number, faces: readonly ElementFaceRefDto[]): void {
+    const entry = this.entry(sessionId);
+    entry.loadSide = null;
+    entry.fixedChosen = true;
+    entry.fixedSide = null;
+    this.apply(sessionId, this.api.selectFaces(sessionId, faces, 'unload'), () => this.apply(sessionId, this.api.selectFaces(sessionId, faces, 'unfix')));
+  }
+
   // --- the brush: pressing or clamping by drawing over the surface ---
 
   brush(sessionId: number): boolean {
@@ -830,11 +897,12 @@ export class SolverService {
   setBrush(sessionId: number, on: boolean): void {
     this.entry(sessionId).brush = on;
     this.entry(sessionId).stroke = null;
+    this.entry(sessionId).femStroke = null;
     this.touch(sessionId);
   }
 
   isPainting(sessionId: number): boolean {
-    return this.entry(sessionId).stroke !== null;
+    return this.entry(sessionId).stroke !== null || this.entry(sessionId).femStroke !== null;
   }
 
   // The pointer went down on the surface: a stroke begins. If the first face was already marked the stroke erases,
@@ -843,6 +911,10 @@ export class SolverService {
     const entry = this.entry(sessionId);
     if (!entry.brush || entry.tool === 'view') return;
     if (pick === null || pick.kind !== 'face') return;
+    if (this.isLocal(sessionId)) {
+      this.paintStartInMesh(sessionId, pick);
+      return;
+    }
     if (entry.tool === 'material') {
       // a material is painted over whatever is under the brush, inside or outside; there is nothing to erase
       entry.stroke = { erase: false, faces: new Map(), elements: new Map(), hexes: new Set() };
@@ -870,6 +942,10 @@ export class SolverService {
   // The pointer moved over the surface with the button down: what it reaches joins the stroke.
   paintTo(sessionId: number, pick: PickedFace | null): void {
     const entry = this.entry(sessionId);
+    if (entry.femStroke) {
+      this.paintToInMesh(sessionId, pick);
+      return;
+    }
     if (!entry.stroke || pick === null || pick.kind !== 'face') return;
     if (entry.tool === 'material') {
       if (entry.scope === 'cube') entry.stroke.hexes.add(pick.hex);
@@ -886,6 +962,10 @@ export class SolverService {
   // stroke, freed) in one go.
   paintEnd(sessionId: number): void {
     const entry = this.entry(sessionId);
+    if (entry.femStroke) {
+      this.paintEndInMesh(sessionId);
+      return;
+    }
     const stroke = entry.stroke;
     entry.stroke = null;
     if (!stroke || (stroke.faces.size === 0 && stroke.elements.size === 0 && stroke.hexes.size === 0)) {
@@ -909,6 +989,57 @@ export class SolverService {
       entry.fixedChosen = true;
       entry.fixedSide = null;
       this.apply(sessionId, this.api.setFixedFaces(sessionId, targets, !stroke.erase));
+    }
+  }
+
+  private paintStartInMesh(sessionId: number, pick: PickedFace): void {
+    const entry = this.entry(sessionId);
+    if (!entry.mesh || !entry.meshIndex || !isFemPick(pick)) return;
+    let erase = false;
+    if (entry.tool === 'erase') erase = true;
+    else if (entry.tool !== 'material') {
+      const first = femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex);
+      erase = entry.tool === 'load' ? femAllMarked(entry.mesh, entry.meshIndex, first, 'loaded', entry.pressure) : femAllMarked(entry.mesh, entry.meshIndex, first, 'fixed');
+    }
+    entry.femStroke = { erase, faces: new Map(), elements: new Set(), hexes: new Set() };
+    this.paintToInMesh(sessionId, pick);
+  }
+
+  private paintToInMesh(sessionId: number, pick: PickedFace | null): void {
+    const entry = this.entry(sessionId);
+    const stroke = entry.femStroke;
+    if (!stroke || !entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return;
+    if (entry.tool === 'material') {
+      if (entry.scope === 'cube') stroke.hexes.add(pick.hex);
+      else for (const key of femElementTargets(pick, entry.scope, entry.mesh)) stroke.elements.add(key);
+      return;
+    }
+    for (const face of femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex)) stroke.faces.set(`${face.key}:${face.face}`, face);
+  }
+
+  private paintEndInMesh(sessionId: number): void {
+    const entry = this.entry(sessionId);
+    const stroke = entry.femStroke;
+    entry.femStroke = null;
+    if (!stroke || (stroke.faces.size === 0 && stroke.elements.size === 0 && stroke.hexes.size === 0)) {
+      this.touch(sessionId);
+      return;
+    }
+    if (entry.tool === 'material') {
+      if (stroke.hexes.size > 0) this.apply(sessionId, this.api.setHexMaterial(sessionId, [...stroke.hexes], entry.activeMaterial));
+      if (stroke.elements.size > 0) this.apply(sessionId, this.api.paintElements(sessionId, [...stroke.elements], entry.activeMaterial));
+      return;
+    }
+    const faces = [...stroke.faces.values()];
+    if (entry.tool === 'erase') {
+      this.eraseMeshFaces(sessionId, faces);
+    } else if (entry.tool === 'load') {
+      entry.loadSide = null;
+      this.apply(sessionId, stroke.erase ? this.api.selectFaces(sessionId, faces, 'unload') : this.api.selectFaces(sessionId, faces, 'load', entry.pressure));
+    } else {
+      entry.fixedChosen = true;
+      entry.fixedSide = null;
+      this.apply(sessionId, this.api.selectFaces(sessionId, faces, stroke.erase ? 'unfix' : 'fix'));
     }
   }
 

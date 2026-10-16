@@ -1,6 +1,7 @@
 import { SolverMeshDto } from '../api/solver-api.service';
 import { LOCAL_COORDS } from './mesh-editor-view';
-import { buildFemMeshView } from './fem-mesh-view';
+import { buildFemHighlight, buildFemMeshView } from './fem-mesh-view';
+import { femIndex } from './fem-targets';
 import * as THREE from 'three';
 
 // one cube [-1,1]^3 as a single element, all its six faces on the surface
@@ -44,5 +45,30 @@ describe('buildFemMeshView', () => {
     const mesh = oneElement({ fixedFaces: [0, 4], loadedFaces: [0, 5], pressures: [-1e6] });
     expect(buildFemMeshView(input(mesh)).root.children.length).toBe(4);   // body, two coats, edges
     expect(buildFemMeshView(input(mesh, { showFixed: false, showLoads: false })).root.children.length).toBe(2);
+  });
+});
+
+describe('buildFemHighlight', () => {
+  const mesh = oneElement();
+  const index = femIndex(mesh);
+
+  it('draws a coat on the faces and the edges of the elements', () => {
+    const group = buildFemHighlight(mesh, index, { faces: [{ key: '7|1|k', face: 5 }], elements: ['7|1|k'], pointed: null });
+    expect(group.children.length).toBe(2);
+    const coat = group.children[0] as THREE.Mesh;
+    expect(coat.geometry.getIndex()!.count).toBe(3 * 3 * 6);
+    // every triangle refers to vertices that exist
+    expect(Math.max(...Array.from(coat.geometry.getIndex()!.array))).toBeLessThan(coat.geometry.getAttribute('position').count);
+  });
+
+  it('puts the second face\'s triangles after the first\'s vertices', () => {
+    const group = buildFemHighlight(mesh, index, { faces: [{ key: '7|1|k', face: 0 }, { key: '7|1|k', face: 1 }], elements: [], pointed: null });
+    const coat = group.children[0] as THREE.Mesh;
+    expect(coat.geometry.getAttribute('position').count).toBe(32);
+    expect(Math.max(...Array.from(coat.geometry.getIndex()!.array))).toBe(31);
+  });
+
+  it('ignores a key the mesh does not have', () => {
+    expect(buildFemHighlight(mesh, index, { faces: [{ key: 'nope', face: 0 }], elements: ['nope'], pointed: null }).children.length).toBe(0);
   });
 });
