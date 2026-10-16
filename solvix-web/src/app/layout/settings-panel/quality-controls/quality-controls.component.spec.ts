@@ -69,7 +69,7 @@ describe('QualityControlsComponent', () => {
     const root = render().nativeElement as HTMLElement;
 
     expect(Array.from(root.querySelectorAll('h5')).map(h => text(h))).toEqual([
-      'Критерії Solvix', 'Фарбувати сцену за', 'Подивитись усередину', 'Інші інструменти'
+      'Критерії Solvix', 'Фарбувати сцену за', 'Вигляд', 'Подивитись усередину', 'Інші інструменти'
     ]);
     expect(root.textContent).not.toMatch(/Проблемні елементи|Консенсус|Загальний результат/);
   });

@@ -33,6 +33,11 @@
     <div class="legend" *ngIf="compareId()">
       <span *ngFor="let l of legend(); trackBy: trackResult"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
     </div>
+  </section>
+
+  <!-- Вигляд тіла -->
+  <section class="part">
+    <h5>Вигляд</h5>
     <div class="slider">
       <div class="slider__head"><span>Непрозорість тіла</span><b>{{ opacityPercent() }}%</b></div>
       <input class="slider__range" type="range" min="5" max="100" step="1" [value]="opacityPercent()" [style.--fill.%]="opacityPercent()" (input)="onOpacity($event)" aria-label="Непрозорість тіла" />
@@ -44,8 +49,8 @@
   <!-- Дослідження всередині -->
   <section class="part">
     <h5>Подивитись усередину</h5>
-    <label class="mark"><input type="checkbox" [checked]="looking().onlyBad" (change)="toggleOnlyBad()" />Лише проблемні елементи</label>
-    <label class="mark"><input type="checkbox" [checked]="looking().section.enabled" (change)="toggleSection()" />Розріз тіла площиною</label>
+    <button type="button" class="tool" [class.tool--on]="looking().onlyBad" (click)="toggleOnlyBad()">Лише проблемні елементи</button>
+    <button type="button" class="tool" [class.tool--on]="looking().section.enabled" (click)="toggleSection()">Розріз площиною</button>
     <div class="cut" *ngIf="looking().section.enabled">
       <div class="cut__axes">
         <button type="button" class="cut__axis" *ngFor="let a of axisNames" [class.on]="looking().section.axis === a.axis" (click)="setSectionAxis(a.axis)">{{ a.name }}</button>
@@ -62,7 +67,7 @@
       <span class="walk__text">{{ badPosition() > 0 ? 'Елемент ' + badPosition() + ' з ' + badElements().length : 'Проблемних елементів: ' + badElements().length }}</span>
       <button type="button" class="walk__btn" title="Наступний проблемний елемент (найгірші першими)" (click)="walk(1)">▶</button>
     </div>
-    <ng-template #noBad><div class="empty">Проблемних елементів немає.</div></ng-template>
+    <ng-template #noBad><div class="hint">Проблемних елементів немає.</div></ng-template>
   </section>
 
   <!-- Згладжування -->
@@ -101,16 +106,14 @@
       <div class="hint">Лише для порівняння на сцені, на розрахунок не впливає.</div>
     </ng-container>
     <ng-template #toolList>
-      <div class="hint">Лише перегляд. Відсоток — частка елементів сітки, які проходять перевірки інструмента.</div>
+      <div class="hint">Лише перегляд. % — частка елементів, що проходять.</div>
       <div class="pills">
-        <button type="button" class="pill" *ngFor="let t of tools(); trackBy: trackById" [class.pill--on]="compareId() === t.id" [title]="t.dto.source" (click)="chooseTool(t.id)">
+        <button type="button" class="pill" *ngFor="let t of tools(); trackBy: trackById" [class.pill--on]="compareId() === t.id" [title]="t.dto.source + (t.dto.note ? ' — ' + t.dto.note : '')" (click)="chooseTool(t.id)">
           <span class="pill__name">{{ t.name }}</span>
           <span class="pill__percent">{{ percentText(t.percent) }}</span>
         </button>
       </div>
       <ng-container *ngIf="chosenTool() as tool">
-        <p class="about">{{ tool.source }}</p>
-        <p class="about about--note" *ngIf="tool.note">{{ tool.note }}</p>
         <ng-container *ngFor="let m of measuresOf(tool); trackBy: trackKey">
           <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
         </ng-container>
