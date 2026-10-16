@@ -70,7 +70,7 @@
     </button>
   </div>
 
-  <div class="hint hint--wide" *ngIf="open('tools')">{{ hint() }}</div>
+  <div class="hint hint--wide" *ngIf="open('tools') && hint()">{{ hint() }}</div>
 </div>
 
 <div class="viewbox">

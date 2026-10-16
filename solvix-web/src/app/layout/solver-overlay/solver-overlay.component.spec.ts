@@ -193,7 +193,7 @@ describe('SolverOverlayComponent', () => {
     expect(component.isFaceTool()).toBeFalse();
     tool = 'material';
     expect(component.isFaceTool()).toBeTrue();
-    expect(component.hint()).toContain('Клік');
+    expect(component.hint()).toBe('');                        // one click needs no explanation
     brush = true;
     expect(component.hint()).toContain('матеріал');
     brush = false;
