@@ -707,14 +707,18 @@ describe('colouring by mesh quality', () => {
     expect(vertices(0.4, flagged('excellent'))).toBe(solid);                 // nothing bad: the inside stays empty
   });
 
-  it('with the body see-through, keeps the faces of the bad elements dense while the rest is as faint as asked', () => {
+  it('with the body see-through, draws every face at the one opacity asked, and also the faces round a bad element inside', () => {
     const state = singleCubeState();
     const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', values: { scaledJacobian: 0.1 } }] };
-    const view = buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 0.05, quality: q });
-    const opacities = (view.pickables as THREE.Mesh[]).map(m => (m.material as THREE.MeshBasicMaterial).opacity).sort((a, b) => a - b);
-    expect(opacities[0]).toBeCloseTo(0.05, 6);                      // the good elements: as asked
-    expect(opacities[opacities.length - 1]).toBeGreaterThan(0.5);   // the bad one is still there to be seen
+    const build = (qualityInput: SolverQualityDto) => buildSolverView({ state, setup: setup({ divisions: [3, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 0.3, quality: qualityInput });
+    const view = build(q);
+    const opacities = (view.pickables as THREE.Mesh[]).map(m => (m.material as THREE.MeshBasicMaterial).opacity);
+    expect(new Set(opacities)).toEqual(new Set([0.3]));             // one tone, bad or not
+    const plain = build(quality('excellent', 'excellent'));
+    const vertices = (v: typeof view) => (v.pickables as THREE.Mesh[]).reduce((sum, m) => sum + m.geometry.getAttribute('position').count, 0);
+    expect(vertices(view)).toBeGreaterThan(vertices(plain));        // the faces round the bad element inside the body are there too
     disposeMeshView(view);
+    disposeMeshView(plain);
   });
 
   it('can draw only the bad elements, and cut the body by a plane', () => {

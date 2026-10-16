@@ -602,9 +602,6 @@ function appendSurface(positions: number[], indices: number[], face: SmallFace, 
   }
 }
 
-// how opaque the faces of the elements that are not excellent stay when the Quality World is see-through
-const BAD_ELEMENT_OPACITY = 0.85;
-
 export function buildSolverView(input: SolverViewInput): MeshView {
   const { state, setup, result, field } = input;
   const root = new THREE.Group();
@@ -789,7 +786,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     // The quality view is lit and matt like the Real World's body (the colours are the grades); the other views keep a light baked into their colours.
     const lit = qualityColors !== null;
     const material: THREE.Material = lit
-      ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid })
+      // see-through, it blends with every face behind it (no depth test), as the Real World's faces do - one tone whatever the order
+      ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid, depthTest: subsetSolid })
       : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
     if (!lit) markForWeightedOit(material);
@@ -816,21 +814,17 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     mesh.userData['pick'] = mesh.userData['resolvePick'](0);
     if (lit) mesh.renderOrder = 1;
     // a translucent outside also writes depth, invisibly, so the lines laid over it are full strength only where nothing of the body is in front of them
-    if (lit && !subsetSolid && subset.every(f => f.outer)) {
-      const depthOnly = new THREE.Mesh(bodyGeometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+    if (lit && !subsetSolid && (input.section || subset.some(f => f.outer))) {
+      const outside = input.section || subset.every(f => f.outer) ? bodyGeometry : faceGeometry(subset.filter(f => f.outer), colorOf, false);
+      const depthOnly = new THREE.Mesh(outside, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
       depthOnly.renderOrder = 0;
       root.add(depthOnly);
     }
     root.add(mesh);
     pickables.push(mesh);
     };
-    if (seeThrough) {
-      // the body is see-through: the faces of the elements that are not excellent stay dense (they are what is looked for), the rest is as faint as the user asked
-      const bad = faces.filter(face => isBad(face.owner.id, ...face.element));
-      const rest = faces.filter(face => !isBad(face.owner.id, ...face.element));
-      if (rest.length > 0) addBody(rest, opacity);
-      if (bad.length > 0) addBody(bad, Math.max(opacity, BAD_ELEMENT_OPACITY));
-    } else addBody(faces, opacity);
+    // one opacity for every face, so the whole body is one tone (the faces round a bad element inside are drawn too, so it can be seen)
+    addBody(faces, opacity);
 
     for (const face of faces) {
       if (!face.outer || input.marksOpacity === 0) continue;
