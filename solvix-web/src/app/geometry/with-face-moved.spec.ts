@@ -1,5 +1,5 @@
 import { withFaceMoved, faceSlots, EDGE_CORNERS } from './mesh-editor-view';
-import { singleCubeState } from './mesh-state.fixture.spec';
+import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 // withFaceMoved mirrors the backend's HexMesh.MoveFace: the 8 nodes on the face
 // move by the full delta, the midpoints of the edges joining the face to the
@@ -40,5 +40,19 @@ describe('withFaceMoved', () => {
   it('returns the state unchanged for an unknown hex', () => {
     const state = singleCubeState();
     expect(withFaceMoved(state, 999, 'XPlus', { x: 1, y: 0, z: 0 })).toBe(state);
+  });
+
+  it('keeps the edges of the linked neighbour straight too when the face is shared', () => {
+    const state = linkedPairState();
+    const moved = withFaceMoved(state, 0, 'XPlus', { x: 0.4, y: 0.1, z: -0.2 });
+    const node = new Map(moved.nodes.map(n => [n.id, n]));
+
+    for (const hex of moved.hexes)
+      EDGE_CORNERS.forEach(([a, b], k) => {
+        const [pa, pb, pm] = [node.get(hex.nodeIds[a])!, node.get(hex.nodeIds[b])!, node.get(hex.nodeIds[8 + k])!];
+        expect(pm.x).withContext(`cube ${hex.id} edge ${k}`).toBeCloseTo((pa.x + pb.x) / 2, 9);
+        expect(pm.y).withContext(`cube ${hex.id} edge ${k}`).toBeCloseTo((pa.y + pb.y) / 2, 9);
+        expect(pm.z).withContext(`cube ${hex.id} edge ${k}`).toBeCloseTo((pa.z + pb.z) / 2, 9);
+      });
   });
 });

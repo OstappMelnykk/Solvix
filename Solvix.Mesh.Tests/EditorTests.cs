@@ -148,6 +148,28 @@ public class EditorTests
     }
 
     [Test]
+    public void Moving_a_shared_face_keeps_the_edges_of_the_linked_neighbour_straight_too()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        var delta = new Vec3(0.4, 0.1, -0.2);
+
+        Assert.That(editor.MoveFace(new FaceRef(0, HexFace.XPlus), delta).Ok, Is.True);
+
+        // every edge of every cube still has its midpoint where a straight edge has it
+        foreach (var hex in editor.Mesh.Hexes)
+            for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
+            {
+                var (ca, cb) = Hex20Reference.EdgeCorners[k];
+                var a = editor.Mesh.Node(hex.NodeIds[ca]).Position;
+                var b = editor.Mesh.Node(hex.NodeIds[cb]).Position;
+                var mid = editor.Mesh.Node(hex.NodeIds[8 + k]).Position;
+                Assert.That((mid - (a + b) * 0.5).Length, Is.LessThan(1e-12), $"cube {hex.Id}, edge {k} is bent");
+            }
+    }
+
+    [Test]
     public void Moving_a_face_is_one_undo_step_and_fails_on_bad_input()
     {
         var editor = new HexMeshEditor();

@@ -535,27 +535,33 @@ public sealed partial class HexMesh
     /// <summary>
     /// Moves a whole face of a hex by one displacement. The face's 8 nodes
     /// (4 corners and the 4 midpoints lying on the face) move by the full
-    /// <paramref name="delta"/>; the midpoints of the 4 edges that join the
-    /// face's corners to the opposite face move by half of it, so those
-    /// in-depth edges stay straight instead of bending. Shared nodes carry
-    /// every hex that owns them, exactly like <see cref="DragNode"/>.
+    /// <paramref name="delta"/>; the midpoints of the edges that leave the
+    /// face's corners (in every hex that owns such a corner, so a linked
+    /// neighbour's edges too) move by half of it, so those edges stay straight
+    /// instead of bending. The same rule as <see cref="DragNode"/>, for four corners at once.
     /// </summary>
     public void MoveFace(FaceRef face, Vec3 delta)
     {
         var hex = _hexes[face.Hex];
         var full = new HashSet<int>();
         foreach (int slot in face.Face.Slots()) full.Add(hex.NodeIds[slot]);
+        var corners = face.Face.Slots().Where(Hex20Reference.IsCorner).Select(slot => hex.NodeIds[slot]).ToHashSet();
 
-        // The connecting edges: one corner on this face, the other on the opposite
-        // face. Their midpoints (8 + k) are not on the face, so they move by half.
+        // An edge that leaves a moved corner: its other end is not on the face, so its midpoint (8 + k) moves by half. An edge between two moved
+        // corners lies in the face and is already among the full ones.
         var half = new HashSet<int>();
-        for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
-        {
-            var (ca, cb) = Hex20Reference.EdgeCorners[k];
-            bool aOn = face.Face.Slots().Contains(ca);
-            bool bOn = face.Face.Slots().Contains(cb);
-            if (aOn ^ bOn) half.Add(hex.NodeIds[8 + k]);
-        }
+        foreach (int corner in corners)
+            foreach (var (hexId, slot) in _owners[corner])
+            {
+                var owner = _hexes[hexId];
+                for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
+                {
+                    var (ca, cb) = Hex20Reference.EdgeCorners[k];
+                    if (ca != slot && cb != slot) continue;
+                    if (corners.Contains(owner.NodeIds[ca == slot ? cb : ca])) continue;
+                    half.Add(owner.NodeIds[8 + k]);
+                }
+            }
         half.ExceptWith(full);
 
         foreach (int id in full) _nodes[id].Position += delta;

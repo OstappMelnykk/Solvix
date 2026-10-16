@@ -40,8 +40,8 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Esc', action: 'зняти виділення' },
   { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
   { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
-  { keys: '← →  ↑ ↓', action: 'зсув вузла/грані по X і Z (Shift — ×10, перший крок до цілого)' },
-  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла/грані по Y: вгору / вниз (Shift — ×10, перший крок до цілого)' },
+  { keys: '← →  ↑ ↓', action: 'зсув вузла/грані по X і Z (Shift — ×10; для вузла перший крок до цілого)' },
+  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла/грані по Y: вгору / вниз (Shift — ×10; для вузла перший крок до цілого)' },
   { keys: '?', action: 'ця підказка' }
 ];
 
