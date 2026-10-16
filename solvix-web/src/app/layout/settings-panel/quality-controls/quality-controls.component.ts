@@ -295,6 +295,17 @@ export class QualityControlsComponent implements DoCheck {
     return this.solver.marks(this.sessionId, 'quality')[kind];
   }
 
+  marksShown(): boolean {
+    return this.showMark('fixed') || this.showMark('loads');
+  }
+
+  // one button for both kinds of marks
+  toggleMarks(): void {
+    const show = !this.marksShown();
+    this.solver.setMarks(this.sessionId, 'quality', 'fixed', show);
+    this.solver.setMarks(this.sessionId, 'quality', 'loads', show);
+  }
+
   toggleMark(kind: 'fixed' | 'loads'): void {
     this.solver.setMarks(this.sessionId, 'quality', kind, !this.showMark(kind));
   }

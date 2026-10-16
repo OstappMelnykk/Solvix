@@ -69,7 +69,7 @@ describe('QualityControlsComponent', () => {
     const root = render().nativeElement as HTMLElement;
 
     expect(Array.from(root.querySelectorAll('h5')).map(h => text(h))).toEqual([
-      'Критерії Solvix', 'Фарбувати сцену за', 'Подивитись усередину', 'Як позначили б інші інструменти'
+      'Критерії Solvix', 'Фарбувати сцену за', 'Подивитись усередину', 'Інші інструменти'
     ]);
     expect(root.textContent).not.toMatch(/Проблемні елементи|Консенсус|Загальний результат/);
   });
@@ -146,13 +146,13 @@ describe('QualityControlsComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
 
     expect(root.querySelector('app-smoothing-controls')).not.toBeNull();
-    const slider = root.querySelector<HTMLInputElement>('.opacity input')!;
-    expect(text(root.querySelector('.opacity'))).toContain('70%');          // the one opacity of the body
+    const slider = root.querySelector<HTMLInputElement>('.slider__range')!;
+    expect(text(root.querySelector('.slider'))).toContain('70%');          // the one opacity of the body
 
     slider.value = '40';
     slider.dispatchEvent(new Event('input'));
     fixture.detectChanges();
-    expect(text(root.querySelector('.opacity'))).toContain('40%');
+    expect(text(root.querySelector('.slider'))).toContain('40%');
   });
 
   it('opens a popup with the maths of a measure from its "i" button, and closes it', () => {
@@ -195,15 +195,14 @@ describe('QualityControlsComponent', () => {
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'grade');
   });
 
-  it('has a switch for the supports and one for the loads', () => {
+  it('has one button for the supports and the loads together', () => {
     const root = render().nativeElement as HTMLElement;
-    const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('.marks .mark input'));
+    const button = link(root, 'Закріплення та навантаження');
 
-    expect(boxes.map(b => b.checked)).toEqual([false, true]);
-    boxes[0].click();
-    boxes[1].click();
+    expect(text(button)).toContain('показано');          // the loads are on already
+    button.click();
 
-    expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'fixed', true);
+    expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'fixed', false);
     expect(solver.setMarks).toHaveBeenCalledWith(1, 'quality', 'loads', false);
   });
 
@@ -238,9 +237,9 @@ describe('QualityControlsComponent', () => {
   describe('the look at other tools', () => {
     it('is closed at first and says that it decides nothing', () => {
       const root = render().nativeElement as HTMLElement;
-      const part = root.querySelector('.part--look')!;
+      const part = Array.from(root.querySelectorAll('.part')).find(p => text(p.querySelector('h5')) === 'Інші інструменти')!;
 
-      expect(text(part)).toContain('Це ніяк не впливає на висновок і на розрахунок');
+      expect(text(part)).toContain('на розрахунок не впливає');
       expect(part.querySelector('.pill')).toBeNull();
     });
 
@@ -248,17 +247,17 @@ describe('QualityControlsComponent', () => {
       const fixture = render();
       const root = fixture.nativeElement as HTMLElement;
 
-      link(root, 'Подивитись, як це позначили б інші інструменти').click();
+      link(root, 'Порівняти з іншими інструментами').click();
       fixture.detectChanges();
 
       expect(Array.from(root.querySelectorAll('.pill')).map(p => text(p))).toEqual(['Abaqus/CAE100%', 'Cubit (Sandia)25%']);
-      expect(text(root.querySelector('.look-note'))).toContain('Лише перегляд');
+      expect(text(root)).toContain('Лише перегляд');
     });
 
     it('puts the marks of the chosen tool on the scene, and takes them off again; the verdict stays Solvix\'s', () => {
       const fixture = render();
       const root = fixture.nativeElement as HTMLElement;
-      link(root, 'Подивитись, як це позначили б інші інструменти').click();
+      link(root, 'Порівняти з іншими інструментами').click();
       fixture.detectChanges();
 
       root.querySelectorAll<HTMLButtonElement>('.pill')[1].click();
@@ -267,7 +266,7 @@ describe('QualityControlsComponent', () => {
       expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');       // Solvix's own, not Cubit's
       expect(text(root.querySelector('.legend'))).toContain('Cubit (Sandia)');
 
-      link(root, 'Закрити й повернути позначки Solvix').click();
+      link(root, 'Закрити').click();
       fixture.detectChanges();
       expect(solver.setQualityCompare).toHaveBeenCalledWith(1, null);
       expect(root.querySelector('.pill')).toBeNull();
@@ -276,7 +275,7 @@ describe('QualityControlsComponent', () => {
     it('keeps the buttons themselves between change-detection passes, so a click is not lost', () => {
       const fixture = render();
       const root = fixture.nativeElement as HTMLElement;
-      link(root, 'Подивитись, як це позначили б інші інструменти').click();
+      link(root, 'Порівняти з іншими інструментами').click();
       fixture.detectChanges();
       const before = Array.from(root.querySelectorAll('.pill'));
 

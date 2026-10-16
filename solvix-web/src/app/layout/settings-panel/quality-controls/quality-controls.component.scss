@@ -21,22 +21,130 @@ h4 {
   color: #9096a0;
 }
 
-// every part of the panel is a card of its own under a header that is easy to see
+// every part is a card with a small caps label, the same as in the Ideal and Real panels
 h5 {
-  margin: 0 0 6px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid $field-border;
-  font-size: 13px;
-  font-weight: 700;
-  color: $text;
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6f737a;
 }
 
 .part {
-  margin-bottom: 8px;
-  padding: 8px 10px 9px;
-  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.hint {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #6f737a;
+}
+
+.tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  background: $field-bg;
   border: 1px solid $field-border;
-  border-radius: 10px;
+  border-radius: 6px;
+  color: #dfe1e5;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $accent-toggle;
+  }
+
+  &--on {
+    background: $accent-toggle;
+    border-color: $accent-toggle;
+    color: #fff;
+  }
+}
+
+// A slider with its value and its two ends, as in the Real World panel.
+.slider {
+  padding: 2px 0 4px;
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12px;
+    color: #b8bcc4;
+
+    b {
+      color: #dfe1e5;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__range {
+    --fill: 22%;
+    display: block;
+    width: 100%;
+    height: 18px;
+    margin: 6px 0 2px;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+
+    &::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(to right, $accent-toggle var(--fill), #3a3d43 var(--fill));
+    }
+
+    &::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background: #3a3d43;
+    }
+
+    &::-moz-range-progress {
+      height: 4px;
+      border-radius: 2px;
+      background: $accent-toggle;
+    }
+
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      margin-top: -5px;
+      border: 2px solid #1e1f22;
+      border-radius: 50%;
+      background: #dfe1e5;
+    }
+
+    &::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      border: 2px solid #1e1f22;
+      border-radius: 50%;
+      background: #dfe1e5;
+    }
+  }
+
+  &__scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #6f737a;
+  }
 }
 
 i {
@@ -247,18 +355,6 @@ i {
   }
 }
 
-.opacity {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 8px 0;
-  font-size: 13px;
-
-  input {
-    width: 100%;
-  }
-}
-
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -387,18 +483,6 @@ i {
 
   &__text {
     font-size: 13px;
-  }
-}
-
-.opacity {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 8px 0;
-  font-size: 13px;
-
-  input {
-    width: 100%;
   }
 }
 
@@ -942,33 +1026,11 @@ i {
 }
 
 // the supports and the loads on the scene can be shown or hidden
-.marks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid $field-border;
-}
-
 .mark {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-
-  &__swatch {
-    width: 14px;
-    height: 14px;
-
-    &--fixed {
-      background: #3388ff;
-    }
-
-    &--loads {
-      background: #44ff44;
-    }
-  }
 }
 
 // the look at other tools: a plain list, the tool on the left and the share it accepts on the right

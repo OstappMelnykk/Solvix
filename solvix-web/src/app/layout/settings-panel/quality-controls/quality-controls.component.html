@@ -33,14 +33,12 @@
     <div class="legend" *ngIf="compareId()">
       <span *ngFor="let l of legend(); trackBy: trackResult"><i [style.background]="color(l.result)"></i>{{ l.text }}</span>
     </div>
-    <label class="opacity" title="Менше — тіло прозоріше, і погані елементи всередині видно крізь хороші. Грані навколо поганих елементів малюються й усередині тіла.">
-      <span>Непрозорість тіла, {{ opacityPercent() }}%</span>
-      <input type="range" min="5" max="100" step="5" [value]="opacityPercent()" (input)="onOpacity($event)" />
-    </label>
-    <div class="marks">
-      <label class="mark"><input type="checkbox" [checked]="showMark('fixed')" (change)="toggleMark('fixed')" /><i class="mark__swatch mark__swatch--fixed"></i>Показувати закріплення</label>
-      <label class="mark"><input type="checkbox" [checked]="showMark('loads')" (change)="toggleMark('loads')" /><i class="mark__swatch mark__swatch--loads"></i>Показувати навантаження</label>
+    <div class="slider">
+      <div class="slider__head"><span>Непрозорість тіла</span><b>{{ opacityPercent() }}%</b></div>
+      <input class="slider__range" type="range" min="5" max="100" step="1" [value]="opacityPercent()" [style.--fill.%]="opacityPercent()" (input)="onOpacity($event)" aria-label="Непрозорість тіла" />
+      <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
     </div>
+    <button type="button" class="tool" [class.tool--on]="marksShown()" (click)="toggleMarks()">Закріплення та навантаження: {{ marksShown() ? 'показано' : 'сховано' }}</button>
   </section>
 
   <!-- Дослідження всередині -->
@@ -96,15 +94,14 @@
   </section>
 
   <!-- 5. Інші інструменти: лише подивитись -->
-  <section class="part part--look">
-    <h5>Як позначили б інші інструменти</h5>
+  <section class="part">
+    <h5>Інші інструменти</h5>
     <ng-container *ngIf="!toolsOpen; else toolList">
-      <p class="about">Лише для порівняння на сцені. Це ніяк не впливає на висновок і на розрахунок.</p>
-      <button type="button" class="go" (click)="openTools()">Подивитись, як це позначили б інші інструменти</button>
+      <button type="button" class="tool" (click)="openTools()">Порівняти з іншими інструментами</button>
+      <div class="hint">Лише для порівняння на сцені, на розрахунок не впливає.</div>
     </ng-container>
     <ng-template #toolList>
-      <p class="look-note">Лише перегляд: сцена показує позначки обраного інструмента. Висновок і розрахунок лишаються за Solvix.</p>
-      <p class="look-note"><b>Відсоток</b> — яка частка елементів вашої сітки проходить перевірки цього інструмента (100% — усі елементи прийнятні).</p>
+      <div class="hint">Лише перегляд. Відсоток — частка елементів сітки, які проходять перевірки інструмента.</div>
       <div class="pills">
         <button type="button" class="pill" *ngFor="let t of tools(); trackBy: trackById" [class.pill--on]="compareId() === t.id" [title]="t.dto.source" (click)="chooseTool(t.id)">
           <span class="pill__name">{{ t.name }}</span>
@@ -118,7 +115,7 @@
           <ng-container *ngTemplateOutlet="gaugeTpl; context: { $implicit: m }"></ng-container>
         </ng-container>
       </ng-container>
-      <button type="button" class="go" (click)="closeTools()">Закрити й повернути позначки Solvix</button>
+      <button type="button" class="tool" (click)="closeTools()">Закрити</button>
     </ng-template>
   </section>
 </ng-container>
