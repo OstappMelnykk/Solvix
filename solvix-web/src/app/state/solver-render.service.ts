@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { SOLVER_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
+import { buildFemMeshView } from '../geometry/fem-mesh-view';
 import { buildQualityView } from '../geometry/quality-view';
 import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValues, materialColor } from '../geometry/solver-view';
 import { MeshEditorService } from './mesh-editor.service';
@@ -66,7 +67,24 @@ export class SolverRenderService {
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
       showInner: this.solver.showInner(sessionId)
     };
-    const view = input.result ? buildSolverView(input) : this.buildSetupView(sessionId, input);
+    const mesh = this.solver.mesh(sessionId);
+    // a locally refined body is drawn from the solver's own mesh of elements (until it arrives, nothing); the cached key follows the solver's revision, which the arrival bumps
+    const view = this.solver.isLocal(sessionId)
+      ? mesh && !input.result
+        ? buildFemMeshView({
+            mesh,
+            defaultMaterial: input.setup?.defaultMaterial ?? 'steel',
+            bodyColor: SETUP_BODY_COLOR,
+            opacity: input.opacity,
+            hiddenMaterials: this.solver.hiddenMaterials(sessionId),
+            showFixed: input.showFixed,
+            showLoads: input.showLoads,
+            edges: display.edges
+          })
+        : null
+      : input.result
+        ? buildSolverView(input)
+        : this.buildSetupView(sessionId, input);
     this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true, vectors: display.vectors });
     this.applyHighlight(sessionId);
     return view;

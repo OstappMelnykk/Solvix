@@ -20,6 +20,9 @@ export interface PickedFace {
   readonly element?: readonly [number, number, number];
   // ... and whether the face lies inside the body (between small elements) rather than on its outside.
   readonly inner?: boolean;
+  // Solver World, locally refined body: the element's key and its local face (0..5) - what names a face of a mesh whatever made it.
+  readonly elementKey?: string;
+  readonly localFace?: number;
 }
 
 export interface PickedNode {
