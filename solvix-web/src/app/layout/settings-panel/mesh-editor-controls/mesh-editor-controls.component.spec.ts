@@ -568,6 +568,21 @@ describe('MeshEditorControlsComponent', () => {
       expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
     });
 
+    it('moves along Y also with ] and [ (by the place of the key) and Alt + up/down, for a keyboard without PageUp and PageDown', () => {
+      state = singleCubeState();
+      selection.selectNode(1, 6);   // corner (1, 1, 1)
+      component.nudgeStep = 0.1;
+
+      press('х', { code: 'BracketRight' });                                  // the key of ] on the Ukrainian layout
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1.1, z: 1 }, false);
+      press('[', { code: 'BracketLeft', shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
+      press('ArrowUp', { altKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1.1, z: 1 }, false);
+      press('ArrowDown', { altKey: true, shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
+    });
+
     it('arrow keys do nothing without a selected node or outside the Real World', () => {
       state = singleCubeState();
       press('ArrowRight');

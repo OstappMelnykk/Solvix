@@ -37,12 +37,13 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Esc', action: 'зняти виділення' },
   { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
   { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
-  { keys: '← →  ↑ ↓  PgUp PgDn', action: 'зсув вузла по X, Z, Y (Shift — ×10)' },
+  { keys: '← →  ↑ ↓', action: 'зсув вузла по X і Z (Shift — ×10)' },
+  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла по Y: вгору / вниз (Shift — ×10)' },
   { keys: '?', action: 'ця підказка' }
 ];
 
-// Arrow keys move X (left/right) and Z (up = away from the viewer along -Z),
-// PageUp/PageDown move Y.
+// Arrow keys move X (left/right) and Z (up = away from the viewer along -Z). Y: ] and [ (by the place of the key, so any layout), Alt + up/down, and
+// PageUp/PageDown for the keyboards that have them.
 const NUDGE_KEYS: Record<string, [Axis, 1 | -1]> = {
   arrowright: ['x', 1],
   arrowleft: ['x', -1],
@@ -544,7 +545,9 @@ export class MeshEditorControlsComponent {
       return;
     }
 
-    if (mod || event.altKey) {                  // (Cmd/Ctrl+Z and +Shift+Z are the whole app's: GlobalShortcutsComponent)
+    if (!mod && event.altKey && (key === 'arrowup' || key === 'arrowdown')) {     // Alt + up/down: Y (a short keyboard has no PageUp/PageDown)
+      if (this.canMoveNode()) this.nudge('y', key === 'arrowup' ? 1 : -1, event.shiftKey ? 10 : 1);
+    } else if (mod || event.altKey) {            // (Cmd/Ctrl+Z and +Shift+Z are the whole app's: GlobalShortcutsComponent)
       handled = false;
     } else if (key === 'a') {
       if (this.canAttachActiveFace()) this.attachActiveFace();
@@ -562,6 +565,8 @@ export class MeshEditorControlsComponent {
       if (this.canAddFirst()) this.addFirst();
     } else if (key === 'escape') {
       this.clearSelection();
+    } else if (event.code === 'BracketRight' || event.code === 'BracketLeft') {   // ] up, [ down along Y, wherever the keys are on the layout
+      if (this.canMoveNode()) this.nudge('y', event.code === 'BracketRight' ? 1 : -1, event.shiftKey ? 10 : 1);
     } else if (NUDGE_KEYS[key]) {
       const [axis, direction] = NUDGE_KEYS[key];
       if (this.canMoveNode()) this.nudge(axis, direction, event.shiftKey ? 10 : 1);
