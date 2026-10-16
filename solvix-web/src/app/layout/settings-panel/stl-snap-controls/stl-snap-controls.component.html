@@ -8,3 +8,4 @@
 </label>
 <div class="selected">Прикріплено вершин: <b>{{ attachedCount() }}</b></div>
 <button class="tool" type="button" [disabled]="attachedCount() === 0" (click)="detachAllNodes()">Відкріпити всі</button>
+<div class="hint">Відлипити вершину: утримуйте <b>Alt</b>, тягнучи її, або натисніть «Відлипити від STL» на сцені (з'являється, коли вибрано прилиплу вершину). Усі разом: «Відкріпити всі».</div>

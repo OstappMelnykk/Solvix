@@ -38,4 +38,9 @@ describe('StlSnapControlsComponent', () => {
     (el().querySelector('button.tool') as HTMLButtonElement).click();
     expect(component.attachedCount()).toBe(0);
   });
+
+  it('says how to make a vertex let go', () => {
+    expect(el().querySelector('.hint')?.textContent).toContain('Alt');
+    expect(el().querySelector('.hint')?.textContent).toContain('Відлипити від STL');
+  });
 });
