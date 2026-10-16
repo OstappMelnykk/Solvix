@@ -207,32 +207,41 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
         // From here on the solver works on the mesh of finite elements (IFemMesh): the setup's cells are bound to its elements and faces by
         // SetupBinding, and nothing below asks which cube an element came from or how it was cut.
-        return BuildProblem(setup, mesh, fine.Mesh, new[] { nx, ny, nz }, fine);
+        return BuildProblem(setup, mesh, fine.Mesh, fine);
     }
 
     /// <summary>
-    /// The solver's input on ANY mesh of finite elements: what the setup says (materials, clamps, pressures, by cells of the cubes) is bound to the
-    /// elements and faces of the mesh, whatever rule made it. <paramref name="counts"/> is the grid of cells the setup is expressed in.
+    /// The solver's input on ANY mesh of finite elements: what the setup says (materials, clamps, pressures, set on regions of the cubes) is bound to the
+    /// elements and faces of the mesh, whatever rule made it. The grid the setup is spoken of in plays no part here: a region is a place in the cube, and the
+    /// faces and elements of the mesh whose centres lie in it are what it means.
     /// </summary>
-    internal static SolverProblem BuildProblem(SolverSetup setup, FemMeshDto mesh, IFemMesh femMesh, int[] counts, FineMesh? fine = null)
+    internal static SolverProblem BuildProblem(SolverSetup setup, FemMeshDto mesh, IFemMesh femMesh, FineMesh? fine = null)
     {
         var byName = setup.MaterialsByName.ToDictionary(m => m.Key, m => Material.Isotropic(m.Value.E, m.Value.Nu, m.Key));
         var materials = new Material[femMesh.ElementCount];
         for (int e = 0; e < femMesh.ElementCount; e++)
-            materials[e] = byName[setup.MaterialOf(SetupBinding.CellOf(femMesh, e, mesh.ElementIds[femMesh.RootOf(e)], counts))];
+            materials[e] = byName[setup.MaterialAt(mesh.ElementIds[femMesh.RootOf(e)], femMesh.CentreOf(e))];
 
-        var cubeIndex = new Dictionary<int, int>();
-        for (int e = 0; e < mesh.ElementCount; e++) cubeIndex[mesh.ElementIds[e]] = e;
-        bool Known(SubFace f) => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face);
-        // a cell of a side of a cube is the outward face (or faces) of the element(s) behind it
-        IEnumerable<ElementFace> Faces(SubFace f) => SetupBinding.FacesOf(femMesh, cubeIndex[f.Hex], f.Face, f.P, f.Q, counts);
-
-        var loads = new LoadCase
+        var clamped = new HashSet<ElementFace>();
+        var pressures = new List<FacePressure>();
+        for (int cube = 0; cube < mesh.ElementCount; cube++)
         {
-            Fixed = setup.Fixed.Where(Known).SelectMany(Faces).Distinct().ToList(),
-            // Pn is the solver's: along the outward normal, negative = compression
-            Pressures = setup.Loads.Where(l => Known(l.Key)).SelectMany(l => Faces(l.Key).Select(face => new FacePressure(face, l.Value))).ToList()
-        };
+            int hex = mesh.ElementIds[cube];
+            foreach (var side in SolverFaces.Names)
+            {
+                bool anyFixed = setup.HasFixed(hex, side), anyLoad = setup.HasLoads(hex, side);
+                if (!anyFixed && !anyLoad) continue;
+                foreach (var face in femMesh.FacesOnSide(cube, side))
+                {
+                    var at = femMesh.FaceCentreOf(face);
+                    var solverFace = new ElementFace(face.Element, face.Face);
+                    if (anyFixed && setup.IsFixedAt(hex, side, at)) clamped.Add(solverFace);
+                    // Pn is the solver's: along the outward normal, negative = compression
+                    if (anyLoad && setup.LoadAt(hex, side, at) is double pn) pressures.Add(new FacePressure(solverFace, pn));
+                }
+            }
+        }
+        var loads = new LoadCase { Fixed = clamped.ToList(), Pressures = pressures };
         return new SolverProblem(femMesh, fine, new FemModel(femMesh.Positions, femMesh.Connectivity, materials), loads);
     }
 }

@@ -46,6 +46,13 @@ internal sealed class RegionMap<TValue> where TValue : notnull
         return true;
     }
 
+    /// <summary>Whether the two maps set the same values on the same places, however each has cut its regions up.</summary>
+    public bool SameAs(RegionMap<TValue> other) =>
+        _entries.All(e => other.Covered(e.Box, e.Value)) && other._entries.All(e => Covered(e.Box, e.Value));
+
+    /// <summary>Takes every region with this value out (the value itself is gone, say a material that was deleted). Returns whether anything changed.</summary>
+    public bool RemoveValue(TValue value) => _entries.RemoveAll(e => EqualityComparer<TValue>.Default.Equals(e.Value, value)) > 0;
+
     /// <summary>The value of the region that owns a place, or nothing.</summary>
     public bool TryGetValueAt(ParametricPoint point, out TValue value)
     {

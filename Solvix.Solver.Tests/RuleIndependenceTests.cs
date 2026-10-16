@@ -54,7 +54,7 @@ public class RuleIndependenceTests
         setup.SetLoads(setup.Expand(last, "XPlus", null, null), Pn);
         var mesh = rule.Build(coarse);
 
-        var problem = SolverFacade.BuildProblem(setup, coarse, mesh, counts);
+        var problem = SolverFacade.BuildProblem(setup, coarse, mesh);
         var solution = Solve(problem);
 
         Assert.That(solution.Converged, Is.True);
@@ -83,7 +83,7 @@ public class RuleIndependenceTests
         setup.SetLoads(setup.Expand(last, "XPlus", null, null), Pn);
         var mesh = rule.Build(coarse);
 
-        var problem = SolverFacade.BuildProblem(setup, coarse, mesh, new[] { nx, ny, nz });
+        var problem = SolverFacade.BuildProblem(setup, coarse, mesh);
 
         // the total force is the pressure times the area of the side (1 x 1), found by summing the real areas of the faces that got the pressure
         double area = 0;
