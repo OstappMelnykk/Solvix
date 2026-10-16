@@ -95,7 +95,7 @@ describe('QualityControlsComponent', () => {
     const gauge = text(root.querySelector('.gauge'));
 
     expect(text(root.querySelectorAll('.part')[1])).not.toContain('source of Solvix');    // the long description is not shown
-    expect(gauge).toContain('Витягнутість');
+    expect(gauge).toContain('Aspect ratio');
     expect(gauge).toContain('25.0');
     expect(gauge).not.toContain('Допустимо');
   });
@@ -187,7 +187,7 @@ describe('QualityControlsComponent', () => {
     const measures = Array.from(root.querySelectorAll<HTMLButtonElement>('.choice__measures .choice__btn'));
 
     expect(text(grade)).toBe('Оцінка');
-    expect(measures.map(m => text(m))).toEqual(['ВитягнутістьAspect ratio']);
+    expect(measures.map(m => text(m))).toEqual(['Aspect ratio']);
 
     measures[0].click();
     expect(solver.setQualityMetric).toHaveBeenCalledWith(1, 'aspectRatio');
@@ -220,7 +220,7 @@ describe('QualityControlsComponent', () => {
     expect(text(root.querySelector('.detail__head'))).toContain('Не приймається');
     expect(root.querySelectorAll('.gauge--compact').length).toBe(1);
     const compact = root.querySelector('.gauge--compact')!;
-    expect(text(compact)).toContain('Витягнутість');
+    expect(text(compact)).toContain('Aspect ratio');
     expect(compact.querySelector('.gauge__marker')).not.toBeNull();         // a ruler with a marker, the small one
     expect(text(compact.querySelector('.gauge__ticks'))).toContain('20');   // and the limit on it
   });

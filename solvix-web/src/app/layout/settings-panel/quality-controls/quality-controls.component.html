@@ -26,7 +26,7 @@
       <hr class="choice__line" />
       <div class="choice__measures">
         <button type="button" class="choice__btn" *ngFor="let l of metricChoices(); trackBy: trackLimit" [class.on]="metric() === l.key" [title]="l.hint" (click)="setMetric(l.key)">
-          <span>{{ l.label }}</span><small>{{ l.tech }}</small>
+          <span>{{ l.tech }}</span>
         </button>
       </div>
     </div>
@@ -125,7 +125,7 @@
 <ng-template #gaugeTpl let-m let-compact="compact">
   <div class="gauge" [class.gauge--compact]="compact">
     <div class="gauge__head">
-      <span class="gauge__name">{{ m.limit.label }} <small>{{ m.limit.tech }}</small>
+      <span class="gauge__name">{{ m.limit.tech }}
         <button type="button" class="gauge__info" aria-label="Що це за параметр" title="Що це за параметр" (click)="openInfo(m)">i</button>
       </span>
       <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
