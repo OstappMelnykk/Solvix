@@ -107,3 +107,25 @@ describe('buildFemMeshView with a result', () => {
     expect(other.setDeformation).toBeUndefined();
   });
 });
+
+describe('buildFemMeshView for the Quality World', () => {
+  const mesh = oneElement({ surfaceFaces: [0, 5] });
+
+  it('paints an element in the colour it is given, and leaves out the ones to skip', () => {
+    const view = buildFemMeshView(input(mesh, { elementColor: () => 0xff0000 }));
+    const color = (view.pickables[0] as THREE.Mesh).geometry.getAttribute('color');
+    expect(color.getX(0)).toBeGreaterThan(color.getY(0) * 3);
+    const none = buildFemMeshView(input(mesh, { skipElement: () => true }));
+    expect((none.pickables[0] as THREE.Mesh).geometry.getAttribute('position').count).toBe(0);
+  });
+
+  it('with only the edges the faces stay to be pointed at but cannot be seen, and the edges take the element\'s colour', () => {
+    const view = buildFemMeshView(input(mesh, { look: 'edges', elementColor: () => 0xff0000 }));
+    const body = view.pickables[0] as THREE.Mesh;
+    expect((body.material as THREE.MeshBasicMaterial).opacity).toBe(0);
+    const edges = view.root.children.find(o => o.userData['edges']) as THREE.LineSegments;
+    const color = edges.geometry.getAttribute('color');
+    expect(color.getX(0)).toBe(1);
+    expect(color.getY(0)).toBe(0);
+  });
+});

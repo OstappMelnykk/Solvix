@@ -34,9 +34,12 @@ export interface QualityPick {
   readonly ex: number;
   readonly ey: number;
   readonly ez: number;
+  // In a locally refined body the element is named by its key (its place in a grid means nothing there).
+  readonly key?: string | null;
 }
 
-export const sameElement = (a: QualityPick, b: QualityPick): boolean => a.hex === b.hex && a.ex === b.ex && a.ey === b.ey && a.ez === b.ez;
+export const sameElement = (a: QualityPick, b: QualityPick): boolean =>
+  a.key != null && b.key != null ? a.key === b.key : a.hex === b.hex && a.ex === b.ex && a.ey === b.ey && a.ez === b.ez;
 
 export type MarksPage = 'solver' | 'quality';
 export interface Marks {
@@ -529,7 +532,7 @@ export class SolverService {
     this.touch(sessionId);
     const now = entry.qualityPick;
     if (now) {
-      this.api.qualityOfElement(sessionId, now).subscribe({
+      (now.key != null && this.isLocal(sessionId) ? this.api.qualityOfElementByKey(sessionId, now.key) : this.api.qualityOfElement(sessionId, now)).subscribe({
         next: detail => {
           // the user may have picked another element while this one was on its way
           if (entry.qualityPick && sameElement(entry.qualityPick, now)) {
@@ -547,7 +550,7 @@ export class SolverService {
     const entry = this.entry(sessionId);
     const state = this.editor.getState(sessionId);
     if (!state || state.hexes.length === 0) return;
-    const key = `${state.version}:${state.hexes.length}:${this.divisions(sessionId).join('x')}`;
+    const key = `${state.version}:${state.hexes.length}:${this.divisions(sessionId).join('x')}:${entry.setup?.refinements?.length ?? 0}`;
     if (entry.qualityKey === key) return;
     entry.qualityKey = key;
     entry.qualityPick = null;            // the mesh changed under it

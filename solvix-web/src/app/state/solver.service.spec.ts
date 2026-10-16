@@ -187,6 +187,16 @@ describe('SolverService', () => {
       expect(http.expectOne(`${api}/${sessionId}/mesh/elements/material`).request.body.elementKeys).toEqual(['a', 'b']);
     });
 
+    it('asks for the quality of a picked element by its key, and tells two picks apart by it', () => {
+      loadMesh();
+      solver.setQualityPick(sessionId, { hex: 0, ex: 0, ey: 0, ez: 0, key: 'a' });
+      http.expectOne(r => r.url === `${api}/${sessionId}/quality/element-by-key` && r.params.get('key') === 'a').flush({ hex: 0, ex: 0, ey: 0, ez: 0, profiles: [] });
+
+      solver.setQualityPick(sessionId, { hex: 0, ex: 0, ey: 0, ez: 0, key: 'b' });
+      expect(solver.qualityPick(sessionId)?.key).toBe('b');
+      http.expectOne(r => r.url === `${api}/${sessionId}/quality/element-by-key` && r.params.get('key') === 'b');
+    });
+
     it('highlights what a click would reach, and offers the scopes a refined body has', () => {
       loadMesh();
       solver.setTool(sessionId, 'fix');

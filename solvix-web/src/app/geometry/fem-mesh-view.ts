@@ -27,12 +27,17 @@ export interface FemMeshViewInput {
   readonly deformationScale?: number;
   readonly colorMax?: number | null;
   readonly vectors?: boolean;
+  // The Quality World's use: the colour an element is drawn in (null = as usual), elements left out, and whether the faces are filled or only the edges are drawn (in the elements' colours).
+  readonly elementColor?: (element: number) => number | null;
+  readonly skipElement?: (element: number) => boolean;
+  readonly look?: 'solid' | 'edges';
 }
 
 const RESOLUTION = 3;
 const EDGE_SEGMENTS = 6;
 const LIGHT = new THREE.Vector3(0.45, 0.8, 0.55).normalize();
 const EDGE_COLOR = 0x1a1d23;
+const PALE_EDGE_COLOR = 0xe6e8ec;
 // local face 0..5 as the solver numbers them
 const LOCAL_FACE_NAMES = ['ZMinus', 'ZPlus', 'YMinus', 'YPlus', 'XMinus', 'XPlus'] as const;
 
@@ -100,7 +105,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   const pickables: THREE.Object3D[] = [];
   const hidden = input.hiddenMaterials ?? new Set<string>();
   const materialOf = (element: number) => mesh.materials[element] || input.defaultMaterial;
-  const visible = pairs(mesh.surfaceFaces).filter(f => !hidden.has(materialOf(f.element)));
+  const visible = pairs(mesh.surfaceFaces).filter(f => !hidden.has(materialOf(f.element)) && !input.skipElement?.(f.element));
   const fixed = new Set(pairs(mesh.fixedFaces).map(faceId));
   const loaded = new Map<number, number>();
   pairs(mesh.loadedFaces).forEach((f, i) => loaded.set(faceId(f), mesh.pressures[i] ?? 0));
@@ -172,9 +177,15 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
 
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
+  const wire = input.look === 'edges';
   const body = new THREE.Mesh(
-    faceGeometry(visible, f => (materialOf(f.element) === input.defaultMaterial ? new THREE.Color(input.bodyColor) : materialColor(materialOf(f.element))), true, values !== null),
-    new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
+    faceGeometry(visible, f => {
+      const own = input.elementColor?.(f.element);
+      if (own !== null && own !== undefined) return new THREE.Color(own);
+      return materialOf(f.element) === input.defaultMaterial ? new THREE.Color(input.bodyColor) : materialColor(materialOf(f.element));
+    }, true, values !== null),
+    // with only the edges drawn the faces are there to be pointed at, not to be seen
+    wire ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }) : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
   );
   markForWeightedOit(body.material as THREE.Material);
   // a click lands on a triangle; its face is the triangle's number divided by the triangles of one face
@@ -204,13 +215,18 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
 
   // the edges of every face
   const lines: number[] = [];
+  const lineColors: number[] = [];
   const movedLines: number[] = [];
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
   const sides: readonly (readonly [number, number, number, number])[] = [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1], [-1, 1, -1, -1]];
   const displacedOn = (f: SurfaceFace, u: number, v: number, out: THREE.Vector3) =>
     pointOn(mesh, f.element, f.face, u, v, out).add(moved.set(scalarOn(mesh, f.element, f.face, u, v, result!.ux), scalarOn(mesh, f.element, f.face, u, v, result!.uy), scalarOn(mesh, f.element, f.face, u, v, result!.uz)));
+  const darkEdge = new THREE.Color(EDGE_COLOR);
+  const paleEdge = new THREE.Color(PALE_EDGE_COLOR);
   for (const f of visible) {
+    const own = wire ? input.elementColor?.(f.element) : null;
+    const edgeColor = wire ? (own !== null && own !== undefined ? new THREE.Color(own) : paleEdge) : darkEdge;
     for (const [u0, v0, u1, v1] of sides) {
       pointOn(mesh, f.element, f.face, u0, v0, a);
       const movedStart = result ? displacedOn(f, u0, v0, new THREE.Vector3()) : null;
@@ -221,6 +237,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
         const v = v0 + (v1 - v0) * t;
         pointOn(mesh, f.element, f.face, u, v, b);
         lines.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        lineColors.push(edgeColor.r, edgeColor.g, edgeColor.b, edgeColor.r, edgeColor.g, edgeColor.b);
         a.copy(b);
         if (movedLast) {
           const next = displacedOn(f, u, v, new THREE.Vector3());
@@ -233,8 +250,9 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   if (lines.length > 0) {
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    buffer.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
     if (result) deformables.push(deformable(buffer, lines, movedLines));
-    const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
+    const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true }));
     edges.userData['edges'] = true;
     edges.visible = input.edges !== false;
     root.add(edges);

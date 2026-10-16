@@ -259,7 +259,8 @@ export class RenderWindowComponent {
     if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick?.kind === 'face' ? pick : null);
     else if (this.activeWorldIndex() === QUALITY_WORLD_INDEX) {
       // a click on a small element picks it in the quality list; a click on nothing clears the pick
-      if (pick?.kind === 'face' && pick.element) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: pick.element[0], ey: pick.element[1], ez: pick.element[2] });
+      if (pick?.kind === 'face' && pick.elementKey !== undefined) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: 0, ey: 0, ez: 0, key: pick.elementKey });
+      else if (pick?.kind === 'face' && pick.element) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: pick.element[0], ey: pick.element[1], ez: pick.element[2] });
       else if (this.solver.qualityPick(sessionId) !== null) this.solver.setQualityPick(sessionId, null);
     } else this.meshSelection.applyPick(sessionId, pick, additive);
   }
