@@ -37,8 +37,8 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Esc', action: 'зняти виділення' },
   { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
   { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
-  { keys: '← →  ↑ ↓', action: 'зсув вузла по X і Z (Shift — ×10)' },
-  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла по Y: вгору / вниз (Shift — ×10)' },
+  { keys: '← →  ↑ ↓', action: 'зсув вузла по X і Z (Shift — ×10, перший крок до цілого)' },
+  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла по Y: вгору / вниз (Shift — ×10, перший крок до цілого)' },
   { keys: '?', action: 'ця підказка' }
 ];
 
@@ -423,12 +423,19 @@ export class MeshEditorControlsComponent {
     this.moveSelectedNode({ x: this.nodeCoord('x'), y: this.nodeCoord('y'), z: this.nodeCoord('z'), [axis]: value });
   }
 
+  // One step along an axis. A coarse step (multiplier above 1, the Shift key) first goes to the nearest whole number in its direction; from a whole
+  // number it is the step times the multiplier.
   nudge(axis: Axis, direction: 1 | -1, multiplier = 1): void {
+    const value = this.nodeCoord(axis);
+    let next = value + direction * this.nudgeStep * multiplier;
+    if (multiplier > 1 && Math.abs(value - Math.round(value)) > 1e-9) {
+      next = direction > 0 ? Math.floor(value) + 1 : Math.ceil(value) - 1;
+    }
     this.moveSelectedNode({
       x: this.nodeCoord('x'),
       y: this.nodeCoord('y'),
       z: this.nodeCoord('z'),
-      [axis]: this.nodeCoord(axis) + direction * this.nudgeStep * multiplier
+      [axis]: next
     });
   }
 

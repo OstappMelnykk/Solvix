@@ -78,7 +78,7 @@ describe('MeshEditorControlsComponent', () => {
       const points = Array.from(root.querySelectorAll('.points li')).map(e => e.textContent!.trim());
       expect(points).toContain('куб 0 — №1, кут');
       expect(points).toContain('куб 1 — №0, кут');
-      expect(points).toContain('Shift — крок ×10');
+      expect(points).toContain('Shift — ×10; перший крок до найближчого цілого');
       expect(root.textContent).not.toContain('глобальний id');
     });
 
@@ -566,6 +566,24 @@ describe('MeshEditorControlsComponent', () => {
       expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 0.9 }, false);
       press('PageDown', { shiftKey: true });
       expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 0, z: 1 }, false);
+    });
+
+    it('a Shift step first goes to the nearest whole number in its direction, and from a whole number it is ten steps', () => {
+      const base = singleCubeState();
+      state = { ...base, nodes: base.nodes.map(n => (n.id === 6 ? { ...n, x: 1.35 } : n)) };
+      selection.selectNode(1, 6);
+      component.nudgeStep = 0.1;
+
+      press('ArrowRight', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 2, y: 1, z: 1 }, false);
+      press('ArrowLeft', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 1, y: 1, z: 1 }, false);
+      press('ArrowRight');                                                      // a small step is a small step
+      expect((editor.moveNode.calls.mostRecent().args[2] as { x: number }).x).toBeCloseTo(1.45, 9);
+
+      state = base;                                                              // on a whole number: ten steps
+      press('ArrowRight', { shiftKey: true });
+      expect(editor.moveNode).toHaveBeenCalledWith(1, 6, { x: 2, y: 1, z: 1 }, false);
     });
 
     it('moves along Y also with ] and [ (by the place of the key) and Alt + up/down, for a keyboard without PageUp and PageDown', () => {
