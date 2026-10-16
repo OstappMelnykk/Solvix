@@ -75,8 +75,6 @@
 
 <div class="group">
   <div class="group-label"><span class="step">2</span> Навантаження і опори</div>
-  <div class="hint">Малюйте на сцені інструментами «Тиск» і «Опора»: клік по грані, або «Пензель» — проведіть по поверхні. Тут задається лише величина тиску.</div>
-
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
     Pn — тиск для нових граней (Па)
     <input type="number" step="100000" [value]="pressure()" (change)="onPressure($event)" />
