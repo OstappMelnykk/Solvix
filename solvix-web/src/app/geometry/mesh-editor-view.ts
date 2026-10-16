@@ -148,7 +148,7 @@ const CORNER_HIT_RADIUS = 0.11;
 const MIDPOINT_HIT_RADIUS = 0.08;
 
 // One tone for every face of the body, so no face looks like another kind: only a candidate for linking (orange) and a picked face differ.
-const BODY_FACE_COLOR = 0x8e9aab;
+const BODY_FACE_COLOR = 0x4a8fe3;
 const CANDIDATE_FACE_COLOR = 0xe08a2e;
 // how opaque a face that is not picked is (a candidate for linking shows through the body a little more than the user's setting)
 const CANDIDATE_MIN_OPACITY = 0.4;
