@@ -347,7 +347,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.paintFrame = requestAnimationFrame(() => {
         this.paintFrame = 0;
         const pick = this.pickAt(x, y);
-        const key = pick && pick.kind === 'face' ? `${pick.hex}:${pick.face}:${pick.p}:${pick.q}:${pick.element?.join(',')}` : '';
+        const key = pick && pick.kind === 'face' ? `${pick.hex}:${pick.face}:${pick.p}:${pick.q}:${pick.element?.join(',')}:${pick.elementKey}:${pick.localFace}` : '';
         if (key !== '' && key !== this.lastPaintKey) {
           this.lastPaintKey = key;
           this.paint.emit({ phase: 'move', pick });

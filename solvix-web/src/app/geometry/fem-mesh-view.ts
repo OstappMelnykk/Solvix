@@ -36,6 +36,10 @@ export interface FemMeshViewInput {
   readonly look?: 'solid' | 'edges';
   // Also draw the edges inside the body (of every face of every element, once), not only those of the surface.
   readonly innerEdges?: boolean;
+  // Draw every face of every element once - the ones inside the body too, not only those on its surface (the Solver World's "inner faces"; the whole shape of the elements that are shown alone).
+  readonly allFaces?: boolean;
+  // Which of two elements that share a face gives it its colour: the one with the higher rank (default: the first).
+  readonly rank?: (element: number) => number;
   // Draw the edges once more over everything, with this strength (0..1): what shows through a see-through body (the edges inside it). 0 = only where nothing is in front.
   readonly ghostEdges?: number;
   // The width of the edges in pixels (default one pixel line). Not for a result: its edges move with the deformation, which needs the plain line.
@@ -125,7 +129,23 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   const pickables: THREE.Object3D[] = [];
   const hidden = input.hiddenMaterials ?? new Set<string>();
   const materialOf = (element: number) => mesh.materials[element] || input.defaultMaterial;
-  const visible = pairs(mesh.surfaceFaces).filter(f => !hidden.has(materialOf(f.element)) && !input.skipElement?.(f.element));
+  const kept = (element: number) => !hidden.has(materialOf(element)) && !input.skipElement?.(element);
+  const surface = new Set(pairs(mesh.surfaceFaces).map(faceId));
+  // every face of the elements that are kept, once (a face two kept elements share is one face)
+  const uniqueFaces = (): SurfaceFace[] => {
+    const best = new Map<string, SurfaceFace>();
+    for (let element = 0; element < mesh.keys.length; element++) {
+      if (!kept(element)) continue;
+      for (let face = 0; face < 6; face++) {
+        const key = cornerKey(mesh, element, face);
+        const had = best.get(key);
+        if (!had || (input.rank?.(element) ?? 0) > (input.rank?.(had.element) ?? 0)) best.set(key, { element, face });
+      }
+    }
+    return [...best.values()];
+  };
+  const everyFace = input.allFaces || input.innerEdges ? uniqueFaces() : [];
+  const visible = input.allFaces ? everyFace : pairs(mesh.surfaceFaces).filter(f => kept(f.element));
   const fixed = new Set(pairs(mesh.fixedFaces).map(faceId));
   const loaded = new Map<number, number>();
   pairs(mesh.loadedFaces).forEach((f, i) => loaded.set(faceId(f), mesh.pressures[i] ?? 0));
@@ -212,7 +232,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   const resolvePick = (triangle: number): PickedFace | null => {
     const f = visible[Math.floor(triangle / trianglesPerFace)];
     if (!f) return null;
-    return { kind: 'face', hex: mesh.hexIds[f.element], face: LOCAL_FACE_NAMES[f.face], elementKey: mesh.keys[f.element], localFace: f.face };
+    return { kind: 'face', hex: mesh.hexIds[f.element], face: LOCAL_FACE_NAMES[f.face], elementKey: mesh.keys[f.element], localFace: f.face, inner: !surface.has(faceId(f)) };
   };
   body.userData['resolvePick'] = resolvePick;
   body.userData['pick'] = resolvePick(0);
@@ -245,20 +265,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   const darkEdge = new THREE.Color(EDGE_COLOR);
   const paleEdge = new THREE.Color(PALE_EDGE_COLOR);
   // the faces whose edges are drawn: the surface ones, or every face once (a face inside the body belongs to two elements)
-  let edgeFaces: SurfaceFace[] = visible;
-  if (input.innerEdges) {
-    const seen = new Set<string>();
-    edgeFaces = [];
-    for (let element = 0; element < mesh.keys.length; element++) {
-      if (hidden.has(materialOf(element)) || input.skipElement?.(element)) continue;
-      for (let face = 0; face < 6; face++) {
-        const id = cornerKey(mesh, element, face);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        edgeFaces.push({ element, face });
-      }
-    }
-  }
+  const edgeFaces: SurfaceFace[] = input.innerEdges ? everyFace : visible;
   for (const f of edgeFaces) {
     const own = wire ? input.elementColor?.(f.element) : null;
     const edgeColor = wire ? (own !== null && own !== undefined ? new THREE.Color(own) : paleEdge) : darkEdge;

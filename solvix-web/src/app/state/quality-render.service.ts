@@ -94,7 +94,11 @@ export class QualityRenderService {
       showFixed: marks.fixed,
       showLoads: marks.loads,
       elementColor: element => (grades ? RESULT_COLORS[rejected(element) ? 'rejected' : 'accepted'] : null),
-      skipElement: element => onlyBad && !!grades && !rejected(element)
+      skipElement: element => onlyBad && !!grades && !rejected(element),
+      // the edges inside the body show in the edges look; a bad element is shown whole, not only where it is on the surface
+      innerEdges: look === 'edges',
+      allFaces: onlyBad,
+      rank: element => (rejected(element) ? 1 : 0)
     });
     const picked = this.solver.qualityPick(sessionId);
     if (picked?.key != null && view.setHighlight) view.setHighlight(buildFemHighlight(mesh, index, { faces: [], elements: [picked.key], pointed: null }));

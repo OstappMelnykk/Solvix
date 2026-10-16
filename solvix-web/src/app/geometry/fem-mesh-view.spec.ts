@@ -179,3 +179,39 @@ describe('buildFemMeshView with wide edges', () => {
     expect((body.material as THREE.MeshBasicMaterial).polygonOffset).toBeTrue();
   });
 });
+
+describe('buildFemMeshView with every face', () => {
+  // two elements stacked along z (the face between them is inside), only the first on the surface of the body except for its top
+  const stacked = (): SolverMeshDto => {
+    const connectivity: number[] = [];
+    for (let e = 0; e < 2; e++) {
+      const slots = new Array(20).fill(0);
+      for (let i = 0; i < 4; i++) { slots[i] = 4 * e + i; slots[4 + i] = 4 * (e + 1) + i; }
+      connectivity.push(...slots);
+    }
+    return { ...oneElement(), elementCount: 2, hexIds: [7, 7], keys: ['a', 'b'], materials: ['', ''], connectivity, positions: new Array(60).fill(0), surfaceFaces: [0, 0, 1, 1] };
+  };
+  const faceCount = (view: ReturnType<typeof buildFemMeshView>) => (view.pickables[0] as THREE.Mesh).geometry.getAttribute('position').count / 16;
+  const resolve = (view: ReturnType<typeof buildFemMeshView>, face: number) => (view.pickables[0] as THREE.Mesh).userData['resolvePick'](face * 18) as { inner: boolean; elementKey: string };
+
+  it('draws only the surface faces, or all of them once when asked, the ones inside marked as inside', () => {
+    expect(faceCount(buildFemMeshView(input(stacked())))).toBe(2);
+    const all = buildFemMeshView(input(stacked(), { allFaces: true }));
+    expect(faceCount(all)).toBe(11);
+    expect(Array.from({ length: 11 }, (_, i) => resolve(all, i).inner).filter(Boolean).length).toBe(9);
+  });
+
+  it('an element shown alone is shown whole, and a face two shown elements share is drawn once', () => {
+    const alone = buildFemMeshView(input(stacked(), { allFaces: true, skipElement: (e: number) => e === 1 }));
+    expect(faceCount(alone)).toBe(6);
+    expect(Array.from({ length: 6 }, (_, i) => resolve(alone, i).elementKey)).toEqual(Array(6).fill('a'));
+  });
+
+  it('the face between two elements takes its colour from the one of the higher rank', () => {
+    const view = buildFemMeshView(input(stacked(), { allFaces: true, elementColor: (e: number) => (e === 1 ? 0xff0000 : 0x00ff00), rank: (e: number) => e }));
+    const colors = (view.pickables[0] as THREE.Mesh).geometry.getAttribute('color');
+    const shared = Array.from({ length: 11 }, (_, i) => i).find(i => resolve(view, i).elementKey === 'b' && resolve(view, i).inner)!;
+    expect(colors.getX(shared * 16)).toBeGreaterThan(0.3);
+    expect(colors.getY(shared * 16)).toBeLessThan(0.1);
+  });
+});

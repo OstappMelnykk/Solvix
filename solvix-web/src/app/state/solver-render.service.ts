@@ -81,6 +81,7 @@ export class SolverRenderService {
             showLoads: input.showLoads,
             edges: display.edges,
             edgeWidth: 1.8,
+            allFaces: input.showInner === true,
             result: input.result,
             field: input.field,
             deformationScale: input.deformationScale,

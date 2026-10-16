@@ -14,8 +14,8 @@ import { SolverService } from '../../../state/solver.service';
     <span title="Скінченні елементи, на яких рахує солвер: листки сітки">Листкових (скінченних): <b>{{ leaves() ?? '…' }}</b></span>
   </div>`,
   styles: [`
-    :host { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); pointer-events: none; z-index: 2; }
-    .counts { display: flex; gap: 18px; padding: 6px 14px; border: 1px solid #393b40; border-radius: 8px; background: #2b2d31; color: #dfe1e5; font: inherit; font-size: 14px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
+    :host { position: absolute; left: 214px; top: 10px; pointer-events: none; z-index: 2; }
+    .counts { display: flex; gap: 18px; padding: 6px 14px; border: 1px solid #393b40; border-radius: 8px; background: #2b2d31; color: #dfe1e5; font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); }
     b { color: #fff; font-weight: 600; }
   `]
 })

@@ -805,12 +805,17 @@ export class SolverService {
   }
 
   // The setup lists every small face, so these are the counts of the divided mesh's faces.
+  // In a refined body the faces are those of the solver's mesh (the setup's cell lists mean nothing there).
   loadedFaceCount(sessionId: number): number {
-    return this.entry(sessionId).setup?.loads.length ?? 0;
+    const entry = this.entry(sessionId);
+    if (this.isLocal(sessionId)) return (entry.mesh?.loadedFaces.length ?? 0) / 2;
+    return entry.setup?.loads.length ?? 0;
   }
 
   fixedFaceCount(sessionId: number): number {
-    return this.entry(sessionId).setup?.fixed.length ?? 0;
+    const entry = this.entry(sessionId);
+    if (this.isLocal(sessionId)) return (entry.mesh?.fixedFaces.length ?? 0) / 2;
+    return entry.setup?.fixed.length ?? 0;
   }
 
   // Every outer face with this name - how a whole side of a body is chosen in one go.
@@ -879,7 +884,9 @@ export class SolverService {
   // The pressures that are set and how many small faces carry each, strongest first.
   loadedPressures(sessionId: number): { pressure: number; count: number }[] {
     const counts = new Map<number, number>();
-    for (const l of this.entry(sessionId).setup?.loads ?? []) counts.set(l.pressure, (counts.get(l.pressure) ?? 0) + 1);
+    const mesh = this.entry(sessionId).mesh;
+    if (this.isLocal(sessionId)) for (const p of mesh?.pressures ?? []) counts.set(p, (counts.get(p) ?? 0) + 1);
+    else for (const l of this.entry(sessionId).setup?.loads ?? []) counts.set(l.pressure, (counts.get(l.pressure) ?? 0) + 1);
     return Array.from(counts, ([pressure, count]) => ({ pressure, count })).sort((a, b) => Math.abs(b.pressure) - Math.abs(a.pressure));
   }
 
@@ -939,6 +946,10 @@ export class SolverService {
     if (entry.tool === 'material') {
       if (entry.scope === 'cube') this.apply(sessionId, this.api.setHexMaterial(sessionId, [pick.hex], entry.activeMaterial));
       else this.apply(sessionId, this.api.paintElements(sessionId, femElementTargets(pick, entry.scope, entry.mesh), entry.activeMaterial));
+      return;
+    }
+    if (pick.inner) {
+      this.notifications.warning('Ця грань усередині тіла: закріплювати й навантажувати можна лише зовнішні.');
       return;
     }
     const faces = femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex);
@@ -1072,6 +1083,10 @@ export class SolverService {
   private paintStartInMesh(sessionId: number, pick: PickedFace): void {
     const entry = this.entry(sessionId);
     if (!entry.mesh || !entry.meshIndex || !isFemPick(pick)) return;
+    if (pick.inner && entry.tool !== 'material') {
+      this.notifications.warning('Ця грань усередині тіла: закріплювати й навантажувати можна лише зовнішні.');
+      return;
+    }
     let erase = false;
     if (entry.tool === 'erase') erase = true;
     else if (entry.tool !== 'material') {
@@ -1086,6 +1101,7 @@ export class SolverService {
     const entry = this.entry(sessionId);
     const stroke = entry.femStroke;
     if (!stroke || !entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return;
+    if (pick.inner && entry.tool !== 'material') return;
     if (entry.tool === 'material') {
       if (entry.scope === 'cube') stroke.hexes.add(pick.hex);
       else for (const key of femElementTargets(pick, entry.scope, entry.mesh)) stroke.elements.add(key);
