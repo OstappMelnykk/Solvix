@@ -296,7 +296,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     root.add(edges);
     if (ghost > 0.01) {
       const through: THREE.Object3D = wide
-        ? wideLines(lines, lineColors, input.edgeWidth!, { opacity: ghost, depthTest: false })
+        ? wideLines(lines, lineColors, Math.max(1, input.edgeWidth! * 0.8), { opacity: ghost, depthTest: false })
         : new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: ghost, depthTest: false }));
       through.userData['edges'] = true;
       through.visible = input.edges !== false;
@@ -404,7 +404,7 @@ export function buildFemHighlight(mesh: SolverMeshDto, index: FemIndex, target: 
   }
   if (lines.length > 0) {
     const yellow = new THREE.Color(HIGHLIGHT_COLOR);
-    group.add(wideLines(lines, lines.flatMap((_, i) => (i % 3 === 0 ? [yellow.r, yellow.g, yellow.b] : [])), 3, { opacity: 1, depthTest: false }));
+    group.add(wideLines(lines, lines.flatMap((_, i) => (i % 3 === 0 ? [yellow.r, yellow.g, yellow.b] : [])), 2, { opacity: 1, depthTest: false }));
   }
   group.renderOrder = 10;
   group.traverse(o => (o.frustumCulled = false));
@@ -412,7 +412,7 @@ export function buildFemHighlight(mesh: SolverMeshDto, index: FemIndex, target: 
 }
 
 // The outline of whole cubes (the elements before the first refinement), from each cube's 20 node positions in slot order: its 12 edges as the curves they are.
-export function buildCubeOutline(cubes: readonly (readonly THREE.Vector3[])[], width = 3): THREE.Group {
+export function buildCubeOutline(cubes: readonly (readonly THREE.Vector3[])[], width = 2): THREE.Group {
   const group = new THREE.Group();
   const lines: number[] = [];
   for (const slots of cubes) {

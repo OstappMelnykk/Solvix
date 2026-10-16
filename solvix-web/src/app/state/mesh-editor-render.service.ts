@@ -13,6 +13,9 @@ import { remapMesh } from '../geometry/fem-remap';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withNodeMoved } from '../geometry/mesh-editor-view';
 
+// The width of the refined mesh's edges, in CSS pixels: a plain line is one device pixel (half of this on a Retina screen), so this is a little thicker, not a lot.
+const EDGE_WIDTH = 1.25;
+
 interface Cached {
   readonly key: string;
   readonly view: MeshView | null;
@@ -98,7 +101,7 @@ export class MeshEditorRenderService {
     if (this.solver.isLocal(sessionId)) {
       if (!mesh || !index) return { view };
       const placed = remapMesh(mesh, state, mode);
-      const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, edgeWidth: 2.5, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
+      const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, edgeWidth: EDGE_WIDTH, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
       view.root.add(fem.root);
       outline = keys => buildFemHighlight(placed, index, { faces: [], elements: keys, pointed: null }, 4000);
       if (this.solver.refineMode(sessionId)) pickables = fem.pickables;
