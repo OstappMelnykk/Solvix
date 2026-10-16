@@ -49,23 +49,31 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         if (new[] { step.NI, step.NJ, step.NK }.Any(n => n < 2 || n > SolverSetup.MaxDivision)) throw new ArgumentException($"Кількість частин по кожній осі має бути від 2 до {SolverSetup.MaxDivision}.");
         if (step.TransitionDepth is < 0 or > 2) throw new ArgumentException("Ширина перехідної зони: 0, 1 або 2.");
         if (mesh.ElementCount == 0) throw new ArgumentException("Немає жодного куба.");
-        // "hex:7" names the whole cube 7 as it is at the start (what a click on a cube of the even mesh means); any other key is a leaf key the mesh has given
-        var leaves = step.Leaves.Select(k => k.StartsWith("hex:") && int.TryParse(k.AsSpan(4), out int id) ? LocalRefinement.RootKey(id) : k).ToList();
-        var candidate = new RefinementStep(leaves, step.NI, step.NJ, step.NK, step.TransitionDepth);
         try
         {
-            // the step must name something that is there, and the whole refinement must still be possible with it
             var before = new LocalRefinement(s.Setup.Refinements.ToList()).Replay(mesh);
-            var wanted = leaves.ToHashSet();
-            if (!before.Cells.Values.Any(c => wanted.Contains(LocalRefinement.LeafKey(before, c, mesh.ElementIds)))) throw new ArgumentException("Обраних ділянок уже немає в сітці.");
+            // "hex:7" names the whole cube 7 as it is now (what a click on a cube means): every leaf the cube is made of at the moment, the cube itself when it has not been refined;
+            // any other key is a leaf key the mesh has given
+            var present = before.Cells.Values.ToDictionary(c => LocalRefinement.LeafKey(before, c, mesh.ElementIds), c => c);
+            var leaves = new List<string>();
+            foreach (var k in step.Leaves)
+            {
+                if (k.StartsWith("hex:") && int.TryParse(k.AsSpan(4), out int id))
+                    leaves.AddRange(before.Cells.Values.Where(c => mesh.ElementIds[c.Root] == id).Select(c => LocalRefinement.LeafKey(before, c, mesh.ElementIds)));
+                else leaves.Add(k);
+            }
+            leaves = leaves.Distinct().ToList();
+            // the step must name something that is there, and the whole refinement must still be possible with it
+            if (!leaves.Any(present.ContainsKey)) throw new ArgumentException("Обраних ділянок уже немає в сітці.");
+            var candidate = new RefinementStep(leaves, step.NI, step.NJ, step.NK, step.TransitionDepth);
             var after = new LocalRefinement(s.Setup.Refinements.Append(candidate).ToList()).Build(mesh);
             if (after.ElementCount > 4 * SolverValidator.MaxElements) throw new ArgumentException($"Забагато елементів ({after.ElementCount}).");
+            s.Setup.AddRefinement(candidate);
         }
         catch (InvalidOperationException exception)
         {
             throw new ArgumentException($"Згущення неможливе: {exception.Message}");
         }
-        s.Setup.AddRefinement(candidate);
         s.Result = null;
         return s.Setup.ToDto();
     });

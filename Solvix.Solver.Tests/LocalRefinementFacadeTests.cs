@@ -31,6 +31,21 @@ public class LocalRefinementFacadeTests
     }
 
     [Test]
+    public void The_whole_cube_by_its_hex_name_means_all_it_is_made_of_now_so_it_can_be_refined_again()
+    {
+        var facade = NewFacade();
+        var coarse = Export(Bar(2));
+        var step = new RefinementStepDto(new[] { "hex:" + coarse.ElementIds[0] }, 2, 2, 2);
+
+        facade.AddLocalRefinement(Session, coarse, step);
+        int once = facade.GetMesh(Session, coarse).ElementCount;
+        var setup = facade.AddLocalRefinement(Session, coarse, step);        // the cube is no longer one leaf: the name still reaches all its leaves
+
+        Assert.That(setup.Refinements, Has.Count.EqualTo(2));
+        Assert.That(facade.GetMesh(Session, coarse).ElementCount, Is.GreaterThan(once));
+    }
+
+    [Test]
     public void Refining_a_cube_makes_a_mesh_of_flat_elements_each_with_a_key_of_its_own()
     {
         var facade = NewFacade();
