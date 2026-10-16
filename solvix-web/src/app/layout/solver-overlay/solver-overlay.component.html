@@ -80,10 +80,12 @@
     <input type="range" min="5" max="100" step="1" [value]="opacityPercent()" (input)="onOpacity($event)" aria-label="Прозорість" />
     <span class="value">{{ opacityPercent() }}%</span>
   </div>
-  <button type="button" class="toggle" [class.toggle--on]="showMark('fixed')" [attr.aria-pressed]="showMark('fixed')" title="Сині грані: де тіло закріплене" (click)="toggleMark('fixed')">Показувати закріплення</button>
-  <button type="button" class="toggle" [class.toggle--on]="showMark('loads')" [attr.aria-pressed]="showMark('loads')" title="Зелені грані: де прикладене навантаження" (click)="toggleMark('loads')">Показувати навантаження</button>
-  <button type="button" class="toggle" [class.toggle--on]="showInner()" [attr.aria-pressed]="showInner()" title="Малювати грані між елементами: видно сітку всередині тіла" (click)="toggleInner()">Внутрішні грані</button>
-  <button type="button" class="toggle" *ngIf="hasResult()" [class.toggle--on]="showVectors()" [attr.aria-pressed]="showVectors()" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно" (click)="toggleVectors()">Стрілки зсуву</button>
+  <div class="toggles">
+    <button type="button" class="toggle" [class.toggle--on]="showMark('fixed')" [attr.aria-pressed]="showMark('fixed')" title="Сині грані: де тіло закріплене" (click)="toggleMark('fixed')">Закріплення</button>
+    <button type="button" class="toggle" [class.toggle--on]="showMark('loads')" [attr.aria-pressed]="showMark('loads')" title="Зелені грані: де прикладене навантаження" (click)="toggleMark('loads')">Навантаження</button>
+    <button type="button" class="toggle" [class.toggle--on]="showInner()" [attr.aria-pressed]="showInner()" title="Малювати грані між елементами: видно сітку всередині тіла" (click)="toggleInner()">Внутрішні грані</button>
+    <button type="button" class="toggle" *ngIf="hasResult()" [class.toggle--on]="showVectors()" [attr.aria-pressed]="showVectors()" title="Стрілки показують, куди зсувається кожна точка; довжина й колір — наскільки сильно" (click)="toggleVectors()">Стрілки зсуву</button>
+  </div>
   <div class="control" *ngIf="hasResult()" title="Множник переміщень для візуалізації. Реальні переміщення на ×1 непомітні.">
     <span class="caption">Деформація ×</span>
     <input type="number" class="num" min="0" [max]="top()" step="any" [value]="scale()" (change)="onScaleNumber($event)" />
