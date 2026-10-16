@@ -267,11 +267,11 @@ public static class HexTemplates
     });
 
     // A block whose inner vertices are shaken about at random: the cubes come out skewed and stretched, so the mesh
-    // quality is poor in many places. It exists to try smoothing (and the quality page) on. The shake is a fixed
+    // quality is poor in many places. It exists to try the quality page on. The shake is a fixed
     // function of the vertex and the seed, so the same numbers always give the same body, and the vertices on the
     // outside of the block stay where they are, so its shape is a plain box. Beyond about a quarter of a cube the shake
     // starts to fold cubes (tried over 40 seeds: none at 0.25, about half at 0.3), so that is the limit.
-    private static TemplateKind RoughBlock() => new("rough-block", "Нерівна сітка (для згладжування)", "Для випробувань", new[]
+    private static TemplateKind RoughBlock() => new("rough-block", "Нерівна сітка (для перевірки якості)", "Для випробувань", new[]
     {
         P("countX", "Кубів по X", 5, 3, 20, true), P("countY", "Кубів по Y", 5, 3, 20, true), P("countZ", "Кубів по Z", 5, 3, 20, true),
         P("length", "Довжина (X)", 5, 0.01, 1000), P("height", "Висота (Y)", 5, 0.01, 1000), P("depth", "Ширина (Z)", 5, 0.01, 1000),

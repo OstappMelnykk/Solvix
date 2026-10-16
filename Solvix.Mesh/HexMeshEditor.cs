@@ -115,27 +115,6 @@ public sealed class HexMeshEditor
         return EditResult.Success;
     });
 
-    /// <summary>Laplacian smoothing that keeps the local density (see <see cref="HexMesh.Smooth"/>); with surface = true the smooth patches of the surface slide too.</summary>
-    public EditResult Smooth(int iterations, double relaxation, bool surface = false, double density = 1, double featureAngle = 25, bool untangle = true, bool straighten = true, double shapeTolerance = 0) => Apply(() =>
-    {
-        if (iterations < 1) return EditResult.Fail("At least one iteration is needed.");
-        if (!(relaxation > 0 && relaxation <= 1)) return EditResult.Fail("The relaxation must be in (0, 1].");
-        if (!(density >= 0 && density <= 1)) return EditResult.Fail("The density weight must be in [0, 1].");
-        if (!(shapeTolerance >= 0 && shapeTolerance <= 0.5)) return EditResult.Fail("The shape tolerance must be in [0, 0.5] of an edge.");
-        if (!(featureAngle > 0 && featureAngle <= 90)) return EditResult.Fail("The feature angle must be in (0, 90] degrees.");
-        var report = Mesh.Smooth(iterations, relaxation, surface, density, featureAngle, untangle, straighten, shapeTolerance);
-        if (report.Moved > 0)
-        {
-            var c = System.Globalization.CultureInfo.InvariantCulture;
-            return EditResult.Done($"Згладжено за {report.Passes} проходів: вільних вершин {report.Interior + report.Surface} із {report.Corners} (внутрішніх {report.Interior}, на поверхні {report.Surface}; решта нерухомі), зрушено {report.Moved} (з них середин ребер {report.EdgesStraightened}){(report.Reshaped > 0 ? $", форму підправлено в {report.Reshaped} вершинах" : "")}. Зсув: найбільший {report.MaxMove.ToString("0.###", c)}, середній {report.MeanMove.ToString("0.###", c)}.{(report.FoldedBefore > 0 ? $" Вивернутих кубів: було {report.FoldedBefore}, стало {report.FoldedAfter}." : "")}");
-        }
-        if (report.Interior + report.Surface == 0)
-            return EditResult.Fail(surface
-                ? "Nothing to smooth: every vertex is on a ridge or a corner of the body."
-                : "Nothing to smooth: every vertex lies on the surface (the body is too thin to have interior vertices). Turn on smoothing of the surface.");
-        return EditResult.Fail("Nothing to smooth: the mesh is already smooth, or each step would fold a cube.");
-    });
-
     public EditResult Reset() => Apply(() =>
     {
         Mesh = new HexMesh();
