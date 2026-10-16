@@ -160,7 +160,7 @@ describe('QualityControlsComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
     expect(root.querySelector('app-measure-info')).toBeNull();
 
-    root.querySelector<HTMLButtonElement>('.gauge__info')!.click();
+    root.querySelector<HTMLButtonElement>('.gauge__name')!.click();
     fixture.detectChanges();
     const popup = root.querySelector('app-measure-info')!;
     expect(text(popup)).toContain('Математика');

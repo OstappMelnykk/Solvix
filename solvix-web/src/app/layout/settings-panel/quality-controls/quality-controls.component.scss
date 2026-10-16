@@ -288,15 +288,147 @@ i {
       font-size: 13px;
     }
 
-    .gauge__name small {
-      font-size: 10px;
+    .gauge__track {
+      height: 6px;
+      margin-top: 5px;
     }
 
-    .gauge__info {
-      width: 14px;
-      height: 14px;
-      margin-left: 4px;
+    .gauge__marker {
+      width: 11px;
+      height: 11px;
+      margin: -5.5px 0 0 -5.5px;
+      border-width: 2px;
+    }
+
+    .gauge__at {
+      display: none;
+    }
+
+    .gauge__ticks {
+      height: 12px;
       font-size: 9px;
+    }
+  }
+
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  &__name {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px dotted $muted;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      border-bottom-color: $text;
+      color: #fff;
+    }
+  }
+
+  &__value {
+    margin-left: auto;
+    color: $muted;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sides {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  &__side {
+    flex: 1;
+    padding: 4px 6px;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+
+    &.on {
+      border-color: $accent-toggle;
+      background: color-mix(in srgb, $accent-toggle 20%, transparent);
+    }
+  }
+}
+
+.walk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+
+  &__btn {
+    width: 36px;
+    padding: 5px 0;
+    background: $field-bg;
+    border: 1px solid $field-border;
+    border-radius: 6px;
+    color: $text;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $accent-toggle;
+    }
+  }
+
+  &__text {
+    font-size: 13px;
+  }
+}
+
+.opacity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 13px;
+
+  input {
+    width: 100%;
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: $muted;
+
+  span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+// the gauges
+.gauge {
+  margin-bottom: 3px;
+  font-size: 12px;
+
+  // the same ruler in a smaller size: for the measures of one picked element
+  &--compact {
+    margin-bottom: 4px;
+    font-size: 12px;
+
+    .gauge__value {
+      font-size: 13px;
     }
 
     .gauge__track {
@@ -328,13 +460,19 @@ i {
   }
 
   &__name {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px dotted $muted;
+    color: inherit;
+    font: inherit;
     font-weight: 600;
+    text-align: left;
+    cursor: pointer;
 
-    small {
-      margin-left: 4px;
-      font-weight: 400;
-      color: $muted;
-      font-size: 11px;
+    &:hover {
+      border-bottom-color: $text;
+      color: #fff;
     }
   }
 

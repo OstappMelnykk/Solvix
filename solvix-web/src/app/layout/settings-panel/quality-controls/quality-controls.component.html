@@ -125,9 +125,7 @@
 <ng-template #gaugeTpl let-m let-compact="compact">
   <div class="gauge" [class.gauge--compact]="compact">
     <div class="gauge__head">
-      <span class="gauge__name">{{ m.limit.tech }}
-        <button type="button" class="gauge__info" aria-label="Що це за параметр" title="Що це за параметр" (click)="openInfo(m)">i</button>
-      </span>
+      <button type="button" class="gauge__name" title="Що це за параметр" (click)="openInfo(m)">{{ m.limit.tech }}</button>
       <span class="gauge__value" [style.color]="color(resultOfMeasure(m))">{{ m.shown }}</span>
     </div>
     <div class="gauge__track">
