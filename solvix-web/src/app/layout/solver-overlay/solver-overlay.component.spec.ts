@@ -182,7 +182,8 @@ describe('SolverOverlayComponent', () => {
       return component.hint();
     });
 
-    expect(new Set(hints).size).toBe(5);
+    expect(hints[0]).toBe('');                                   // no tool: nothing to explain
+    expect(new Set(hints).size).toBe(4);                         // '' for view and material, one each for the others
     expect(hints[1]).toContain('навантажити');
     expect(hints[3]).toContain('стерти');
     expect(hints[4]).toBe('');                                   // the material needs no words for one click
