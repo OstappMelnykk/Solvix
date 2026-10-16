@@ -173,6 +173,35 @@ describe('SolverControlsComponent', () => {
         expect(component.isMaterialFormOpen).toBeFalse();
       });
 
+      it('an existing material is edited: the form takes its values and saving puts them back under its own name', () => {
+        const steel = { name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3, color: '#445566' };
+
+        component.startEdit(steel, new Event('click'));
+        expect(component.isMaterialFormOpen).toBeTrue();
+        expect(component.editingName).toBe('steel');
+        expect(component.newLabel).toBe('Сталь');
+        expect(component.newYoungGPa).toBe(210);
+        expect(component.newPoisson).toBe(0.3);
+        expect(component.newColor).toBe('#445566');
+
+        component.newYoungGPa = 190;
+        component.newColor = '#aabbcc';
+        component.addMaterial();
+
+        expect(solver.upsertMaterial).toHaveBeenCalledWith(1, { name: 'steel', label: 'Сталь', e: 190e9, nu: 0.3, color: '#aabbcc' });
+        expect(component.editingName).toBeNull();
+        expect(component.isMaterialFormOpen).toBeFalse();
+      });
+
+      it('editing can be cancelled without sending anything', () => {
+        component.startEdit({ name: 'steel', label: 'Сталь', e: 2.1e11, nu: 0.3 }, new Event('click'));
+        component.cancelEdit();
+
+        expect(component.editingName).toBeNull();
+        expect(component.isMaterialFormOpen).toBeFalse();
+        expect(solver.upsertMaterial).not.toHaveBeenCalled();
+      });
+
       it('is not added when invalid, and the number fields ignore junk', () => {
         component.newLabel = '';
         component.addMaterial();

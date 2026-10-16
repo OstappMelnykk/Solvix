@@ -36,6 +36,8 @@ export class SolverControlsComponent implements DoCheck {
   newPoisson = 0.3;
   newColor = '#4a8fe3';
   isMaterialFormOpen = false;
+  // The material the form edits (null: the form makes a new one).
+  editingName: string | null = null;
 
   // --- the mesh of small elements ---
 
@@ -112,9 +114,27 @@ export class SolverControlsComponent implements DoCheck {
   addMaterial(): void {
     if (!this.canAddMaterial()) return;
     const label = this.newLabel.trim();
-    const name = `custom-${label.toLowerCase().replace(/[^a-z0-9а-яіїєґ]+/gi, '-')}`;
+    const name = this.editingName ?? `custom-${label.toLowerCase().replace(/[^a-z0-9а-яіїєґ]+/gi, '-')}`;
     this.solver.upsertMaterial(this.sessionId, { name, label, e: this.newYoungGPa * GPA, nu: this.newPoisson, color: this.newColor });
     this.solver.setActiveMaterial(this.sessionId, name);
+    this.newLabel = '';
+    this.editingName = null;
+    this.isMaterialFormOpen = false;
+  }
+
+  // The form takes the values of a material, and saving puts them back under its name.
+  startEdit(material: { name: string; label: string; e: number; nu: number; color?: string }, event: Event): void {
+    event.stopPropagation();
+    this.editingName = material.name;
+    this.newLabel = material.label;
+    this.newYoungGPa = Number((material.e / GPA).toPrecision(6));
+    this.newPoisson = material.nu;
+    this.newColor = material.color ?? this.colorOf(material.name);
+    this.isMaterialFormOpen = true;
+  }
+
+  cancelEdit(): void {
+    this.editingName = null;
     this.newLabel = '';
     this.isMaterialFormOpen = false;
   }
