@@ -252,12 +252,29 @@ $material: #c77dff;
   text-align: right;
 }
 
-.check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
+.toggle {
+  width: 100%;
+  padding: 6px 10px;
+  margin-top: 4px;
+  background: #1e1f22;
+  border: 1px solid $border;
+  border-radius: 6px;
+  color: $text;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: center;
   cursor: pointer;
+
+  &:hover {
+    border-color: $accent;
+  }
+
+  &--on {
+    background: $accent;
+    border-color: $accent;
+    color: #fff;
+    font-weight: 600;
+  }
 }
 
 .num {

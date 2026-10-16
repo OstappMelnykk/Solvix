@@ -183,7 +183,7 @@ describe('SolverOverlayComponent', () => {
     expect(component.isFaceTool()).toBeTrue();
     tool = 'fix';
     expect(component.isFaceTool()).toBeTrue();
-
+    brush = true;
     component.toggleBrush();
 
     expect(solver.setBrush).toHaveBeenCalledWith(1, false);
