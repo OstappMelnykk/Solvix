@@ -15,8 +15,6 @@ import { SmoothingControlsComponent } from '../smoothing-controls/smoothing-cont
 import { sectionOf } from '../../../state/quality-render.service';
 import { ExploreSettings, QualityExploreService, SectionSettings } from '../../../state/quality-explore.service';
 import { elementCentreOf } from '../../../geometry/solver-view';
-import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
-import { QUALITY_WORLD_INDEX } from '../../../config/app-settings';
 
 interface Measure {
   // the tool whose measure it is (aspect ratio means different things in different tools)
@@ -41,7 +39,6 @@ export class QualityControlsComponent implements DoCheck {
   private readonly solver = inject(SolverService);
   private readonly editor = inject(MeshEditorService);
   private readonly activeWorld = inject(ActiveWorldService);
-  private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly explore = inject(QualityExploreService);
 
   @Input({ required: true }) sessionId!: number;
@@ -140,13 +137,9 @@ export class QualityControlsComponent implements DoCheck {
     }
   }
 
-  // How opaque the body is (percent): lower it to see the bad elements inside.
-  opacityPercent(): number {
-    return Math.round(this.geometryOpacity.get(this.sessionId, QUALITY_WORLD_INDEX) * 100);
-  }
-
-  onOpacity(event: Event): void {
-    this.geometryOpacity.set(this.sessionId, QUALITY_WORLD_INDEX, Number((event.target as HTMLInputElement).value) / 100);
+  // The body filled, or wholly transparent with only its edges.
+  setFilled(filled: boolean): void {
+    this.explore.setFilled(this.sessionId, filled);
   }
 
   // The measure whose "i" popup is open (UI only).

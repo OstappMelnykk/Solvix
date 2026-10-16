@@ -27,8 +27,8 @@ export interface QualityViewInput {
   readonly quality: SolverQualityDto | null;
   // what the colours show: the overall grade or one measure
   readonly metric: QualityMetric;
-  // 0..1, the one opacity of the body
-  readonly opacity: number;
+  // true: the body is filled; false: it is wholly transparent and only its edges show (the edges of a bad element in red)
+  readonly filled: boolean;
   // draw just the elements the metric does not grade excellent
   readonly onlyBad: boolean;
   readonly section?: SectionCut;
@@ -36,7 +36,7 @@ export interface QualityViewInput {
   readonly showLoads: boolean;
 }
 
-// The look is the Real World's.
+// Two looks only: the body filled, or wholly transparent with just its edges. The look is the Real World's.
 const BODY_COLOR = 0x4a8fe3;
 const EDGE_COLOR = [0.9, 0.91, 0.93];
 const CORNER_COLOR = 0xffffff;
@@ -46,11 +46,9 @@ const CORNER_RADIUS = 0.045;
 const MIDPOINT_RADIUS = 0.032;
 const SUB_NODE_SIZE = 0.035;
 const CAP_OUTLINE_COLOR = 0xe6e8ec;
-// the opacity from which the dots hidden by the body begin to fade away (as in the Real World)
-const GHOST_FULL_AT = 0.7;
 const DOT_SPHERE_SEGMENTS = [10, 8] as const;
 // how visible the farthest edges and dots of a see-through body are (the nearest are fully visible), as in the Real World
-const FAR_ALPHA = 0.1;
+const FAR_ALPHA = 0.2;
 
 // The depth range of the body as the camera sees it, shared by the shaders that fade with depth: refreshed from the camera before the object is drawn.
 interface FadeUniforms {
@@ -70,13 +68,13 @@ function trackFade(object: THREE.Object3D, uniforms: FadeUniforms, centre: THREE
 
 // A matt lit material whose faces draw their own edges: where the position inside a small face (u, v in [-1, 1]) is within a
 // pixel or so of its border, the colour goes to the edge colour (and the face to opaque, so the edge of a see-through body still reads).
-function litFaceMaterial(options: { transparent: boolean; opacity: number; solid: boolean; clip: THREE.Plane[] }, edgeStrength: number, fade: FadeUniforms): THREE.MeshLambertMaterial {
+function litFaceMaterial(options: { solid: boolean; clip: THREE.Plane[] }, fade: FadeUniforms): THREE.MeshLambertMaterial {
   const material = new THREE.MeshLambertMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
-    transparent: options.transparent,
-    opacity: options.opacity,
-    // see-through, every face blends with all the others (no depth test), so the tone does not depend on the order they are drawn in
+    // wholly transparent: the faces draw nothing but their edges, and nothing hides anything
+    transparent: !options.solid,
+    opacity: options.solid ? 1 : 0,
     depthWrite: options.solid,
     depthTest: options.solid,
     clippingPlanes: options.clip
@@ -96,10 +94,11 @@ function litFaceMaterial(options: { transparent: boolean; opacity: number; solid
         '#include <opaque_fragment>',
         `vec2 edgeD = 1.0 - abs(vFaceUv);
         vec2 edgeW = max(fwidth(vFaceUv), vec2(1e-6));
-        float edgeLine = 1.0 - smoothstep(0.4, 1.3, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
+        float edgeLine = 1.0 - smoothstep(${options.solid ? '0.4, 1.3' : '0.6, 1.7'}, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
         edgeLine *= mix(1.0, uFadeMin, clamp((vFadeDepth - uFadeNear) / max(uFadeFar - uFadeNear, 0.0001), 0.0, 1.0));
-        outgoingLight = mix(outgoingLight, vec3(${EDGE_COLOR.join(', ')}), edgeLine);
-        diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine * ${edgeStrength.toFixed(2)});
+        ${options.solid ? `vec3 edgeColor = vec3(${EDGE_COLOR.join(', ')});` : 'vec3 edgeColor = mix(vColor.rgb, vec3(1.0), 0.4);'}
+        outgoingLight = mix(outgoingLight, edgeColor, edgeLine);
+        diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine);
         #include <opaque_fragment>`
       );
   };
@@ -180,11 +179,8 @@ export function buildQualityView(input: QualityViewInput): MeshView {
   const counts = geometry.counts;
   const resolution = faceResolution(counts);
   const trianglesPerFace = 2 * resolution * resolution;
-  const opacity = Math.min(1, Math.max(0.05, input.opacity));
-  const solid = opacity >= 1;
+  const solid = input.filled;
   const seeThrough = !solid;
-  // how much of what the body hides is seen: everything at GHOST_FULL_AT and below, nothing for a solid body
-  const ghost = seeThrough ? Math.min(1, Math.max(0, (1 - opacity) / (1 - GHOST_FULL_AT))) : 0;
 
   // ---- grades ----
   const grades = quality ? new Map(quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, input.metric, quality.limits)])) : null;
@@ -267,7 +263,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
 
   if (faces.length > 0) {
     const faceGeometry = surface(faces, true);
-    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ transparent: seeThrough, opacity, solid, clip }, seeThrough ? 0.9 : 1, fadeUniforms));
+    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ solid, clip }, fadeUniforms));
     faceMesh.renderOrder = 1;
     trackFade(faceMesh, fadeUniforms, sphere.center, radius);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
@@ -287,19 +283,6 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     }
     root.add(faceMesh);
     pickables.push(faceMesh);
-
-    // a see-through outside also writes depth, invisibly, before the dots and the lines: what is in front of them is then known
-    if (seeThrough) {
-      const outer = faces.filter(f => f.outer);
-      if (outer.length > 0) {
-        const depthOnly = new THREE.Mesh(
-          outer.length === faces.length ? faceGeometry : surface(outer, false),
-          new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide, clippingPlanes: clip })
-        );
-        depthOnly.renderOrder = 0;
-        root.add(depthOnly);
-      }
-    }
   }
 
   // ---- the nodes: the cube's corners (white) and midpoints (yellow) as dots, the nodes of the small elements between them as small dots ----
@@ -319,28 +302,22 @@ export function buildQualityView(input: QualityViewInput): MeshView {
       if (!found.has(key)) found.set(key, { at: v, kind: cubeNodes.get(key) ?? 'sub' });
     }
   }
-  const dotSet = (kind: 'corner' | 'mid' | 'sub', ghosted: boolean): THREE.Object3D | null => {
-    // what the body hides shows through only as the cubes' corners: the midpoints and the small elements' nodes behind it would drown the picture
-    if (ghosted && kind !== 'corner') return null;
+  // a solid body shows the dots on its surface (the small elements' nodes as small ones); a transparent one only the cubes' corners and midpoints, over everything
+  const dotSet = (kind: 'corner' | 'mid' | 'sub'): THREE.Object3D | null => {
+    if (seeThrough && kind === 'sub') return null;
     const points = Array.from(found.values()).filter(f => f.kind === kind);
     if (points.length === 0) return null;
-    const material = (colour: number) =>
-      ghosted
-        ? new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: ghost, depthTest: false, clippingPlanes: clip })
-        : new THREE.MeshBasicMaterial({ color: colour, transparent: seeThrough, clippingPlanes: clip });
     if (kind === 'sub') {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(f => [f.at.x, f.at.y, f.at.z]), 3));
-      const pointMaterial = new THREE.PointsMaterial({
-        color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true, transparent: seeThrough, opacity: ghosted ? ghost : 1, depthTest: !ghosted, clippingPlanes: clip
-      });
+      const pointMaterial = new THREE.PointsMaterial({ color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true, clippingPlanes: clip });
       fade.patch(pointMaterial);
       const dots = new THREE.Points(g, pointMaterial);
-      dots.renderOrder = ghosted ? 4 : 3;
+      dots.renderOrder = 3;
       fade.track(dots);
       return dots;
     }
-    const sphereMaterial = material(kind === 'corner' ? CORNER_COLOR : MIDPOINT_COLOR);
+    const sphereMaterial = new THREE.MeshBasicMaterial({ color: kind === 'corner' ? CORNER_COLOR : MIDPOINT_COLOR, transparent: seeThrough, depthTest: solid, clippingPlanes: clip });
     fade.patch(sphereMaterial);
     const spheres = new THREE.InstancedMesh(new THREE.SphereGeometry(kind === 'corner' ? CORNER_RADIUS : MIDPOINT_RADIUS, ...DOT_SPHERE_SEGMENTS), sphereMaterial, points.length);
     fade.track(spheres);
@@ -351,16 +328,12 @@ export function buildQualityView(input: QualityViewInput): MeshView {
       spheres.setMatrixAt(i, placed.matrix);
     });
     spheres.instanceMatrix.needsUpdate = true;
-    spheres.renderOrder = ghosted ? 4 : 3;
+    spheres.renderOrder = 3;
     return spheres;
   };
   for (const kind of ['corner', 'mid', 'sub'] as const) {
-    const front = dotSet(kind, false);
-    if (front) root.add(front);
-    if (ghost > 0.01) {
-      const behind = dotSet(kind, true);
-      if (behind) root.add(behind);
-    }
+    const dots = dotSet(kind);
+    if (dots) root.add(dots);
   }
 
   // ---- the cut itself: for every element the plane runs through, the polygon in which it cuts it, in the colour of the element ----
@@ -404,14 +377,14 @@ export function buildQualityView(input: QualityViewInput): MeshView {
             }
           }
     }
-    if (capPositions.length > 0) {
+    if (solid && capPositions.length > 0) {
       // a hair into the body: the outline and the sheet of the plane lie in front of it
       const into = (values: number[], by: number) => values.map((v, i) => (i % 3 === cut.axis ? v + by : v));
       const capGeometry = new THREE.BufferGeometry();
       capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(into(capPositions, -layer), 3));
       capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
       capGeometry.computeVertexNormals();
-      const capMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: seeThrough, opacity, depthWrite: solid, depthTest: solid });
+      const capMaterial = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
       const cap = new THREE.Mesh(capGeometry, capMaterial);
       cap.renderOrder = 1;
       cap.userData['sectionCap'] = true;

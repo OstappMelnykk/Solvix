@@ -38,11 +38,6 @@
   <!-- Вигляд тіла -->
   <section class="part">
     <h5>Вигляд</h5>
-    <div class="slider">
-      <div class="slider__head"><span>Непрозорість тіла</span><b>{{ opacityPercent() }}%</b></div>
-      <input class="slider__range" type="range" min="5" max="100" step="1" [value]="opacityPercent()" [style.--p]="(opacityPercent() - 5) / 95" (input)="onOpacity($event)" aria-label="Непрозорість тіла" />
-      <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
-    </div>
     <button type="button" class="tool" [class.tool--on]="marksShown()" (click)="toggleMarks()">Закріплення та навантаження: {{ marksShown() ? 'показано' : 'сховано' }}</button>
   </section>
 
@@ -50,6 +45,10 @@
   <section class="part">
     <h5>Подивитись усередину</h5>
     <button type="button" class="tool" [class.tool--on]="looking().onlyBad" (click)="toggleOnlyBad()">Лише проблемні елементи</button>
+    <div class="pair" *ngIf="looking().onlyBad">
+      <button type="button" class="tool" [class.tool--on]="looking().filled" (click)="setFilled(true)">Залите</button>
+      <button type="button" class="tool" [class.tool--on]="!looking().filled" (click)="setFilled(false)" title="Тіло прозоре, видно лише ребра; ребра поганих елементів червоні">Лише ребра</button>
+    </div>
     <button type="button" class="tool" [class.tool--on]="looking().section.enabled" (click)="toggleSection()">Розріз площиною</button>
     <div class="cut" *ngIf="looking().section.enabled">
       <div class="cut__axes">
