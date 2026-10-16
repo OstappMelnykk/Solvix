@@ -8,17 +8,16 @@ import { SolverService } from './solver.service';
 import { GeometryOpacityService } from './geometry-opacity.service';
 import { NodeSizeService } from './node-size.service';
 import { SurfaceAttachmentService } from './surface-attachment.service';
-import { buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
+import { buildCubeOutline, buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
 import { remapMesh } from '../geometry/fem-remap';
-import { SolverMeshDto } from '../api/solver-api.service';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
-import { MeshPick, MeshView, buildMeshView, ghostOf, withNodeMoved } from '../geometry/mesh-editor-view';
+import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withNodeMoved } from '../geometry/mesh-editor-view';
 
 interface Cached {
   readonly key: string;
   readonly view: MeshView | null;
-  // the refined mesh as this world places it, for the outline of what a pick would choose
-  readonly placed?: SolverMeshDto;
+  // The outline of elements (by key) in this world, for what a pick would choose.
+  readonly outline?: (keys: readonly string[]) => THREE.Object3D | null;
 }
 
 // The 3D view of a session's mesh for one World: the Ideal World shows every
@@ -66,7 +65,7 @@ export class MeshEditorRenderService {
     if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
     if (live) state = withNodeMoved(state, live.nodeId, live.position, live.carry);
-    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}:${this.solver.isLocal(sessionId) ? `local${this.solver.mesh(sessionId) ? '+' : '-'}${this.solver.revision(sessionId)}${this.solver.refineMode(sessionId)}` : ''}`;
+    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}:${this.solver.isLocal(sessionId) ? `local${this.solver.mesh(sessionId) ? '+' : '-'}${this.solver.revision(sessionId)}${this.solver.refineMode(sessionId)}` : `${this.solver.refineMode(sessionId)}:${[...this.solver.refineSelection(sessionId)].join(',')}`}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 
@@ -82,21 +81,41 @@ export class MeshEditorRenderService {
       { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined, xrayNodes: this.selection.xrayNodes(sessionId), faceOpacity: this.opacity.get(sessionId, worldIndex), nodeScale: { corner: this.nodeSize.get(sessionId, 'corner'), mid: this.nodeSize.get(sessionId, 'mid') } }
     );
     const refined = this.withRefinedMesh(sessionId, worldIndex, state, view);
-    this.cache.set(cacheKey, { key, view: refined.view, placed: refined.placed });
+    this.cache.set(cacheKey, { key, view: refined.view, outline: refined.outline });
     return refined.view;
   }
 
   // A locally refined body: the edges of the solver's elements drawn over the cubes, the elements chosen to be refined outlined, and - while elements are being picked - the
-  // faces of those elements are what a click lands on (the cubes' own faces and nodes are not).
-  private withRefinedMesh(sessionId: number, worldIndex: number, state: MeshStateDto, view: MeshView): { view: MeshView | null; placed?: SolverMeshDto } {
+  // faces of those elements are what a click lands on (the cubes' own faces and nodes are not). Before the first refinement the elements are the cubes: the ones chosen
+  // are outlined and the cubes' own faces take the clicks.
+  private withRefinedMesh(sessionId: number, worldIndex: number, state: MeshStateDto, view: MeshView): { view: MeshView | null; outline?: Cached['outline'] } {
+    const mode = worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real';
+    const chosen = [...this.solver.refineSelection(sessionId)];
     const mesh = this.solver.isLocal(sessionId) ? this.solver.mesh(sessionId) : null;
     const index = this.solver.meshIndex(sessionId);
-    if (!mesh || !index) return { view };
-    const placed = remapMesh(mesh, state, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real');
-    const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, edgeWidth: 2.5, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
-    view.root.add(fem.root);
-    const chosen = [...this.solver.refineSelection(sessionId)];
-    if (chosen.length > 0) view.root.add(buildFemHighlight(placed, index, { faces: [], elements: chosen, pointed: null }, 4000));
+    let outline: Cached['outline'];
+    let pickables = view.pickables;
+    if (this.solver.isLocal(sessionId)) {
+      if (!mesh || !index) return { view };
+      const placed = remapMesh(mesh, state, mode);
+      const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, edgeWidth: 2.5, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
+      view.root.add(fem.root);
+      outline = keys => buildFemHighlight(placed, index, { faces: [], elements: keys, pointed: null }, 4000);
+      if (this.solver.refineMode(sessionId)) pickables = fem.pickables;
+    } else {
+      const nodes = new Map(state.nodes.map(n => [n.id, n]));
+      outline = keys => {
+        const cubes = keys
+          .map(k => state.hexes.find(h => `hex:${h.id}` === k))
+          .filter((h): h is NonNullable<typeof h> => !!h && h.nodeIds.every(id => nodes.has(id)))
+          .map(h => h.nodeIds.map(id => nodePosition(nodes.get(id)!, mode)));
+        return cubes.length > 0 ? buildCubeOutline(cubes) : null;
+      };
+    }
+    if (chosen.length > 0) {
+      const chosenOutline = outline(chosen);
+      if (chosenOutline) view.root.add(chosenOutline);
+    }
     // what a pick would choose, outlined while the pointer is over the body (swapped in place, the view is not rebuilt)
     let hover: THREE.Object3D | null = null;
     const setHighlight = (group: THREE.Object3D | null) => {
@@ -107,16 +126,14 @@ export class MeshEditorRenderService {
       hover = group;
       if (group) view.root.add(group);
     };
-    const shown: MeshView = { ...view, pickables: this.solver.refineMode(sessionId) ? fem.pickables : view.pickables, setHighlight };
-    return { view: shown, placed };
+    return { view: { ...view, pickables, setHighlight }, outline };
   }
 
   // The pointer is over the body (or left it) while elements are being picked: outline what a click would choose.
   setRefineHover(sessionId: number, worldIndex: number, pick: MeshPick | null): void {
     const cached = this.cache.get(`${sessionId}:${worldIndex}`);
-    const index = this.solver.meshIndex(sessionId);
-    if (!cached?.view?.setHighlight || !cached.placed || !index) return;
+    if (!cached?.view?.setHighlight || !cached.outline) return;
     const keys = this.solver.refineMode(sessionId) && pick?.kind === 'face' ? this.solver.refineTargets(sessionId, pick) : [];
-    cached.view.setHighlight(keys.length > 0 ? buildFemHighlight(cached.placed, index, { faces: [], elements: keys, pointed: null }) : null);
+    cached.view.setHighlight(keys.length > 0 ? cached.outline(keys) : null);
   }
 }

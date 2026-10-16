@@ -410,3 +410,28 @@ export function buildFemHighlight(mesh: SolverMeshDto, index: FemIndex, target: 
   group.traverse(o => (o.frustumCulled = false));
   return group;
 }
+
+// The outline of whole cubes (the elements before the first refinement), from each cube's 20 node positions in slot order: its 12 edges as the curves they are.
+export function buildCubeOutline(cubes: readonly (readonly THREE.Vector3[])[], width = 3): THREE.Group {
+  const group = new THREE.Group();
+  const lines: number[] = [];
+  for (const slots of cubes) {
+    ELEMENT_EDGES.forEach(([c0, c1], k) => {
+      const [a, m, b] = [slots[c0], slots[8 + k], slots[c1]];
+      let last = a.clone();
+      for (let s = 1; s <= 6; s++) {
+        const t = -1 + (2 * s) / 6;
+        const next = a.clone().multiplyScalar((t * (t - 1)) / 2).addScaledVector(m, 1 - t * t).addScaledVector(b, (t * (t + 1)) / 2);
+        lines.push(last.x, last.y, last.z, next.x, next.y, next.z);
+        last = next;
+      }
+    });
+  }
+  if (lines.length > 0) {
+    const yellow = new THREE.Color(HIGHLIGHT_COLOR);
+    group.add(wideLines(lines, lines.flatMap((_, i) => (i % 3 === 0 ? [yellow.r, yellow.g, yellow.b] : [])), width, { opacity: 1, depthTest: false }));
+  }
+  group.renderOrder = 10;
+  group.traverse(o => (o.frustumCulled = false));
+  return group;
+}

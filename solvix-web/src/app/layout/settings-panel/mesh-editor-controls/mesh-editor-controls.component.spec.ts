@@ -786,32 +786,31 @@ describe('MeshEditorControlsComponent', () => {
       component.transitionWidth = 1;
     });
 
-    it('asks to pick cubes when none is picked', () => {
+    it('asks to choose what to refine when nothing is chosen', () => {
       component.runLocalRefinement();
 
       expect(solver.addRefinement).not.toHaveBeenCalled();
       expect(TestBed.inject(NotificationService).toasts()[0].kind).toBe('warning');
     });
 
-    it('cuts the picked cubes into the chosen numbers with the chosen transition', () => {
+    it('cuts what was chosen into the chosen numbers with the chosen transition, whatever cubes are picked the old way', () => {
       selection.toggleHex(1, 0);
-      selection.toggleHex(1, 1);
+      solver.refineSelection.and.returnValue(new Set(['hex:0', 'hex:1']));
       component.runLocalRefinement();
 
       expect(solver.addRefinement).toHaveBeenCalledWith(1, { leaves: ['hex:0', 'hex:1'], ni: 2, nj: 3, nk: 4, transitionDepth: 1 });
       expect(solver.clearRefinement).not.toHaveBeenCalled();
     });
 
-    it('refines the elements chosen with the Refinement tool, children included, instead of the cubes', () => {
-      selection.toggleHex(1, 0);
+    it('refines the leaves chosen, children included', () => {
       solver.refineSelection.and.returnValue(new Set(['0|2|k1', '0|2|k2']));
       component.runLocalRefinement();
 
       expect(solver.addRefinement).toHaveBeenCalledWith(1, jasmine.objectContaining({ leaves: ['0|2|k1', '0|2|k2'] }));
     });
 
-    it('"at once" starts again from the even cubes when the body is refined already, "by steps" lays a step on top', () => {
-      selection.toggleHex(1, 0);
+    it('"at once" starts again from the even cubes the chosen leaves lie in, "by steps" lays a step on top', () => {
+      solver.refineSelection.and.returnValue(new Set(['4|2|k1', '4|2|k2', 'hex:7']));
       solver.isLocal.and.returnValue(true);
       solver.clearRefinement.and.callFake((_, then) => then?.());
 
@@ -822,6 +821,7 @@ describe('MeshEditorControlsComponent', () => {
       component.runLocalRefinement();
       expect(solver.clearRefinement).toHaveBeenCalledTimes(1);
       expect(solver.addRefinement).toHaveBeenCalledTimes(2);
+      expect(solver.addRefinement.calls.mostRecent().args[1].leaves).toEqual(['hex:4', 'hex:7']);
     });
   });
 });

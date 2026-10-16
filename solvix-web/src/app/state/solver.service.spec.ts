@@ -227,10 +227,16 @@ describe('SolverService', () => {
       expect(solver.refineTargets(sessionId, { kind: 'face', hex: 0, face: 'XPlus', p: 0, q: 0 })).toEqual([]);
     });
 
-    it('picks elements only once the body is refined', () => {
+    it('before the first refinement the elements to pick are the cubes themselves', () => {
       loadSetup();
       solver.setRefineMode(sessionId, true);
-      expect(solver.refineMode(sessionId)).toBeFalse();
+      expect(solver.refineMode(sessionId)).toBeTrue();
+
+      solver.chooseByPick(sessionId, { kind: 'face', hex: 3, face: 'XPlus' });
+      solver.chooseByPick(sessionId, { kind: 'face', hex: 5, face: 'XPlus' });
+      expect([...solver.refineSelection(sessionId)]).toEqual(['hex:3', 'hex:5']);
+      solver.chooseByPick(sessionId, { kind: 'face', hex: 3, face: 'YPlus' });
+      expect([...solver.refineSelection(sessionId)]).toEqual(['hex:5']);
     });
 
     it('highlights what a click would reach, and offers the scopes a refined body has', () => {

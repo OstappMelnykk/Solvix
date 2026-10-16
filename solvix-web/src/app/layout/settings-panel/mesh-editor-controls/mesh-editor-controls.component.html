@@ -253,16 +253,16 @@
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'steps'" [attr.aria-checked]="localRunMode === 'steps'" (click)="localRunMode = 'steps'">По кроках</button>
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'at-once'" [attr.aria-checked]="localRunMode === 'at-once'" (click)="localRunMode = 'at-once'">Одразу</button>
   </div>
-  <ng-container *ngIf="isLocalRefined()">
+  <ng-container>
     <div class="sub-label">Елементи для згущення{{ chosenCount() > 0 ? ': ' + chosenCount() : '' }}</div>
     <div class="pair">
-      <button class="tool" type="button" [class.tool--on]="pickingElements()" [attr.aria-pressed]="pickingElements()" (click)="togglePicking()">Вибирати на сцені</button>
+      <button class="tool" type="button" [class.tool--on]="pickingElements()" [attr.aria-pressed]="pickingElements()" (click)="togglePicking()">Вибір елементів</button>
       <button class="tool" type="button" [disabled]="chosenCount() === 0" (click)="clearChosen()">Зняти вибір</button>
     </div>
-    <div class="pair" role="radiogroup" aria-label="Скільки захоплює вибір" *ngIf="pickingElements()">
+    <div class="pair" role="radiogroup" aria-label="Скільки захоплює вибір" *ngIf="pickingElements() && isLocalRefined()">
       <button *ngFor="let item of pickScopes" class="tool" type="button" role="radio" [class.tool--on]="pickScope() === item.scope" [attr.aria-checked]="pickScope() === item.scope" [title]="item.title" (click)="setPickScope(item.scope)">{{ item.label }}</button>
     </div>
-    <label class="row" *ngIf="pickingElements() && pickScope() === 'cell'" title="Скільки елементів углиб від грані, на яку клікнули: 0 — той, що одразу за гранню">
+    <label class="row" *ngIf="pickingElements() && isLocalRefined() && pickScope() === 'cell'" title="Скільки елементів углиб від грані, на яку клікнули: 0 — той, що одразу за гранню">
       <span>Глибина</span>
       <input type="number" min="0" max="50" step="1" [value]="pickDepth()" (change)="deeper($any($event.target).valueAsNumber - pickDepth())" aria-label="Глибина" />
     </label>

@@ -274,7 +274,7 @@ export class SolverService {
   }
 
   setRefineMode(sessionId: number, on: boolean): void {
-    this.entry(sessionId).refineMode = on && this.isLocal(sessionId);
+    this.entry(sessionId).refineMode = on;
     this.touch(sessionId);
   }
 
@@ -301,11 +301,13 @@ export class SolverService {
   // The elements a pick in the Ideal or Real World would choose (the same for the click and for the outline shown while the pointer is over the body).
   refineTargets(sessionId: number, pick: PickedFace | null): string[] {
     const entry = this.entry(sessionId);
+    // before the first refinement the elements are the cubes themselves
+    if (pick !== null && !this.isLocal(sessionId)) return pick.kind === 'face' ? [`hex:${pick.hex}`] : [];
     if (!entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return [];
     return femRefineTargets(pick, entry.refineScope, entry.mesh, entry.meshIndex, entry.refineDepth);
   }
 
-  // A click on an element of the refined mesh in the Ideal or Real World: it joins the elements chosen to be refined, or leaves them when all it reaches was chosen.
+  // A click on an element in the Ideal or Real World (a cube before the first refinement, a leaf after it): it joins the elements chosen to be refined, or leaves them when all it reaches was chosen.
   chooseByPick(sessionId: number, pick: PickedFace | null): void {
     const entry = this.entry(sessionId);
     const keys = this.refineTargets(sessionId, pick);
@@ -333,7 +335,6 @@ export class SolverService {
       next: setup => {
         this.acceptSetup(sessionId, setup);
         this.entry(sessionId).refineSelected = new Set<string>();
-        this.entry(sessionId).refineMode = this.entry(sessionId).refineMode && this.isLocal(sessionId);
         this.forgetResultOfOldMesh(sessionId);
       },
       error: (error: { error?: { error?: string } }) => this.notifications.warning(error.error?.error ?? 'Не вдалось виконати згущення.')
@@ -345,7 +346,6 @@ export class SolverService {
       next: setup => {
         this.acceptSetup(sessionId, setup);
         this.entry(sessionId).refineSelected = new Set<string>();
-        this.entry(sessionId).refineMode = this.entry(sessionId).refineMode && this.isLocal(sessionId);
         this.forgetResultOfOldMesh(sessionId);
         then?.();
       },
