@@ -275,7 +275,7 @@ public class SolverApiTests
         await BuildBar(2);
 
         var nothing = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = Array.Empty<string>(), ni = 2, nj = 2, nk = 2 });
-        var one = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:0" }, ni = 1, nj = 2, nk = 2 });
+        var one = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:0" }, ni = 0, nj = 2, nk = 2 });
         var gone = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:77" }, ni = 2, nj = 2, nk = 2 });
 
         foreach (var response in new[] { nothing, one, gone })
