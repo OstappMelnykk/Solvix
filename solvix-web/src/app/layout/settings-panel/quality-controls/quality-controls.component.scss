@@ -11,10 +11,10 @@ $text: #e4e6ea;
 }
 
 h4 {
-  margin: 0 0 12px;
-  padding-bottom: 6px;
+  margin: 0 0 8px;
+  padding-bottom: 4px;
   border-bottom: 1px solid $field-border;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -23,17 +23,17 @@ h4 {
 
 // every part of the panel is a card of its own under a header that is easy to see
 h5 {
-  margin: 0 0 10px;
-  padding-bottom: 8px;
+  margin: 0 0 6px;
+  padding-bottom: 5px;
   border-bottom: 1px solid $field-border;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
   color: $text;
 }
 
 .part {
-  margin-bottom: 14px;
-  padding: 12px 14px 14px;
+  margin-bottom: 8px;
+  padding: 8px 10px 9px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid $field-border;
   border-radius: 10px;
@@ -49,19 +49,19 @@ i {
 
 // the verdict
 .verdict {
-  padding: 10px 12px;
+  padding: 7px 10px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid;
-  border-left-width: 6px;
+  border-left-width: 5px;
   border-radius: 8px;
 
   &__title {
-    font-size: 17px;
+    font-size: 14px;
     font-weight: 700;
   }
 
   &__sub {
-    margin: 2px 0 10px;
+    margin: 1px 0 6px;
     color: $muted;
   }
 }
@@ -276,7 +276,8 @@ i {
 
 // the gauges
 .gauge {
-  margin-bottom: 7px;
+  margin-bottom: 3px;
+  font-size: 12px;
 
   // the same ruler in a smaller size: for the measures of one picked element
   &--compact {
@@ -361,7 +362,7 @@ i {
   }
 
   &__value {
-    font-size: 20px;
+    font-size: 15px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -369,17 +370,17 @@ i {
   &__track {
     position: relative;
     display: flex;
-    height: 10px;
-    margin-top: 20px;
+    height: 7px;
+    margin-top: 15px;
     border-radius: 5px;
     gap: 2px;
   }
 
   &__ticks {
     position: relative;
-    height: 16px;
-    margin-top: 2px;
-    font-size: 11px;
+    height: 13px;
+    margin-top: 1px;
+    font-size: 10px;
     color: $muted;
     font-variant-numeric: tabular-nums;
   }
@@ -420,9 +421,9 @@ i {
     position: absolute;
     z-index: 1;
     top: 50%;
-    width: 16px;
-    height: 16px;
-    margin: -8px 0 0 -8px;
+    width: 13px;
+    height: 13px;
+    margin: -6.5px 0 0 -6.5px;
     background: #000;
     border: 3px solid #f0b429;
     border-radius: 50%;
