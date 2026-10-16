@@ -65,7 +65,6 @@ export class SolverRenderService {
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
       showInner: this.solver.showInner(sessionId),
-      showLabels: this.solver.pressureLabels(sessionId),
       quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
     };
     const view = input.result ? buildSolverView(input) : this.buildSetupView(sessionId, input);
@@ -99,7 +98,6 @@ export class SolverRenderService {
       },
       showInner: input.showInner === true,
       dots: false,
-      labels: input.showLabels !== false,
       edges: this.solver.display(sessionId).edges
     });
   }

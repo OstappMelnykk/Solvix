@@ -224,12 +224,6 @@ describe('the Quality World view', () => {
       disposeMeshView(none);
     });
 
-    it('writes the pressure on the pressed face', () => {
-      const view = marked({ showLoads: true });
-
-      expect(view.root.children.some(c => c.userData['pressureLabel'])).toBeTrue();
-      disposeMeshView(view);
-    });
   });
 
   describe('a section', () => {
@@ -290,14 +284,6 @@ describe('the Quality World view', () => {
       disposeMeshView(view);
     });
 
-    it('draws no labels of the pressures on a cut body', () => {
-      const view = buildQualityView(input({
-        state: singleCubeState(), setup: setup({ loads: [{ hex: 0, face: 'XPlus', p: 0, q: 0, pressure: -1e6 }] }), quality: quality([]), showLoads: true, section: cut('above', 0.5)
-      }));
-
-      expect(view.root.children.some(c => c.userData['pressureLabel'])).toBeFalse();
-      disposeMeshView(view);
-    });
   });
 
   it('puts a highlight into the view and takes it out again', () => {

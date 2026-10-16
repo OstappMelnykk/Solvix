@@ -199,14 +199,6 @@ export class SolverOverlayComponent {
     if (Number.isFinite(percent)) this.solver.setOpacity(this.sessionId, percent / 100);
   }
 
-  pressureLabels(): boolean {
-    return this.solver.pressureLabels(this.sessionId);
-  }
-
-  togglePressureLabels(): void {
-    this.solver.setPressureLabels(this.sessionId, !this.pressureLabels());
-  }
-
   // Taking back the last action of the set-up, whatever it was (also Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z everywhere in the app).
   canUndo(): boolean {
     return this.undoRedo.canUndo();

@@ -6,7 +6,7 @@ import { MeshView, PickedFace } from './mesh-editor-view';
 import { QualityMetric, measuredGrade, resultOf } from './quality-grading';
 import {
   DrawnFace, FIXED_COLOR, LOAD_COLOR, OVERLAY_OPACITY, RESULT_COLORS, SectionCut, SolverGeometry,
-  appendSurface, disposeObject, elementSectionLoops, faceName, facePoint, faceResolution, planeSlack, pressureColor, pressureLabel,
+  appendSurface, disposeObject, elementSectionLoops, faceName, faceResolution, planeSlack, pressureColor,
   sectionPlane, triangulateLoop
 } from './solver-view';
 
@@ -38,14 +38,12 @@ export interface QualityViewInput {
   readonly showLoads: boolean;
   // The same view also draws the body of the Solver World while it is being set up (nothing coloured by grade, no dots of the nodes):
   // the colour of a body without grades (default the blue of the Real World), what colours an element of its own (a material), the elements
-  // not drawn (a hidden material), the faces between the elements drawn too, the dots of the nodes (default yes), the labels of the pressures
-  // (default yes) and the edges (default yes).
+  // not drawn (a hidden material), the faces between the elements drawn too, the dots of the nodes (default yes) and the edges (default yes).
   readonly bodyColor?: number;
   readonly colorOfElement?: (hex: number, ex: number, ey: number, ez: number) => number | null;
   readonly hidden?: (hex: number, ex: number, ey: number, ez: number) => boolean;
   readonly showInner?: boolean;
   readonly dots?: boolean;
-  readonly labels?: boolean;
   readonly edges?: boolean;
 }
 
@@ -510,41 +508,6 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     const coat = new THREE.Mesh(buffer, material);
     coat.renderOrder = 5;
     root.add(coat);
-  }
-
-  // the pressure written on the pressed faces: one label per cube side and pressure
-  if (input.showLoads && input.labels !== false && !cut && pressure.size > 0) {
-    const groups = new Map<string, { text: string; points: THREE.Vector3[]; normals: THREE.Vector3[]; area: number }>();
-    const everyPoint: THREE.Vector3[] = [];
-    for (const face of faces) {
-      if (!face.outer) continue;
-      const value = pressure.get(keyOfFace(face));
-      if (value === undefined) continue;
-      const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
-      const centre = facePoint(small, 0, 0);
-      const spanned = facePoint(small, 1, 0).sub(facePoint(small, -1, 0)).cross(facePoint(small, 0, 1).sub(facePoint(small, 0, -1)));
-      const area = spanned.length();
-      const normal = spanned.normalize();
-      const group = `${face.owner.id}:${face.face}:${value}`;
-      const entry = groups.get(group) ?? { text: `${Number((value / 1e6).toPrecision(3))} МПа`, points: [], normals: [], area: 0 };
-      entry.points.push(centre);
-      entry.normals.push(normal);
-      entry.area += area;
-      groups.set(group, entry);
-      everyPoint.push(centre);
-    }
-    if (everyPoint.length > 0) {
-      const box = new THREE.Box3().setFromPoints(everyPoint);
-      const body = box.getCenter(new THREE.Vector3());
-      const bodySize = Math.max(box.getSize(new THREE.Vector3()).length(), 1e-6);
-      for (const entry of groups.values()) {
-        const height = Math.min(bodySize * 0.15, Math.max(bodySize * 0.006, Math.sqrt(entry.area) / 6));
-        const centre = entry.points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).divideScalar(entry.points.length);
-        const normal = entry.normals.reduce((sum, n) => sum.add(n), new THREE.Vector3()).normalize();
-        if (normal.dot(centre.clone().sub(body)) < 0) normal.negate();
-        root.add(pressureLabel(entry.text, centre.add(normal.multiplyScalar(height * 0.6)), height));
-      }
-    }
   }
 
   // what a click would act on is drawn into the view without rebuilding it

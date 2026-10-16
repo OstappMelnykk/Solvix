@@ -31,7 +31,7 @@ describe('SolverOverlayComponent', () => {
     result = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'tool', 'setTool', 'scopesOf', 'scope', 'setScope', 'depth', 'setDepth', 'divisions', 'setup', 'activeMaterial', 'setActiveMaterial',
-      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures', 'pressureLabels', 'setPressureLabels'
+      'loadedFaceCount', 'fixedFaceCount', 'isFixedAuto', 'result', 'display', 'setDeformationScale', 'setOpacity', 'showInner', 'setShowInner', 'brush', 'setBrush', 'pressure', 'setPressure', 'loadedPressures', 
     ]);
     solver.tool.and.callFake(() => tool);
     solver.brush.and.callFake(() => brush);
@@ -83,13 +83,6 @@ describe('SolverOverlayComponent', () => {
   });
 
   describe('pressure', () => {
-    it('the labels on the faces are switched with a tick', () => {
-      solver.pressureLabels.and.returnValue(true);
-      expect(component.pressureLabels()).toBeTrue();
-      component.togglePressureLabels();
-      expect(solver.setPressureLabels).toHaveBeenCalledWith(1, false);
-    });
-
     it('is set in MPa for the next faces, and the legend lists the different pressures', () => {
       expect(component.pressureMpa()).toBe(-1);
       component.onPressureMpa({ target: { value: '-2.5' } } as unknown as Event);
