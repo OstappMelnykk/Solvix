@@ -168,6 +168,12 @@ const FAR_ALPHA = 0.15;
 // the opacity from which the hidden (inner) lines and nodes begin to fade away: at this opacity and below they are fully there, at 100% they are gone, in between they
 // fade evenly - so there is no jump between 99 % and 100 %
 const GHOST_FULL_AT = 0.7;
+
+// How much of the inner lines of a body of this opacity is seen through it: all of it at GHOST_FULL_AT and below, none for a solid body.
+export function ghostOf(faceOpacity: number): number {
+  const opacity = Math.min(1, Math.max(0, faceOpacity));
+  return opacity < 1 ? Math.min(1, Math.max(0, (1 - opacity) / (1 - GHOST_FULL_AT))) : 0;
+}
 const BASE_HEX_COLOR = 0x39c5f2;
 const ADAPTING_HEX_COLOR = 0xc77dff;
 const PREVIEW_FACE_COLOR = 0x6ee06e;

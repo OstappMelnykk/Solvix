@@ -151,3 +151,14 @@ describe('buildFemMeshView with the edges inside', () => {
     expect(inner).toBe(11 * 4 * 6);
   });
 });
+
+describe('buildFemMeshView edges seen through a body', () => {
+  it('draws the edges a second time over everything when asked, and once otherwise', () => {
+    const count = (view: ReturnType<typeof buildFemMeshView>) => view.root.children.filter(o => o.userData['edges']).length;
+    expect(count(buildFemMeshView(input(oneElement())))).toBe(1);
+    const through = buildFemMeshView(input(oneElement(), { ghostEdges: 0.6 }));
+    expect(count(through)).toBe(2);
+    const twin = through.root.children.filter(o => o.userData['edges'])[1] as THREE.LineSegments;
+    expect((twin.material as THREE.LineBasicMaterial).depthTest).toBeFalse();
+  });
+});

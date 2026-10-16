@@ -33,6 +33,8 @@ export interface FemMeshViewInput {
   readonly look?: 'solid' | 'edges';
   // Also draw the edges inside the body (of every face of every element, once), not only those of the surface.
   readonly innerEdges?: boolean;
+  // Draw the edges once more over everything, with this strength (0..1): what shows through a see-through body (the edges inside it). 0 = only where nothing is in front.
+  readonly ghostEdges?: number;
 }
 
 const RESOLUTION = 3;
@@ -272,7 +274,15 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true }));
     edges.userData['edges'] = true;
     edges.visible = input.edges !== false;
+    edges.renderOrder = 2;
     root.add(edges);
+    if ((input.ghostEdges ?? 0) > 0.01) {
+      const through = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: input.ghostEdges, depthTest: false }));
+      through.userData['edges'] = true;
+      through.visible = input.edges !== false;
+      through.renderOrder = 2;
+      root.add(through);
+    }
   }
 
   // the displacement vectors: arrows at the nodes, shown or hidden without a rebuild
