@@ -262,12 +262,12 @@ internal sealed class SolverSetup
     /// <summary>Gives cells of a cube's grid a material of their own (null or empty: they follow their cube again).</summary>
     public void SetElementMaterial(IEnumerable<ElementKey> elements, string? name) => Edit(() =>
     {
-        foreach (var element in elements.Where(IsValidElement)) SetMaterialOn(element.Hex, Cuboid.Of(SetupBinding.RegionOf(element, Counts)), name);
+        foreach (var element in elements.Where(IsValidElement)) SetMaterialOn(element.Hex, new BoxShape(Cuboid.Of(SetupBinding.RegionOf(element, Counts))), name);
         Version++;
     });
 
-    /// <summary>Gives a region of a cube (a box in its own coordinates) a material of its own (null or empty: it follows the cube again).</summary>
-    public void SetMaterialOn(int hex, Cuboid region, string? name)
+    /// <summary>Gives a shape of a cube (a place in its own coordinates) a material of its own (null or empty: it follows the cube again).</summary>
+    public void SetMaterialOn(int hex, Shape region, string? name)
     {
         if (!_elementMaterials.TryGetValue(hex, out var map)) _elementMaterials[hex] = map = new RegionMap<string>();
         if (string.IsNullOrEmpty(name) || name == MaterialOf(hex)) map.Clear(region);
@@ -277,7 +277,7 @@ internal sealed class SolverSetup
 
     // ---- faces -------------------------------------------------------------------------------------
 
-    private static Cuboid CellBox(SubFace f, int[] counts) => Cuboid.Of(SetupBinding.RegionOf(f.Face, f.P, f.Q, counts));
+    private static Shape CellBox(SubFace f, int[] counts) => new BoxShape(Cuboid.Of(SetupBinding.RegionOf(f.Face, f.P, f.Q, counts)));
 
     private static RegionMap<T> MapOf<T>(Dictionary<(int Hex, string Side), RegionMap<T>> maps, int hex, string side) where T : notnull =>
         maps.TryGetValue((hex, side), out var map) ? map : maps[(hex, side)] = new RegionMap<T>();

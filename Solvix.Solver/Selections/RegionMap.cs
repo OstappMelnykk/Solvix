@@ -3,110 +3,125 @@ using Solvix.FemMesh;
 namespace Solvix.Solver.Selections;
 
 /// <summary>
-/// What is set on the regions of one cube (or of one side of it): each region of a cube has at most one value, regions never overlap. Setting a value on a box
-/// takes that box out of whatever was there; clearing takes it out for good. A box that is already exactly so changes nothing (so an action that changes nothing
-/// can be told). This is the part of the setup that does NOT depend on how the body is cut into elements: the mesh asks, for each of its faces or elements, which
-/// region it lies in (<see cref="ValueAt"/>), so a region means the same on an even cut, a locally refined mesh, or any other.
+/// What is set on the places of one cube (or of one side of it): layers of shapes, the newest on top. What lies at a place is what the newest layer that
+/// holds it says: a value, or (a layer that clears) nothing. Setting a value on a shape puts a layer on top; clearing puts a clearing layer on top. This is the
+/// part of the setup that does NOT depend on how the body is cut into elements: the mesh asks, for each of its faces or elements, what lies at its centre
+/// (<see cref="TryGetValueAt"/>), so a shape means the same on an even cut, a locally refined mesh, or any other.
+/// <para>
+/// A layer under a newer one of the very same shape is gone, so setting and clearing the same cell over and over does not pile up. Whether something changed is told
+/// conservatively: only what is surely no change is called so (a box set to a value it already has everywhere is; a shape that is not a box is when the newest
+/// layer there is the same shape with the same value) - at worst an action that changed nothing leaves a step to undo, never the reverse.
+/// </para>
 /// </summary>
 internal sealed class RegionMap<TValue> where TValue : notnull
 {
-    private readonly List<(Cuboid Box, TValue Value)> _entries = new();
+    private readonly record struct Layer(Shape Shape, bool Has, TValue? Value);
 
-    public IReadOnlyList<(Cuboid Box, TValue Value)> Entries => _entries;
+    private readonly List<Layer> _layers = new();
 
-    public int Count => _entries.Count;
+    public int Count => _layers.Count(l => l.Has);
 
     public RegionMap<TValue> Copy()
     {
         var copy = new RegionMap<TValue>();
-        copy._entries.AddRange(_entries);
+        copy._layers.AddRange(_layers);
         return copy;
     }
 
-    /// <summary>Puts a value on the box, taking the box out of whatever was there. Returns whether anything changed.</summary>
-    public bool Set(Cuboid box, TValue value) => Replace(box, value, true);
-
-    /// <summary>Takes the box out: nothing is set on it afterwards. Returns whether anything changed.</summary>
-    public bool Clear(Cuboid box) => Replace(box, default, false);
-
-    private bool Replace(Cuboid box, TValue? value, bool has)
+    /// <summary>Puts a value on a shape. Returns whether anything changed.</summary>
+    public bool Set(Shape shape, TValue value)
     {
-        if (has ? Covered(box, value!) : !_entries.Any(e => e.Box.Overlaps(box))) return false;
-
-        var kept = new List<(Cuboid, TValue)>();
-        foreach (var (existing, v) in _entries)
-        {
-            if (!existing.Overlaps(box)) kept.Add((existing, v));
-            else foreach (var piece in existing.Minus(box)) kept.Add((piece, v));
-        }
-        if (has) kept.Add((box, value!));
-        _entries.Clear();
-        _entries.AddRange(kept);
-        Coalesce();
+        if (SurelyHas(shape, value)) return false;
+        Push(new Layer(shape, true, value));
         return true;
     }
 
-    /// <summary>Whether the two maps set the same values on the same places, however each has cut its regions up.</summary>
-    public bool SameAs(RegionMap<TValue> other) =>
-        _entries.All(e => other.Covered(e.Box, e.Value)) && other._entries.All(e => Covered(e.Box, e.Value));
-
-    /// <summary>Takes every region with this value out (the value itself is gone, say a material that was deleted). Returns whether anything changed.</summary>
-    public bool RemoveValue(TValue value) => _entries.RemoveAll(e => EqualityComparer<TValue>.Default.Equals(e.Value, value)) > 0;
-
-    /// <summary>The value of the region that owns a place, or nothing.</summary>
-    public bool TryGetValueAt(ParametricPoint point, out TValue value)
+    /// <summary>Takes a shape's places out: nothing is set on them afterwards. Returns whether anything changed.</summary>
+    public bool Clear(Shape shape)
     {
-        foreach (var (box, v) in _entries)
-            if (box.Owns(point)) { value = v; return true; }
+        if (!_layers.Any(l => l.Has && l.Shape.Bounds.Overlaps(shape.Bounds))) return false;
+        Push(new Layer(shape, false, default));
+        return true;
+    }
+
+    /// <summary>The value at a place, or nothing.</summary>
+    public bool TryGetValueAt(ParametricPoint at, out TValue value)
+    {
+        for (int i = _layers.Count - 1; i >= 0; i--)
+        {
+            var layer = _layers[i];
+            if (!Near(layer.Shape.Bounds, at) || !layer.Shape.Contains(at)) continue;
+            if (!layer.Has) break;
+            value = layer.Value!;
+            return true;
+        }
         value = default!;
         return false;
     }
 
-    /// <summary>Whether every part of the box already has this value.</summary>
-    private bool Covered(Cuboid box, TValue value)
+    /// <summary>Whether the two maps are the same layers in the same order (a map put together differently that says the same may be called different, never the reverse).</summary>
+    public bool SameAs(RegionMap<TValue> other) =>
+        _layers.Count == other._layers.Count && _layers.Zip(other._layers).All(p =>
+            p.First.Has == p.Second.Has && p.First.Shape.Equals(p.Second.Shape) && EqualityComparer<TValue>.Default.Equals(p.First.Value, p.Second.Value));
+
+    /// <summary>Takes every layer with this value out (the value itself is gone, say a material that was deleted). Returns whether anything changed.</summary>
+    public bool RemoveValue(TValue value) => _layers.RemoveAll(l => l.Has && EqualityComparer<TValue>.Default.Equals(l.Value, value)) > 0;
+
+    private void Push(Layer layer)
     {
-        var uncovered = new List<Cuboid> { box };
-        foreach (var (existing, v) in _entries)
-        {
-            if (!EqualityComparer<TValue>.Default.Equals(v, value)) continue;
-            uncovered = uncovered.SelectMany(u => u.Minus(existing)).ToList();
-            if (uncovered.Count == 0) return true;
-        }
-        return uncovered.Count == 0;
+        _layers.RemoveAll(l => l.Shape.Equals(layer.Shape));              // under a newer layer of the very same shape: gone
+        if (layer.Has || _layers.Any(l => l.Has && l.Shape.Bounds.Overlaps(layer.Shape.Bounds))) _layers.Add(layer);
     }
 
-    // Two boxes with the same value that fill a bigger box between them become that box, so a region that was cut and put back together is one box again.
-    private void Coalesce()
+    private static bool Near(Cuboid bounds, ParametricPoint at)
     {
-        if (_entries.Count > 4000) return;                                       // the work is quadratic; a map this fragmented is left as it is
-        bool merged = true;
-        while (merged)
-        {
-            merged = false;
-            for (int i = 0; i < _entries.Count && !merged; i++)
-                for (int j = i + 1; j < _entries.Count && !merged; j++)
-                    if (EqualityComparer<TValue>.Default.Equals(_entries[i].Value, _entries[j].Value) && TryJoin(_entries[i].Box, _entries[j].Box, out var joined))
-                    {
-                        _entries[i] = (joined, _entries[i].Value);
-                        _entries.RemoveAt(j);
-                        merged = true;
-                    }
-        }
-    }
-
-    private static bool TryJoin(Cuboid a, Cuboid b, out Cuboid joined)
-    {
-        joined = a;
-        int different = -1;
+        // a flat shape (collapsed along an axis) is looked for everywhere on that axis: the face of an element is found by the centre of the face, which is on the plane
         for (int axis = 0; axis < 3; axis++)
         {
-            if (a.Lo(axis) == b.Lo(axis) && a.Hi(axis) == b.Hi(axis)) continue;
-            if (different >= 0) return false;
-            different = axis;
+            if (bounds.Collapsed(axis)) continue;
+            long c = Quantum.Of(at[axis]);
+            if (c < bounds.Lo(axis) || c > bounds.Hi(axis)) return false;
         }
-        if (different < 0) return false;
-        if (a.Hi(different) == b.Lo(different)) { joined = a.With(different, a.Lo(different), b.Hi(different)); return true; }
-        if (b.Hi(different) == a.Lo(different)) { joined = a.With(different, b.Lo(different), a.Hi(different)); return true; }
+        return true;
+    }
+
+    // Surely every place of the shape already has this value.
+    private bool SurelyHas(Shape shape, TValue value)
+    {
+        if (shape is BoxShape box) return BoxHas(box.Box, value);
+        // not a box: only if the newest layer that touches it is that very shape with that value
+        for (int i = _layers.Count - 1; i >= 0; i--)
+        {
+            var layer = _layers[i];
+            if (!layer.Shape.Bounds.Overlaps(shape.Bounds)) continue;
+            return layer.Has && layer.Shape.Equals(shape) && EqualityComparer<TValue>.Default.Equals(layer.Value, value);
+        }
         return false;
+    }
+
+    // Exact for a box, as long as the layers over it are boxes too: the parts of the box that no layer has said anything about yet are what is left to look at.
+    private bool BoxHas(Cuboid box, TValue value)
+    {
+        var rest = new List<Cuboid> { box };
+        for (int i = _layers.Count - 1; i >= 0 && rest.Count > 0; i--)
+        {
+            var layer = _layers[i];
+            if (!rest.Any(r => r.Overlaps(layer.Shape.Bounds)) && !layer.Shape.Bounds.Overlaps(box)) continue;
+            if (layer.Shape is not BoxShape other)
+            {
+                if (layer.Shape.Bounds.Overlaps(box)) return false;                    // something that is not a box lies over it: not sure
+                continue;
+            }
+            bool matches = layer.Has && EqualityComparer<TValue>.Default.Equals(layer.Value, value);
+            var next = new List<Cuboid>();
+            foreach (var part in rest)
+            {
+                if (!part.Overlaps(other.Box)) { next.Add(part); continue; }
+                if (!matches) return false;                                              // a part of the box is held by something else
+                next.AddRange(part.Minus(other.Box));
+            }
+            rest = next;
+        }
+        return rest.Count == 0;
     }
 }
