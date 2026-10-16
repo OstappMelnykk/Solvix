@@ -82,13 +82,6 @@
   <button class="btn" type="button" (click)="clearSetup()">Скинути закріплення, тиск і матеріали</button>
 </div>
 
-<button class="btn" type="button" [disabled]="isRunning()" (click)="validate()">Перевірити</button>
-<div class="issues" *ngIf="validation() as v">
-  <div class="issue issue--ok" *ngIf="v.canSolve && v.issues.length === 0">Усе гаразд, можна рахувати.</div>
-  <div class="issue" *ngFor="let issue of v.issues" [class.issue--error]="issue.severity === 'error'" [class.issue--warning]="issue.severity === 'warning'">
-    {{ issue.severity === 'error' ? '✕' : '⚠' }} {{ issue.message }}
-  </div>
-</div>
 <button class="btn-solve" type="button" [disabled]="isRunning() || hexCount() === 0" (click)="solve()">
   <ng-container *ngIf="isRunning(); else idle">Розрахунок… {{ progressPercent() }}%</ng-container>
   <ng-template #idle>▶ Розрахувати</ng-template>

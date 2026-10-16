@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { SolverControlsComponent } from './solver-controls.component';
 import { SolverService } from '../../../state/solver.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { SolverJobDto, SolverResultDto, SolverSetupDto, SolverValidationDto } from '../../../api/solver-api.service';
+import { SolverJobDto, SolverResultDto, SolverSetupDto } from '../../../api/solver-api.service';
 import { linkedPairState } from '../../../geometry/mesh-state.fixture.spec';
 
 describe('SolverControlsComponent', () => {
@@ -11,7 +11,6 @@ describe('SolverControlsComponent', () => {
   let setup: SolverSetupDto | null;
   let job: SolverJobDto;
   let result: SolverResultDto | null;
-  let validation: SolverValidationDto | null;
   let display: { field: 'none' | 'vonMises' | 'displacement'; deformationScale: number; opacity: number; colorMax: number | null; edges: boolean; vectors: boolean };
   let divisions: number[];
   let pressure: number;
@@ -40,17 +39,15 @@ describe('SolverControlsComponent', () => {
     };
     job = { state: 'idle', progress: 0, stage: '', error: null, ticket: 0 };
     result = null;
-    validation = null;
     display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
-      'setup', 'validation', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
+      'setup', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
       'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'applyPressureToAll', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
-      'clearSetup', 'validate', 'solve', 'cancel', 'setField', 'clearResult'
+      'clearSetup', 'solve', 'cancel', 'setField', 'clearResult'
     ]);
     solver.setup.and.callFake(() => setup);
-    solver.validation.and.callFake(() => validation);
     solver.job.and.callFake(() => job);
     solver.result.and.callFake(() => result);
     solver.display.and.callFake(() => display);
@@ -215,11 +212,9 @@ describe('SolverControlsComponent', () => {
   });
 
   describe('solving', () => {
-    it('validates and solves through the service', () => {
-      component.validate();
+    it('solves through the service', () => {
       component.solve();
 
-      expect(solver.validate).toHaveBeenCalledWith(1);
       expect(solver.solve).toHaveBeenCalledWith(1);
     });
 
@@ -260,12 +255,6 @@ describe('SolverControlsComponent', () => {
       component.cancel();
 
       expect(solver.cancel).toHaveBeenCalledWith(1);
-    });
-
-    it('exposes the verdict of the validation', () => {
-      validation = { canSolve: false, issues: [{ severity: 'error', message: 'Закріпіть' }] };
-
-      expect(component.validation()!.issues[0].message).toBe('Закріпіть');
     });
   });
 

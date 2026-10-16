@@ -232,10 +232,6 @@ export class SolverControlsComponent implements DoCheck {
 
   // --- solving ---
 
-  validate(): void {
-    this.solver.validate(this.sessionId);
-  }
-
   // The quality of the mesh does not stand in the way: the user decides (the verdict above only says what to expect).
   solve(): void {
     void this.solver.solve(this.sessionId);
@@ -247,10 +243,6 @@ export class SolverControlsComponent implements DoCheck {
 
   isRunning(): boolean {
     return this.solver.isRunning(this.sessionId);
-  }
-
-  validation() {
-    return this.solver.validation(this.sessionId);
   }
 
   job() {
