@@ -137,14 +137,14 @@ describe('the Quality World view', () => {
     disposeMeshView(view);
   });
 
-  it('shows the dots hidden by the body again, weaker the more opaque the body is, and none at all for a solid one', () => {
+  it('shows the cubes\' corners hidden by the body again (only those), weaker the more opaque the body is, and none at all for a solid one', () => {
     const solid = buildQualityView(input());
     const see = buildQualityView(input({ opacity: 0.5 }));
     const count = (v: ReturnType<typeof buildQualityView>) => v.root.children.filter(c => c instanceof THREE.InstancedMesh).length;
 
-    expect(count(see)).toBe(2 * count(solid));
+    expect(count(see)).toBe(count(solid) + 1);                               // the corners only
     const hidden = see.root.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh).filter(m => !(m.material as THREE.MeshBasicMaterial).depthTest);
-    expect(hidden.length).toBe(count(solid));
+    expect(hidden.length).toBe(1);
     expect((hidden[0].material as THREE.MeshBasicMaterial).opacity).toBeGreaterThan(0);
     disposeMeshView(solid);
     disposeMeshView(see);

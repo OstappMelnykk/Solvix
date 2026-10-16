@@ -50,7 +50,7 @@ const CAP_OUTLINE_COLOR = 0xe6e8ec;
 const GHOST_FULL_AT = 0.7;
 const DOT_SPHERE_SEGMENTS = [10, 8] as const;
 // how visible the farthest edges and dots of a see-through body are (the nearest are fully visible), as in the Real World
-const FAR_ALPHA = 0.15;
+const FAR_ALPHA = 0.1;
 
 // The depth range of the body as the camera sees it, shared by the shaders that fade with depth: refreshed from the camera before the object is drawn.
 interface FadeUniforms {
@@ -320,6 +320,8 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     }
   }
   const dotSet = (kind: 'corner' | 'mid' | 'sub', ghosted: boolean): THREE.Object3D | null => {
+    // what the body hides shows through only as the cubes' corners: the midpoints and the small elements' nodes behind it would drown the picture
+    if (ghosted && kind !== 'corner') return null;
     const points = Array.from(found.values()).filter(f => f.kind === kind);
     if (points.length === 0) return null;
     const material = (colour: number) =>
