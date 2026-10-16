@@ -21,7 +21,7 @@ export interface FemIndex {
 // The corner slots (0..7) of each local face, the solver's order: ZMinus, ZPlus, YMinus, YPlus, XMinus, XPlus.
 const FACE_CORNERS: readonly (readonly number[])[] = ['ZMinus', 'ZPlus', 'YMinus', 'YPlus', 'XMinus', 'XPlus'].map(name => faceSlots(name as HexFaceName).filter(slot => slot < 8));
 
-function cornerKey(mesh: SolverMeshDto, element: number, face: number): string {
+export function cornerKey(mesh: SolverMeshDto, element: number, face: number): string {
   return FACE_CORNERS[face].map(slot => mesh.connectivity[element * 20 + slot]).sort((a, b) => a - b).join(',');
 }
 

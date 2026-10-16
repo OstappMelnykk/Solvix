@@ -6,6 +6,9 @@ import { SolverService } from './solver.service';
 import { GeometryOpacityService } from './geometry-opacity.service';
 import { NodeSizeService } from './node-size.service';
 import { SurfaceAttachmentService } from './surface-attachment.service';
+import { buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
+import { remapMesh } from '../geometry/fem-remap';
+import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { MeshView, buildMeshView, withNodeMoved } from '../geometry/mesh-editor-view';
 
 interface Cached {
@@ -58,7 +61,7 @@ export class MeshEditorRenderService {
     if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
     if (live) state = withNodeMoved(state, live.nodeId, live.position, live.carry);
-    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}`;
+    const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}:${this.solver.isLocal(sessionId) ? `local${this.solver.mesh(sessionId) ? '+' : '-'}${this.solver.revision(sessionId)}${this.solver.refineMode(sessionId)}` : ''}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
 
@@ -73,7 +76,22 @@ export class MeshEditorRenderService {
       },
       { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined, xrayNodes: this.selection.xrayNodes(sessionId), faceOpacity: this.opacity.get(sessionId, worldIndex), nodeScale: { corner: this.nodeSize.get(sessionId, 'corner'), mid: this.nodeSize.get(sessionId, 'mid') } }
     );
-    this.cache.set(cacheKey, { key, view });
-    return view;
+    const shown = this.withRefinedMesh(sessionId, worldIndex, state, view);
+    this.cache.set(cacheKey, { key, view: shown });
+    return shown;
+  }
+
+  // A locally refined body: the edges of the solver's elements drawn over the cubes, the elements chosen to be refined outlined, and - while elements are being picked - the
+  // faces of those elements are what a click lands on (the cubes' own faces and nodes are not).
+  private withRefinedMesh(sessionId: number, worldIndex: number, state: MeshStateDto, view: MeshView): MeshView {
+    const mesh = this.solver.isLocal(sessionId) ? this.solver.mesh(sessionId) : null;
+    const index = this.solver.meshIndex(sessionId);
+    if (!mesh || !index) return view;
+    const placed = remapMesh(mesh, state, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real');
+    const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, showFixed: false, showLoads: false });
+    view.root.add(fem.root);
+    const chosen = [...this.solver.refineSelection(sessionId)];
+    if (chosen.length > 0) view.root.add(buildFemHighlight(placed, index, { faces: [], elements: chosen, pointed: null }, 4000));
+    return this.solver.refineMode(sessionId) ? { ...view, pickables: fem.pickables } : view;
   }
 }

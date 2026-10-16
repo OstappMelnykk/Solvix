@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { ElementFaceRefDto, SolverMeshDto, SolverResultDto } from '../api/solver-api.service';
 import { disposeObject3D } from './dispose-object3d';
 import { markForWeightedOit } from '../rendering/weighted-oit';
-import { FemHighlightInput, FemIndex } from './fem-targets';
+import { FemHighlightInput, FemIndex, cornerKey } from './fem-targets';
 import { LOCAL_COORDS, MeshView, PickedFace, faceAxis, faceSlots } from './mesh-editor-view';
 import { buildDisplacementArrows } from './displacement-arrows';
 import { Deformable, FIXED_COLOR, OVERLAY_OPACITY, SolverField, applyColorRange, applyDeformation, deformable, fieldRange, fieldValues, materialColor, pressureColor, rampColor } from './solver-view';
@@ -31,6 +31,8 @@ export interface FemMeshViewInput {
   readonly elementColor?: (element: number) => number | null;
   readonly skipElement?: (element: number) => boolean;
   readonly look?: 'solid' | 'edges';
+  // Also draw the edges inside the body (of every face of every element, once), not only those of the surface.
+  readonly innerEdges?: boolean;
 }
 
 const RESOLUTION = 3;
@@ -224,7 +226,22 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     pointOn(mesh, f.element, f.face, u, v, out).add(moved.set(scalarOn(mesh, f.element, f.face, u, v, result!.ux), scalarOn(mesh, f.element, f.face, u, v, result!.uy), scalarOn(mesh, f.element, f.face, u, v, result!.uz)));
   const darkEdge = new THREE.Color(EDGE_COLOR);
   const paleEdge = new THREE.Color(PALE_EDGE_COLOR);
-  for (const f of visible) {
+  // the faces whose edges are drawn: the surface ones, or every face once (a face inside the body belongs to two elements)
+  let edgeFaces: SurfaceFace[] = visible;
+  if (input.innerEdges) {
+    const seen = new Set<string>();
+    edgeFaces = [];
+    for (let element = 0; element < mesh.keys.length; element++) {
+      if (hidden.has(materialOf(element)) || input.skipElement?.(element)) continue;
+      for (let face = 0; face < 6; face++) {
+        const id = cornerKey(mesh, element, face);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        edgeFaces.push({ element, face });
+      }
+    }
+  }
+  for (const f of edgeFaces) {
     const own = wire ? input.elementColor?.(f.element) : null;
     const edgeColor = wire ? (own !== null && own !== undefined ? new THREE.Color(own) : paleEdge) : darkEdge;
     for (const [u0, v0, u1, v1] of sides) {

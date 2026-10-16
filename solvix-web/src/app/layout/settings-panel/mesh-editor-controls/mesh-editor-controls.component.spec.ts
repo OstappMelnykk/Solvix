@@ -35,7 +35,7 @@ describe('MeshEditorControlsComponent', () => {
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
-    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement', 'refineSelection', 'clearRefineSelection']);
+    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement', 'refineSelection', 'clearRefineSelection', 'refineMode', 'setRefineMode', 'refineScope', 'setRefineScope']);
     solver.divisions.and.returnValue([1, 2, 3]);
     solver.refineSelection.and.returnValue(new Set<string>());
     TestBed.configureTestingModule({

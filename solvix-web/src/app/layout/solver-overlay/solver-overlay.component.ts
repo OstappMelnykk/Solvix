@@ -16,8 +16,7 @@ export const TOOLS: readonly { tool: Tool; label: string; title: string }[] = [
   { tool: 'load', label: 'Тиск', title: 'Клік позначає грані як навантажені (зелені); ще клік — знімає' },
   { tool: 'fix', label: 'Опора', title: 'Клік закріплює грані (сині); ще клік — знімає' },
   { tool: 'erase', label: 'Гумка', title: 'Стирає і тиск, і опору з граней, до яких торкнулись' },
-  { tool: 'material', label: 'Матеріал', title: 'Клік фарбує елементи вибраним матеріалом' },
-  { tool: 'refine', label: 'Згущення', title: 'Клік вибирає елементи, які згустить «Запустити» (панель зліва); ще клік — знімає' }
+  { tool: 'material', label: 'Матеріал', title: 'Клік фарбує елементи вибраним матеріалом' }
 ];
 
 const SCOPE_LABELS: Record<Scope, { label: string; title: string }> = {
@@ -44,10 +43,7 @@ export class SolverOverlayComponent {
 
   @Input({ required: true }) sessionId!: number;
 
-  // The refinement tool only has a meaning once the body is refined: the elements to refine again are the leaves of its mesh.
-  visibleTools(): typeof TOOLS {
-    return this.solver.isLocal(this.sessionId) ? TOOLS : TOOLS.filter(t => t.tool !== 'refine');
-  }
+  readonly tools = TOOLS;
 
   // The two windows can be folded to their title and a tick.
   private readonly closed = new Set<'tools' | 'view'>();

@@ -197,26 +197,21 @@ describe('SolverService', () => {
       http.expectOne(r => r.url === `${api}/${sessionId}/quality/element-by-key` && r.params.get('key') === 'b');
     });
 
-    it('chooses the elements to refine with the Refinement tool, and a second click on them takes them off', () => {
+    it('chooses the elements to refine by pointing at them in the Ideal and Real Worlds, and a second pick takes them off', () => {
       loadMesh();
-      solver.setTool(sessionId, 'refine');
-      solver.pick(sessionId, pointAt('a'));
-      solver.pick(sessionId, pointAt('b'));
+      solver.chooseByPick(sessionId, pointAt('a'));
+      solver.chooseByPick(sessionId, pointAt('b'));
       expect([...solver.refineSelection(sessionId)]).toEqual(['a', 'b']);
       http.expectNone(`${api}/${sessionId}/mesh/faces`);
 
-      solver.pick(sessionId, pointAt('a'));
+      solver.chooseByPick(sessionId, pointAt('a'));
       expect([...solver.refineSelection(sessionId)]).toEqual(['b']);
-      expect(solver.femHighlight(sessionId)?.elements).toContain('b');
     });
 
-    it('a stroke of the Refinement tool chooses what it passes over, and refining empties the choice', () => {
+    it('a pick reaches the element, or its whole cube, as the scope says, and refining empties the choice', () => {
       loadMesh();
-      solver.setTool(sessionId, 'refine');
-      solver.setBrush(sessionId, true);
-      solver.paintStart(sessionId, pointAt('a'));
-      solver.paintTo(sessionId, pointAt('b'));
-      solver.paintEnd(sessionId);
+      solver.setRefineScope(sessionId, 'cube');
+      solver.chooseByPick(sessionId, pointAt('a'));
       expect([...solver.refineSelection(sessionId)]).toEqual(['a', 'b']);
 
       solver.addRefinement(sessionId, { leaves: ['a', 'b'], ni: 2, nj: 2, nk: 2, transitionDepth: 0 });
@@ -224,10 +219,10 @@ describe('SolverService', () => {
       expect(solver.refineSelection(sessionId).size).toBe(0);
     });
 
-    it('has no Refinement tool before the body is refined', () => {
+    it('picks elements only once the body is refined', () => {
       loadSetup();
-      solver.setTool(sessionId, 'refine');
-      expect(solver.tool(sessionId)).toBe('view');
+      solver.setRefineMode(sessionId, true);
+      expect(solver.refineMode(sessionId)).toBeFalse();
     });
 
     it('highlights what a click would reach, and offers the scopes a refined body has', () => {

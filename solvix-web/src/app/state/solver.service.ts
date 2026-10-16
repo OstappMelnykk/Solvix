@@ -130,6 +130,9 @@ interface SessionSolver {
   // The same in a locally refined body, where faces and elements are named by key.
   // The elements (leaf keys) chosen to be refined next.
   refineSelected: Set<string>;
+  // Picking elements to refine in the Ideal and Real Worlds, and how far a pick reaches.
+  refineMode: boolean;
+  refineScope: Scope;
   femStroke: { erase: boolean; faces: Map<string, ElementFaceRefDto>; elements: Set<string>; hexes: Set<number> } | null;
   // The small face under the mouse.
   hover: PickedFace | null;
@@ -203,6 +206,8 @@ export class SolverService {
       brush: false,
       stroke: null,
       refineSelected: new Set<string>(),
+      refineMode: false,
+      refineScope: 'cell',
       femStroke: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
@@ -261,6 +266,38 @@ export class SolverService {
     return this.entry(sessionId).refineSelected;
   }
 
+  // Whether a click in the Ideal and Real Worlds picks the elements to refine (instead of cubes and faces).
+  refineMode(sessionId: number): boolean {
+    return this.entry(sessionId).refineMode;
+  }
+
+  setRefineMode(sessionId: number, on: boolean): void {
+    this.entry(sessionId).refineMode = on && this.isLocal(sessionId);
+    this.touch(sessionId);
+  }
+
+  // How far a click reaches when picking elements to refine: the element, the row of them inward from the face, or its cube.
+  refineScope(sessionId: number): Scope {
+    return this.entry(sessionId).refineScope;
+  }
+
+  setRefineScope(sessionId: number, scope: Scope): void {
+    this.entry(sessionId).refineScope = FEM_REFINE_SCOPES.includes(scope) ? scope : 'cell';
+    this.touch(sessionId);
+  }
+
+  // A click on an element of the refined mesh in the Ideal or Real World: it joins the elements chosen to be refined, or leaves them when all it reaches was chosen.
+  chooseByPick(sessionId: number, pick: PickedFace | null): void {
+    const entry = this.entry(sessionId);
+    if (!entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return;
+    const keys = femRefineTargets(pick, entry.refineScope, entry.mesh, entry.meshIndex);
+    const add = !keys.every(k => entry.refineSelected.has(k));
+    const next = new Set(entry.refineSelected);
+    for (const k of keys) add ? next.add(k) : next.delete(k);
+    entry.refineSelected = next;
+    this.touch(sessionId);
+  }
+
   clearRefineSelection(sessionId: number): void {
     this.entry(sessionId).refineSelected = new Set<string>();
     this.touch(sessionId);
@@ -277,6 +314,7 @@ export class SolverService {
       next: setup => {
         this.acceptSetup(sessionId, setup);
         this.entry(sessionId).refineSelected = new Set<string>();
+        this.entry(sessionId).refineMode = this.entry(sessionId).refineMode && this.isLocal(sessionId);
         this.forgetResultOfOldMesh(sessionId);
       },
       error: (error: { error?: { error?: string } }) => this.notifications.warning(error.error?.error ?? 'Не вдалось виконати згущення.')
@@ -287,8 +325,8 @@ export class SolverService {
     this.api.clearRefinement(sessionId).subscribe({
       next: setup => {
         this.acceptSetup(sessionId, setup);
-        if (this.entry(sessionId).tool === 'refine') this.entry(sessionId).tool = 'view';
         this.entry(sessionId).refineSelected = new Set<string>();
+        this.entry(sessionId).refineMode = this.entry(sessionId).refineMode && this.isLocal(sessionId);
         this.forgetResultOfOldMesh(sessionId);
         then?.();
       },
@@ -393,7 +431,6 @@ export class SolverService {
 
   setTool(sessionId: number, tool: Tool): void {
     const entry = this.entry(sessionId);
-    if (tool === 'refine' && !this.isLocal(sessionId)) return;
     entry.tool = tool;
     // a scope that means nothing for the new tool falls back to the small one
     if (!this.scopesOf(tool).includes(entry.scope)) entry.scope = 'cell';
@@ -402,8 +439,8 @@ export class SolverService {
   }
 
   scopesOf(tool: Tool, sessionId?: number): readonly Scope[] {
-    if (sessionId !== undefined && this.isLocal(sessionId)) return tool === 'material' ? FEM_MATERIAL_SCOPES : tool === 'refine' ? FEM_REFINE_SCOPES : tool === 'view' ? [] : FEM_FACE_SCOPES;
-    return tool === 'material' ? MATERIAL_SCOPES : tool === 'view' || tool === 'refine' ? [] : FACE_SCOPES;
+    if (sessionId !== undefined && this.isLocal(sessionId)) return tool === 'material' ? FEM_MATERIAL_SCOPES : tool === 'view' ? [] : FEM_FACE_SCOPES;
+    return tool === 'material' ? MATERIAL_SCOPES : tool === 'view' ? [] : FACE_SCOPES;
   }
 
   scope(sessionId: number): Scope {
@@ -602,16 +639,14 @@ export class SolverService {
   femHighlight(sessionId: number): FemHighlightInput | null {
     const entry = this.entry(sessionId);
     if (!entry.mesh || !entry.meshIndex) return null;
-    const chosen = [...entry.refineSelected];
     if (entry.femStroke) {
       const stroke = entry.femStroke;
       const wholeCubes = entry.mesh.keys.filter((_, i) => stroke.hexes.has(entry.mesh!.hexIds[i]));
-      return { faces: [...stroke.faces.values()], elements: [...chosen, ...stroke.elements, ...wholeCubes], pointed: null };
+      return { faces: [...stroke.faces.values()], elements: [...stroke.elements, ...wholeCubes], pointed: null };
     }
     const pick = entry.hover;
-    if (!isFemPick(pick) || entry.tool === 'view') return chosen.length > 0 ? { faces: [], elements: chosen, pointed: null } : null;
+    if (!isFemPick(pick) || entry.tool === 'view') return null;
     const pointed = { key: pick.elementKey, face: pick.localFace };
-    if (entry.tool === 'refine') return { faces: [], elements: [...chosen, ...femRefineTargets(pick, entry.scope, entry.mesh, entry.meshIndex)], pointed };
     if (entry.tool === 'material') return { faces: [], elements: femElementTargets(pick, entry.scope, entry.mesh), pointed };
     return { faces: femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex), elements: [], pointed };
   }
@@ -882,11 +917,6 @@ export class SolverService {
   private pickInMesh(sessionId: number, pick: PickedFace): void {
     const entry = this.entry(sessionId);
     if (!entry.mesh || !entry.meshIndex || !isFemPick(pick)) return;
-    if (entry.tool === 'refine') {
-      const keys = femRefineTargets(pick, entry.scope, entry.mesh, entry.meshIndex);
-      this.chooseForRefinement(sessionId, keys, !keys.every(k => entry.refineSelected.has(k)));
-      return;
-    }
     if (entry.tool === 'material') {
       if (entry.scope === 'cube') this.apply(sessionId, this.api.setHexMaterial(sessionId, [pick.hex], entry.activeMaterial));
       else this.apply(sessionId, this.api.paintElements(sessionId, femElementTargets(pick, entry.scope, entry.mesh), entry.activeMaterial));
@@ -905,15 +935,6 @@ export class SolverService {
       entry.fixedSide = null;
       this.apply(sessionId, this.api.selectFaces(sessionId, faces, marked ? 'unfix' : 'fix'));
     }
-  }
-
-  // Adds these elements to the ones chosen for refinement, or takes them out.
-  private chooseForRefinement(sessionId: number, keys: readonly string[], add: boolean): void {
-    const entry = this.entry(sessionId);
-    const next = new Set(entry.refineSelected);
-    for (const k of keys) add ? next.add(k) : next.delete(k);
-    entry.refineSelected = next;
-    this.touch(sessionId);
   }
 
   private eraseMeshFaces(sessionId: number, faces: readonly ElementFaceRefDto[]): void {
@@ -1034,9 +1055,7 @@ export class SolverService {
     if (!entry.mesh || !entry.meshIndex || !isFemPick(pick)) return;
     let erase = false;
     if (entry.tool === 'erase') erase = true;
-    else if (entry.tool === 'refine') {
-      erase = femRefineTargets(pick, entry.scope, entry.mesh, entry.meshIndex).every(k => entry.refineSelected.has(k));
-    } else if (entry.tool !== 'material') {
+    else if (entry.tool !== 'material') {
       const first = femFaceTargets(pick, entry.scope, entry.mesh, entry.meshIndex);
       erase = entry.tool === 'load' ? femAllMarked(entry.mesh, entry.meshIndex, first, 'loaded', entry.pressure) : femAllMarked(entry.mesh, entry.meshIndex, first, 'fixed');
     }
@@ -1048,10 +1067,6 @@ export class SolverService {
     const entry = this.entry(sessionId);
     const stroke = entry.femStroke;
     if (!stroke || !entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return;
-    if (entry.tool === 'refine') {
-      for (const key of femRefineTargets(pick, entry.scope, entry.mesh, entry.meshIndex)) stroke.elements.add(key);
-      return;
-    }
     if (entry.tool === 'material') {
       if (entry.scope === 'cube') stroke.hexes.add(pick.hex);
       else for (const key of femElementTargets(pick, entry.scope, entry.mesh)) stroke.elements.add(key);
@@ -1066,10 +1081,6 @@ export class SolverService {
     entry.femStroke = null;
     if (!stroke || (stroke.faces.size === 0 && stroke.elements.size === 0 && stroke.hexes.size === 0)) {
       this.touch(sessionId);
-      return;
-    }
-    if (entry.tool === 'refine') {
-      this.chooseForRefinement(sessionId, [...stroke.elements], !stroke.erase);
       return;
     }
     if (entry.tool === 'material') {

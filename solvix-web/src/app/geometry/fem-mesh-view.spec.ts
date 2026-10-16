@@ -129,3 +129,25 @@ describe('buildFemMeshView for the Quality World', () => {
     expect(color.getY(0)).toBe(0);
   });
 });
+
+describe('buildFemMeshView with the edges inside', () => {
+  // two elements stacked along z: the face between them is inside the body, the other ten are on the surface
+  const stacked = (): SolverMeshDto => {
+    const connectivity: number[] = [];
+    for (let e = 0; e < 2; e++) {
+      const slots = new Array(20).fill(0);
+      for (let i = 0; i < 4; i++) { slots[i] = 4 * e + i; slots[4 + i] = 4 * (e + 1) + i; }
+      connectivity.push(...slots);
+    }
+    return { ...oneElement(), elementCount: 2, hexIds: [7, 7], keys: ['a', 'b'], materials: ['', ''], connectivity, positions: new Array(60).fill(0), surfaceFaces: [0, 0] };
+  };
+  const segments = (view: ReturnType<typeof buildFemMeshView>) => (view.root.children.find(o => o.userData['edges']) as THREE.LineSegments).geometry.getAttribute('position').count / 2;
+
+  it('draws the edges of the face between two elements once, and none of it without the option', () => {
+    const plain = segments(buildFemMeshView(input(stacked())));
+    const inner = segments(buildFemMeshView(input(stacked(), { innerEdges: true })));
+    // 4 sides of a face, 6 segments each; the surface face alone, then 11 faces (12 minus the shared one counted once)
+    expect(plain).toBe(1 * 4 * 6);
+    expect(inner).toBe(11 * 4 * 6);
+  });
+});

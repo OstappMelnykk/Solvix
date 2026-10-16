@@ -253,8 +253,16 @@
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'steps'" [attr.aria-checked]="localRunMode === 'steps'" (click)="localRunMode = 'steps'">По кроках</button>
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'at-once'" [attr.aria-checked]="localRunMode === 'at-once'" (click)="localRunMode = 'at-once'">Одразу</button>
   </div>
-  <div class="hint" *ngIf="chosenCount() > 0">Вибрано елементів: {{ chosenCount() }}
-    <button class="tool" type="button" (click)="clearChosen()">Зняти вибір</button></div>
+  <ng-container *ngIf="isLocalRefined()">
+    <div class="sub-label">Елементи для згущення{{ chosenCount() > 0 ? ': ' + chosenCount() : '' }}</div>
+    <div class="pair">
+      <button class="tool" type="button" [class.tool--on]="pickingElements()" [attr.aria-pressed]="pickingElements()" (click)="togglePicking()">Вибирати на сцені</button>
+      <button class="tool" type="button" [disabled]="chosenCount() === 0" (click)="clearChosen()">Зняти вибір</button>
+    </div>
+    <div class="pair" role="radiogroup" aria-label="Скільки захоплює вибір" *ngIf="pickingElements()">
+      <button *ngFor="let item of pickScopes" class="tool" type="button" role="radio" [class.tool--on]="pickScope() === item.scope" [attr.aria-checked]="pickScope() === item.scope" [title]="item.title" (click)="setPickScope(item.scope)">{{ item.label }}</button>
+    </div>
+  </ng-container>
   <button class="tool tool--primary" type="button" (click)="runLocalRefinement()">Запустити</button>
   <button *ngIf="isLocalRefined()" class="tool" type="button" (click)="clearLocalRefinement()">Скинути згущення</button>
 </div>

@@ -255,6 +255,12 @@ export class RenderWindowComponent {
   onMeshPick(pick: MeshPick | null, additive: boolean): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
+    // while the elements of a refined body are being picked, a click in the Ideal and Real Worlds chooses elements to refine
+    const world = this.activeWorldIndex();
+    if ((world === IDEAL_WORLD_INDEX || world === REAL_WORLD_INDEX) && this.solver.refineMode(sessionId)) {
+      this.solver.chooseByPick(sessionId, pick?.kind === 'face' ? pick : null);
+      return;
+    }
     // in the Solver World a click acts through the chosen tool (see SolverService.pick)
     if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick?.kind === 'face' ? pick : null);
     else if (this.activeWorldIndex() === QUALITY_WORLD_INDEX) {

@@ -11,6 +11,7 @@ import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
+import { Scope } from '../../../geometry/solver-targets';
 
 const FACE_LABELS: Record<HexFaceName, string> = {
   XMinus: 'X−',
@@ -459,7 +460,7 @@ export class MeshEditorControlsComponent {
     const chosen = [...this.solver.refineSelection(this.sessionId)];
     const hexes = this.selectedHexes();
     if (chosen.length === 0 && hexes.length === 0) {
-      this.notifications.warning('Виберіть куби (Shift + клік) або, у світі солвера, елементи інструментом «Згущення».');
+      this.notifications.warning('Виберіть куби (Shift + клік) або, коли тіло вже згущене, елементи («Вибирати на сцені»).');
       return;
     }
     const sessionId = this.sessionId;
@@ -481,6 +482,28 @@ export class MeshEditorControlsComponent {
 
   clearChosen(): void {
     if (this.sessionId !== null) this.solver.clearRefineSelection(this.sessionId);
+  }
+
+  readonly pickScopes: readonly { scope: Scope; label: string; title: string }[] = [
+    { scope: 'cell', label: 'Один', title: 'Лише елемент, на який клікнули' },
+    { scope: 'column', label: 'Стовпчик', title: 'Ряд елементів від грані вглиб тіла (так дістаються внутрішні)' },
+    { scope: 'cube', label: 'Куб', title: 'Усі елементи куба' }
+  ];
+
+  pickingElements(): boolean {
+    return this.sessionId !== null && this.solver.refineMode(this.sessionId);
+  }
+
+  togglePicking(): void {
+    if (this.sessionId !== null) this.solver.setRefineMode(this.sessionId, !this.pickingElements());
+  }
+
+  pickScope(): Scope {
+    return this.sessionId === null ? 'cell' : this.solver.refineScope(this.sessionId);
+  }
+
+  setPickScope(scope: Scope): void {
+    if (this.sessionId !== null) this.solver.setRefineScope(this.sessionId, scope);
   }
 
   isLocalRefined(): boolean {
