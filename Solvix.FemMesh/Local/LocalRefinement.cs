@@ -19,11 +19,14 @@ public sealed class LocalRefinement(IReadOnlyList<RefinementStep> history) : IMe
 
     public IReadOnlyList<RefinementStep> History { get; } = history;
 
-    /// <summary>The key of the leaf of the coarse mesh that is the whole cube: what a first refinement names a cube by.</summary>
-    public static string RootKey(int cube) => $"{cube}|1|0,0,0;1,0,0;0,1,0;1,1,0;0,0,1;1,0,1;0,1,1;1,1,1";
+    /// <summary>The key of the leaf of the coarse mesh that is the whole cube with this editor id: what a first refinement names a cube by.</summary>
+    public static string RootKey(int hexId) => $"{hexId}|1|0,0,0;1,0,0;0,1,0;1,1,0;0,0,1;1,0,1;0,1,1;1,1,1";
 
-    /// <summary>The key of a leaf: its cube and the place of its eight corners inside the cube as exact fractions, in lowest terms. It does not change when the lattice gets finer.</summary>
-    public static string LeafKey(LatticeMesh mesh, Cell cell)
+    /// <summary>
+    /// The key of a leaf: the editor id of its cube (<paramref name="hexIds"/> is the id of each root of the lattice) and the place of its eight corners inside the cube as exact fractions,
+    /// in lowest terms. It does not change when the lattice gets finer, nor when other cubes come and go.
+    /// </summary>
+    public static string LeafKey(LatticeMesh mesh, Cell cell, IReadOnlyList<int> hexIds)
     {
         var root = mesh.Roots[cell.Root];
         long scale = mesh.Scale;
@@ -38,7 +41,7 @@ public sealed class LocalRefinement(IReadOnlyList<RefinementStep> history) : IMe
         long gcd = scale;
         foreach (long n in numbers) gcd = (long)BigInteger.GreatestCommonDivisor(gcd, Math.Abs(n));
         var corners = Enumerable.Range(0, 8).Select(s => $"{numbers[3 * s] / gcd},{numbers[3 * s + 1] / gcd},{numbers[3 * s + 2] / gcd}");
-        return $"{cell.Root}|{scale / gcd}|{string.Join(';', corners)}";
+        return $"{hexIds[cell.Root]}|{scale / gcd}|{string.Join(';', corners)}";
     }
 
     /// <summary>The coarse mesh with the history replayed on it: the lattice of the leaves.</summary>
@@ -51,7 +54,7 @@ public sealed class LocalRefinement(IReadOnlyList<RefinementStep> history) : IMe
         foreach (var step in history)
         {
             var wanted = step.Leaves.ToHashSet();
-            var marked = mesh.Cells.Values.Where(c => wanted.Contains(LeafKey(mesh, c))).Select(c => c.Id).ToList();
+            var marked = mesh.Cells.Values.Where(c => wanted.Contains(LeafKey(mesh, c, coarse.ElementIds))).Select(c => c.Id).ToList();
             if (marked.Count == 0) continue;                              // everything the step named is gone
             Refiner.Refine(mesh, marked, step.NI, step.NJ, step.NK, step.TransitionDepth);
         }

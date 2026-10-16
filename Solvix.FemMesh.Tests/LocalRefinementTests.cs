@@ -166,6 +166,24 @@ public class LocalRefinementTests
     }
 
     [Test]
+    public void The_history_follows_the_cube_by_its_id_not_by_its_place_in_the_list_when_other_cubes_are_removed()
+    {
+        var editor = Support.Bar(4);
+        var rule = Refine(Cube(2, 2));
+        int before = rule.Build(Support.Export(editor)).ElementsOf(2).Count;       // cube 2 is third in the list
+
+        editor.RemoveHex(0);                                                          // now it is second
+        var coarse = Support.Export(editor);
+        var after = rule.Build(coarse);
+
+        Assert.That(coarse.ElementIds, Is.EqualTo(new[] { 1, 2, 3 }));
+        Assert.That(after.ElementsOf(1).Count, Is.EqualTo(before), "the cube with id 2 is still the refined one (it is the second in the list now)");
+        Assert.That(after.ElementsOf(0).Count, Is.EqualTo(1).Or.GreaterThan(1), "its neighbour may get transition cells");
+        Assert.That(Enumerable.Range(0, after.ElementCount).All(e => after.KeyOf(e).StartsWith(coarse.ElementIds[after.RootOf(e)] + "|")), Is.True, "every key begins with the id of its cube");
+        AssertSound(after, coarse, 3, 14);
+    }
+
+    [Test]
     public void A_step_that_names_leaves_that_are_gone_is_skipped_and_the_rest_still_works()
     {
         var (_, coarse) = Bar(2);

@@ -104,7 +104,7 @@ internal static class LatticeToFem
             var cell = cells[e];
             var root = lattice.Roots[cell.Root];
             roots2[e] = cell.Root;
-            keys[e] = LocalRefinement.LeafKey(lattice, cell);
+            keys[e] = LocalRefinement.LeafKey(lattice, cell, coarse.ElementIds);
             var corner = cell.Nodes.Select(lattice.PointOf).ToArray();
             ParametricPoint At(Pt3 p) => new(2 * (p.X / (double)scale - root.I) - 1, 2 * (p.Y / (double)scale - root.J) - 1, 2 * (p.Z / (double)scale - root.K) - 1);
             ParametricPoint Middle(IEnumerable<int> slots)

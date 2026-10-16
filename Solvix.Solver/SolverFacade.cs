@@ -49,13 +49,15 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
         if (new[] { step.NI, step.NJ, step.NK }.Any(n => n < 2 || n > SolverSetup.MaxDivision)) throw new ArgumentException($"Кількість частин по кожній осі має бути від 2 до {SolverSetup.MaxDivision}.");
         if (step.TransitionDepth is < 0 or > 2) throw new ArgumentException("Ширина перехідної зони: 0, 1 або 2.");
         if (mesh.ElementCount == 0) throw new ArgumentException("Немає жодного куба.");
-        var candidate = new RefinementStep(step.Leaves.ToList(), step.NI, step.NJ, step.NK, step.TransitionDepth);
+        // "hex:7" names the whole cube 7 as it is at the start (what a click on a cube of the even mesh means); any other key is a leaf key the mesh has given
+        var leaves = step.Leaves.Select(k => k.StartsWith("hex:") && int.TryParse(k.AsSpan(4), out int id) ? LocalRefinement.RootKey(id) : k).ToList();
+        var candidate = new RefinementStep(leaves, step.NI, step.NJ, step.NK, step.TransitionDepth);
         try
         {
             // the step must name something that is there, and the whole refinement must still be possible with it
             var before = new LocalRefinement(s.Setup.Refinements.ToList()).Replay(mesh);
-            var wanted = step.Leaves.ToHashSet();
-            if (!before.Cells.Values.Any(c => wanted.Contains(LocalRefinement.LeafKey(before, c)))) throw new ArgumentException("Обраних ділянок уже немає в сітці.");
+            var wanted = leaves.ToHashSet();
+            if (!before.Cells.Values.Any(c => wanted.Contains(LocalRefinement.LeafKey(before, c, mesh.ElementIds)))) throw new ArgumentException("Обраних ділянок уже немає в сітці.");
             var after = new LocalRefinement(s.Setup.Refinements.Append(candidate).ToList()).Build(mesh);
             if (after.ElementCount > 4 * SolverValidator.MaxElements) throw new ArgumentException($"Забагато елементів ({after.ElementCount}).");
         }
