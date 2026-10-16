@@ -1,4 +1,4 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, ElementRef, Input, inject } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
@@ -18,6 +18,7 @@ export class SessionStateControlsComponent {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly sessions = inject(SessionsService);
   private readonly solver = inject(SolverService);
+  private readonly host = inject(ElementRef, { optional: true });
 
   @Input({ required: true }) sessionId!: number | null;
 
@@ -38,6 +39,7 @@ export class SessionStateControlsComponent {
 
   requestReset(): void {
     this.isResetConfirming = true;
+    this.showConfirmation();
   }
 
   cancelReset(): void {
@@ -46,10 +48,16 @@ export class SessionStateControlsComponent {
 
   requestRestart(): void {
     this.isRestartConfirming = true;
+    this.showConfirmation();
   }
 
   cancelRestart(): void {
     this.isRestartConfirming = false;
+  }
+
+  // The block is the last one of the panel: once the question is there, the panel is scrolled so that its buttons are in view (no scrolling to find them).
+  private showConfirmation(): void {
+    setTimeout(() => (this.host?.nativeElement as HTMLElement | undefined)?.scrollIntoView({ block: 'end', behavior: 'smooth' }));
   }
 
   // "Start over": the whole session - cubes, undo history, imported reference, selection, camera - is replaced by a brand-new empty one.

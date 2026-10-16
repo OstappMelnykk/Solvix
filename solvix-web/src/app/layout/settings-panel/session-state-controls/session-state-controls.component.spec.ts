@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { SessionStateControlsComponent } from './session-state-controls.component';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
@@ -85,5 +85,28 @@ describe('SessionStateControlsComponent', () => {
       expect(selection.hexes(old)).toEqual([]);
       expect(selection.nodeId(old)).toBeNull();
     });
+  });
+
+  describe('the question', () => {
+    it('is short, so the buttons stay near, and the panel is scrolled to them', fakeAsync(() => {
+      const fixture = TestBed.createComponent(SessionStateControlsComponent);
+      fixture.componentInstance.sessionId = 1;
+      fixture.detectChanges();
+      const scrolled = spyOn(fixture.nativeElement as HTMLElement, 'scrollIntoView');
+
+      fixture.componentInstance.requestRestart();
+      fixture.detectChanges();
+      tick();
+
+      const question = fixture.nativeElement.querySelector('.selected') as HTMLElement;
+      expect(question.textContent!.length).toBeLessThan(50);
+      expect(scrolled).toHaveBeenCalledWith(jasmine.objectContaining({ block: 'end' }));
+
+      fixture.componentInstance.cancelRestart();
+      fixture.componentInstance.requestReset();
+      fixture.detectChanges();
+      tick();
+      expect(scrolled).toHaveBeenCalledTimes(2);
+    }));
   });
 });
