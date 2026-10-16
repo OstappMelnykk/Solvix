@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { ElementFaceRefDto, SolverMeshDto } from '../api/solver-api.service';
+import { ElementFaceRefDto, SolverMeshDto, SolverResultDto } from '../api/solver-api.service';
 import { disposeObject3D } from './dispose-object3d';
 import { markForWeightedOit } from '../rendering/weighted-oit';
 import { FemHighlightInput, FemIndex } from './fem-targets';
 import { LOCAL_COORDS, MeshView, PickedFace, faceAxis, faceSlots } from './mesh-editor-view';
-import { FIXED_COLOR, OVERLAY_OPACITY, materialColor, pressureColor } from './solver-view';
+import { buildDisplacementArrows } from './displacement-arrows';
+import { Deformable, FIXED_COLOR, OVERLAY_OPACITY, SolverField, applyColorRange, applyDeformation, deformable, fieldRange, fieldValues, materialColor, pressureColor, rampColor } from './solver-view';
 
 // The Solver World's drawing of a mesh of finite elements that is not an even grid (a locally refined body): the solver's own flat list of elements,
 // the faces on the surface drawn as small curved faces, so every element is as separately reachable as in the even division. Faces are named by
@@ -20,6 +21,12 @@ export interface FemMeshViewInput {
   readonly showLoads?: boolean;
   readonly marksOpacity?: number;
   readonly edges?: boolean;
+  // After a solve: the result on this mesh (its nodes are the mesh's), the field to colour by, how far to draw the deformation, the top of the colour range and whether to draw the vectors.
+  readonly result?: SolverResultDto | null;
+  readonly field?: SolverField;
+  readonly deformationScale?: number;
+  readonly colorMax?: number | null;
+  readonly vectors?: boolean;
 }
 
 const RESOLUTION = 3;
@@ -57,6 +64,14 @@ export function femFaceName(face: number) {
   return LOCAL_FACE_NAMES[face];
 }
 
+// the value of a per-node array at an element's face point (u, v)
+function scalarOn(mesh: SolverMeshDto, element: number, face: number, u: number, v: number, values: readonly number[]): number {
+  const { slots, uv } = FACE_NODES[face];
+  let sum = 0;
+  for (let i = 0; i < slots.length; i++) sum += shape(uv[i][0], uv[i][1], u, v) * values[mesh.connectivity[element * 20 + slots[i]]];
+  return sum;
+}
+
 // the point of an element's face at (u, v) in [-1, 1]^2
 function pointOn(mesh: SolverMeshDto, element: number, face: number, u: number, v: number, out: THREE.Vector3): THREE.Vector3 {
   const { slots, uv } = FACE_NODES[face];
@@ -91,22 +106,44 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   pairs(mesh.loadedFaces).forEach((f, i) => loaded.set(faceId(f), mesh.pressures[i] ?? 0));
   const allPressures = [...loaded.values()];
 
+  // a result belongs to the mesh it was solved on: with another node count it means nothing here
+  const result = input.result && input.result.positions.length === mesh.positions.length ? input.result : null;
+  const field = input.field ?? 'none';
+  const values = result ? fieldValues(result, field) : null;
+  const top = values ? (input.colorMax && input.colorMax > 0 ? input.colorMax : fieldRange(values).max) : 0;
+  const deformables: Deformable[] = [];
+
   const stride = RESOLUTION + 1;
   const trianglesPerFace = RESOLUTION * RESOLUTION * 2;
   const point = new THREE.Vector3();
+  const moved = new THREE.Vector3();
 
-  const faceGeometry = (faces: readonly SurfaceFace[], colorOf: (f: SurfaceFace) => THREE.Color, shade: boolean): THREE.BufferGeometry => {
+  // `byField`: the surface is coloured by the field of the result; otherwise by colorOf
+  const faceGeometry = (faces: readonly SurfaceFace[], colorOf: (f: SurfaceFace) => THREE.Color, shade: boolean, byField: boolean): THREE.BufferGeometry => {
     const positions: number[] = [];
+    const displaced: number[] = [];
     const colors: number[] = [];
+    const vertexValues: number[] = [];
     const indices: number[] = [];
     for (const f of faces) {
       const base = positions.length / 3;
       const color = colorOf(f);
       for (let iv = 0; iv <= RESOLUTION; iv++)
         for (let iu = 0; iu <= RESOLUTION; iu++) {
-          pointOn(mesh, f.element, f.face, -1 + (2 * iu) / RESOLUTION, -1 + (2 * iv) / RESOLUTION, point);
+          const u = -1 + (2 * iu) / RESOLUTION;
+          const v = -1 + (2 * iv) / RESOLUTION;
+          pointOn(mesh, f.element, f.face, u, v, point);
           positions.push(point.x, point.y, point.z);
-          colors.push(color.r, color.g, color.b);
+          if (result) {
+            moved.set(scalarOn(mesh, f.element, f.face, u, v, result.ux), scalarOn(mesh, f.element, f.face, u, v, result.uy), scalarOn(mesh, f.element, f.face, u, v, result.uz));
+            displaced.push(point.x + moved.x, point.y + moved.y, point.z + moved.z);
+          }
+          if (byField && values) {
+            const value = scalarOn(mesh, f.element, f.face, u, v, values);
+            vertexValues.push(value);
+            const c = rampColor(top > 0 ? value / top : 0);
+            colors.push(c.r, c.g, c.b);
+          } else colors.push(color.r, color.g, color.b);
         }
       for (let iv = 0; iv < RESOLUTION; iv++)
         for (let iu = 0; iu < RESOLUTION; iu++) {
@@ -118,23 +155,25 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     buffer.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     buffer.setIndex(indices);
+    const light = new Float32Array(positions.length / 3).fill(1);
     if (shade) {
       // a fixed light baked into the colours: a face turned away from it is darker, which is what lets the eye read the shape
       buffer.computeVertexNormals();
       const normal = buffer.getAttribute('normal');
       const color = buffer.getAttribute('color');
       for (let i = 0; i < normal.count; i++) {
-        const light = 0.58 + 0.42 * Math.abs(normal.getX(i) * LIGHT.x + normal.getY(i) * LIGHT.y + normal.getZ(i) * LIGHT.z);
-        color.setXYZ(i, color.getX(i) * light, color.getY(i) * light, color.getZ(i) * light);
+        light[i] = 0.58 + 0.42 * Math.abs(normal.getX(i) * LIGHT.x + normal.getY(i) * LIGHT.y + normal.getZ(i) * LIGHT.z);
+        color.setXYZ(i, color.getX(i) * light[i], color.getY(i) * light[i], color.getZ(i) * light[i]);
       }
     }
+    if (result) deformables.push(deformable(buffer, positions, displaced, byField && values ? vertexValues : undefined, light));
     return buffer;
   };
 
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
   const body = new THREE.Mesh(
-    faceGeometry(visible, f => (materialOf(f.element) === input.defaultMaterial ? new THREE.Color(input.bodyColor) : materialColor(materialOf(f.element))), true),
+    faceGeometry(visible, f => (materialOf(f.element) === input.defaultMaterial ? new THREE.Color(input.bodyColor) : materialColor(materialOf(f.element))), true, values !== null),
     new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
   );
   markForWeightedOit(body.material as THREE.Material);
@@ -142,13 +181,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
   const resolvePick = (triangle: number): PickedFace | null => {
     const f = visible[Math.floor(triangle / trianglesPerFace)];
     if (!f) return null;
-    return {
-      kind: 'face',
-      hex: mesh.hexIds[f.element],
-      face: LOCAL_FACE_NAMES[f.face],
-      elementKey: mesh.keys[f.element],
-      localFace: f.face
-    };
+    return { kind: 'face', hex: mesh.hexIds[f.element], face: LOCAL_FACE_NAMES[f.face], elementKey: mesh.keys[f.element], localFace: f.face };
   };
   body.userData['resolvePick'] = resolvePick;
   body.userData['pick'] = resolvePick(0);
@@ -161,7 +194,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     if (faces.length === 0 || marksOpacity === 0) return;
     root.add(
       new THREE.Mesh(
-        faceGeometry(faces, colorOf, false),
+        faceGeometry(faces, colorOf, false, false),
         new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: marksOpacity, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
       )
     );
@@ -171,27 +204,53 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
 
   // the edges of every face
   const lines: number[] = [];
+  const movedLines: number[] = [];
   const a = new THREE.Vector3();
   const b = new THREE.Vector3();
   const sides: readonly (readonly [number, number, number, number])[] = [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1], [-1, 1, -1, -1]];
+  const displacedOn = (f: SurfaceFace, u: number, v: number, out: THREE.Vector3) =>
+    pointOn(mesh, f.element, f.face, u, v, out).add(moved.set(scalarOn(mesh, f.element, f.face, u, v, result!.ux), scalarOn(mesh, f.element, f.face, u, v, result!.uy), scalarOn(mesh, f.element, f.face, u, v, result!.uz)));
   for (const f of visible) {
     for (const [u0, v0, u1, v1] of sides) {
       pointOn(mesh, f.element, f.face, u0, v0, a);
+      const movedStart = result ? displacedOn(f, u0, v0, new THREE.Vector3()) : null;
+      let movedLast = movedStart;
       for (let s = 1; s <= EDGE_SEGMENTS; s++) {
         const t = s / EDGE_SEGMENTS;
-        pointOn(mesh, f.element, f.face, u0 + (u1 - u0) * t, v0 + (v1 - v0) * t, b);
+        const u = u0 + (u1 - u0) * t;
+        const v = v0 + (v1 - v0) * t;
+        pointOn(mesh, f.element, f.face, u, v, b);
         lines.push(a.x, a.y, a.z, b.x, b.y, b.z);
         a.copy(b);
+        if (movedLast) {
+          const next = displacedOn(f, u, v, new THREE.Vector3());
+          movedLines.push(movedLast.x, movedLast.y, movedLast.z, next.x, next.y, next.z);
+          movedLast = next;
+        }
       }
     }
   }
   if (lines.length > 0) {
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+    if (result) deformables.push(deformable(buffer, lines, movedLines));
     const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
     edges.userData['edges'] = true;
     edges.visible = input.edges !== false;
     root.add(edges);
+  }
+
+  // the displacement vectors: arrows at the nodes, shown or hidden without a rebuild
+  const arrows = result ? buildDisplacementArrows(result, rampColor) : null;
+  if (arrows) {
+    const buffer = new THREE.BufferGeometry();
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(arrows.base, 3));
+    buffer.setAttribute('color', new THREE.Float32BufferAttribute(arrows.colors, 3));
+    deformables.push(deformable(buffer, arrows.base, arrows.moved));
+    const vectors = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true }));
+    vectors.userData['vectors'] = true;
+    vectors.visible = input.vectors !== false;
+    root.add(vectors);
   }
 
   let highlight: THREE.Object3D | null = null;
@@ -204,10 +263,16 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     if (group) root.add(group);
   };
 
+  // a moved vertex invalidates the bounds; nothing here is culled by them
   root.traverse(o => (o.frustumCulled = false));
-  return { root, pickables, nodeMeshes: new Map(), setHighlight };
+  const view: MeshView = {
+    root, pickables, nodeMeshes: new Map(), setHighlight,
+    setDeformation: result ? scale => applyDeformation(deformables, scale) : undefined,
+    setColorRange: result ? max => applyColorRange(deformables, max) : undefined
+  };
+  view.setDeformation?.(input.deformationScale ?? 0);
+  return view;
 }
-
 
 // The 12 edges of an element as (corner, corner) of its 20 nodes; edge k has its midpoint at slot 8 + k.
 const ELEMENT_EDGES: readonly (readonly [number, number])[] = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];

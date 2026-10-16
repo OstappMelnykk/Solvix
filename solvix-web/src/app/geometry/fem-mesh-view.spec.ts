@@ -72,3 +72,38 @@ describe('buildFemHighlight', () => {
     expect(buildFemHighlight(mesh, index, { faces: [{ key: 'nope', face: 0 }], elements: ['nope'], pointed: null }).children.length).toBe(0);
   });
 });
+
+describe('buildFemMeshView with a result', () => {
+  // the cube stretched: every node moves 0.5 along x
+  const result = (more = {}) => ({
+    ticket: 1, divisions: [1, 1, 1], positions: LOCAL_COORDS.flatMap(c => [...c]), hexIds: [7], gridNodes: [],
+    ux: LOCAL_COORDS.map(() => 0.5), uy: LOCAL_COORDS.map(() => 0), uz: LOCAL_COORDS.map(() => 0),
+    vonMises: LOCAL_COORDS.map((_, i) => i), maxDisplacement: 0.5, maxVonMises: 19, elapsedSeconds: 0, ...more
+  });
+  const solved = (more = {}) => buildFemMeshView(input(oneElement({ surfaceFaces: [0, 5] }), { result: result(), field: 'vonMises', deformationScale: 0, ...more }));
+  const xs = (view: ReturnType<typeof solved>) => {
+    const position = (view.pickables[0] as THREE.Mesh).geometry.getAttribute('position');
+    return Array.from({ length: position.count }, (_, i) => position.getX(i));
+  };
+
+  it('draws the body deformed by the scale asked for, and moves it in place', () => {
+    const view = solved();
+    expect(xs(view).every(x => Math.abs(x - 1) < 1e-6)).toBeTrue();
+    view.setDeformation!(2);
+    expect(xs(view).every(x => Math.abs(x - 2) < 1e-6)).toBeTrue();
+  });
+
+  it('colours the surface by the field, hotter where the value is larger', () => {
+    const view = solved();
+    const color = (view.pickables[0] as THREE.Mesh).geometry.getAttribute('color');
+    const reds = Array.from({ length: color.count }, (_, i) => color.getX(i));
+    expect(new Set(reds.map(r => r.toFixed(3))).size).toBeGreaterThan(1);
+    expect(view.setColorRange).toBeDefined();
+  });
+
+  it('draws the arrows of the displacements, and ignores a result of another mesh', () => {
+    expect(solved().root.children.some(o => o.userData['vectors'])).toBeTrue();
+    const other = buildFemMeshView(input(oneElement({ surfaceFaces: [0, 5] }), { result: result({ positions: [0, 0, 0] }), field: 'vonMises' }));
+    expect(other.setDeformation).toBeUndefined();
+  });
+});

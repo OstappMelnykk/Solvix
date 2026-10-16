@@ -70,7 +70,7 @@ export class SolverRenderService {
     const mesh = this.solver.mesh(sessionId);
     // a locally refined body is drawn from the solver's own mesh of elements (until it arrives, nothing); the cached key follows the solver's revision, which the arrival bumps
     const view = this.solver.isLocal(sessionId)
-      ? mesh && !input.result
+      ? mesh
         ? buildFemMeshView({
             mesh,
             defaultMaterial: input.setup?.defaultMaterial ?? 'steel',
@@ -79,7 +79,13 @@ export class SolverRenderService {
             hiddenMaterials: this.solver.hiddenMaterials(sessionId),
             showFixed: input.showFixed,
             showLoads: input.showLoads,
-            edges: display.edges
+            edges: display.edges,
+            result: input.result,
+            field: input.field,
+            deformationScale: input.deformationScale,
+            colorMax: input.colorMax,
+            vectors: input.vectors,
+            marksOpacity: input.marksOpacity
           })
         : null
       : input.result
