@@ -8,19 +8,22 @@ import * as THREE from 'three';
 // brightness, so shape and silhouette actually read at a glance. A fixed
 // scene fixture (not per-session/model), same lifetime as the whole
 // WorldCanvasComponent, so it needs no cleanup/disposal logic of its own.
+//
+// The key light comes from above and a little to the side, so that the three faces of a cube seen from the usual view (top, one side, the front) are three
+// clearly different tones - that is what shows the volume and the geometry of the body. The ambient light is low, so the shaded sides stay dark enough.
 export function buildSceneLights(): THREE.Object3D {
   const group = new THREE.Group();
   group.name = 'scene-lights';
 
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.18);
   group.add(ambientLight);
 
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  keyLight.position.set(5, 8, 5);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  keyLight.position.set(6, 10, 3);
   group.add(keyLight);
 
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
-  fillLight.position.set(-5, 2, -5);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.25);
+  fillLight.position.set(-6, 3, -4);
   group.add(fillLight);
 
   return group;
