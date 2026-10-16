@@ -37,9 +37,8 @@ const CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
 const DEFAULT_ORTHO_HALF_HEIGHT = 5;
-// The lens of the loupe: its side in pixels, and how many times it magnifies.
-const LOUPE_SIZE = 240;
-const LOUPE_ZOOM = 4;
+// How much of a normal wheel step a step with Alt held is.
+const FINE_ZOOM_SPEED = 0.25;
 
 const DEFAULT_ORBIT_TARGET: [number, number, number] = [0, 0, 0];
 
@@ -311,12 +310,12 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private snapper: SurfaceSnapper | null = null;
   private altHeld = false;
   private painting = false;
-  // The loupe: a square lens that follows the pointer and shows the scene under it magnified.
-  private loupeOn = false;
-  private loupePointer: { x: number; y: number } | null = null;
-  @ViewChild('loupeBox') private loupeBox?: ElementRef<HTMLDivElement>;
   private lastPaintKey = '';
   private paintFrame = 0;
+
+  private onWheelSpeed = (event: WheelEvent) => {
+    if (this.controls) this.controls.zoomSpeed = event.altKey ? FINE_ZOOM_SPEED : 1;
+  };
 
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
@@ -347,7 +346,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private hoverFrame = 0;
   private onPointerMove = (event: PointerEvent) => {
     this.altHeld = event.altKey;
-    this.trackLoupe(event);
     if (this.painting) {
       // the faces under the pointer while the button is down: one raycast per frame, and a face only once in a row
       const x = event.clientX;
@@ -379,8 +377,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.buildEnabled) event.preventDefault();
   };
   private onPointerLeave = () => {
-    this.loupePointer = null;
-    this.showLoupeBox(false);
     if (this.hoverEnabled) this.meshHover.emit(null);
   };
 
@@ -457,6 +453,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('wheel', this.onWheelSpeed, true);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
     canvas.removeEventListener('contextmenu', this.onContextMenu);
     if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
@@ -496,6 +493,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // The wheel zooms towards what is under the pointer (the orbit centre follows), so tiny elements can be approached however far the centre of the body is.
     this.controls.zoomToCursor = true;
     this.controls.minDistance = 0.0005;
+    // Each wheel step takes a fixed share of the distance to what is under the pointer, so the nearer the surface, the finer the step; with Alt held it is a quarter of that (Shift turns the wheel sideways in browsers),
+    // for placing the view exactly on a tiny element.
+    window.addEventListener('wheel', this.onWheelSpeed, true);
 
     // Rotate mode draws exactly the 3 draggable ring arcs (X/Y/Z, plus a
     // 4th screen-space ring) the user asked for - dragging one spins the
@@ -1211,7 +1211,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (this.active) {
       try {
         this.oitRenderer.render(this.scene, this.camera);
-        this.renderLoupe();
       } catch (error) {
         console.error(`[WorldCanvasComponent] world ${this.worldIndex}: render() failed`, error);
       }
@@ -1332,71 +1331,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // the 3 canvases owns its own GridHelper instance (see initScene).
   isGridVisible(): boolean {
     return this.gridVisible;
-  }
-
-  isLoupeOn(): boolean {
-    return this.loupeOn;
-  }
-
-  toggleLoupe(): void {
-    this.loupeOn = !this.loupeOn;
-    if (!this.loupeOn) this.showLoupeBox(false);
-  }
-
-  // Where the pointer is, in the canvas's own pixels: the lens is drawn round it.
-  private trackLoupe(event: PointerEvent): void {
-    if (!this.loupeOn) return;
-    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
-    this.loupePointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    this.showLoupeBox(true);
-  }
-
-  // The square of the lens: it keeps inside the canvas.
-  private loupeRect(): { x: number; y: number; size: number } | null {
-    const pointer = this.loupePointer;
-    if (!this.loupeOn || !pointer) return null;
-    const size = Math.min(LOUPE_SIZE, this.lastWidth, this.lastHeight);
-    return {
-      x: Math.min(Math.max(pointer.x - size / 2, 0), this.lastWidth - size),
-      y: Math.min(Math.max(pointer.y - size / 2, 0), this.lastHeight - size),
-      size
-    };
-  }
-
-  private showLoupeBox(visible: boolean): void {
-    const box = this.loupeBox?.nativeElement;
-    if (!box) return;
-    const rect = visible ? this.loupeRect() : null;
-    box.style.display = rect ? 'block' : 'none';
-    if (rect) {
-      box.style.left = `${rect.x}px`;
-      box.style.top = `${rect.y}px`;
-      box.style.width = `${rect.size}px`;
-      box.style.height = `${rect.size}px`;
-    }
-  }
-
-  // The scene again, in the square of the lens: the part of the picture round the pointer (a LOUPE_ZOOM-th of the lens) is drawn over the whole lens.
-  private renderLoupe(): void {
-    const rect = this.loupeRect();
-    const pointer = this.loupePointer;
-    if (!rect || !pointer) return;
-    const width = this.lastWidth;
-    const height = this.lastHeight;
-    const part = rect.size / LOUPE_ZOOM;
-    const camera = this.camera as THREE.PerspectiveCamera | THREE.OrthographicCamera;
-    const previousAutoClear = this.renderer.autoClear;
-    camera.setViewOffset(width, height, pointer.x - part / 2, pointer.y - part / 2, part, part);
-    this.renderer.setScissorTest(true);
-    this.renderer.setViewport(rect.x, height - rect.y - rect.size, rect.size, rect.size);
-    this.renderer.setScissor(rect.x, height - rect.y - rect.size, rect.size, rect.size);
-    this.renderer.autoClear = true;
-    this.renderer.setRenderTarget(null);
-    this.renderer.render(this.scene, camera);
-    this.renderer.autoClear = previousAutoClear;
-    this.renderer.setScissorTest(false);
-    this.renderer.setViewport(0, 0, width, height);
-    camera.clearViewOffset();
   }
 
   toggleGridVisible(): void {

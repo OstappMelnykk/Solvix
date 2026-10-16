@@ -5,7 +5,6 @@
      forcing Angular to hand this ONE World a genuinely fresh <canvas>
      element, instead of staying a dead/broken-image canvas until a full
      page reload. -->
-<div #loupeBox class="loupe"></div>
 <canvas #canvas *ngFor="let g of canvasKeys(); trackBy: trackGeneration"></canvas>
 
 <div class="canvas-toolbar">
@@ -24,15 +23,6 @@
       (click)="toggleGridVisible()"
     >
       {{ isGridVisible() ? 'Сховати сітку' : 'Показати сітку' }}
-    </button>
-    <button
-      class="tool-button"
-      [class.tool-button--on]="isLoupeOn()"
-      type="button"
-      title="Лупа: квадрат під курсором показує сцену збільшену в 4 рази"
-      (click)="toggleLoupe()"
-    >
-      {{ isLoupeOn() ? 'Лупа: увімкнено' : 'Лупа' }}
     </button>
     <button
       class="tool-button"
