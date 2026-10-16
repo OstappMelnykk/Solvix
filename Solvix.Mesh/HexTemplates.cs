@@ -537,6 +537,8 @@ public static class HexTemplates
         Preset("cube-2", "Куб 2×2×2", "block", ("countX", 2), ("countY", 2), ("countZ", 2), ("length", 2), ("height", 2), ("depth", 2)),
         Preset("column", "Колона 1×6×1", "block", ("countX", 1), ("countY", 6), ("countZ", 1), ("length", 1), ("height", 6), ("depth", 1)),
         Preset("slab", "Плита 6×1×6", "block", ("countX", 6), ("countY", 1), ("countZ", 6), ("length", 6), ("height", 0.5), ("depth", 6)),
+        Preset("plate-10", "Пластина 10×1×10", "block", ("countX", 10), ("countY", 1), ("countZ", 10), ("length", 10), ("height", 1), ("depth", 10)),
+        Preset("cube-10", "Куб 10×10×10", "block", ("countX", 10), ("countY", 10), ("countZ", 10), ("length", 10), ("height", 10), ("depth", 10)),
         Preset("wall", "Стіна 8×4×1", "block", ("countX", 8), ("countY", 4), ("countZ", 1), ("length", 8), ("height", 4), ("depth", 0.5)),
         Preset("box", "Порожня коробка", "box-shell"),
         Preset("box-thick", "Коробка з товстою стінкою", "box-shell", ("countX", 7), ("countY", 6), ("countZ", 7), ("wallCells", 2), ("length", 7), ("height", 6), ("depth", 7)),
