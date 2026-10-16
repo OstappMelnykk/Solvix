@@ -33,6 +33,13 @@ public interface IFemMesh
     /// <summary>Where the centre of a face of an element lies inside the cube, in the cube's own coordinates.</summary>
     ParametricPoint FaceCentreOf(ElementFace face);
 
+    /// <summary>
+    /// The 8 corners of the element in the cube's own coordinates, in the order of the first 8 nodes of the element (see <see cref="ElementLocal.Nodes"/>). The element is
+    /// the hexahedron between them; a face of it is the quadrilateral between its 4 corners (<see cref="ElementLocal.FaceNodes"/>, the first four of each - the corners).
+    /// It need not be a box: a transition template makes wedges and trapezoids.
+    /// </summary>
+    IReadOnlyList<ParametricPoint> CornersOf(int element);
+
     /// <summary>The elements that lie in a cube.</summary>
     IReadOnlyList<int> ElementsOf(int root);
 

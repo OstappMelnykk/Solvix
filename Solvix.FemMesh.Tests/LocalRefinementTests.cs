@@ -242,3 +242,98 @@ public class LocalRefinementTests
         }
     }
 }
+
+public class RegionsOfFacesTests
+{
+    private static RefinementStep Cube(int cube, int n = 2, int depth = 0) => new(new[] { LocalRefinement.RootKey(cube) }, n, n, n, depth);
+
+    public static IEnumerable<TestCaseData> Meshes()
+    {
+        yield return new TestCaseData(new UniformRefinement(3, 2, 4), 3).SetName("uniform 3x2x4");
+        yield return new TestCaseData(new LocalRefinement(new[] { Cube(1) }), 3).SetName("one cube");
+        yield return new TestCaseData(new LocalRefinement(new[] { Cube(1, 3), Cube(2, 2, 2) }), 3).SetName("two cubes and a wide zone");
+        yield return new TestCaseData(new LocalRefinement(new[] { Cube(0, 2, 1), Cube(2, 3, 1) }), 3).SetName("both ends");
+    }
+
+    // The corners of the face of an element on a side of a cube, flattened into the side's own plane (the two coordinates along the side).
+    private static (double U, double V)[] Quad(IFemMesh mesh, ElementFace face, int[] tangents)
+    {
+        var corners = mesh.CornersOf(face.Element);
+        var ring = ElementLocal.FaceNodes[face.Face].Where(n => n < 8).Select(n => corners[n]).Select(p => (U: p[tangents[0]], V: p[tangents[1]])).ToList();
+        double cu = ring.Average(p => p.U), cv = ring.Average(p => p.V);
+        return ring.OrderBy(p => Math.Atan2(p.V - cv, p.U - cu)).ToArray();
+    }
+
+    private static double Area((double U, double V)[] quad)
+    {
+        double twice = 0;
+        for (int i = 0; i < quad.Length; i++) twice += quad[i].U * quad[(i + 1) % quad.Length].V - quad[(i + 1) % quad.Length].U * quad[i].V;
+        return Math.Abs(twice) / 2;
+    }
+
+    // A point strictly inside a convex quadrilateral (its corners in order).
+    private static bool Inside((double U, double V)[] quad, double u, double v)
+    {
+        int sign = 0;
+        for (int i = 0; i < quad.Length; i++)
+        {
+            var (a, b) = (quad[i], quad[(i + 1) % quad.Length]);
+            double cross = (b.U - a.U) * (v - a.V) - (b.V - a.V) * (u - a.U);
+            if (Math.Abs(cross) < 1e-12) return false;
+            int s = Math.Sign(cross);
+            if (sign == 0) sign = s;
+            else if (s != sign) return false;
+        }
+        return true;
+    }
+
+    // The faces of a mesh on a side of a cube are flat convex quadrilaterals (not always rectangles: next to a transition cell they are trapezoids) that tile the side
+    // without a gap or an overlap: the side of the cube is [-1,1]^2, so their areas add up to 4, and no point of the side is inside two of them.
+    [TestCaseSource(nameof(Meshes))]
+    public void The_faces_on_a_side_are_convex_quadrilaterals_that_tile_it(IMeshRefinement rule, int cubes)
+    {
+        var mesh = rule.Build(Support.Export(Support.Bar(cubes)));
+        int trapezoids = 0;
+
+        for (int cube = 0; cube < cubes; cube++)
+            foreach (var side in ElementLocal.FaceNames)
+            {
+                int axis = side[0] - 'X';
+                var tangents = Enumerable.Range(0, 3).Where(d => d != axis).ToArray();
+                var quads = mesh.FacesOnSide(cube, side).Select(f => Quad(mesh, f, tangents)).ToList();
+                Assert.That(quads.Sum(Area), Is.EqualTo(4.0).Within(1e-9), $"cube {cube} {side}: the quadrilaterals fill the side");
+                foreach (var quad in quads)
+                {
+                    double width = quad.Max(p => p.U) - quad.Min(p => p.U), height = quad.Max(p => p.V) - quad.Min(p => p.V);
+                    if (Math.Abs(Area(quad) - width * height) > 1e-9) trapezoids++;
+                }
+                // sample the side: every sample is inside exactly one face, except the ones too near an edge to say
+                for (int i = 0; i < 23; i++)
+                    for (int j = 0; j < 23; j++)
+                    {
+                        double u = -1 + (i + 0.37) * 2 / 23, v = -1 + (j + 0.61) * 2 / 23;
+                        int owners = quads.Count(q => Inside(q, u, v));
+                        Assert.That(owners, Is.LessThanOrEqualTo(1), $"cube {cube} {side}: ({u:0.###}, {v:0.###}) is in two faces");
+                    }
+            }
+        Assert.That(trapezoids, rule is UniformRefinement ? Is.EqualTo(0) : Is.GreaterThanOrEqualTo(0));
+    }
+
+    [TestCaseSource(nameof(Meshes))]
+    public void The_corners_of_an_element_lie_in_its_cube_and_hold_its_centre(IMeshRefinement rule, int cubes)
+    {
+        var mesh = rule.Build(Support.Export(Support.Bar(cubes)));
+
+        for (int e = 0; e < mesh.ElementCount; e++)
+        {
+            var corners = mesh.CornersOf(e);
+            var centre = mesh.CentreOf(e);
+            Assert.That(corners.Count, Is.EqualTo(8));
+            for (int a = 0; a < 3; a++)
+            {
+                Assert.That(corners.All(c => c[a] >= -1 - 1e-9 && c[a] <= 1 + 1e-9), Is.True, $"element {e} lies in its cube");
+                Assert.That(centre[a], Is.EqualTo(corners.Average(c => c[a])).Within(1e-9), "the centre is the middle of the corners");
+            }
+        }
+    }
+}

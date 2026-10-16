@@ -97,6 +97,7 @@ internal static class LatticeToFem
         var keys = new string[count];
         var centres = new ParametricPoint[count];
         var faceCentres = new ParametricPoint[count, 6];
+        var cornerPoints = new ParametricPoint[count][];
         var sides = new string?[count, 6];
         for (int e = 0; e < count; e++)
         {
@@ -105,6 +106,7 @@ internal static class LatticeToFem
             roots2[e] = cell.Root;
             keys[e] = LocalRefinement.LeafKey(lattice, cell);
             var corner = cell.Nodes.Select(lattice.PointOf).ToArray();
+            ParametricPoint At(Pt3 p) => new(2 * (p.X / (double)scale - root.I) - 1, 2 * (p.Y / (double)scale - root.J) - 1, 2 * (p.Z / (double)scale - root.K) - 1);
             ParametricPoint Middle(IEnumerable<int> slots)
             {
                 var list = slots.ToList();
@@ -112,6 +114,8 @@ internal static class LatticeToFem
                 return new ParametricPoint(2 * (x / scale - root.I) - 1, 2 * (y / scale - root.J) - 1, 2 * (z / scale - root.K) - 1);
             }
             centres[e] = Middle(Enumerable.Range(0, 8));
+            // the corners in the order of the solver's first 8 nodes (each is the lattice slot with the same signs)
+            cornerPoints[e] = Enumerable.Range(0, 8).Select(k => At(corner[(ElementLocal.Nodes[k, 0] > 0 ? 1 : 0) | (ElementLocal.Nodes[k, 1] > 0 ? 2 : 0) | (ElementLocal.Nodes[k, 2] > 0 ? 4 : 0)])).ToArray();
             for (int f = 0; f < 6; f++)
             {
                 var (axis, sign) = ElementLocal.FaceAxis(f);
@@ -125,7 +129,7 @@ internal static class LatticeToFem
         var flat = new double[positions.Count, 3];
         for (int n = 0; n < positions.Count; n++)
             for (int c = 0; c < 3; c++) flat[n, c] = positions[n][c];
-        return new FemMesh(flat, connectivity, roots2, keys, centres, faceCentres, sides);
+        return new FemMesh(flat, connectivity, roots2, keys, centres, faceCentres, cornerPoints, sides);
     }
 
     // The place of a point of the doubled lattice in its cube, in the cube's own coordinates [-1, 1].

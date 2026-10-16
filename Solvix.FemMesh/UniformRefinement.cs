@@ -90,6 +90,7 @@ public sealed class UniformRefinement(int nx, int ny, int nz) : IMeshRefinement
         var keys = new string[count];
         var centres = new ParametricPoint[count];
         var faceCentres = new ParametricPoint[count, 6];
+        var cornerPoints = new ParametricPoint[count][];
         var sides = new string?[count, 6];
         for (int e = 0; e < cubes; e++)
             for (int ez = 0; ez < Nz; ez++)
@@ -103,6 +104,8 @@ public sealed class UniformRefinement(int nx, int ny, int nz) : IMeshRefinement
                         var hi = new[] { Edge(ex + 1, Nx), Edge(ey + 1, Ny), Edge(ez + 1, Nz) };
                         var middle = new[] { 0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), 0.5 * (lo[2] + hi[2]) };
                         centres[fine] = new ParametricPoint(middle[0], middle[1], middle[2]);
+                        cornerPoints[fine] = Enumerable.Range(0, 8).Select(k => new ParametricPoint(
+                            ElementLocal.Nodes[k, 0] < 0 ? lo[0] : hi[0], ElementLocal.Nodes[k, 1] < 0 ? lo[1] : hi[1], ElementLocal.Nodes[k, 2] < 0 ? lo[2] : hi[2])).ToArray();
                         for (int f = 0; f < 6; f++)
                         {
                             var (faceAxis, faceSign) = ElementLocal.FaceAxis(f);
@@ -124,7 +127,7 @@ public sealed class UniformRefinement(int nx, int ny, int nz) : IMeshRefinement
         var flat = new double[positions.Count, 3];
         for (int n = 0; n < positions.Count; n++)
             for (int c = 0; c < 3; c++) flat[n, c] = positions[n][c];
-        return new FemMesh(flat, connectivity, roots, keys, centres, faceCentres, sides);
+        return new FemMesh(flat, connectivity, roots, keys, centres, faceCentres, cornerPoints, sides);
     }
 
     /// <summary>The coordinate of the i-th of n equal cuts of [-1, 1]; one formula for every place that needs it, so equal places are equal numbers.</summary>
