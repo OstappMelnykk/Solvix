@@ -64,8 +64,7 @@ export class SolverRenderService {
       marksOpacity: this.solver.viewer(sessionId) ? (this.solver.viewerMarks(sessionId) ? VIEWER_MARKS_OPACITY : 0) : undefined,
       opacity: display.opacity,
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
-      showInner: this.solver.showInner(sessionId),
-      quality: this.solver.showQuality(sessionId) ? this.solver.quality(sessionId) : null
+      showInner: this.solver.showInner(sessionId)
     };
     const view = input.result ? buildSolverView(input) : this.buildSetupView(sessionId, input);
     this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true, vectors: display.vectors });

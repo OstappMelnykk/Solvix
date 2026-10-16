@@ -207,14 +207,6 @@ export class SolverControlsComponent implements DoCheck {
     this.solver.refreshQuality(this.sessionId);
   }
 
-  showQuality(): boolean {
-    return this.solver.showQuality(this.sessionId);
-  }
-
-  toggleQuality(): void {
-    this.solver.setShowQuality(this.sessionId, !this.showQuality());
-  }
-
   readonly gradeLabels: readonly { key: QualityGradeName; label: string }[] = [
     { key: 'excellent', label: 'Відмінні' },
     { key: 'good', label: 'Добрі' },

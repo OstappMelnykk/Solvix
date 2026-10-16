@@ -42,7 +42,7 @@ describe('SolverControlsComponent', () => {
     display = { field: 'vonMises', deformationScale: 1, opacity: 1, colorMax: null, edges: true, vectors: true };
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'setup', 'job', 'result', 'display', 'isRunning', 'divisions', 'setDivisions', 'setDefaultMaterial', 'upsertMaterial',
-      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality', 'showQuality', 'setShowQuality',
+      'layers', 'layerMaterial', 'setLayerMaterial', 'quality', 'qualityReport', 'solvixQuality', 'ensureQuality', 'refreshQuality',
       'activeMaterial', 'setActiveMaterial', 'tool', 'setTool', 'materialCounts', 'isHidden', 'toggleHidden', 'fillAll',
       'pressure', 'setPressure', 'applyPressureToAll', 'loadSide', 'fixedSide', 'isFixedAuto', 'selectLoadSide', 'selectFixedSide', 'loadedFaceCount', 'fixedFaceCount',
       'clearSetup', 'removeMaterial', 'solve', 'cancel', 'setField', 'clearResult'
@@ -66,7 +66,6 @@ describe('SolverControlsComponent', () => {
     solver.quality.and.returnValue(null);
     solver.qualityReport.and.returnValue(null);
     solver.solvixQuality.and.returnValue(null);
-    solver.showQuality.and.returnValue(false);
     solver.tool.and.returnValue('view');
     solver.materialCounts.and.returnValue(new Map([['steel', 7], ['rubber', 3]]));
     solver.isHidden.and.callFake((_s, name) => name === 'rubber');
@@ -345,12 +344,10 @@ describe('SolverControlsComponent', () => {
     const grades = { excellent: 3, good: 0, acceptable: 0, poor: 0, invalid: 0 };
     const q = (over: Record<string, number> = {}) => ({ id: 'solvix', name: 'Solvix', source: '', note: '', elements: 3, grades: { ...grades, ...over }, worst: {}, limits: [], flagged: [] });
 
-    it('evaluates and switches the colouring', () => {
+    it('evaluates the mesh', () => {
       component.refreshQuality();
-      component.toggleQuality();
 
       expect(solver.refreshQuality).toHaveBeenCalledWith(1);
-      expect(solver.setShowQuality).toHaveBeenCalledWith(1, true);
     });
 
     it('gives the verdict in one line, worst problem first', () => {

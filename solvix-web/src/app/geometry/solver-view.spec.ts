@@ -648,32 +648,6 @@ describe('colouring by mesh quality', () => {
     expect(new THREE.Color(GRADE_COLORS.excellent).g).toBeGreaterThan(new THREE.Color(GRADE_COLORS.excellent).r);
   });
 
-  it('paints each cube with the colour of its grade instead of its material', () => {
-    const view = buildSolverView({ state: linkedPairState(), setup: setup(), result: null, field: 'vonMises', deformationScale: 1, opacity: 1, quality: quality('excellent', 'invalid') });
-
-    const good = colourOf(view, 0);
-    const bad = colourOf(view, 1);
-
-    expect(good.g).toBeGreaterThan(good.r);                  // green (shading only darkens)
-    expect(bad.r).toBeGreaterThan(bad.g * 2);                // red
-    disposeMeshView(view);
-  });
-
-  it('colours each small element by its own grade, not the whole cube by its worst', () => {
-    const state = singleCubeState();
-    const q: SolverQualityDto = { ...quality('excellent', 'excellent'), flagged: [{ hex: 0, ex: 1, ey: 0, ez: 0, grade: 'invalid', values: { scaledJacobian: 0.1 } }] };
-
-    const view = buildSolverView({ state, setup: setup({ divisions: [2, 1, 1] }), result: null, field: 'none', deformationScale: 0, opacity: 1, quality: q });
-    const colours = new Set<string>();
-    const mesh = (view.pickables as THREE.Mesh[])[0];
-    const color = mesh.geometry.getAttribute('color');
-    for (let i = 0; i < color.count; i++) colours.add(new THREE.Color(color.getX(i), color.getY(i), color.getZ(i)).getHex() > 0 ? (color.getX(i) > color.getY(i) * 2 ? 'red' : 'green') : '');
-
-    expect(colours.has('red')).toBeTrue();
-    expect(colours.has('green')).toBeTrue();
-    disposeMeshView(view);
-  });
-
   const cubeFaces = () => {
     const corner = (x: number, y: number, z: number) => [x, y, z];
     const quad = (a: number[], b: number[], c: number[], d: number[]) => ({ positions: [...a, ...b, ...c, ...d], indices: [0, 1, 2, 0, 2, 3] });
@@ -711,17 +685,6 @@ describe('colouring by mesh quality', () => {
 
     expect(other.x).toBeGreaterThan(centre.x);
     expect(elementCentreOf(singleCubeState(), [3, 1, 1], { hex: 99, ex: 0, ey: 0, ez: 0 })).toBeNull();
-  });
-
-  it('wins over the field of a result while it is shown', () => {
-    const state = singleCubeState();
-    const result = resultFor(state, [1, 1, 1], () => ({ vm: 5e6 }));
-    const q = quality('poor', 'poor');
-
-    const view = buildSolverView({ state, setup: setup(), result, field: 'vonMises', deformationScale: 1, opacity: 1, quality: q });
-
-    expect(colourOf(view, 0).r).toBeGreaterThan(colourOf(view, 0).b * 2);        // the grade's orange, not the ramp's blue/red
-    disposeMeshView(view);
   });
 });
 

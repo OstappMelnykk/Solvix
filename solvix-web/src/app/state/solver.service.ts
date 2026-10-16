@@ -92,7 +92,6 @@ interface SessionSolver {
   showInner: boolean;
   // Write the pressure on the pressed faces.
   // Colour the cubes by the quality of their worst element instead of by material.
-  showQuality: boolean;
   // The mesh judged by Solvix's criterion and, to look at, by other tools.
   qualityReport: SolverQualityReportDto | null;
   // The other tool whose marks are drawn on the scene instead of Solvix's, for a look only (null: Solvix's own).
@@ -174,7 +173,6 @@ export class SolverService {
       activeMaterial: 'rubber',
       hidden: new Set<string>(),
       showInner: false,
-      showQuality: false,
       qualityReport: null,
       qualityCompare: null,
       qualityDetail: null,
@@ -467,16 +465,6 @@ export class SolverService {
     entry.qualityPick = null;            // the mesh changed under it
     entry.qualityDetail = null;
     this.refreshQuality(sessionId);
-  }
-
-  showQuality(sessionId: number): boolean {
-    return this.entry(sessionId).showQuality;
-  }
-
-  setShowQuality(sessionId: number, show: boolean): void {
-    this.entry(sessionId).showQuality = show;
-    if (show) this.refreshQuality(sessionId);
-    this.touch(sessionId);
   }
 
   showInner(sessionId: number): boolean {

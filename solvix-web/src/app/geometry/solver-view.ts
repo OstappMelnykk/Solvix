@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
-import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
+import { QualityGradeName, SolverFaceDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { markForWeightedOit } from '../rendering/weighted-oit';
 import { buildDisplacementArrows } from './displacement-arrows';
-import { Result, measuredGrade, resultOf } from './quality-grading';
+import { Result } from './quality-grading';
 import { LOCAL_COORDS, MeshView, PickedFace, mapHex } from './mesh-editor-view';
 
 // The Solver World's drawing of a body, the way the solver's own viewer shows its mesh: every cube cut into
@@ -27,8 +27,6 @@ export interface SolverViewInput {
   readonly hiddenMaterials?: ReadonlySet<string>;
   // Also draw the faces between visible elements (the grid inside the body).
   readonly showInner?: boolean;
-  // When given, the small elements are coloured by their quality grade instead of by material (the Solver World's "show on the scene").
-  readonly quality?: SolverQualityDto | null;
   // The value that gets the last colour of the ramp (default: the largest value of the field); larger values are
   // painted the same, so one hot spot does not wash out the rest.
   readonly colorMax?: number | null;
@@ -506,14 +504,10 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   const hidden = input.hiddenMaterials ?? new Set<string>();
   const opacity = Math.min(1, Math.max(0.05, input.opacity));
   const solid = opacity >= 1;
-  const values = result && !input.quality ? fieldValues(result, field) : null;
+  const values = result ? fieldValues(result, field) : null;
   const range: FieldRange = values ? { min: 0, max: input.colorMax && input.colorMax > 0 ? input.colorMax : fieldRange(values).max } : { min: 0, max: 0 };
   const span = range.max - range.min;
 
-  // the elements the server flagged; any other small element is excellent
-  const qualityColors = input.quality
-    ? new Map(input.quality.flagged.map(e => [`${e.hex}:${e.ex}:${e.ey}:${e.ez}`, measuredGrade(e, 'grade', input.quality!.limits)]))
-    : null;
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -635,7 +629,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       }
     }
     const colorOf = (face: DrawnFace, value: number) =>
-      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent')]) : materialColor(materialOf(face.owner.id, ...face.element));
+      values ? rampColor(span > 0 ? (value - range.min) / span : 0) : materialColor(materialOf(face.owner.id, ...face.element));
     const addBody = (subset: readonly DrawnFace[], subsetOpacity: number): void => {
     const subsetSolid = subsetOpacity >= 1;
     const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });

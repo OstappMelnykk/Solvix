@@ -620,10 +620,10 @@ describe('SolverService', () => {
       expect(http.expectOne(`${api}/${sessionId}/hexes/material`).request.body).toEqual({ hexIds: [1], material: 'dentin' });   // "enamel" is not in this library
     });
 
-    it('asks the server for the quality and keeps it; colouring by quality is a setting that fetches it', () => {
+    it('asks the server for the quality and keeps it', () => {
       expect(solver.quality(sessionId)).toBeNull();
 
-      solver.setShowQuality(sessionId, true);
+      solver.refreshQuality(sessionId);
 
       const request = http.expectOne(`${api}/${sessionId}/quality`);
       const profile = (id: string, rejected: number) => ({ id, name: id, source: '', note: '', elements: 2, grades: { ...grades, poor: rejected }, worst: {}, limits: [], flagged: [] });
@@ -636,10 +636,6 @@ describe('SolverService', () => {
       solver.setQualityCompare(sessionId, null);
       expect(solver.quality(sessionId)!.id).toBe('solvix');
       expect(solver.qualityReport(sessionId)!.profiles.length).toBe(2);
-      expect(solver.showQuality(sessionId)).toBeTrue();
-      solver.setShowQuality(sessionId, false);
-      http.expectNone(`${api}/${sessionId}/quality`);
-      expect(solver.showQuality(sessionId)).toBeFalse();
     });
 
     it('fetches the details of the picked element and drops them when the pick is cleared', () => {
