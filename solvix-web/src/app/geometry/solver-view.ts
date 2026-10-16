@@ -634,7 +634,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   // a flagged element that the chosen measure does not grade excellent
   const isBad = (hex: number, ex: number, ey: number, ez: number): boolean => (qualityColors?.get(`${hex}:${ex}:${ey}:${ez}`) ?? 'excellent') !== 'excellent';
   const seeThrough = qualityColors !== null && opacity < 1;
-  // the quality view's lines and dots are lifted a hair towards the camera, so the ones lying ON a face win over it (no fade: the body is not see-through here)
+  // the quality view's lines and dots are lifted a hair towards the camera, so the ones lying ON a face win over it (no fade: the body is not see-through here); so they are not moved along the axis of a cut either - that would sink the ones on the end faces into the body
   const lift = <T extends THREE.Material>(material: T): T => {
     if (qualityColors) createDepthFade(new THREE.Vector3(), 1, 1).patch(material);
     return material;
@@ -893,7 +893,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   if (lines.length > 0 && input.edges !== false) {
     const buffer = new THREE.BufferGeometry();
     const shownLines = input.section ? clipSegmentsToPlane(lines, input.section) : lines;
-    buffer.setAttribute('position', new THREE.Float32BufferAttribute(input.section ? shiftAlong(shownLines, input.section.axis, layer) : shownLines, 3));
+    buffer.setAttribute('position', new THREE.Float32BufferAttribute(input.section && !qualityColors ? shiftAlong(shownLines, input.section.axis, layer) : shownLines, 3));
     if (displaced) deformables.push(deformable(buffer, lines, movedLines));
     const edges = new THREE.LineSegments(buffer, lift(new THREE.LineBasicMaterial({ color: qualityColors ? QUALITY_EDGE_COLOR : EDGE_COLOR })));
     edges.userData['edges'] = true;
@@ -1027,7 +1027,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const structure = [...interior, ...outline];
     if (structure.length > 0) {
       const lineGeometry = new THREE.BufferGeometry();
-      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(structure, cut.axis, layer), 3));
+      lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(structure, cut.axis, qualityColors ? 0 : layer), 3));
       const inside = new THREE.LineSegments(lineGeometry, lift(new THREE.LineBasicMaterial({ color: qualityColors ? QUALITY_EDGE_COLOR : EDGE_COLOR })));
       inside.userData['sectionStructure'] = true;
       root.add(inside);
@@ -1041,7 +1041,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       const points = state.nodes.filter(n => cornerNodes.has(n.id) === wanted && kept(n));
       if (points.length === 0) continue;
       const pointGeometry = new THREE.BufferGeometry();
-      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(points.flatMap(n => [n.x, n.y, n.z]), cut.axis, 2 * layer), 3));
+      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(points.flatMap(n => [n.x, n.y, n.z]), cut.axis, qualityColors ? 0 : 2 * layer), 3));
       const dots = new THREE.Points(pointGeometry, lift(new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false, depthTest: true })));
       dots.userData['sectionNodes'] = wanted ? 'corners' : 'midpoints';
       root.add(dots);
