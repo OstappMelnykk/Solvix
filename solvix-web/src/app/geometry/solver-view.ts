@@ -1010,9 +1010,17 @@ export function buildSolverView(input: SolverViewInput): MeshView {
         ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
         : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
       if (qualityColors) {
-        const normal = [0, 0, 0];
-        normal[cut.axis] = 1;
-        capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(capPositions.map((_, i) => normal[i % 3]), 3));
+        // the cut looks to the open side. A two-sided material turns the normal of a triangle seen from behind, so a triangle wound the other way gets the opposite normal.
+        const open = cut.keep === 'below' ? 1 : -1;
+        const normals: number[] = [];
+        const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3();
+        for (let i = 0; i < capPositions.length; i += 9) {
+          pa.fromArray(capPositions, i); pb.fromArray(capPositions, i + 3); pc.fromArray(capPositions, i + 6);
+          const wound = [0, 0, 0];
+          wound[cut.axis] = pb.sub(pa).cross(pc.sub(pa)).getComponent(cut.axis) >= 0 ? open : -open;
+          for (let k = 0; k < 3; k++) normals.push(wound[0], wound[1], wound[2]);
+        }
+        capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
       } else markForWeightedOit(capMaterial);
       capMaterial.polygonOffset = true;               // behind its own outline, which lies in the same plane
       capMaterial.polygonOffsetFactor = 1;
@@ -1048,7 +1056,8 @@ export function buildSolverView(input: SolverViewInput): MeshView {
 
   // the plane of the cut, drawn as a pale sheet with an outline, so it is plain where it passes through the body
   if (input.section) {
-    const plane = sectionPlane(state, { ...input.section, at: input.section.at + 3 * layer });
+    // the sheet lies behind the cut itself (which is shifted by one layer into the body), so it never tints the cut seen from the open side
+    const plane = sectionPlane(state, { ...input.section, at: input.section.at - 2 * layer });
     plane.userData['sectionPlane'] = true;
     root.add(plane);
   }
