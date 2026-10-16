@@ -85,12 +85,12 @@ function trackFade(object: THREE.Object3D, uniforms: FadeUniforms, centre: THREE
 
 // A matt lit material whose faces draw their own edges: where the position inside a small face (u, v in [-1, 1]) is within a
 // pixel or so of its border, the colour goes to the edge colour (and the face to opaque, so the edge of a see-through body still reads).
-function litFaceMaterial(options: { kind: QualityLook['kind']; opacity: number; clip: THREE.Plane[]; edges: boolean }, fade: FadeUniforms): THREE.MeshLambertMaterial {
+function litFaceMaterial(options: { kind: QualityLook['kind']; opacity: number; clip: THREE.Plane[]; edges: boolean; side?: THREE.Side }, fade: FadeUniforms): THREE.MeshLambertMaterial {
   const solid = options.kind === 'solid';
   const wire = options.kind === 'edges';
   const material = new THREE.MeshLambertMaterial({
     vertexColors: true,
-    side: THREE.DoubleSide,
+    side: options.side ?? THREE.DoubleSide,
     // see-through, every face blends with all the others (no depth test), so the tone does not depend on the order they are drawn in; wholly transparent, the faces draw nothing but their edges
     transparent: !solid,
     opacity: solid ? 1 : wire ? 0 : options.opacity,
@@ -99,7 +99,7 @@ function litFaceMaterial(options: { kind: QualityLook['kind']; opacity: number; 
     clippingPlanes: options.clip
   });
   // the shader differs with the look, so each look is a program of its own
-  material.customProgramCacheKey = () => `quality-face-edges:${options.kind}:${options.edges}`;
+  material.customProgramCacheKey = () => `quality-face-edges:${options.kind}:${options.edges}:${options.side ?? 'both'}`;
   material.onBeforeCompile = shader => {
     shader.uniforms['uFadeNear'] = fade.uFadeNear;
     shader.uniforms['uFadeFar'] = fade.uFadeFar;
@@ -204,6 +204,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
   const solid = input.look.kind === 'solid';
   const wire = input.look.kind === 'edges';
   const seeThrough = !solid;
+  const translucent = input.look.kind === 'translucent';
   const opacity = input.look.kind === 'translucent' ? Math.min(1, Math.max(0.05, input.look.opacity)) : 1;
   // how much of what a see-through body hides is seen: everything at GHOST_FULL_AT and below
   const ghost = input.look.kind === 'translucent' ? Math.min(1, Math.max(0, (1 - opacity) / (1 - GHOST_FULL_AT))) : 0;
@@ -289,7 +290,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
 
   if (faces.length > 0) {
     const faceGeometry = surface(faces, true);
-    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ kind: input.look.kind, opacity, clip, edges: input.edges !== false }, fadeUniforms));
+    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ kind: input.look.kind, opacity, clip, edges: input.edges !== false, side: translucent ? THREE.FrontSide : undefined }, fadeUniforms));
     faceMesh.renderOrder = 1;
     trackFade(faceMesh, fadeUniforms, sphere.center, radius);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
@@ -309,6 +310,15 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     }
     root.add(faceMesh);
     pickables.push(faceMesh);
+
+    // A see-through body tints only the sides turned to the viewer, so the tone is the same everywhere (the far sides would add a second layer
+    // where the body is seen through); the edges of the far sides are drawn by a copy that shows nothing else.
+    if (translucent) {
+      const far = new THREE.Mesh(faceGeometry, litFaceMaterial({ kind: 'edges', opacity: 0, clip, edges: input.edges !== false, side: THREE.BackSide }, fadeUniforms));
+      far.renderOrder = 1;
+      trackFade(far, fadeUniforms, sphere.center, radius);
+      root.add(far);
+    }
 
     // a see-through outside also writes depth, invisibly, before the dots: what is in front of them is then known
     if (!solid && !wire) {
