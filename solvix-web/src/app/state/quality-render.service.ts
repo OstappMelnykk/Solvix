@@ -5,7 +5,6 @@ import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { buildQualityView } from '../geometry/quality-view';
 import { SectionCut, SolverViewInput, buildHighlight } from '../geometry/solver-view';
 import { QualityExploreService, SectionSettings } from './quality-explore.service';
-import { GeometryOpacityService } from './geometry-opacity.service';
 import { MeshEditorService } from './mesh-editor.service';
 import { SolverService } from './solver.service';
 
@@ -21,7 +20,6 @@ interface Cached {
 export class QualityRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly solver = inject(SolverService);
-  private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly explore = inject(QualityExploreService);
   private readonly cache = new Map<number, Cached>();
 
@@ -34,8 +32,7 @@ export class QualityRenderService {
     }
     const quality = this.solver.quality(sessionId);
     const looking = this.explore.get(sessionId);
-    const opacity = this.geometryOpacity.get(sessionId, worldIndex);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${looking.onlyBad ? opacity : ''}:${this.explore.revision(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${this.explore.revision(sessionId)}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -53,8 +50,7 @@ export class QualityRenderService {
       setup: input.setup,
       quality,
       metric: this.solver.qualityMetric(sessionId),
-      // the whole body is filled or edges only; the bad elements alone are see-through to the opacity set
-      look: looking.onlyBad ? { kind: 'translucent', opacity } : looking.filled ? { kind: 'solid' } : { kind: 'edges' },
+      filled: looking.filled,
       onlyBad: looking.onlyBad,
       section: looking.section.enabled ? sectionOf(state, looking.section) : undefined,
       showFixed: marks.fixed,

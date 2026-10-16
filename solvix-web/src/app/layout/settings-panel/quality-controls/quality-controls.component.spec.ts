@@ -147,12 +147,11 @@ describe('QualityControlsComponent', () => {
     expect(root.querySelector('app-smoothing-controls')).not.toBeNull();
   });
 
-  it('offers filled or edges only for the whole body, and an opacity slider once only the bad elements are shown', () => {
+  it('offers two looks of the body, filled or only its edges', () => {
     const fixture = render();
     const root = fixture.nativeElement as HTMLElement;
     const looks = () => Array.from(root.querySelectorAll<HTMLButtonElement>('.pair .tool'));
     expect(looks().map(b => text(b))).toEqual(['Залите', 'Лише ребра']);
-    expect(root.querySelector('.slider')).toBeNull();
     expect(looks()[0].classList.contains('tool--on')).toBeTrue();
 
     looks()[1].click();
@@ -160,15 +159,14 @@ describe('QualityControlsComponent', () => {
     expect(fixture.componentInstance.looking().filled).toBeFalse();
     expect(looks()[1].classList.contains('tool--on')).toBeTrue();
 
-    fixture.componentInstance.toggleOnlyBad();
+    fixture.componentInstance.toggleOnlyBad();                           // the same for the bad elements alone
     fixture.detectChanges();
-    expect(looks().length).toBe(0);
-    const slider = root.querySelector<HTMLInputElement>('.slider__range')!;
-    expect(text(root.querySelector('.slider'))).toContain('70%');          // the one opacity of the body
-    slider.value = '40';
-    slider.dispatchEvent(new Event('input'));
+    expect(looks().length).toBe(2);
+    expect(root.querySelector('.slider')).toBeNull();
+
+    looks()[0].click();
     fixture.detectChanges();
-    expect(text(root.querySelector('.slider'))).toContain('40%');
+    expect(fixture.componentInstance.looking().filled).toBeTrue();
   });
 
   it('opens a popup with the maths of a measure from its "i" button, and closes it', () => {

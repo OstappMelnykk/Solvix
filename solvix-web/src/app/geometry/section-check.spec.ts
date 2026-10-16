@@ -36,7 +36,7 @@ const setupOf = (divisions: [number, number, number]): SolverSetupDto => ({
 });
 
 const build = (state: MeshStateDto, divisions: [number, number, number], section: SectionCut) =>
-  buildQualityView({ state, setup: setupOf(divisions), quality: null, metric: 'grade', look: { kind: 'solid' }, onlyBad: false, section, showFixed: false, showLoads: false });
+  buildQualityView({ state, setup: setupOf(divisions), quality: null, metric: 'grade', filled: true, onlyBad: false, section, showFixed: false, showLoads: false });
 
 // the area of the cap of a cut: the sum of its triangles
 function capArea(cap: THREE.Mesh): { area: number; negative: number } {
