@@ -133,6 +133,8 @@ export interface MeshViewOptions {
   readonly xrayNodes?: boolean;
   // How opaque the faces are (0..1): the opacity of a linked face; the other states scale with it. Default 0.22.
   readonly faceOpacity?: number;
+  // How large the dots of the nodes are, as a share of the usual size (default 1). The click targets around them never get smaller than the usual ones.
+  readonly nodeScale?: number;
   // Draw the faces (default on); off when another view draws them and only the lines and nodes are wanted.
   readonly faces?: boolean;
   // Make the nodes clickable (default on); off for a view that is only looked at.
@@ -446,10 +448,11 @@ export function buildMeshView(
   }
 
   // Nodes: corners and midpoints, one sphere per node (a shared node once).
-  const cornerGeometry = new THREE.SphereGeometry(CORNER_RADIUS, 10, 8);
-  const midGeometry = new THREE.SphereGeometry(MIDPOINT_RADIUS, 8, 6);
-  const cornerHitGeometry = new THREE.SphereGeometry(CORNER_HIT_RADIUS, 8, 6);
-  const midHitGeometry = new THREE.SphereGeometry(MIDPOINT_HIT_RADIUS, 8, 6);
+  const nodeScale = Math.max(0.05, options.nodeScale ?? 1);
+  const cornerGeometry = new THREE.SphereGeometry(CORNER_RADIUS * nodeScale, 10, 8);
+  const midGeometry = new THREE.SphereGeometry(MIDPOINT_RADIUS * nodeScale, 8, 6);
+  const cornerHitGeometry = new THREE.SphereGeometry(Math.max(CORNER_HIT_RADIUS, CORNER_RADIUS * nodeScale * 1.4), 8, 6);
+  const midHitGeometry = new THREE.SphereGeometry(Math.max(MIDPOINT_HIT_RADIUS, MIDPOINT_RADIUS * nodeScale * 1.4), 8, 6);
   const hitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
   // The 20 nodes of the picked cubes (and of the cube of the picked face) can be reached through other cubes: they are
   // drawn over everything, and a click on one wins over the faces in front of it.

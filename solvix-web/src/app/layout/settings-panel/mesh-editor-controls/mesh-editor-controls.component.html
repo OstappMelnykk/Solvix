@@ -191,6 +191,24 @@
     />
     <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
   </div>
+  <div class="slider" *ngIf="isRealWorld">
+    <div class="slider__head">
+      <span>Розмір вершин</span>
+      <b>{{ nodeSizePercent() }}%</b>
+    </div>
+    <input
+      class="slider__range"
+      type="range"
+      [min]="nodeSizeMin"
+      [max]="nodeSizeMax"
+      step="5"
+      [value]="nodeSizePercent()"
+      [style.--p]="(nodeSizePercent() - nodeSizeMin) / (nodeSizeMax - nodeSizeMin)"
+      (input)="onNodeSize($event)"
+      aria-label="Розмір вершин"
+    />
+    <div class="slider__scale"><span>дрібні</span><span>великі</span></div>
+  </div>
 </div>
 
 <div class="group">

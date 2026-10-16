@@ -4,6 +4,7 @@ import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { MAX_NODE_SIZE, MIN_NODE_SIZE, NodeSizeService } from '../../../state/node-size.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { SolverService } from '../../../state/solver.service';
@@ -72,6 +73,7 @@ export class MeshEditorControlsComponent {
   private readonly solver = inject(SolverService);
   private readonly attachments = inject(SurfaceAttachmentService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
+  private readonly nodeSize = inject(NodeSizeService);
 
   @Input({ required: true }) sessionId!: number | null;
   @Input({ required: true }) worldIndex!: number | null;
@@ -126,6 +128,20 @@ export class MeshEditorControlsComponent {
   onOpacity(event: Event): void {
     if (this.sessionId !== null && this.worldIndex !== null) this.geometryOpacity.set(this.sessionId, this.worldIndex, Number((event.target as HTMLInputElement).value) / 100);
   }
+
+  // --- how large the 20 nodes of the cubes are drawn (Real World, percent of the usual size) ---
+
+  readonly nodeSizeMin = Math.round(MIN_NODE_SIZE * 100);
+  readonly nodeSizeMax = Math.round(MAX_NODE_SIZE * 100);
+
+  nodeSizePercent(): number {
+    return this.sessionId === null ? 100 : Math.round(this.nodeSize.get(this.sessionId) * 100);
+  }
+
+  onNodeSize(event: Event): void {
+    if (this.sessionId !== null) this.nodeSize.set(this.sessionId, Number((event.target as HTMLInputElement).value) / 100);
+  }
+
   // --- nodes stuck to the imported surface ---
 
   isNodeAttached(): boolean {

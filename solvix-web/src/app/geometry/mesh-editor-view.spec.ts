@@ -577,4 +577,24 @@ describe('mesh-editor-view', () => {
       expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1.7 })).length).toBe(1);
     });
   });
+
+  it('draws the dots of the nodes at the size asked for, with the click targets never smaller than the usual ones', () => {
+    const radius = (scale: number | undefined) => {
+      const view = buildMeshView(singleCubeState(), 'real', { hexes: [], face: null, hoverFace: null, nodeId: null }, { subdivisions: 1, nodeScale: scale });
+      const sphere = Array.from(view.nodeMeshes.values())[0].geometry as THREE.SphereGeometry;
+      const hit = (view.pickables.find(p => (p.userData['pick'] as { kind: string }).kind === 'node') as THREE.Mesh).geometry as THREE.SphereGeometry;
+      disposeMeshView(view);
+      return { dot: sphere.parameters.radius, hit: hit.parameters.radius };
+    };
+
+    const usual = radius(undefined);
+    const big = radius(3);
+    const small = radius(0.3);
+
+    expect(radius(1).dot).toBeCloseTo(usual.dot, 9);
+    expect(big.dot).toBeCloseTo(usual.dot * 3, 9);
+    expect(small.dot).toBeCloseTo(usual.dot * 0.3, 9);
+    expect(small.hit).toBeCloseTo(usual.hit, 9);
+    expect(big.hit).toBeGreaterThanOrEqual(usual.hit);
+  });
 });
