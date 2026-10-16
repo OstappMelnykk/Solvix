@@ -237,7 +237,6 @@
 
 <div class="group">
   <div class="group-label">Локальне згущення</div>
-  <div class="hint">Заглушка: запуск ще не підключено.</div>
   <div class="row row--coords">
     <span>X</span><input type="number" min="1" max="8" step="1" [value]="localDivisions[0]" (change)="onLocalDivisionChange(0, $event)" />
     <span>Y</span><input type="number" min="1" max="8" step="1" [value]="localDivisions[1]" (change)="onLocalDivisionChange(1, $event)" />
@@ -255,4 +254,5 @@
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'at-once'" [attr.aria-checked]="localRunMode === 'at-once'" (click)="localRunMode = 'at-once'">Одразу</button>
   </div>
   <button class="tool tool--primary" type="button" (click)="runLocalRefinement()">Запустити</button>
+  <button *ngIf="isLocalRefined()" class="tool" type="button" (click)="clearLocalRefinement()">Скинути згущення</button>
 </div>

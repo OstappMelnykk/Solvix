@@ -266,11 +266,12 @@ export class SolverService {
     });
   }
 
-  clearRefinement(sessionId: number): void {
+  clearRefinement(sessionId: number, then?: () => void): void {
     this.api.clearRefinement(sessionId).subscribe({
       next: setup => {
         this.acceptSetup(sessionId, setup);
         this.forgetResultOfOldMesh(sessionId);
+        then?.();
       },
       error: () => this.notifications.error('Не вдалось прибрати згущення.')
     });

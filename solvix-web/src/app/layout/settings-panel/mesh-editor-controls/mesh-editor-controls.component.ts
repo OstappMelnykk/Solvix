@@ -7,6 +7,7 @@ import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geo
 import { DEFAULT_NODE_SIZE, MAX_NODE_SIZE, MIN_NODE_SIZE, NodeKind, NodeSizeService } from '../../../state/node-size.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
+import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
@@ -71,6 +72,7 @@ export class MeshEditorControlsComponent {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
+  private readonly notifications = inject(NotificationService);
   private readonly attachments = inject(SurfaceAttachmentService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly nodeSize = inject(NodeSizeService);
@@ -80,7 +82,7 @@ export class MeshEditorControlsComponent {
 
   adaptSecond = true;
 
-  // Local refinement: UI stub, not wired to anything yet.
+  // Local refinement: the picked cubes are cut into localDivisions with a transition zone of this width round them.
   readonly transitionWidths = [0, 1, 2];
   localDivisions: number[] = [1, 1, 1];
   transitionWidth = 0;
@@ -450,8 +452,32 @@ export class MeshEditorControlsComponent {
     this.transitionWidth = Number((event.target as HTMLSelectElement).value);
   }
 
+  // Cuts the picked cubes. "By steps" lays the step on top of the ones made before; "at once" starts from the even cubes again.
   runLocalRefinement(): void {
-    // Stub: the local refinement run is not connected yet.
+    if (this.sessionId === null) return;
+    const hexes = this.selectedHexes();
+    if (hexes.length === 0) {
+      this.notifications.warning('Виберіть куби, які треба згустити (Shift + клік).');
+      return;
+    }
+    const sessionId = this.sessionId;
+    const step = {
+      leaves: hexes.map(id => `hex:${id}`),
+      ni: this.localDivisions[0],
+      nj: this.localDivisions[1],
+      nk: this.localDivisions[2],
+      transitionDepth: this.transitionWidth
+    };
+    if (this.localRunMode === 'at-once' && this.isLocalRefined()) this.solver.clearRefinement(sessionId, () => this.solver.addRefinement(sessionId, step));
+    else this.solver.addRefinement(sessionId, step);
+  }
+
+  isLocalRefined(): boolean {
+    return this.sessionId !== null && this.solver.isLocal(this.sessionId);
+  }
+
+  clearLocalRefinement(): void {
+    if (this.sessionId !== null) this.solver.clearRefinement(this.sessionId);
   }
 
   onNudgeStepChange(event: Event): void {

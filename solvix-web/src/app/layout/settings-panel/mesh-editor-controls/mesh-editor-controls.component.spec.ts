@@ -9,6 +9,7 @@ import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { NotificationService } from '../../../state/notification.service';
 import { NodeSizeService } from '../../../state/node-size.service';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { linkedPairState, singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
@@ -34,7 +35,7 @@ describe('MeshEditorControlsComponent', () => {
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
-    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions']);
+    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement']);
     solver.divisions.and.returnValue([1, 2, 3]);
     TestBed.configureTestingModule({
       providers: [
@@ -775,6 +776,43 @@ describe('MeshEditorControlsComponent', () => {
       expect(sizes.get(1, 'corner')).toBe(1);
       expect(sizes.get(1, 'mid')).toBe(1);
       expect(component.nodeSizePercent('corner')).toBe(100);
+    });
+  });
+  describe('local refinement', () => {
+    beforeEach(() => {
+      state = linkedPairState();
+      component.localDivisions = [2, 3, 4];
+      component.transitionWidth = 1;
+    });
+
+    it('asks to pick cubes when none is picked', () => {
+      component.runLocalRefinement();
+
+      expect(solver.addRefinement).not.toHaveBeenCalled();
+      expect(TestBed.inject(NotificationService).toasts()[0].kind).toBe('warning');
+    });
+
+    it('cuts the picked cubes into the chosen numbers with the chosen transition', () => {
+      selection.toggleHex(1, 0);
+      selection.toggleHex(1, 1);
+      component.runLocalRefinement();
+
+      expect(solver.addRefinement).toHaveBeenCalledWith(1, { leaves: ['hex:0', 'hex:1'], ni: 2, nj: 3, nk: 4, transitionDepth: 1 });
+      expect(solver.clearRefinement).not.toHaveBeenCalled();
+    });
+
+    it('"at once" starts again from the even cubes when the body is refined already, "by steps" lays a step on top', () => {
+      selection.toggleHex(1, 0);
+      solver.isLocal.and.returnValue(true);
+      solver.clearRefinement.and.callFake((_, then) => then?.());
+
+      component.runLocalRefinement();
+      expect(solver.clearRefinement).not.toHaveBeenCalled();
+
+      component.localRunMode = 'at-once';
+      component.runLocalRefinement();
+      expect(solver.clearRefinement).toHaveBeenCalledTimes(1);
+      expect(solver.addRefinement).toHaveBeenCalledTimes(2);
     });
   });
 });
