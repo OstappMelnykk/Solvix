@@ -2,18 +2,7 @@
 <div class="stats">Куби: {{ hexCount() }} · елементів СЕ: {{ elementCount() }}</div>
 
 <div class="group">
-  <div class="group-label"><span class="step">1</span> Сітка СЕ</div>
-  <div class="hint">Кількість скінченних елементів у кожному кубі по його осях. Більше — точніший результат, але довший розрахунок.</div>
-  <div class="triple">
-    <label *ngFor="let name of axes; let i = index" [title]="'Кількість СЕ в кубі вздовж осі ' + name[1]">
-      {{ name }}
-      <input type="number" min="1" max="8" step="1" [value]="divisions()[i]" (change)="onDivision(i, $event)" />
-    </label>
-  </div>
-</div>
-
-<div class="group">
-  <div class="group-label"><span class="step">2</span> Матеріали</div>
+  <div class="group-label"><span class="step">1</span> Матеріали</div>
   <div class="hint">Оберіть матеріал у списку й фарбуйте ним елементи на сцені (інструмент «Матеріал»). Око ховає матеріал, щоб бачити, що за ним.</div>
   <div class="materials">
     <div
@@ -80,7 +69,7 @@
 </div>
 
 <div class="group">
-  <div class="group-label"><span class="step">3</span> Навантаження і опори</div>
+  <div class="group-label"><span class="step">2</span> Навантаження і опори</div>
   <div class="hint">Малюйте на сцені інструментами «Тиск» і «Опора»: клік по грані, або «Пензель» — проведіть по поверхні. Тут задається лише величина тиску.</div>
 
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">

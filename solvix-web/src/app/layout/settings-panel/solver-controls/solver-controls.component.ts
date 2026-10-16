@@ -30,7 +30,6 @@ export class SolverControlsComponent implements DoCheck {
 
   @Input({ required: true }) sessionId!: number;
 
-  readonly axes = ['Nx', 'Ny', 'Nz'] as const;
   // Form fields of the custom material (not sent until the button is pressed).
   newLabel = '';
   newYoungGPa = 70;
@@ -49,14 +48,6 @@ export class SolverControlsComponent implements DoCheck {
 
   elementCount(): number {
     return this.hexCount() * this.divisions().reduce((product, n) => product * n, 1);
-  }
-
-  onDivision(axis: number, event: Event): void {
-    const value = Math.floor(Number((event.target as HTMLInputElement).value));
-    if (!Number.isFinite(value)) return;
-    const next = [...this.divisions()];
-    next[axis] = Math.min(8, Math.max(1, value));
-    this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
   }
 
   // --- materials: a palette; the active one is what the Material tool paints with ---

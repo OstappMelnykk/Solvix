@@ -168,31 +168,6 @@ h4 {
   color: #8a8f98;
 }
 
-.triple {
-  display: flex;
-  gap: 6px;
-
-  label {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 11px;
-    color: #8a8f98;
-  }
-
-  input {
-    width: 100%;
-    box-sizing: border-box;
-    background: $field-bg;
-    color: #dfe1e5;
-    border: 1px solid $field-border;
-    border-radius: 4px;
-    padding: 3px 6px;
-    font-size: 12px;
-  }
-}
-
 .field {
   display: flex;
   flex-direction: column;

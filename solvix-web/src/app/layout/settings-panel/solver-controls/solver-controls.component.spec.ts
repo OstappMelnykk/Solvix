@@ -81,22 +81,10 @@ describe('SolverControlsComponent', () => {
   });
 
   describe('the mesh of small elements', () => {
-    it('shows the division and the number of elements it makes', () => {
+    it('shows the number of elements the division makes (the division itself is set in the Real World)', () => {
       expect(component.divisions()).toEqual([2, 1, 3]);
       expect(component.hexCount()).toBe(2);
       expect(component.elementCount()).toBe(2 * 2 * 1 * 3);
-    });
-
-    it('sends the changed axis with the others kept, clamped to 1..8, ignoring non-numbers', () => {
-      const type = (axis: number, value: string) => component.onDivision(axis, { target: { value } } as unknown as Event);
-
-      type(0, '4');
-      type(1, '99');
-      type(2, '0');
-      type(0, '2.9');
-      type(1, 'abc');
-
-      expect(solver.setDivisions.calls.allArgs()).toEqual([[1, 4, 1, 3], [1, 2, 8, 3], [1, 2, 1, 1], [1, 2, 1, 3]]);
     });
   });
 
