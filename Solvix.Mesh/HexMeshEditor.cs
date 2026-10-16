@@ -115,6 +115,19 @@ public sealed class HexMeshEditor
         return EditResult.Success;
     });
 
+    /// <summary>
+    /// Moves a whole face by one displacement, as a single undoable step. The 8
+    /// face nodes move by the full delta; the midpoints of the edges joining the
+    /// face to the opposite one move by half, keeping those edges straight.
+    /// </summary>
+    public EditResult MoveFace(FaceRef face, Vec3 delta) => Apply(() =>
+    {
+        if (!Mesh.HasHex(face.Hex)) return EditResult.Fail($"Unknown hex {face.Hex}.");
+        if (!IsFinite(delta)) return EditResult.Fail("The displacement must be a finite number.");
+        Mesh.MoveFace(face, delta);
+        return EditResult.Success;
+    });
+
     public EditResult Reset() => Apply(() =>
     {
         Mesh = new HexMesh();

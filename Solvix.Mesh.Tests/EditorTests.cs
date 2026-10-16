@@ -116,6 +116,53 @@ public class EditorTests
     }
 
     [Test]
+    public void Moving_a_face_shifts_its_8_nodes_fully_and_the_connecting_midpoints_by_half()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        var hex = editor.Mesh.Hex(0);
+        var face = HexFace.XPlus;
+
+        // Snapshot every node position before the move.
+        var before = Enumerable.Range(0, 20).ToDictionary(s => s, s => editor.Mesh.Node(hex.NodeIds[s]).Position);
+        var delta = new Vec3(0.3, 0, 0);
+
+        Assert.That(editor.MoveFace(new FaceRef(0, face), delta).Ok, Is.True);
+
+        var onFace = face.Slots().ToHashSet();
+        // The 8 nodes on the face move by the full delta.
+        foreach (int s in onFace)
+            Assert.That(editor.Mesh.Node(hex.NodeIds[s]).Position, Is.EqualTo(before[s] + delta), $"slot {s} should move fully");
+
+        // Midpoints of the connecting edges (one corner on the face, one off) move by half.
+        for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
+        {
+            var (ca, cb) = Hex20Reference.EdgeCorners[k];
+            int mid = 8 + k;
+            if (onFace.Contains(mid)) continue; // already covered as an on-face node
+            bool connecting = onFace.Contains(ca) ^ onFace.Contains(cb);
+            var expected = before[mid] + (connecting ? delta * 0.5 : Vec3.Zero);
+            var actual = editor.Mesh.Node(hex.NodeIds[mid]).Position;
+            Assert.That((actual - expected).Length, Is.LessThan(1e-12), $"midpoint slot {mid}");
+        }
+    }
+
+    [Test]
+    public void Moving_a_face_is_one_undo_step_and_fails_on_bad_input()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        var before = editor.Mesh.ToState();
+
+        Assert.That(editor.MoveFace(new FaceRef(0, HexFace.ZPlus), new Vec3(0, 0, 0.5)).Ok, Is.True);
+        Assert.That(editor.Undo(), Is.True);
+        Assert.That(editor.Mesh.ToState().Nodes, Is.EquivalentTo(before.Nodes));
+
+        Assert.That(editor.MoveFace(new FaceRef(99, HexFace.ZPlus), new Vec3(0, 0, 1)).Ok, Is.False);   // unknown hex
+        Assert.That(editor.MoveFace(new FaceRef(0, HexFace.ZPlus), new Vec3(double.NaN, 0, 0)).Ok, Is.False); // not finite
+    }
+
+    [Test]
     public void Reset_empties_the_mesh_and_is_undoable()
     {
         var editor = Square(out _, out _, out _, out _);
