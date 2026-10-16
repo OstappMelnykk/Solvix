@@ -16,7 +16,7 @@ namespace Solvix.FemMesh.Local;
 public static class Templates
 {
     /// <summary>T1 around the parent's corner (slot k).</summary>
-    public static List<Cell> ApplyCorner(HexMesh mesh, Cell parent, int k, int n) => Add(mesh, parent, CornerChildren(mesh.CornersOf(parent), k, n));
+    public static List<Cell> ApplyCorner(LatticeMesh mesh, Cell parent, int k, int n) => Add(mesh, parent, CornerChildren(mesh.CornersOf(parent), k, n));
 
     /// <summary>The corners (in slot order) of the children of T1 around the corner k of a parent with corners <paramref name="c"/>.</summary>
     public static List<Pt3[]> CornerChildren(Pt3[] c, int k, int n)
@@ -42,7 +42,7 @@ public static class Templates
     }
 
     /// <summary>T2 along the parent's edge that runs along <paramref name="axis"/> and starts at slot <paramref name="start"/> (its end on the minus side).</summary>
-    public static List<Cell> ApplyEdge(HexMesh mesh, Cell parent, int axis, int start, int n) => Add(mesh, parent, EdgeChildren(mesh.CornersOf(parent), axis, start, n));
+    public static List<Cell> ApplyEdge(LatticeMesh mesh, Cell parent, int axis, int start, int n) => Add(mesh, parent, EdgeChildren(mesh.CornersOf(parent), axis, start, n));
 
     public static List<Pt3[]> EdgeChildren(Pt3[] c, int axis, int start, int n)
     {
@@ -73,7 +73,7 @@ public static class Templates
     }
 
     /// <summary>T4: n slabs parallel to the parent's face on the given side of the given axis.</summary>
-    public static List<Cell> ApplyFace(HexMesh mesh, Cell parent, int axis, int side, int n) => Add(mesh, parent, FaceChildren(mesh.CornersOf(parent), axis, side, n));
+    public static List<Cell> ApplyFace(LatticeMesh mesh, Cell parent, int axis, int side, int n) => Add(mesh, parent, FaceChildren(mesh.CornersOf(parent), axis, side, n));
 
     public static List<Pt3[]> FaceChildren(Pt3[] c, int axis, int side, int n)
     {
@@ -106,7 +106,7 @@ public static class Templates
     /// <summary>Does the template give valid children: every child with a positive Jacobian at all its corners?</summary>
     public static bool IsValid(List<Pt3[]> children) => children.All(ch => Enumerable.Range(0, 8).All(s => Conformity.JacobianAtCorner(ch, s) > 0));
 
-    private static List<Cell> Add(HexMesh mesh, Cell parent, List<Pt3[]> children) => children.Select(corners => mesh.AddCell(parent.Root, corners)).ToList();
+    private static List<Cell> Add(LatticeMesh mesh, Cell parent, List<Pt3[]> children) => children.Select(corners => mesh.AddCell(parent.Root, corners)).ToList();
 
     // a + (b - a) * numerator / n, exact because the lattice has been scaled by n
     private static Pt3 Along(Pt3 a, Pt3 b, int numerator, int n)

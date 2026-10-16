@@ -23,6 +23,6 @@ internal static class Support
         var connectivity = new int[fem.ElementCount * 20];
         for (int e = 0; e < fem.ElementCount; e++)
             for (int s = 0; s < 20; s++) connectivity[e * 20 + s] = fem.Connectivity[e, s];
-        return new FemMeshDto(fem.NodeCount, fem.ElementCount, positions, connectivity, fem.NodeIds, fem.ElementIds, editor.Mesh.InvalidHexes());
+        return new FemMeshDto(fem.NodeCount, fem.ElementCount, positions, connectivity, fem.NodeIds, fem.ElementIds, editor.Mesh.InvalidHexes(), fem.Cells);
     }
 }

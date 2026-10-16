@@ -13,7 +13,9 @@ public sealed record FemMeshDto(
     IReadOnlyList<int> Connectivity,
     IReadOnlyList<int> NodeIds,
     IReadOnlyList<int> ElementIds,
-    IReadOnlyList<int> FoldedHexes);
+    IReadOnlyList<int> FoldedHexes,
+    // The cell (I, J, K) of the editor's lattice of each cube, three numbers per element in the order of ElementIds (empty when not known).
+    IReadOnlyList<int>? Cells = null);
 
 /// <summary>Isotropic linear elastic material. E in Pa.</summary>
 /// <summary>A material; <c>Color</c> is the colour it has on the scene as #rrggbb (optional: a material without one gets a colour from its name).</summary>

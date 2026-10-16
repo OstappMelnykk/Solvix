@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Solvix.Fem;
 using Solvix.Contracts.Facades;
+using IFemMesh = Solvix.FemMesh.IFemMesh;
 
 namespace Solvix.Solver;
 
@@ -156,7 +157,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
                 Publish(sessionId, ticket, new SolverJobDto("failed", 1, "", $"Ітерації не збіглися (нев'язка {output.Residual:E1}): система погано обумовлена, спробуйте менший контраст матеріалів або менше кубів.", ticket));
                 return;
             }
-            var fine = input.Fine;
+            var fine = input.Fine ?? throw new NotSupportedException("The result of a mesh that is not cut evenly cannot be shown yet.");
             int n = fine.NodeCount;
             var ux = new double[n]; var uy = new double[n]; var uz = new double[n]; var positions = new double[3 * n];
             for (int i = 0; i < n; i++)
@@ -206,9 +207,15 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
         // From here on the solver works on the mesh of finite elements (IFemMesh): the setup's cells are bound to its elements and faces by
         // SetupBinding, and nothing below asks which cube an element came from or how it was cut.
-        var femMesh = fine.Mesh;
-        var counts = new[] { nx, ny, nz };
+        return BuildProblem(setup, mesh, fine.Mesh, new[] { nx, ny, nz }, fine);
+    }
 
+    /// <summary>
+    /// The solver's input on ANY mesh of finite elements: what the setup says (materials, clamps, pressures, by cells of the cubes) is bound to the
+    /// elements and faces of the mesh, whatever rule made it. <paramref name="counts"/> is the grid of cells the setup is expressed in.
+    /// </summary>
+    internal static SolverProblem BuildProblem(SolverSetup setup, FemMeshDto mesh, IFemMesh femMesh, int[] counts, FineMesh? fine = null)
+    {
         var byName = setup.MaterialsByName.ToDictionary(m => m.Key, m => Material.Isotropic(m.Value.E, m.Value.Nu, m.Key));
         var materials = new Material[femMesh.ElementCount];
         for (int e = 0; e < femMesh.ElementCount; e++)
@@ -226,9 +233,9 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
             // Pn is the solver's: along the outward normal, negative = compression
             Pressures = setup.Loads.Where(l => Known(l.Key)).SelectMany(l => Faces(l.Key).Select(face => new FacePressure(face, l.Value))).ToList()
         };
-        return new SolverProblem(fine, new FemModel(femMesh.Positions, femMesh.Connectivity, materials), loads);
+        return new SolverProblem(femMesh, fine, new FemModel(femMesh.Positions, femMesh.Connectivity, materials), loads);
     }
 }
 
 /// <summary>The divided mesh with its model and load case - what one solve works on.</summary>
-internal sealed record SolverProblem(FineMesh Fine, FemModel Model, LoadCase Loads);
+internal sealed record SolverProblem(IFemMesh Mesh, FineMesh? Fine, FemModel Model, LoadCase Loads);

@@ -19,7 +19,7 @@ internal static class SeamSolver
 
     private const int SearchLimit = 200000;                            // the biggest group searched with going back (the number of steps is limited as well)
 
-    public static void Solve(HexMesh mesh, ISet<int> required, int axis, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, Action<SeamTry>? log)
+    public static void Solve(LatticeMesh mesh, ISet<int> required, int axis, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, Action<SeamTry>? log)
     {
         var all = required.OrderBy(x => x).ToList();
         var forced = new HashSet<int>(marks);
@@ -65,7 +65,7 @@ internal static class SeamSolver
     }
 
     // the face on the seam of the cell's layer pair, if it has one; else by parity
-    private static int FirstSide(HexMesh mesh, int id, int axis)
+    private static int FirstSide(LatticeMesh mesh, int id, int axis)
     {
         var cell = mesh.Cells[id];
         int layer = mesh.Roots[cell.Root].Layer(axis);
@@ -79,7 +79,7 @@ internal static class SeamSolver
     }
 
     // cells that touch a common cell are in one group
-    private static List<List<int>> Groups(HexMesh mesh, List<int> need, Dictionary<int, List<int>> cellsOf)
+    private static List<List<int>> Groups(LatticeMesh mesh, List<int> need, Dictionary<int, List<int>> cellsOf)
     {
         var parent = need.ToDictionary(id => id, id => id);
         int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
@@ -93,7 +93,7 @@ internal static class SeamSolver
     }
 
     // marks the face of a cell and completes; the nodes that became marked are returned so that it can be undone
-    private static List<int> Mark(HexMesh mesh, int id, int side, HashSet<int> marks, int axis, Dictionary<int, List<int>> cellsOf)
+    private static List<int> Mark(LatticeMesh mesh, int id, int side, HashSet<int> marks, int axis, Dictionary<int, List<int>> cellsOf)
     {
         var added = new List<int>();
         foreach (int slot in Hex.FaceSlots(axis, side))
@@ -103,7 +103,7 @@ internal static class SeamSolver
     }
 
     // is every decided cell still marked exactly on its face after these nodes were added?
-    private static bool Consistent(HexMesh mesh, List<int> added, Dictionary<int, int> decided, int axis, Dictionary<int, List<int>> cellsOf)
+    private static bool Consistent(LatticeMesh mesh, List<int> added, Dictionary<int, int> decided, int axis, Dictionary<int, List<int>> cellsOf)
     {
         foreach (int node in added)
             foreach (int c in cellsOf[node])
@@ -113,7 +113,7 @@ internal static class SeamSolver
 
     // The search with going back, without recursion (a group can have thousands of cells, and a recursion that deep overflows the stack of a thread of the
     // server): level i holds the cell i of the group; tried[i] says how many of its two sides have been tried, added[i] the nodes its kept side marked.
-    private static Dictionary<int, int>? Search(HexMesh mesh, ISet<int> required, List<int> group, Dictionary<int, int> first, HashSet<int> marks, Dictionary<int, int> decided, int axis, Dictionary<int, List<int>> cellsOf)
+    private static Dictionary<int, int>? Search(LatticeMesh mesh, ISet<int> required, List<int> group, Dictionary<int, int> first, HashSet<int> marks, Dictionary<int, int> decided, int axis, Dictionary<int, List<int>> cellsOf)
     {
         long budget = 4000 + 200L * group.Count;
         var chosen = new Dictionary<int, int>();
@@ -168,7 +168,7 @@ internal static class SeamSolver
     }
 
     // no exact choice: one cell after another, the first side that cuts the cell and spoils none that is cut; a cell with no such side is left
-    private static Dictionary<int, int> Greedy(HexMesh mesh, ISet<int> required, List<int> group, Dictionary<int, int> first, HashSet<int> marks, Dictionary<int, int> decided, int axis, Dictionary<int, List<int>> cellsOf)
+    private static Dictionary<int, int> Greedy(LatticeMesh mesh, ISet<int> required, List<int> group, Dictionary<int, int> first, HashSet<int> marks, Dictionary<int, int> decided, int axis, Dictionary<int, List<int>> cellsOf)
     {
         var chosen = new Dictionary<int, int>();
         foreach (int id in group)

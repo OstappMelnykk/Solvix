@@ -5,12 +5,12 @@ namespace Solvix.FemMesh.Tests.Local;
 /// <summary>How far one refinement spreads. The book adds everything that was refined to M after each pass, which makes the next pass refine the transition layers too (a corner cell touches 48 coarse cells); the default here adds only what comes from the user's cells.</summary>
 public class SpreadTests
 {
-    private static List<Root> Refined(HexMesh mesh) => mesh.Roots.Where(r => r.Leaves.Count > 1).ToList();
+    private static List<Root> Refined(LatticeMesh mesh) => mesh.Roots.Where(r => r.Leaves.Count > 1).ToList();
 
     [Test]
     public void A_single_corner_cell_touches_only_the_2_by_2_by_2_block_it_is_in()
     {
-        var mesh = HexMesh.Grid(7, 7, 7);
+        var mesh = LatticeMesh.Grid(7, 7, 7);
         Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2);
         Assert.That(Conformity.Check(mesh), Is.Empty);
         var touched = Refined(mesh);
@@ -23,7 +23,7 @@ public class SpreadTests
     {
         foreach (var n in new[] { 2, 3, 4 })
         {
-            var mesh = HexMesh.Grid(7, 7, 7);
+            var mesh = LatticeMesh.Grid(7, 7, 7);
             Refiner.Refine(mesh, mesh.Roots.Single(r => (r.I, r.J, r.K) == (3, 3, 3)).Leaves.ToList(), n, n, n);
             Assert.That(Conformity.Check(mesh), Is.Empty, $"n = {n}");
             var touched = Refined(mesh);
@@ -35,7 +35,7 @@ public class SpreadTests
     [Test]
     public void The_book_variant_spreads_further_and_is_still_conforming()
     {
-        var mesh = HexMesh.Grid(7, 7, 7);
+        var mesh = LatticeMesh.Grid(7, 7, 7);
         var result = Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, transitionDepth: 2);
         Assert.That(Conformity.Check(mesh), Is.Empty);
         Assert.That(Refined(mesh).Count, Is.GreaterThan(8));
@@ -54,7 +54,7 @@ public class SpreadTests
                 var holes = new List<(int, int, int)>();
                 for (int i = 0; i < nx; i++) for (int j = 0; j < ny; j++) for (int k = 0; k < nz; k++) if (random.NextDouble() < 0.1) holes.Add((i, j, k));
                 if (holes.Count == nx * ny * nz) holes.RemoveAt(0);
-                var mesh = HexMesh.Grid(nx, ny, nz, holes);
+                var mesh = LatticeMesh.Grid(nx, ny, nz, holes);
                 var chosen = mesh.Roots.Where(_ => random.NextDouble() < 0.25).Select(r => r.Id).ToHashSet();
                 if (chosen.Count == 0) continue;
                 int nI = random.Next(2, 5), nJ = random.Next(2, 5), nK = random.Next(2, 5);
@@ -77,7 +77,7 @@ public class SpreadTests
             var random = new Random(200 + depth);
             for (int trial = 0; trial < 40; trial++)
             {
-                var mesh = HexMesh.Grid(3, 3, 3);
+                var mesh = LatticeMesh.Grid(3, 3, 3);
                 Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.3).SelectMany(r => r.Leaves).ToList(), 2, 2, 2, depth);
                 var leaves = mesh.Cells.Keys.Where(_ => random.NextDouble() < 0.03).ToList();
                 if (leaves.Count == 0) continue;
@@ -94,13 +94,13 @@ public class SpreadTests
 /// <summary>Many refinements one after another make the lattice very fine; that must work while the numbers fit and be refused cleanly after.</summary>
 public class DepthTests
 {
-    private static string Signature(HexMesh mesh) =>
+    private static string Signature(LatticeMesh mesh) =>
         string.Join(";", mesh.Cells.Values.Select(c => string.Join(",", c.Nodes.Select(mesh.PointOf).Select(p => $"{p.X}:{p.Y}:{p.Z}"))).OrderBy(s => s, StringComparer.Ordinal));
 
     [Test]
     public void Refining_the_same_corner_again_and_again_stays_conforming_until_the_lattice_is_too_fine_and_then_is_refused_untouched()
     {
-        var mesh = HexMesh.Grid(3, 3, 3);
+        var mesh = LatticeMesh.Grid(3, 3, 3);
         int rounds = 0;
         while (true)
         {
@@ -121,7 +121,7 @@ public class DepthTests
     [Test]
     public void The_coordinates_never_pass_the_limit_the_checks_can_handle()
     {
-        var mesh = HexMesh.Grid(2, 2, 2);
+        var mesh = LatticeMesh.Grid(2, 2, 2);
         for (int round = 0; round < 6; round++)
         {
             try { Refiner.Refine(mesh, new[] { mesh.Cells.Keys.First() }, 8, 8, 8); }
@@ -135,7 +135,7 @@ public class TransitionDepthTests
 {
     private static int Touched(int depth, (int, int, int) at)
     {
-        var mesh = HexMesh.Grid(9, 9, 9);
+        var mesh = LatticeMesh.Grid(9, 9, 9);
         Refiner.Refine(mesh, mesh.Roots.Single(r => (r.I, r.J, r.K) == at).Leaves.ToList(), 2, 2, 2, depth);
         Assert.That(Conformity.Check(mesh), Is.Empty, $"depth {depth}");
         return mesh.Roots.Count(r => r.Leaves.Count > 1);
@@ -156,7 +156,7 @@ public class TransitionDepthTests
     [Test]
     public void A_depth_outside_0_to_2_is_refused_and_the_mesh_is_untouched()
     {
-        var mesh = HexMesh.Grid(2, 2, 2);
+        var mesh = LatticeMesh.Grid(2, 2, 2);
         Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, 3));
         Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, mesh.Roots[0].Leaves.ToList(), 2, 2, 2, -1));
         Assert.That(mesh.Cells, Has.Count.EqualTo(8));
@@ -169,7 +169,7 @@ public class BigSelectionTests
     [Test]
     public void A_block_of_125_coarse_cells_cut_in_3_by_3_by_3_conforms_and_needs_no_deep_recursion()
     {
-        var mesh = HexMesh.Grid(9, 9, 9);
+        var mesh = LatticeMesh.Grid(9, 9, 9);
         var block = mesh.Roots.Where(r => r.I is >= 2 and < 7 && r.J is >= 2 and < 7 && r.K is >= 2 and < 7).SelectMany(r => r.Leaves).ToList();
         Assert.That(block, Has.Count.EqualTo(125));
 
@@ -189,7 +189,7 @@ public class BigSelectionTests
     [Test]
     public void A_second_refinement_of_a_whole_block_of_leaves_conforms_on_a_small_stack_too()
     {
-        var mesh = HexMesh.Grid(6, 6, 6);
+        var mesh = LatticeMesh.Grid(6, 6, 6);
         Refiner.Refine(mesh, mesh.Roots.Where(r => r.I is >= 1 and < 5 && r.J is >= 1 and < 5 && r.K is >= 1 and < 5).SelectMany(r => r.Leaves).ToList(), 2, 2, 2);
         var inside = mesh.Cells.Values.Where(c => mesh.CornersOf(c).All(p => p.X >= 2 * mesh.Scale / 6 * 2 && p.X <= 4 * mesh.Scale && p.Y >= 2 * mesh.Scale / 6 * 2 && p.Y <= 4 * mesh.Scale && p.Z >= 2 * mesh.Scale / 6 * 2 && p.Z <= 4 * mesh.Scale)).Select(c => c.Id).ToList();
         Assert.That(inside, Is.Not.Empty);

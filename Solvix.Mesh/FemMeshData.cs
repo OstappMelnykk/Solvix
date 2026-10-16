@@ -15,4 +15,6 @@ public sealed class FemMeshData
     public required int[] NodeIds { get; init; }
     /// <summary>Hex id for each solver element index.</summary>
     public required int[] ElementIds { get; init; }
+    /// <summary>The cell (I, J, K) of the editor's lattice each element sits in: three numbers per element, in the order of <see cref="ElementIds"/>.</summary>
+    public int[] Cells { get; init; } = Array.Empty<int>();
 }

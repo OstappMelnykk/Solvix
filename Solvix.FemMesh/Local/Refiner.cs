@@ -27,7 +27,7 @@ public sealed record SeamTry(int Cell, int Side, string Kind, IReadOnlyList<int>
 /// </summary>
 public sealed record RefineStep(
     string Kind, int Axis, int N,
-    HexMesh? Mesh,
+    LatticeMesh? Mesh,
     IReadOnlyList<int> Marked,
     IReadOnlyList<int> M,
     IReadOnlyList<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Applied,
@@ -48,7 +48,7 @@ public static class Refiner
     /// The lattice gets finer by a factor nI x nJ x nK with every refinement, and its coordinates have to stay exact integers that the checks can multiply:
     /// below 2^40. A refinement that would go over it is refused before anything is changed.
     /// </summary>
-    public static void EnsureFine(HexMesh mesh, int nI, int nJ, int nK)
+    public static void EnsureFine(LatticeMesh mesh, int nI, int nJ, int nK)
     {
         long biggest = mesh.Nodes.Count == 0 ? 1 : mesh.Nodes.Max(p => Math.Max(p.X, Math.Max(p.Y, p.Z)));
         Int128 after = (Int128)biggest * nI * nJ * nK;
@@ -56,7 +56,7 @@ public static class Refiner
             throw new InvalidOperationException($"The lattice is too fine for another refinement ({nI}x{nJ}x{nK} would make it {after} units across a cell of the coarse grid's size {mesh.Scale}); undo some refinements or use a smaller n.");
     }
 
-    public static RefineResult Refine(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
+    public static RefineResult Refine(LatticeMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
     {
         if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
         if (transitionDepth < 0 || transitionDepth > 2) throw new ArgumentOutOfRangeException(nameof(transitionDepth), "the depth of the transition zone is 0, 1 or 2.");
@@ -71,7 +71,7 @@ public static class Refiner
     }
 
     /// <summary>The refinement of a copy of the mesh, recorded stage by stage; the mesh itself is not changed. The last stage is the result.</summary>
-    public static List<RefineStep> Preview(HexMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
+    public static List<RefineStep> Preview(LatticeMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
     {
         if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
         if (transitionDepth < 0 || transitionDepth > 2) throw new ArgumentOutOfRangeException(nameof(transitionDepth), "the depth of the transition zone is 0, 1 or 2.");
@@ -89,7 +89,7 @@ public static class Refiner
     }
 
     /// <summary>One pass along an axis: rescale by n, mark, complete, give the cells of M a seam of their own where the layers gave none, apply the templates, expand M.</summary>
-    public static PassTrace Pass(HexMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n, List<RefineStep>? steps = null, bool expandTransitions = false)
+    public static PassTrace Pass(LatticeMesh mesh, HashSet<int> marked, HashSet<int> required, int axis, int n, List<RefineStep>? steps = null, bool expandTransitions = false)
     {
         mesh.Rescale(n);
         var cellsOf = CellsByNode(mesh);
@@ -132,7 +132,7 @@ public static class Refiner
     /// and taken in the pairs (0, 1), (2, 3), ... everywhere in the grid (so the seams line up across holes). The seam of a pair is the plane its two
     /// layers share; a layer whose partner is missing still has that plane as its seam. A cell of M that has a face on its seam marks the four nodes of it.
     /// </summary>
-    public static HashSet<int> MarkNodes(HexMesh mesh, ISet<int> marked, int axis)
+    public static HashSet<int> MarkNodes(LatticeMesh mesh, ISet<int> marked, int axis)
     {
         var marks = new HashSet<int>();
         long d = mesh.Scale;
@@ -165,10 +165,10 @@ public static class Refiner
     /// marked - those of the face that holds all its marks, or else all eight. That can change the pattern of the cells round those nodes, so it
     /// is repeated until nothing changes. The result is the smallest such set of marks containing the given ones, whatever the order.
     /// </summary>
-    public static void Complete(HexMesh mesh, HashSet<int> marks) => Complete(mesh, marks, CellsByNode(mesh));
+    public static void Complete(LatticeMesh mesh, HashSet<int> marks) => Complete(mesh, marks, CellsByNode(mesh));
 
     // seeds: the nodes just marked, when the marks before them already had patterns with templates everywhere (then only the cells round the seeds can be wrong)
-    internal static void Complete(HexMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, IEnumerable<int>? seeds = null, List<int>? added = null)
+    internal static void Complete(LatticeMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, IEnumerable<int>? seeds = null, List<int>? added = null)
     {
         var queue = new Queue<int>((seeds ?? marks).SelectMany(n => cellsOf.GetValueOrDefault(n) ?? new List<int>()).Distinct());
         while (queue.Count > 0)
@@ -191,7 +191,7 @@ public static class Refiner
     /// A template on a strongly skewed parent (a leaf of an earlier refinement) can fold a child. A cell whose template would do that gets more marks - the
     /// smallest bigger pattern whose template is valid (all eight marked always is) - and the completion runs again, until every cell's template is valid.
     /// </summary>
-    private static void EnsureValid(HexMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, int n)
+    private static void EnsureValid(LatticeMesh mesh, HashSet<int> marks, Dictionary<int, List<int>> cellsOf, int n)
     {
         var allowed = Enumerable.Range(1, 255).Where(m => Patterns.KindOf(m) != Patterns.Kind.Invalid)
             .OrderBy(m => System.Numerics.BitOperations.PopCount((uint)m)).ThenBy(m => m).ToArray();
@@ -214,7 +214,7 @@ public static class Refiner
         }
     }
 
-    internal static Dictionary<int, List<int>> CellsByNode(HexMesh mesh)
+    internal static Dictionary<int, List<int>> CellsByNode(LatticeMesh mesh)
     {
         var map = new Dictionary<int, List<int>>();
         foreach (var cell in mesh.Cells.Values)
@@ -235,7 +235,7 @@ public static class Refiner
 
     // ---- templates -----------------------------------------------------------------------------------------------------
 
-    private static List<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Apply(HexMesh mesh, HashSet<int> marks, int n)
+    private static List<(int Cell, string Template, int Index, IReadOnlyList<int> Children)> Apply(LatticeMesh mesh, HashSet<int> marks, int n)
     {
         var applied = new List<(int, string, int, IReadOnlyList<int>)>();
         foreach (var cell in mesh.Cells.Values.OrderBy(c => c.Id).ToList())

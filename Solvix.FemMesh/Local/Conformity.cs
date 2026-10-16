@@ -8,7 +8,7 @@ namespace Solvix.FemMesh.Local;
 /// </summary>
 public static class Conformity
 {
-    public static List<string> Check(HexMesh mesh)
+    public static List<string> Check(LatticeMesh mesh)
     {
         var problems = new List<string>();
         var faces = new Dictionary<(int, int, int, int), List<(int Cell, int Axis, int Side)>>();
@@ -56,7 +56,7 @@ public static class Conformity
     /// The shared faces that the two cells meet along different axes of their own (the diagonal faces between the plates of T1 and T2 are such). A mesh
     /// can be conforming and still have them; a consumer that pairs a face of one cell with the same-axis face of its neighbour has to know.
     /// </summary>
-    public static int AxisMismatchedFaces(HexMesh mesh)
+    public static int AxisMismatchedFaces(LatticeMesh mesh)
     {
         var faces = new Dictionary<(int, int, int, int), List<int>>();
         foreach (var cell in mesh.Cells.Values)
@@ -77,7 +77,7 @@ public static class Conformity
     }
 
     // a face with one owner is on the outside when it lies in a plane of the coarse lattice and the coarse cell on the other side of that plane is missing
-    private static bool OnOuterBoundary(HexMesh mesh, Dictionary<(int, int, int), Root> roots, Cell cell, int axis, int side)
+    private static bool OnOuterBoundary(LatticeMesh mesh, Dictionary<(int, int, int), Root> roots, Cell cell, int axis, int side)
     {
         var corners = Hex.FaceSlots(axis, side).Select(s => mesh.PointOf(cell.Nodes[s])).ToArray();
         long at = corners[0][axis];

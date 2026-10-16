@@ -79,6 +79,41 @@ public class SetupBindingTests
         }
     }
 
+    [TestCase(1, 1, 1, 1)]
+    [TestCase(2, 2, 2, 2)]
+    [TestCase(3, 3, 2, 1)]
+    public void On_a_locally_refined_mesh_the_cells_of_the_setup_also_tile_it_without_a_gap_or_an_overlap(int cell, int sx, int sy, int sz)
+    {
+        var coarse = Export(Bar(4));
+        var rule = new Solvix.FemMesh.Local.LocalRefinement(new[]
+        {
+            new Solvix.FemMesh.Local.RefinementStep(new[] { Solvix.FemMesh.Local.LocalRefinement.RootKey(1) }, 3, 3, 3),
+            new Solvix.FemMesh.Local.RefinementStep(new[] { Solvix.FemMesh.Local.LocalRefinement.RootKey(2) }, 2, 2, 2, 1)
+        });
+        var mesh = rule.Build(coarse);
+        var counts = new[] { sx, sy, sz };
+
+        for (int cube = 0; cube < 4; cube++)
+        {
+            foreach (var side in ElementLocal.FaceNames)
+            {
+                int axis = side[0] - 'X';
+                var tangents = Enumerable.Range(0, 3).Where(d => d != axis).ToArray();
+                var named = new List<Solvix.Fem.ElementFace>();
+                for (int p = 0; p < counts[tangents[0]]; p++)
+                    for (int q = 0; q < counts[tangents[1]]; q++) named.AddRange(SetupBinding.FacesOf(mesh, cube, side, p, q, counts));
+                var all = mesh.FacesOnSide(cube, side).Select(f => new Solvix.Fem.ElementFace(f.Element, f.Face)).ToList();
+                Assert.That(named.Count, Is.EqualTo(all.Count), $"cube {cube} {side}: every face in one cell");
+                Assert.That(named.ToHashSet().SetEquals(all), Is.True, $"cube {cube} {side}");
+            }
+            var elements = new List<int>();
+            for (int ex = 0; ex < sx; ex++)
+                for (int ey = 0; ey < sy; ey++)
+                    for (int ez = 0; ez < sz; ez++) elements.AddRange(SetupBinding.ElementsOf(mesh, cube, new ElementKey(0, ex, ey, ez), counts));
+            Assert.That(elements.OrderBy(i => i), Is.EqualTo(mesh.ElementsOf(cube).OrderBy(i => i)), $"cube {cube}: the elements, each in one cell");
+        }
+    }
+
     [Test]
     public void A_side_the_solver_does_not_know_names_nothing()
     {

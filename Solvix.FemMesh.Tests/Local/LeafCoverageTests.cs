@@ -5,7 +5,7 @@ namespace Solvix.FemMesh.Tests.Local;
 /// <summary>How often a marked leaf of an earlier refinement ends up cut into exactly nI x nJ x nK pieces. A leaf that is not is reported as unreached, never silently.</summary>
 public class LeafCoverageTests
 {
-    private static bool IsBox(HexMesh mesh, Cell c)
+    private static bool IsBox(LatticeMesh mesh, Cell c)
     {
         var p = mesh.CornersOf(c);
         for (int s = 0; s < 8; s++)
@@ -17,7 +17,7 @@ public class LeafCoverageTests
         return true;
     }
 
-    private static (long X0, long Y0, long Z0, long X1, long Y1, long Z1) BoxOf(HexMesh mesh, Cell c)
+    private static (long X0, long Y0, long Z0, long X1, long Y1, long Z1) BoxOf(LatticeMesh mesh, Cell c)
     {
         var p = mesh.CornersOf(c);
         return (p.Min(q => q.X), p.Min(q => q.Y), p.Min(q => q.Z), p.Max(q => q.X), p.Max(q => q.Y), p.Max(q => q.Z));
@@ -30,7 +30,7 @@ public class LeafCoverageTests
         int checkedLeaves = 0, whole = 0, silent = 0;
         for (int trial = 0; trial < 120; trial++)
         {
-            var mesh = HexMesh.Grid(3, 3, 3);
+            var mesh = LatticeMesh.Grid(3, 3, 3);
             Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.3).SelectMany(r => r.Leaves).ToList(), 2, 2, 2);
             var boxes = mesh.Cells.Values.Where(c => IsBox(mesh, c)).Select(c => c.Id).Where(_ => random.NextDouble() < 0.06).ToList();
             if (boxes.Count == 0) continue;

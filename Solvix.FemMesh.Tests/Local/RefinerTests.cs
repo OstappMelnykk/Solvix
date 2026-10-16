@@ -4,26 +4,26 @@ namespace Solvix.FemMesh.Tests.Local;
 
 public class RefinerTests
 {
-    private static void AssertConforming(HexMesh mesh, string what = "")
+    private static void AssertConforming(LatticeMesh mesh, string what = "")
     {
         var problems = Conformity.Check(mesh);
         Assert.That(problems, Is.Empty, what + "\n" + string.Join("\n", problems.Take(8)));
     }
 
-    private static string Signature(HexMesh mesh) =>
+    private static string Signature(LatticeMesh mesh) =>
         string.Join(";", mesh.Cells.Values
             .Select(c => string.Join(",", c.Nodes.Select(mesh.PointOf).Select(p => $"{p.X}:{p.Y}:{p.Z}")))
             .OrderBy(s => s, StringComparer.Ordinal));
 
-    private static List<int> LeavesOfRoots(HexMesh mesh, Func<Root, bool> pick) => mesh.Roots.Where(pick).SelectMany(r => r.Leaves).ToList();
+    private static List<int> LeavesOfRoots(LatticeMesh mesh, Func<Root, bool> pick) => mesh.Roots.Where(pick).SelectMany(r => r.Leaves).ToList();
 
-    private static HexMesh RandomGrid(Random random, int max, double holes)
+    private static LatticeMesh RandomGrid(Random random, int max, double holes)
     {
         int nx = random.Next(1, max + 1), ny = random.Next(1, max + 1), nz = random.Next(1, max + 1);
         var holeList = new List<(int, int, int)>();
         for (int i = 0; i < nx; i++) for (int j = 0; j < ny; j++) for (int k = 0; k < nz; k++) if (random.NextDouble() < holes) holeList.Add((i, j, k));
         if (holeList.Count == nx * ny * nz) holeList.RemoveAt(0);
-        return HexMesh.Grid(nx, ny, nz, holeList);
+        return LatticeMesh.Grid(nx, ny, nz, holeList);
     }
 
     // ---- the patterns --------------------------------------------------------------------------------------------------------
@@ -62,7 +62,7 @@ public class RefinerTests
         var random = new Random(2);
         for (int trial = 0; trial < 150; trial++)
         {
-            var mesh = HexMesh.Grid(3, 3, 3);
+            var mesh = LatticeMesh.Grid(3, 3, 3);
             var marks = Enumerable.Range(0, mesh.Nodes.Count).Where(_ => random.NextDouble() < 0.2).ToHashSet();
             var once = new HashSet<int>(marks);
             Refiner.Complete(mesh, once);
@@ -91,13 +91,13 @@ public class RefinerTests
         for (int n = 2; n <= 6; n++)
             for (int kind = 0; kind < 3; kind++)
             {
-                var mesh = HexMesh.Grid(1, 1, 1);
+                var mesh = LatticeMesh.Grid(1, 1, 1);
                 mesh.Rescale(n);
                 var parent = mesh.Cells.Values.Single();
                 var corners = mesh.CornersOf(parent);
                 for (int variant = 0; variant < (kind == 0 ? 8 : kind == 1 ? 12 : 6); variant++)
                 {
-                    var m = HexMesh.Grid(1, 1, 1);
+                    var m = LatticeMesh.Grid(1, 1, 1);
                     m.Rescale(n);
                     var p = m.Cells.Values.Single();
                     List<Cell> children;
@@ -124,7 +124,7 @@ public class RefinerTests
     {
         foreach (var (nI, nJ, nK) in new[] { (2, 2, 2), (3, 2, 4), (2, 5, 3), (4, 4, 4) })
         {
-            var mesh = HexMesh.Grid(4, 4, 4);
+            var mesh = LatticeMesh.Grid(4, 4, 4);
             var picked = new[] { (0, 0, 0), (3, 3, 3), (1, 2, 1), (0, 3, 2) };
             Refiner.Refine(mesh, LeavesOfRoots(mesh, r => picked.Contains((r.I, r.J, r.K))), nI, nJ, nK);
             AssertConforming(mesh, $"n = {nI}x{nJ}x{nK}");
@@ -192,7 +192,7 @@ public class RefinerTests
     [Test]
     public void A_refinement_of_a_clone_leaves_the_original_alone()
     {
-        var mesh = HexMesh.Grid(3, 3, 3);
+        var mesh = LatticeMesh.Grid(3, 3, 3);
         string before = Signature(mesh);
         var clone = mesh.Clone();
         Refiner.Refine(clone, clone.Roots[13].Leaves.ToList(), 3, 2, 2);
@@ -208,14 +208,14 @@ public class RefinerTests
             {
                 foreach (int which in new[] { 0, -1 })
                 {
-                    var mesh = HexMesh.Grid(nx, ny, nz);
+                    var mesh = LatticeMesh.Grid(nx, ny, nz);
                     var root = which == 0 ? mesh.Roots[0] : mesh.Roots[^1];
                     Refiner.Refine(mesh, root.Leaves.ToList(), n, n, n);
                     AssertConforming(mesh, $"{nx}x{ny}x{nz}, n = {n}, root {which}");
                 }
             }
         var holes = new[] { (1, 1, 0), (1, 1, 2), (0, 1, 1), (2, 1, 1), (1, 0, 1), (1, 2, 1) };         // the middle cell is enclosed on all six sides
-        var pocket = HexMesh.Grid(3, 3, 3, holes);
+        var pocket = LatticeMesh.Grid(3, 3, 3, holes);
         Refiner.Refine(pocket, pocket.Roots.Single(r => r is { I: 1, J: 1, K: 1 }).Leaves.ToList(), 3, 3, 3);
         AssertConforming(pocket);
     }
@@ -223,7 +223,7 @@ public class RefinerTests
     [Test]
     public void Bad_input_is_refused_and_the_mesh_is_untouched()
     {
-        var mesh = HexMesh.Grid(2, 2, 2);
+        var mesh = LatticeMesh.Grid(2, 2, 2);
         string before = Signature(mesh);
         Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, new[] { 0 }, 1, 2, 2));
         Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, new[] { 0 }, 2, 2, 1));
@@ -233,7 +233,7 @@ public class RefinerTests
 
     // ---- the second refinement: leaves of an earlier one ---------------------------------------------------------------------
 
-    private static HexMesh RefinedOnce(Random random)
+    private static LatticeMesh RefinedOnce(Random random)
     {
         var mesh = RandomGrid(random, 4, 0.1);
         var first = LeavesOfRoots(mesh, _ => random.NextDouble() < 0.3);
@@ -281,7 +281,7 @@ public class RefinerTests
     [Test]
     public void The_diagonal_faces_between_plates_are_the_known_cases_of_a_face_met_along_two_different_axes()
     {
-        var mesh = HexMesh.Grid(3, 3, 3);
+        var mesh = LatticeMesh.Grid(3, 3, 3);
         Refiner.Refine(mesh, mesh.Roots[13].Leaves.ToList(), 3, 3, 3);
         TestContext.Out.WriteLine($"AXISMISMATCH {Conformity.AxisMismatchedFaces(mesh)} faces of {mesh.Cells.Count} cells");
         Assert.That(Conformity.AxisMismatchedFaces(mesh), Is.GreaterThan(0), "T1 and T2 do make such faces: a consumer must be ready for them");

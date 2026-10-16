@@ -4,7 +4,7 @@ namespace Solvix.FemMesh.Tests.Local;
 
 public class PreviewTests
 {
-    private static string Signature(HexMesh mesh) =>
+    private static string Signature(LatticeMesh mesh) =>
         string.Join(";", mesh.Cells.Values
             .Select(c => string.Join(",", c.Nodes.Select(mesh.PointOf).Select(p => $"{p.X}:{p.Y}:{p.Z}")))
             .OrderBy(s => s, StringComparer.Ordinal));
@@ -12,7 +12,7 @@ public class PreviewTests
     [Test]
     public void The_preview_shows_the_stages_in_order_ends_in_the_same_mesh_as_refining_and_leaves_the_original_alone()
     {
-        var a = HexMesh.Grid(4, 4, 4);
+        var a = LatticeMesh.Grid(4, 4, 4);
         var b = a.Clone();
         var cells = a.Roots.Where(r => (r.I, r.J, r.K) is (1, 1, 1) or (2, 2, 1)).SelectMany(r => r.Leaves).ToList();
         string before = Signature(a);
@@ -38,7 +38,7 @@ public class PreviewTests
         int guesses = 0, changes = 0;
         for (int trial = 0; trial < 40; trial++)
         {
-            var mesh = HexMesh.Grid(random.Next(2, 4), random.Next(2, 4), random.Next(2, 4));
+            var mesh = LatticeMesh.Grid(random.Next(2, 4), random.Next(2, 4), random.Next(2, 4));
             Refiner.Refine(mesh, mesh.Roots.Where(_ => random.NextDouble() < 0.4).SelectMany(r => r.Leaves).ToList(), 2, 2, 2);
             var leaves = mesh.Cells.Keys.Where(_ => random.NextDouble() < 0.06).ToList();
             if (leaves.Count == 0) continue;

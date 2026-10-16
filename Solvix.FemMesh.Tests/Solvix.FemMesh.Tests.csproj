@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Solvix.FemMesh\Solvix.FemMesh.csproj" />
     <ProjectReference Include="..\Solvix.Mesh\Solvix.Mesh.csproj" />
+    <ProjectReference Include="..\Solvix.Fem\Solvix.Fem.csproj" />
   </ItemGroup>
 
 </Project>

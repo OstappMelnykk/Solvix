@@ -7,7 +7,7 @@ public class SmokeTests
     [Test]
     public void A_plain_grid_is_conforming()
     {
-        var mesh = HexMesh.Grid(3, 3, 3);
+        var mesh = LatticeMesh.Grid(3, 3, 3);
         Assert.That(Conformity.Check(mesh), Is.Empty);
         Assert.That(mesh.Cells, Has.Count.EqualTo(27));
     }
@@ -17,7 +17,7 @@ public class SmokeTests
     {
         foreach (int n in new[] { 2, 3, 4 })
         {
-            var mesh = HexMesh.Grid(5, 5, 5);
+            var mesh = LatticeMesh.Grid(5, 5, 5);
             var middle = mesh.Roots.Single(r => r.I == 2 && r.J == 2 && r.K == 2).Leaves.ToList();
 
             var result = Refiner.Refine(mesh, middle, n, n, n);

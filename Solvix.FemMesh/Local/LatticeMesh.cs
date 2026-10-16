@@ -50,7 +50,7 @@ public sealed class Root
 /// A hexahedral mesh on an integer lattice, made of the leaves of a coarse grid. Nodes are identified by their position, so two cells
 /// meeting at a point share that node by construction.
 /// </summary>
-public sealed class HexMesh
+public sealed class LatticeMesh
 {
     private readonly List<Pt3> _nodes = new();
     private Dictionary<Pt3, int> _index = new();
@@ -77,11 +77,11 @@ public sealed class HexMesh
     }
 
     /// <summary>A coarse grid of nx x ny x nz unit cells without the cells listed in <paramref name="holes"/> (as (i, j, k)).</summary>
-    public static HexMesh Grid(int nx, int ny, int nz, IEnumerable<(int I, int J, int K)>? holes = null)
+    public static LatticeMesh Grid(int nx, int ny, int nz, IEnumerable<(int I, int J, int K)>? holes = null)
     {
         if (nx < 1 || ny < 1 || nz < 1) throw new ArgumentException("A grid needs at least one cell.");
         var skip = (holes ?? Array.Empty<(int, int, int)>()).ToHashSet();
-        var mesh = new HexMesh();
+        var mesh = new LatticeMesh();
         for (int k = 0; k < nz; k++)
             for (int j = 0; j < ny; j++)
                 for (int i = 0; i < nx; i++)
@@ -93,6 +93,22 @@ public sealed class HexMesh
                     root.Leaves.Add(mesh.AddCell(root.Id, corners).Id);
                 }
         if (mesh._roots.Count == 0) throw new ArgumentException("A grid with every cell a hole is empty.");
+        return mesh;
+    }
+
+    /// <summary>A coarse grid of the given unit cells (any places of the lattice, also negative ones); root number i is the i-th cell.</summary>
+    public static LatticeMesh FromCells(IReadOnlyList<(int I, int J, int K)> cells)
+    {
+        if (cells.Count == 0) throw new ArgumentException("A mesh needs at least one cell.");
+        var mesh = new LatticeMesh();
+        for (int r = 0; r < cells.Count; r++)
+        {
+            var (i, j, k) = cells[r];
+            var root = new Root { Id = r, I = i, J = j, K = k };
+            mesh._roots.Add(root);
+            var corners = Enumerable.Range(0, 8).Select(s => new Pt3(i + Hex.Bit(s, 0), j + Hex.Bit(s, 1), k + Hex.Bit(s, 2))).ToArray();
+            root.Leaves.Add(mesh.AddCell(root.Id, corners).Id);
+        }
         return mesh;
     }
 
@@ -127,9 +143,9 @@ public sealed class HexMesh
     }
 
     /// <summary>A copy that can be changed without touching this one (the undo step).</summary>
-    public HexMesh Clone()
+    public LatticeMesh Clone()
     {
-        var copy = new HexMesh { Scale = Scale, _nextCell = _nextCell };
+        var copy = new LatticeMesh { Scale = Scale, _nextCell = _nextCell };
         copy._nodes.AddRange(_nodes);
         copy._index = new Dictionary<Pt3, int>(_index);
         foreach (var r in _roots)
