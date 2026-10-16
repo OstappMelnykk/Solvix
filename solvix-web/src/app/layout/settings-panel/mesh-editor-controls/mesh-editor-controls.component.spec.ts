@@ -8,6 +8,8 @@ import { SolverService } from '../../../state/solver.service';
 import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
+import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { NodeSizeService } from '../../../state/node-size.service';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { linkedPairState, singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
 
@@ -59,7 +61,7 @@ describe('MeshEditorControlsComponent', () => {
 
     it('has the sections in the order of work, the first cube and the constructor in one row, and no undo, redo, hint, mapping check or x-ray option', () => {
       const root = render(IDEAL_WORLD_INDEX);
-      const labels = Array.from(root.querySelectorAll('.group-label')).map(e => e.textContent!.trim());
+      const labels = Array.from(root.querySelectorAll('.group-label')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
       expect(labels.slice(0, 2)).toEqual(['Початок', 'Робота з шестигранником']);
       expect(labels).toContain('Налаштування сітки');
       expect(labels.slice(-2)).toEqual(['Рівномірне згущення', 'Локальне згущення']);
@@ -75,7 +77,7 @@ describe('MeshEditorControlsComponent', () => {
       selection.selectNode(1, linkedPairState().hexes[0].nodeIds[1]);
       const root = render(REAL_WORLD_INDEX, linkedPairState());
 
-      const points = Array.from(root.querySelectorAll('.points li')).map(e => e.textContent!.trim());
+      const points = Array.from(root.querySelectorAll('.points li')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
       expect(points).toContain('куб 0 — №1, кут');
       expect(points).toContain('куб 1 — №0, кут');
       expect(points).toContain('Shift — ×10; перший крок до найближчого цілого');
@@ -96,7 +98,7 @@ describe('MeshEditorControlsComponent', () => {
     });
 
     it('has the block of the node only in the Real World, where the nodes are moved', () => {
-      const labels = (root: HTMLElement) => Array.from(root.querySelectorAll('.group-label')).map(e => e.textContent!.trim());
+      const labels = (root: HTMLElement) => Array.from(root.querySelectorAll('.group-label')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
       expect(labels(render(IDEAL_WORLD_INDEX))).not.toContain('Вузол');
       expect(labels(render(REAL_WORLD_INDEX))).toContain('Вузол');
     });
@@ -750,6 +752,29 @@ describe('MeshEditorControlsComponent', () => {
 
       selection.selectNode(1, 8);
       expect(component.nodeOwners()).toEqual([{ hex: 0, local: 8, kind: 'середина ребра' }]);
+    });
+  });
+
+  describe('the mesh settings', () => {
+    it('has a button that puts the opacity and the sizes of the nodes back to the usual ones', () => {
+      state = singleCubeState();
+      const fixture = TestBed.createComponent(MeshEditorControlsComponent);
+      fixture.componentInstance.sessionId = 1;
+      fixture.componentInstance.worldIndex = IDEAL_WORLD_INDEX;
+      fixture.detectChanges();
+      const component = fixture.componentInstance;
+      const opacity = TestBed.inject(GeometryOpacityService);
+      const sizes = TestBed.inject(NodeSizeService);
+      opacity.set(1, IDEAL_WORLD_INDEX, 0.2);
+      sizes.set(1, 'corner', 3);
+      sizes.set(1, 'mid', 0.5);
+
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.group-label--row button')!.click();
+
+      expect(opacity.get(1, IDEAL_WORLD_INDEX)).toBe(DEFAULT_BODY_OPACITY);
+      expect(sizes.get(1, 'corner')).toBe(1);
+      expect(sizes.get(1, 'mid')).toBe(1);
+      expect(component.nodeSizePercent('corner')).toBe(100);
     });
   });
 });

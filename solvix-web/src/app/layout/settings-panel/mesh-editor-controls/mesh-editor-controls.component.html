@@ -172,7 +172,7 @@
 </div>
 
 <div class="group">
-  <div class="group-label">Налаштування сітки</div>
+  <div class="group-label group-label--row"><span>Налаштування сітки</span><button class="chip" type="button" title="Прозорість і розміри вершин — до стандартних" (click)="resetViewSettings()">Скинути</button></div>
   <div class="slider">
     <div class="slider__head">
       <span>Непрозорість граней</span>
@@ -189,7 +189,6 @@
       (input)="onOpacity($event)"
       aria-label="Непрозорість граней"
     />
-    <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
   </div>
   <div class="slider">
     <div class="slider__head">
@@ -207,7 +206,6 @@
       (input)="onNodeSize('corner', $event)"
       aria-label="Розмір вершин кубів"
     />
-    <div class="slider__scale"><span>дрібні</span><span>великі</span></div>
   </div>
   <div class="slider">
     <div class="slider__head">
@@ -225,7 +223,6 @@
       (input)="onNodeSize('mid', $event)"
       aria-label="Розмір середніх вузлів"
     />
-    <div class="slider__scale"><span>дрібні</span><span>великі</span></div>
   </div>
 </div>
 

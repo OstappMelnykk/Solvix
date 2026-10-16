@@ -3,8 +3,8 @@ import { NgFor, NgIf } from '@angular/common';
 import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
-import { GeometryOpacityService } from '../../../state/geometry-opacity.service';
-import { MAX_NODE_SIZE, MIN_NODE_SIZE, NodeKind, NodeSizeService } from '../../../state/node-size.service';
+import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { DEFAULT_NODE_SIZE, MAX_NODE_SIZE, MIN_NODE_SIZE, NodeKind, NodeSizeService } from '../../../state/node-size.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { SolverService } from '../../../state/solver.service';
@@ -140,6 +140,14 @@ export class MeshEditorControlsComponent {
 
   onNodeSize(kind: NodeKind, event: Event): void {
     if (this.sessionId !== null) this.nodeSize.set(this.sessionId, kind, Number((event.target as HTMLInputElement).value) / 100);
+  }
+
+  // The opacity and the sizes of the nodes back to the usual ones.
+  resetViewSettings(): void {
+    if (this.sessionId === null || this.worldIndex === null) return;
+    this.geometryOpacity.set(this.sessionId, this.worldIndex, DEFAULT_BODY_OPACITY);
+    this.nodeSize.set(this.sessionId, 'corner', DEFAULT_NODE_SIZE);
+    this.nodeSize.set(this.sessionId, 'mid', DEFAULT_NODE_SIZE);
   }
 
   // --- nodes stuck to the imported surface ---
