@@ -43,6 +43,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Refinement3D.Tests", "Refin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Refinement3D.Api", "Refinement3D\Refinement3D.Api\Refinement3D.Api.csproj", "{44917892-EFFD-4251-A961-F772A99CBCA4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.FemMesh", "Solvix.FemMesh\Solvix.FemMesh.csproj", "{709EEA03-ED40-408B-953D-FC0FD5F38714}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Solvix.FemMesh.Tests", "Solvix.FemMesh.Tests\Solvix.FemMesh.Tests.csproj", "{C16DF914-B310-4C3E-BC7D-61B8251BFAED}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -125,6 +129,14 @@ Global
 		{44917892-EFFD-4251-A961-F772A99CBCA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{44917892-EFFD-4251-A961-F772A99CBCA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{44917892-EFFD-4251-A961-F772A99CBCA4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{709EEA03-ED40-408B-953D-FC0FD5F38714}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{709EEA03-ED40-408B-953D-FC0FD5F38714}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{709EEA03-ED40-408B-953D-FC0FD5F38714}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{709EEA03-ED40-408B-953D-FC0FD5F38714}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C16DF914-B310-4C3E-BC7D-61B8251BFAED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C16DF914-B310-4C3E-BC7D-61B8251BFAED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C16DF914-B310-4C3E-BC7D-61B8251BFAED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C16DF914-B310-4C3E-BC7D-61B8251BFAED}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{8E0259C7-F0C2-4FE4-BBB5-6299DDEEDA71} = {99472618-285B-498F-89BE-B8DF2F88E6BB}
