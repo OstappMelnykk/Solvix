@@ -85,9 +85,10 @@ export class MeshEditorControlsComponent {
 
   // Local refinement: the picked cubes are cut into localDivisions with a transition zone of this width round them.
   readonly transitionWidths = [0, 1, 2];
-  localDivisions: number[] = [1, 1, 1];
+  localDivisions: number[] = [2, 2, 2];
   transitionWidth = 0;
-  localRunMode: 'steps' | 'at-once' = 'steps';
+  // "By steps" (a wizard that shows the algorithm's stages) is not made yet: only "at once" runs.
+  localRunMode: 'steps' | 'at-once' = 'at-once';
   nudgeStep = 0.1;
   isHelpOpen = false;
   readonly shortcuts = SHORTCUTS;
@@ -453,8 +454,7 @@ export class MeshEditorControlsComponent {
     this.transitionWidth = Number((event.target as HTMLSelectElement).value);
   }
 
-  // Cuts the elements chosen with "Вибір елементів" (the cubes before the first refinement, the leaves after it). "By steps" lays the step on top of the ones made before;
-  // "at once" starts from the even cubes again, so it cuts the cubes the chosen leaves lie in.
+  // Cuts the elements chosen with "Вибір елементів" (the cubes before the first refinement, the leaves after it), laying the step on top of the ones made before.
   runLocalRefinement(): void {
     if (this.sessionId === null) return;
     const chosen = [...this.solver.refineSelection(this.sessionId)];
@@ -470,10 +470,7 @@ export class MeshEditorControlsComponent {
       nk: this.localDivisions[2],
       transitionDepth: this.transitionWidth
     };
-    if (this.localRunMode === 'at-once' && this.isLocalRefined()) {
-      const cubes = [...new Set(chosen.map(key => (key.startsWith('hex:') ? key : `hex:${key.split('|')[0]}`)))];
-      this.solver.clearRefinement(sessionId, () => this.solver.addRefinement(sessionId, { ...step, leaves: cubes }));
-    } else this.solver.addRefinement(sessionId, step);
+    this.solver.addRefinement(sessionId, step);
   }
 
   // How many elements are chosen with the Refinement tool.

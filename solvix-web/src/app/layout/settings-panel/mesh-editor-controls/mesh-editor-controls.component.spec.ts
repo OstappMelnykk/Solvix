@@ -809,19 +809,20 @@ describe('MeshEditorControlsComponent', () => {
       expect(solver.addRefinement).toHaveBeenCalledWith(1, jasmine.objectContaining({ leaves: ['0|2|k1', '0|2|k2'] }));
     });
 
-    it('"at once" starts again from the even cubes the chosen leaves lie in, "by steps" lays a step on top', () => {
-      solver.refineSelection.and.returnValue(new Set(['4|2|k1', '4|2|k2', 'hex:7']));
+    it('starts with 2 parts along each axis and runs at once, the step by steps being not made yet', () => {
+      const fresh = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
+      expect(fresh.localDivisions).toEqual([2, 2, 2]);
+      expect(fresh.localRunMode).toBe('at-once');
+    });
+
+    it('lays each step on top of the ones made before, never clearing them', () => {
+      solver.refineSelection.and.returnValue(new Set(['4|2|k1']));
       solver.isLocal.and.returnValue(true);
-      solver.clearRefinement.and.callFake((_, then) => then?.());
 
       component.runLocalRefinement();
+
       expect(solver.clearRefinement).not.toHaveBeenCalled();
-
-      component.localRunMode = 'at-once';
-      component.runLocalRefinement();
-      expect(solver.clearRefinement).toHaveBeenCalledTimes(1);
-      expect(solver.addRefinement).toHaveBeenCalledTimes(2);
-      expect(solver.addRefinement.calls.mostRecent().args[1].leaves).toEqual(['hex:4', 'hex:7']);
+      expect(solver.addRefinement).toHaveBeenCalledWith(1, jasmine.objectContaining({ leaves: ['4|2|k1'] }));
     });
   });
 });

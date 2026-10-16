@@ -250,7 +250,7 @@
   </label>
   <div class="sub-label">Запуск</div>
   <div class="pair" role="radiogroup" aria-label="Запуск згущення">
-    <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'steps'" [attr.aria-checked]="localRunMode === 'steps'" (click)="localRunMode = 'steps'">По кроках</button>
+    <button class="tool" type="button" role="radio" disabled title="Ще не реалізовано" aria-checked="false">По кроках</button>
     <button class="tool" type="button" role="radio" [class.tool--on]="localRunMode === 'at-once'" [attr.aria-checked]="localRunMode === 'at-once'" (click)="localRunMode = 'at-once'">Одразу</button>
   </div>
   <ng-container>
