@@ -1,4 +1,5 @@
 using Solvix.Contracts.Facades;
+using Solvix.FemMesh;
 
 namespace Solvix.Solver;
 
@@ -48,107 +49,48 @@ internal sealed class FineMesh
         return points.ToArray();
     }
 
-    public static FineMesh Build(FemMeshDto mesh, int nx, int ny, int nz)
+    /// <summary>The finite-element mesh itself, as the abstraction (<see cref="IFemMesh"/>) the rest of the solver sees.</summary>
+    public required IFemMesh Mesh { get; init; }
+
+    /// <summary>
+    /// The uniform rule (<see cref="UniformRefinement"/>) applied to the cubes, with the addressing of the uniform cut - the cube of an element,
+    /// its index along each axis, the node of each grid point - read off the mesh. The mesh is made by the rule alone; this class no longer
+    /// has a generator of its own.
+    /// </summary>
+    public static FineMesh Build(FemMeshDto mesh, int nx, int ny, int nz) => Of(new UniformRefinement(nx, ny, nz).Build(mesh), mesh, nx, ny, nz);
+
+    /// <summary>The uniform addressing over a mesh that a uniform rule has made.</summary>
+    public static FineMesh Of(IFemMesh femMesh, FemMeshDto coarse, int nx, int ny, int nz)
     {
-        int cubes = mesh.ElementCount;
+        int count = femMesh.ElementCount;
         var points = GridPoints(nx, ny, nz);
         int g = points.Length;
         var gridIndex = new Dictionary<(int, int, int), int>();
         for (int i = 0; i < g; i++) gridIndex[points[i]] = i;
+        var cubeOfId = new Dictionary<int, int>();
+        for (int e = 0; e < coarse.ElementCount; e++) cubeOfId[coarse.ElementIds[e]] = e;
 
-        // ---- which nodes are one: unite the grid points on every face that two cubes share --------------
-        var parent = Enumerable.Range(0, cubes * g).ToArray();
-        int Find(int x) { while (parent[x] != x) x = parent[x] = parent[parent[x]]; return x; }
-
-        // a face is identified by the (sorted) ids of its 8 parent nodes; two cubes that share all 8 are linked there
-        var faces = new Dictionary<string, List<(int Cube, int Face)>>();
-        for (int e = 0; e < cubes; e++)
-            for (int f = 0; f < 6; f++)
-            {
-                string key = string.Join(',', FaceSlots[f].Select(s => mesh.Connectivity[e * 20 + s]).OrderBy(i => i));
-                if (!faces.TryGetValue(key, out var list)) faces[key] = list = new();
-                list.Add((e, f));
-            }
-        foreach (var list in faces.Values)
-        {
-            foreach (var (a, fa) in list)
-            {
-                if (fa % 2 == 0) continue;                                  // handle each pair once, from its + face
-                foreach (var (b, fb) in list)
-                {
-                    if (b == a || fb != (fa ^ 1)) continue;
-                    int axis = fa / 2;
-                    int endA = 2 * N(axis, nx, ny, nz), endB = 0;
-                    foreach (var (ix, iy, iz) in points)
-                    {
-                        var p = new[] { ix, iy, iz };
-                        if (p[axis] != endA) continue;
-                        var q = (int[])p.Clone();
-                        q[axis] = endB;
-                        parent[Find(a * g + gridIndex[(p[0], p[1], p[2])])] = Find(b * g + gridIndex[(q[0], q[1], q[2])]);
-                    }
-                }
-            }
-        }
-
-        // ---- compact node numbering, positions from the shape functions ------------------------------------
-        var nodeOfRoot = new Dictionary<int, int>();
-        var positions = new List<double[]>();
-        var gridNodes = new int[cubes * g];
-        for (int e = 0; e < cubes; e++)
-        {
-            var corners = new double[20][];
-            for (int s = 0; s < 20; s++)
-            {
-                int node = mesh.Connectivity[e * 20 + s];
-                corners[s] = new[] { mesh.Positions[node * 3], mesh.Positions[node * 3 + 1], mesh.Positions[node * 3 + 2] };
-            }
-            for (int i = 0; i < g; i++)
-            {
-                int root = Find(e * g + i);
-                if (!nodeOfRoot.TryGetValue(root, out int n))
-                {
-                    n = nodeOfRoot[root] = positions.Count;
-                    var phi = ShapeFunctions((double)points[i].X / nx - 1, (double)points[i].Y / ny - 1, (double)points[i].Z / nz - 1);
-                    var position = new double[3];
-                    for (int s = 0; s < 20; s++)
-                        for (int c = 0; c < 3; c++) position[c] += phi[s] * corners[s][c];
-                    positions.Add(position);
-                }
-                gridNodes[e * g + i] = n;
-            }
-        }
-
-        // ---- the small elements ---------------------------------------------------------------------------
-        int per = nx * ny * nz, count = cubes * per;
-        var connectivity = new int[count, 20];
         var parentOf = new int[count]; var exs = new int[count]; var eys = new int[count]; var ezs = new int[count];
-        for (int e = 0; e < cubes; e++)
-            for (int ez = 0; ez < nz; ez++)
-                for (int ey = 0; ey < ny; ey++)
-                    for (int ex = 0; ex < nx; ex++)
-                    {
-                        int fine = e * per + (ez * ny + ey) * nx + ex;
-                        parentOf[fine] = e; exs[fine] = ex; eys[fine] = ey; ezs[fine] = ez;
-                        for (int k = 0; k < 20; k++)
-                            connectivity[fine, k] = gridNodes[e * g + gridIndex[(2 * ex + Local[k, 0] + 1, 2 * ey + Local[k, 1] + 1, 2 * ez + Local[k, 2] + 1)]];
-                    }
-
-        var flat = new double[positions.Count, 3];
-        for (int n = 0; n < positions.Count; n++)
-            for (int c = 0; c < 3; c++) flat[n, c] = positions[n][c];
+        var gridNodes = new int[coarse.ElementCount * g];
+        for (int fine = 0; fine < count; fine++)
+        {
+            // the key of an element of the uniform rule is "cube id:ex,ey,ez"
+            var key = femMesh.KeyOf(fine);
+            int colon = key.IndexOf(':');
+            var xyz = key[(colon + 1)..].Split(',').Select(int.Parse).ToArray();
+            int cube = cubeOfId[int.Parse(key[..colon])];
+            parentOf[fine] = cube; exs[fine] = xyz[0]; eys[fine] = xyz[1]; ezs[fine] = xyz[2];
+            for (int k = 0; k < 20; k++)
+                gridNodes[cube * g + gridIndex[(2 * xyz[0] + Local[k, 0] + 1, 2 * xyz[1] + Local[k, 1] + 1, 2 * xyz[2] + Local[k, 2] + 1)]] = femMesh.Connectivity[fine, k];
+        }
         return new FineMesh
         {
-            NodeCount = positions.Count, ElementCount = count, Positions = flat, Connectivity = connectivity,
+            Mesh = femMesh, NodeCount = femMesh.NodeCount, ElementCount = count, Positions = femMesh.Positions, Connectivity = femMesh.Connectivity,
             ParentOf = parentOf, Ex = exs, Ey = eys, Ez = ezs, Divisions = (nx, ny, nz), GridNodes = gridNodes, GridPointCount = g,
         };
     }
 
     private static int N(int axis, int nx, int ny, int nz) => axis == 0 ? nx : axis == 1 ? ny : nz;
-
-    // The 8 slots on each face, in the editor's face order: XMinus, XPlus, YMinus, YPlus, ZMinus, ZPlus.
-    private static readonly int[][] FaceSlots = Enumerable.Range(0, 6).Select(f =>
-        Enumerable.Range(0, 20).Where(s => Local[s, f / 2] == (f % 2 == 0 ? -1 : 1)).ToArray()).ToArray();
 
     /// <summary>The small element behind the small face (p, q) of a side of a cube, and the solver's local face index it shows outwards.</summary>
     public (int Element, int SolverFace) BoundaryElement(int cube, string face, int p, int q)
