@@ -74,4 +74,21 @@ describe('SolverApiService', () => {
     api.getResult(5).subscribe();
     expectCall('GET', 'result');
   });
+
+  it('refines locally, reads the mesh, points at faces and elements by key', () => {
+    api.addRefinement(5, { leaves: ['hex:1'], ni: 2, nj: 2, nk: 3, transitionDepth: 1 }).subscribe();
+    expectCall('POST', 'refinement', { leaves: ['hex:1'], ni: 2, nj: 2, nk: 3, transitionDepth: 1 });
+    api.clearRefinement(5).subscribe();
+    expectCall('DELETE', 'refinement');
+    api.getMesh(5).subscribe();
+    expectCall('GET', 'mesh');
+    api.selectFaces(5, [{ key: 'k', face: 1 }], 'load', -1e6).subscribe();
+    expectCall('PUT', 'mesh/faces', { faces: [{ key: 'k', face: 1 }], action: 'load', pressure: -1e6 });
+    api.paintElements(5, ['a', 'b'], 'rubber').subscribe();
+    expectCall('PUT', 'mesh/elements/material', { elementKeys: ['a', 'b'], material: 'rubber' });
+    api.qualityOfElementByKey(5, 'a|b').subscribe();
+    const request = http.expectOne(r => r.url === `${base}/quality/element-by-key`);
+    expect(request.request.params.get('key')).toBe('a|b');
+    request.flush({});
+  });
 });

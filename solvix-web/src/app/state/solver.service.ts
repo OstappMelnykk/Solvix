@@ -10,11 +10,13 @@ import { PickedFace } from '../geometry/mesh-editor-view';
 import { FACE_SCOPES, HighlightTargetsInput, MATERIAL_SCOPES, Scope, Tool, elementTargets, faceTargets, sameFace, smallFacesOf } from '../geometry/solver-targets';
 import { QualityMetric, SOLVIX_ID } from '../geometry/quality-grading';
 import {
+  RefinementStepDto,
   SolverApiService,
   SolverElementDto,
   SolverFaceDto,
   SolverJobDto,
   SolverMaterialDto,
+  SolverMeshDto,
   SolverElementReportDto,
   SolverQualityDto,
   SolverQualityReportDto,
@@ -76,6 +78,11 @@ export const DEFAULT_PRESSURE = -1e6;
 
 interface SessionSolver {
   setup: SolverSetupDto | null;
+  // The mesh of finite elements of a locally refined body (what the Solver World draws and is pointed at), the state of the set-up and of the cubes it was fetched for,
+  // and the state a fetch is under way (or failed) for, so that one state is asked for once.
+  mesh: SolverMeshDto | null;
+  meshKey: string | null;
+  meshAsked: string | null;
   validation: SolverValidationDto | null;
   job: SolverJobDto;
   result: SolverResultDto | null;
@@ -160,6 +167,9 @@ export class SolverService {
   private entry(sessionId: number): SessionSolver {
     return this.store.getOrCreate(sessionId, () => ({
       setup: null,
+      mesh: null,
+      meshKey: null,
+      meshAsked: null,
       validation: null,
       job: IDLE_JOB,
       result: null,
@@ -199,6 +209,68 @@ export class SolverService {
       this.refreshSetup(sessionId);
     }
     return entry.setup;
+  }
+
+  // Whether the body is refined locally (then it is the mesh of finite elements that is drawn and pointed at, not the cubes cut evenly).
+  isLocal(sessionId: number): boolean {
+    return (this.entry(sessionId).setup?.refinements?.length ?? 0) > 0;
+  }
+
+  // The mesh of finite elements of a locally refined body (null while there is none, or until it has arrived). It is fetched again when the set-up or the cubes changed.
+  mesh(sessionId: number): SolverMeshDto | null {
+    const entry = this.entry(sessionId);
+    if (!this.isLocal(sessionId)) {
+      entry.mesh = null;
+      entry.meshKey = null;
+      entry.meshAsked = null;
+      return null;
+    }
+    const state = this.editor.getState(sessionId);
+    const key = `${entry.setup!.version}:${state?.version ?? '-'}:${state?.hexes.length ?? 0}`;
+    if (entry.meshKey !== key && entry.meshAsked !== key) {
+      entry.meshAsked = key;
+      this.api.getMesh(sessionId).subscribe({
+        next: mesh => {
+          entry.mesh = mesh;
+          entry.meshKey = key;
+          this.touch(sessionId);
+        },
+        error: () => this.notifications.error('Не вдалось отримати сітку скінченних елементів.')
+      });
+    }
+    return entry.mesh;
+  }
+
+  // Refines locally. The server refuses a step that cannot be done, and says why.
+  addRefinement(sessionId: number, step: RefinementStepDto): void {
+    this.api.addRefinement(sessionId, step).subscribe({
+      next: setup => {
+        this.acceptSetup(sessionId, setup);
+        this.forgetResultOfOldMesh(sessionId);
+      },
+      error: (error: { error?: { error?: string } }) => this.notifications.warning(error.error?.error ?? 'Не вдалось виконати згущення.')
+    });
+  }
+
+  clearRefinement(sessionId: number): void {
+    this.api.clearRefinement(sessionId).subscribe({
+      next: setup => {
+        this.acceptSetup(sessionId, setup);
+        this.forgetResultOfOldMesh(sessionId);
+      },
+      error: () => this.notifications.error('Не вдалось прибрати згущення.')
+    });
+  }
+
+  // A result belongs to the mesh it was solved on: with another mesh it means nothing.
+  private forgetResultOfOldMesh(sessionId: number): void {
+    const entry = this.entry(sessionId);
+    entry.validation = null;
+    entry.result = null;
+    entry.job = IDLE_JOB;
+    entry.qualityReport = null;
+    entry.qualityKey = null;
+    this.touch(sessionId);
   }
 
   validation(sessionId: number): SolverValidationDto | null {

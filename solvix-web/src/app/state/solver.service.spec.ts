@@ -91,6 +91,55 @@ describe('SolverService', () => {
     expect(solver.materialOf(sessionId, 0)).toBe('steel');
   });
 
+  describe('local refinement', () => {
+    const step = { leaves: ['hex:1'], ni: 2, nj: 2, nk: 2, transitionDepth: 1 };
+    const refined = { ...emptySetup, version: 2, refinements: [step] };
+
+    it('is local only once the set-up holds a refinement', () => {
+      loadSetup();
+      expect(solver.isLocal(sessionId)).toBe(false);
+      expect(solver.mesh(sessionId)).toBeNull();
+      http.expectNone(`${api}/${sessionId}/mesh`);
+    });
+
+    it('takes the set-up the server answers with and forgets the old result', () => {
+      loadSetup();
+      solver.addRefinement(sessionId, step);
+      http.expectOne(`${api}/${sessionId}/refinement`).flush(refined);
+
+      expect(solver.isLocal(sessionId)).toBe(true);
+      expect(solver.result(sessionId)).toBeNull();
+    });
+
+    it('says why the server refused a step', () => {
+      loadSetup();
+      solver.addRefinement(sessionId, step);
+      http.expectOne(`${api}/${sessionId}/refinement`).flush({ error: 'не можна' }, { status: 400, statusText: 'Bad Request' });
+
+      expect(notifications.toasts().at(-1)?.message).toContain('не можна');
+      expect(solver.isLocal(sessionId)).toBe(false);
+    });
+
+    it('asks for the mesh once per state of the set-up', () => {
+      loadSetup(refined);
+      expect(solver.mesh(sessionId)).toBeNull();
+      expect(solver.mesh(sessionId)).toBeNull();
+      const request = http.expectOne(`${api}/${sessionId}/mesh`);
+      request.flush({ rule: 'local', nodeCount: 0, elementCount: 0 });
+
+      expect(solver.mesh(sessionId)?.rule).toBe('local');
+      http.expectNone(`${api}/${sessionId}/mesh`);
+    });
+
+    it('goes back to the even division when the refinement is cleared', () => {
+      loadSetup(refined);
+      solver.clearRefinement(sessionId);
+      http.expectOne(`${api}/${sessionId}/refinement`).flush(emptySetup);
+
+      expect(solver.isLocal(sessionId)).toBe(false);
+    });
+  });
+
   describe('choosing faces, as in the solver', () => {
     const faces = (request: { request: { body: { faces: unknown } } }) => request.request.body.faces;
 
