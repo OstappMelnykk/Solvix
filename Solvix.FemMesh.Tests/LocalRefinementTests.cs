@@ -91,6 +91,26 @@ public class LocalRefinementTests
 
     // ---- the tests ----
 
+    // n = 1 along an axis cuts nothing along it; the rest of the step still works, and all ones change nothing but stay sound
+    [TestCase(1, 1, 1, 0)]
+    [TestCase(1, 1, 1, 2)]
+    [TestCase(2, 1, 1, 0)]
+    [TestCase(1, 2, 1, 1)]
+    [TestCase(1, 1, 2, 2)]
+    [TestCase(2, 1, 2, 1)]
+    [TestCase(1, 2, 2, 0)]
+    public void A_step_may_have_one_part_along_any_axis(int ni, int nj, int nk, int depth)
+    {
+        var (_, coarse) = Bar(3);
+        var step = new RefinementStep(new[] { LocalRefinement.RootKey(1) }, ni, nj, nk, depth);
+
+        var mesh = Refine(step).Build(coarse);
+
+        AssertSound(mesh, coarse, 3, 14);
+        if (ni == 1 && nj == 1 && nk == 1) Assert.That(mesh.ElementCount, Is.EqualTo(3), "nothing is cut");
+        else Assert.That(mesh.ElementCount, Is.GreaterThan(3));
+    }
+
     [Test]
     public void Nothing_to_refine_gives_the_cubes_themselves()
     {

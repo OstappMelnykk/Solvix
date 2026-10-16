@@ -31,6 +31,18 @@ public class LocalRefinementFacadeTests
     }
 
     [Test]
+    public void One_part_along_every_axis_is_allowed_though_it_cuts_nothing()
+    {
+        var facade = NewFacade();
+        var coarse = Export(Bar(2));
+
+        var setup = facade.AddLocalRefinement(Session, coarse, Cube(0, 1));
+
+        Assert.That(setup.Refinements, Has.Count.EqualTo(1));
+        Assert.That(facade.GetMesh(Session, coarse).ElementCount, Is.EqualTo(2));
+    }
+
+    [Test]
     public void The_whole_cube_by_its_hex_name_means_all_it_is_made_of_now_so_it_can_be_refined_again()
     {
         var facade = NewFacade();
@@ -74,7 +86,7 @@ public class LocalRefinementFacadeTests
         int version = facade.GetSetup(Session).Version;
 
         Assert.Throws<ArgumentException>(() => facade.AddLocalRefinement(Session, coarse, new RefinementStepDto(Array.Empty<string>(), 2, 2, 2)));
-        Assert.Throws<ArgumentException>(() => facade.AddLocalRefinement(Session, coarse, Cube(1, 1)), "n = 1 cuts nothing");
+        Assert.Throws<ArgumentException>(() => facade.AddLocalRefinement(Session, coarse, Cube(1, 0)), "n = 0 is not a number of parts");
         Assert.Throws<ArgumentException>(() => facade.AddLocalRefinement(Session, coarse, Cube(1, 99)));
         Assert.Throws<ArgumentException>(() => facade.AddLocalRefinement(Session, coarse, Cube(1, 2, 5)), "the zone is 0, 1 or 2");
         Assert.Throws<ArgumentException>(() => facade.AddLocalRefinement(Session, coarse, new RefinementStepDto(new[] { "nothing like this" }, 2, 2, 2)));

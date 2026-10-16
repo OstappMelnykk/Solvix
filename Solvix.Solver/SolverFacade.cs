@@ -46,7 +46,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
     public SolverSetupDto AddLocalRefinement(int sessionId, FemMeshDto mesh, RefinementStepDto step) => sessions.With(sessionId, s =>
     {
         if (step.Leaves.Count == 0) throw new ArgumentException("Оберіть, що згущувати.");
-        if (new[] { step.NI, step.NJ, step.NK }.Any(n => n < 2 || n > SolverSetup.MaxDivision)) throw new ArgumentException($"Кількість частин по кожній осі має бути від 2 до {SolverSetup.MaxDivision}.");
+        if (new[] { step.NI, step.NJ, step.NK }.Any(n => n < 1 || n > SolverSetup.MaxDivision)) throw new ArgumentException($"Кількість частин по кожній осі має бути від 1 до {SolverSetup.MaxDivision}.");
         if (step.TransitionDepth is < 0 or > 2) throw new ArgumentException("Ширина перехідної зони: 0, 1 або 2.");
         if (mesh.ElementCount == 0) throw new ArgumentException("Немає жодного куба.");
         try

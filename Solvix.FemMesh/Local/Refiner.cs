@@ -58,7 +58,7 @@ public static class Refiner
 
     public static RefineResult Refine(LatticeMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
     {
-        if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        if (nI < 1 || nJ < 1 || nK < 1) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 1.");
         if (transitionDepth < 0 || transitionDepth > 2) throw new ArgumentOutOfRangeException(nameof(transitionDepth), "the depth of the transition zone is 0, 1 or 2.");
         EnsureFine(mesh, nI, nJ, nK);
         var marked = markedCells.ToHashSet();
@@ -73,7 +73,7 @@ public static class Refiner
     /// <summary>The refinement of a copy of the mesh, recorded stage by stage; the mesh itself is not changed. The last stage is the result.</summary>
     public static List<RefineStep> Preview(LatticeMesh mesh, IEnumerable<int> markedCells, int nI, int nJ, int nK, int transitionDepth = 0)
     {
-        if (nI < 2 || nJ < 2 || nK < 2) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 2.");
+        if (nI < 1 || nJ < 1 || nK < 1) throw new ArgumentOutOfRangeException(nameof(nI), "n must be at least 1.");
         if (transitionDepth < 0 || transitionDepth > 2) throw new ArgumentOutOfRangeException(nameof(transitionDepth), "the depth of the transition zone is 0, 1 or 2.");
         EnsureFine(mesh, nI, nJ, nK);
         var copy = mesh.Clone();

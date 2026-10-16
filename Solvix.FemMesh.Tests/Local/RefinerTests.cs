@@ -225,8 +225,8 @@ public class RefinerTests
     {
         var mesh = LatticeMesh.Grid(2, 2, 2);
         string before = Signature(mesh);
-        Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, new[] { 0 }, 1, 2, 2));
-        Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, new[] { 0 }, 2, 2, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, new[] { 0 }, 0, 2, 2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Refiner.Refine(mesh, new[] { 0 }, 2, 2, 0));
         Assert.Throws<ArgumentException>(() => Refiner.Refine(mesh, new[] { 999 }, 2, 2, 2));
         Assert.That(Signature(mesh), Is.EqualTo(before));
     }
