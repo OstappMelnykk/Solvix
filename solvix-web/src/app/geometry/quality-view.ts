@@ -49,10 +49,28 @@ const CAP_OUTLINE_COLOR = 0xe6e8ec;
 // the opacity from which the dots hidden by the body begin to fade away (as in the Real World)
 const GHOST_FULL_AT = 0.7;
 const DOT_SPHERE_SEGMENTS = [10, 8] as const;
+// how visible the farthest edges and dots of a see-through body are (the nearest are fully visible), as in the Real World
+const FAR_ALPHA = 0.15;
+
+// The depth range of the body as the camera sees it, shared by the shaders that fade with depth: refreshed from the camera before the object is drawn.
+interface FadeUniforms {
+  readonly uFadeNear: { value: number };
+  readonly uFadeFar: { value: number };
+  readonly uFadeMin: { value: number };
+}
+
+function trackFade(object: THREE.Object3D, uniforms: FadeUniforms, centre: THREE.Vector3, radius: number): void {
+  const inView = new THREE.Vector3();
+  object.onBeforeRender = (_renderer, _scene, camera) => {
+    inView.copy(centre).applyMatrix4(camera.matrixWorldInverse);
+    uniforms.uFadeNear.value = -inView.z - radius;
+    uniforms.uFadeFar.value = -inView.z + radius;
+  };
+}
 
 // A matt lit material whose faces draw their own edges: where the position inside a small face (u, v in [-1, 1]) is within a
 // pixel or so of its border, the colour goes to the edge colour (and the face to opaque, so the edge of a see-through body still reads).
-function litFaceMaterial(options: { transparent: boolean; opacity: number; solid: boolean; clip: THREE.Plane[] }, edgeStrength: number): THREE.MeshLambertMaterial {
+function litFaceMaterial(options: { transparent: boolean; opacity: number; solid: boolean; clip: THREE.Plane[] }, edgeStrength: number, fade: FadeUniforms): THREE.MeshLambertMaterial {
   const material = new THREE.MeshLambertMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
@@ -65,16 +83,21 @@ function litFaceMaterial(options: { transparent: boolean; opacity: number; solid
   });
   material.customProgramCacheKey = () => 'quality-face-edges';
   material.onBeforeCompile = shader => {
+    shader.uniforms['uFadeNear'] = fade.uFadeNear;
+    shader.uniforms['uFadeFar'] = fade.uFadeFar;
+    shader.uniforms['uFadeMin'] = fade.uFadeMin;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 faceUv;\nvarying vec2 vFaceUv;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFaceUv = faceUv;');
+      .replace('#include <common>', '#include <common>\nattribute vec2 faceUv;\nvarying vec2 vFaceUv;\nvarying float vFadeDepth;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFaceUv = faceUv;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvFadeDepth = -mvPosition.z;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vFaceUv;')
+      .replace('#include <common>', '#include <common>\nvarying vec2 vFaceUv;\nvarying float vFadeDepth;\nuniform float uFadeNear;\nuniform float uFadeFar;\nuniform float uFadeMin;')
       .replace(
         '#include <opaque_fragment>',
         `vec2 edgeD = 1.0 - abs(vFaceUv);
         vec2 edgeW = max(fwidth(vFaceUv), vec2(1e-6));
         float edgeLine = 1.0 - smoothstep(0.4, 1.3, min(edgeD.x / edgeW.x, edgeD.y / edgeW.y));
+        edgeLine *= mix(1.0, uFadeMin, clamp((vFadeDepth - uFadeNear) / max(uFadeFar - uFadeNear, 0.0001), 0.0, 1.0));
         outgoingLight = mix(outgoingLight, vec3(${EDGE_COLOR.join(', ')}), edgeLine);
         diffuseColor.a = mix(diffuseColor.a, 1.0, edgeLine * ${edgeStrength.toFixed(2)});
         #include <opaque_fragment>`
@@ -209,6 +232,14 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     return result;
   };
 
+  // the nearer edges and dots of a see-through body are strong, the farther ones faint
+  const bounds = new THREE.Box3();
+  for (const n of state.nodes) bounds.expandByPoint(new THREE.Vector3(n.x, n.y, n.z));
+  const sphere = bounds.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 1) : bounds.getBoundingSphere(new THREE.Sphere());
+  const radius = Math.max(sphere.radius, 1e-3);
+  const fadeUniforms: FadeUniforms = { uFadeNear: { value: 0 }, uFadeFar: { value: 1 }, uFadeMin: { value: seeThrough ? FAR_ALPHA : 1 } };
+  const fade = createDepthFade(sphere.center, radius, seeThrough ? FAR_ALPHA : 1);
+
   const faces = drawnFaces(state, geometry, visible, isBad, seeThrough);
   const pickables: THREE.Object3D[] = [];
 
@@ -236,8 +267,9 @@ export function buildQualityView(input: QualityViewInput): MeshView {
 
   if (faces.length > 0) {
     const faceGeometry = surface(faces, true);
-    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ transparent: seeThrough, opacity, solid, clip }, seeThrough ? 0.9 : 1));
+    const faceMesh = new THREE.Mesh(faceGeometry, litFaceMaterial({ transparent: seeThrough, opacity, solid, clip }, seeThrough ? 0.9 : 1, fadeUniforms));
     faceMesh.renderOrder = 1;
+    trackFade(faceMesh, fadeUniforms, sphere.center, radius);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
     faceMesh.userData['resolvePick'] = (triangle: number): PickedFace | null => {
       const face = faces[Math.floor(triangle / trianglesPerFace)];
@@ -297,17 +329,19 @@ export function buildQualityView(input: QualityViewInput): MeshView {
     if (kind === 'sub') {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(f => [f.at.x, f.at.y, f.at.z]), 3));
-      const dots = new THREE.Points(g, new THREE.PointsMaterial({
+      const pointMaterial = new THREE.PointsMaterial({
         color: SUB_NODE_COLOR, size: SUB_NODE_SIZE, sizeAttenuation: true, transparent: seeThrough, opacity: ghosted ? ghost : 1, depthTest: !ghosted, clippingPlanes: clip
-      }));
+      });
+      fade.patch(pointMaterial);
+      const dots = new THREE.Points(g, pointMaterial);
       dots.renderOrder = ghosted ? 4 : 3;
+      fade.track(dots);
       return dots;
     }
-    const spheres = new THREE.InstancedMesh(
-      new THREE.SphereGeometry(kind === 'corner' ? CORNER_RADIUS : MIDPOINT_RADIUS, ...DOT_SPHERE_SEGMENTS),
-      material(kind === 'corner' ? CORNER_COLOR : MIDPOINT_COLOR),
-      points.length
-    );
+    const sphereMaterial = material(kind === 'corner' ? CORNER_COLOR : MIDPOINT_COLOR);
+    fade.patch(sphereMaterial);
+    const spheres = new THREE.InstancedMesh(new THREE.SphereGeometry(kind === 'corner' ? CORNER_RADIUS : MIDPOINT_RADIUS, ...DOT_SPHERE_SEGMENTS), sphereMaterial, points.length);
+    fade.track(spheres);
     const placed = new THREE.Object3D();
     points.forEach((f, i) => {
       placed.position.copy(f.at);
