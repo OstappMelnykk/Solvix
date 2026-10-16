@@ -61,6 +61,12 @@ describe('what the Refinement tool reaches', () => {
     expect(femRefineTargets(hit('b', 0, 1), 'cube', stack, stackIndex)).toEqual(['b', 'c']);
   });
 
+  it('one element that deep inward from the face, the deepest there is when the row is shorter', () => {
+    expect(femRefineTargets(hit('a', 0, 0), 'cell', stack, stackIndex, 1)).toEqual(['b']);
+    expect(femRefineTargets(hit('a', 0, 0), 'cell', stack, stackIndex, 2)).toEqual(['c']);
+    expect(femRefineTargets(hit('a', 0, 0), 'cell', stack, stackIndex, 9)).toEqual(['c']);
+  });
+
   it('stops where the row ends, and finds nothing for a pick of the even division', () => {
     expect(femRefineTargets(hit('c', 0, 1), 'column', stack, stackIndex)).toEqual(['c']);
     expect(femRefineTargets({ kind: 'face', hex: 0, face: 'XPlus', p: 0, q: 0 }, 'column', stack, stackIndex)).toEqual([]);

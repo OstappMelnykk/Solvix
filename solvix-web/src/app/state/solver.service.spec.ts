@@ -219,6 +219,14 @@ describe('SolverService', () => {
       expect(solver.refineSelection(sessionId).size).toBe(0);
     });
 
+    it('a pick reaches the element that deep inward from the face when the depth says so', () => {
+      loadMesh();
+      expect(solver.refineTargets(sessionId, pointAt('a'))).toEqual(['a']);
+      solver.setRefineDepth(sessionId, 3);
+      expect(solver.refineDepth(sessionId)).toBe(3);
+      expect(solver.refineTargets(sessionId, { kind: 'face', hex: 0, face: 'XPlus', p: 0, q: 0 })).toEqual([]);
+    });
+
     it('picks elements only once the body is refined', () => {
       loadSetup();
       solver.setRefineMode(sessionId, true);

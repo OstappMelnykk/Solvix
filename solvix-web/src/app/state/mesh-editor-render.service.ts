@@ -1,4 +1,6 @@
 import { Injectable, inject } from '@angular/core';
+import * as THREE from 'three';
+import { disposeObject3D } from '../geometry/dispose-object3d';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 import { MeshEditorService } from './mesh-editor.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
@@ -8,12 +10,15 @@ import { NodeSizeService } from './node-size.service';
 import { SurfaceAttachmentService } from './surface-attachment.service';
 import { buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
 import { remapMesh } from '../geometry/fem-remap';
+import { SolverMeshDto } from '../api/solver-api.service';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
-import { MeshView, buildMeshView, ghostOf, withNodeMoved } from '../geometry/mesh-editor-view';
+import { MeshPick, MeshView, buildMeshView, ghostOf, withNodeMoved } from '../geometry/mesh-editor-view';
 
 interface Cached {
   readonly key: string;
   readonly view: MeshView | null;
+  // the refined mesh as this world places it, for the outline of what a pick would choose
+  readonly placed?: SolverMeshDto;
 }
 
 // The 3D view of a session's mesh for one World: the Ideal World shows every
@@ -76,22 +81,42 @@ export class MeshEditorRenderService {
       },
       { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined, xrayNodes: this.selection.xrayNodes(sessionId), faceOpacity: this.opacity.get(sessionId, worldIndex), nodeScale: { corner: this.nodeSize.get(sessionId, 'corner'), mid: this.nodeSize.get(sessionId, 'mid') } }
     );
-    const shown = this.withRefinedMesh(sessionId, worldIndex, state, view);
-    this.cache.set(cacheKey, { key, view: shown });
-    return shown;
+    const refined = this.withRefinedMesh(sessionId, worldIndex, state, view);
+    this.cache.set(cacheKey, { key, view: refined.view, placed: refined.placed });
+    return refined.view;
   }
 
   // A locally refined body: the edges of the solver's elements drawn over the cubes, the elements chosen to be refined outlined, and - while elements are being picked - the
   // faces of those elements are what a click lands on (the cubes' own faces and nodes are not).
-  private withRefinedMesh(sessionId: number, worldIndex: number, state: MeshStateDto, view: MeshView): MeshView {
+  private withRefinedMesh(sessionId: number, worldIndex: number, state: MeshStateDto, view: MeshView): { view: MeshView | null; placed?: SolverMeshDto } {
     const mesh = this.solver.isLocal(sessionId) ? this.solver.mesh(sessionId) : null;
     const index = this.solver.meshIndex(sessionId);
-    if (!mesh || !index) return view;
+    if (!mesh || !index) return { view };
     const placed = remapMesh(mesh, state, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real');
     const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
     view.root.add(fem.root);
     const chosen = [...this.solver.refineSelection(sessionId)];
     if (chosen.length > 0) view.root.add(buildFemHighlight(placed, index, { faces: [], elements: chosen, pointed: null }, 4000));
-    return this.solver.refineMode(sessionId) ? { ...view, pickables: fem.pickables } : view;
+    // what a pick would choose, outlined while the pointer is over the body (swapped in place, the view is not rebuilt)
+    let hover: THREE.Object3D | null = null;
+    const setHighlight = (group: THREE.Object3D | null) => {
+      if (hover) {
+        view.root.remove(hover);
+        disposeObject3D(hover);
+      }
+      hover = group;
+      if (group) view.root.add(group);
+    };
+    const shown: MeshView = { ...view, pickables: this.solver.refineMode(sessionId) ? fem.pickables : view.pickables, setHighlight };
+    return { view: shown, placed };
+  }
+
+  // The pointer is over the body (or left it) while elements are being picked: outline what a click would choose.
+  setRefineHover(sessionId: number, worldIndex: number, pick: MeshPick | null): void {
+    const cached = this.cache.get(`${sessionId}:${worldIndex}`);
+    const index = this.solver.meshIndex(sessionId);
+    if (!cached?.view?.setHighlight || !cached.placed || !index) return;
+    const keys = this.solver.refineMode(sessionId) && pick?.kind === 'face' ? this.solver.refineTargets(sessionId, pick) : [];
+    cached.view.setHighlight(keys.length > 0 ? buildFemHighlight(cached.placed, index, { faces: [], elements: keys, pointed: null }) : null);
   }
 }

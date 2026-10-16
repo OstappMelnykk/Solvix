@@ -13,7 +13,7 @@
     [holeHighlight]="getHoleHighlight(i)"
     [meshView]="getMeshView(i)"
     (meshPick)="onMeshPick($event.pick, $event.additive)"
-    [hoverEnabled]="i === solverWorldIndex"
+    [hoverEnabled]="hoverOn(i)"
     (meshHover)="onMeshHover($event)"
     [buildEnabled]="isBuildOn(i)"
     (meshBuild)="onMeshBuild($event)"

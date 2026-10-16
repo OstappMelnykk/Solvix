@@ -62,6 +62,13 @@ export class RenderWindowComponent {
   readonly worlds = WORLDS_CONFIG;
   readonly solverWorldIndex = SOLVER_WORLD_INDEX;
 
+  // Where the pointer is followed to show what a click would act on: the Solver World, and the Ideal and Real Worlds while elements are being picked.
+  hoverOn(worldIndex: number): boolean {
+    if (worldIndex === SOLVER_WORLD_INDEX) return true;
+    const sessionId = this.sessions.activeSessionId();
+    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null && this.solver.refineMode(sessionId);
+  }
+
   // null when there's no active session - never matches a real worldIndex,
   // so every WorldCanvasComponent ends up [hidden] and inactive, same as if
   // a World were simply never selected.
@@ -247,6 +254,11 @@ export class RenderWindowComponent {
   onMeshHover(pick: MeshPick | null): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
+    const world = this.activeWorldIndex();
+    if (world === IDEAL_WORLD_INDEX || world === REAL_WORLD_INDEX) {
+      this.meshEditorRender.setRefineHover(sessionId, world, pick);
+      return;
+    }
     if (this.solver.setHover(sessionId, pick?.kind === 'face' ? pick : null)) this.solverRender.refreshHighlight(sessionId);
   }
 

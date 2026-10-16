@@ -87,10 +87,10 @@ export function femAllMarked(mesh: SolverMeshDto, index: FemIndex, faces: readon
 }
 
 // Elements to refine: the one behind the face hit, the whole row of them from that face inward through the body, or every leaf of its cube.
-export function femRefineTargets(pick: PickedFace, scope: Scope, mesh: SolverMeshDto, index: FemIndex): string[] {
+export function femRefineTargets(pick: PickedFace, scope: Scope, mesh: SolverMeshDto, index: FemIndex, depth = 0): string[] {
   if (!isFemPick(pick)) return [];
   if (scope === 'cube') return femElementTargets(pick, 'cube', mesh);
-  if (scope !== 'column') return [pick.elementKey];
+  if (scope !== 'column' && depth <= 0) return [pick.elementKey];
   const keys: string[] = [];
   let element = index.element.get(pick.elementKey);
   let face = pick.localFace;
@@ -104,5 +104,7 @@ export function femRefineTargets(pick: PickedFace, scope: Scope, mesh: SolverMes
     element = Math.floor(next / 6);
     face = next % 6;
   }
+  // one element: the one `depth` steps inward from the face (the deepest there is when the row is shorter)
+  if (scope !== 'column') return [keys[Math.min(depth, keys.length - 1)]];
   return keys;
 }

@@ -262,6 +262,10 @@
     <div class="pair" role="radiogroup" aria-label="Скільки захоплює вибір" *ngIf="pickingElements()">
       <button *ngFor="let item of pickScopes" class="tool" type="button" role="radio" [class.tool--on]="pickScope() === item.scope" [attr.aria-checked]="pickScope() === item.scope" [title]="item.title" (click)="setPickScope(item.scope)">{{ item.label }}</button>
     </div>
+    <label class="row" *ngIf="pickingElements() && pickScope() === 'cell'" title="Скільки елементів углиб від грані, на яку клікнули: 0 — той, що одразу за гранню">
+      <span>Глибина</span>
+      <input type="number" min="0" max="50" step="1" [value]="pickDepth()" (change)="deeper($any($event.target).valueAsNumber - pickDepth())" aria-label="Глибина" />
+    </label>
   </ng-container>
   <button class="tool tool--primary" type="button" (click)="runLocalRefinement()">Запустити</button>
   <button *ngIf="isLocalRefined()" class="tool" type="button" (click)="clearLocalRefinement()">Скинути згущення</button>

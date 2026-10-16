@@ -498,6 +498,14 @@ export class MeshEditorControlsComponent {
     if (this.sessionId !== null) this.solver.setRefineMode(this.sessionId, !this.pickingElements());
   }
 
+  pickDepth(): number {
+    return this.sessionId === null ? 0 : this.solver.refineDepth(this.sessionId);
+  }
+
+  deeper(step: number): void {
+    if (this.sessionId !== null) this.solver.setRefineDepth(this.sessionId, this.pickDepth() + step);
+  }
+
   pickScope(): Scope {
     return this.sessionId === null ? 'cell' : this.solver.refineScope(this.sessionId);
   }

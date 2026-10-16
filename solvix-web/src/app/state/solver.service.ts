@@ -133,6 +133,7 @@ interface SessionSolver {
   // Picking elements to refine in the Ideal and Real Worlds, and how far a pick reaches.
   refineMode: boolean;
   refineScope: Scope;
+  refineDepth: number;
   femStroke: { erase: boolean; faces: Map<string, ElementFaceRefDto>; elements: Set<string>; hexes: Set<number> } | null;
   // The small face under the mouse.
   hover: PickedFace | null;
@@ -208,6 +209,7 @@ export class SolverService {
       refineSelected: new Set<string>(),
       refineMode: false,
       refineScope: 'cell',
+      refineDepth: 0,
       femStroke: null,
       hover: null,
       pressure: DEFAULT_PRESSURE,
@@ -286,11 +288,28 @@ export class SolverService {
     this.touch(sessionId);
   }
 
+  // How many elements inward from the face that was clicked the picked element lies (0 = the one right behind the face): how interior elements are reached one by one.
+  refineDepth(sessionId: number): number {
+    return this.entry(sessionId).refineDepth;
+  }
+
+  setRefineDepth(sessionId: number, depth: number): void {
+    this.entry(sessionId).refineDepth = Math.max(0, Math.min(50, Math.floor(depth)));
+    this.touch(sessionId);
+  }
+
+  // The elements a pick in the Ideal or Real World would choose (the same for the click and for the outline shown while the pointer is over the body).
+  refineTargets(sessionId: number, pick: PickedFace | null): string[] {
+    const entry = this.entry(sessionId);
+    if (!entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return [];
+    return femRefineTargets(pick, entry.refineScope, entry.mesh, entry.meshIndex, entry.refineDepth);
+  }
+
   // A click on an element of the refined mesh in the Ideal or Real World: it joins the elements chosen to be refined, or leaves them when all it reaches was chosen.
   chooseByPick(sessionId: number, pick: PickedFace | null): void {
     const entry = this.entry(sessionId);
-    if (!entry.mesh || !entry.meshIndex || pick === null || !isFemPick(pick)) return;
-    const keys = femRefineTargets(pick, entry.refineScope, entry.mesh, entry.meshIndex);
+    const keys = this.refineTargets(sessionId, pick);
+    if (keys.length === 0) return;
     const add = !keys.every(k => entry.refineSelected.has(k));
     const next = new Set(entry.refineSelected);
     for (const k of keys) add ? next.add(k) : next.delete(k);
