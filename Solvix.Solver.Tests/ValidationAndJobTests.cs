@@ -91,15 +91,16 @@ public class ValidationAndJobTests
     }
 
     [Test]
-    public void Folded_cubes_block_the_solve()
+    public void Folded_cubes_are_a_warning_the_user_decides_what_to_do_about()
     {
         var editor = Bar(2);
         editor.MoveNode(editor.Mesh.Hex(0).NodeIds[6], new Vec3(-3, -3, -3), false);
 
         var validation = Prepared().Validate(Session, Export(editor));
 
-        Assert.That(validation.CanSolve, Is.False);
-        Assert.That(Errors(validation), Has.Some.Contain("Вивернуті"));
+        Assert.That(validation.CanSolve, Is.True);
+        Assert.That(Warnings(validation), Has.Some.Contain("Вивернуті"));
+        Assert.That(Errors(validation), Has.None.Contain("Вивернуті"));
     }
 
     [Test]

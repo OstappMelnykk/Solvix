@@ -172,12 +172,6 @@ export class SolverControlsComponent implements DoCheck {
     return this.decisionOf.value;
   }
 
-  // The solver is not started on a mesh that Solvix does not accept.
-  meshRejected(): boolean {
-    const d = this.decision();
-    return d !== null && d.level !== 'ok';
-  }
-
   openQuality(): void {
     this.activeWorld.selectCurrentWorld(QUALITY_WORLD_INDEX);
   }
@@ -251,9 +245,8 @@ export class SolverControlsComponent implements DoCheck {
     this.solver.validate(this.sessionId);
   }
 
-  // A mesh Solvix does not accept can still be solved, but the user is asked first; an unusable one the server refuses.
+  // The quality of the mesh does not stand in the way: the user decides (the verdict above only says what to expect).
   solve(): void {
-    if (this.meshRejected()) return;
     void this.solver.solve(this.sessionId);
   }
 

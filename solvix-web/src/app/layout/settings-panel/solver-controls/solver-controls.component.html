@@ -100,7 +100,7 @@
     {{ issue.severity === 'error' ? '✕' : '⚠' }} {{ issue.message }}
   </div>
 </div>
-<button class="btn-solve" type="button" [disabled]="isRunning() || hexCount() === 0 || meshRejected()" [title]="meshRejected() ? 'Сітка не приймається за критеріями Solvix — виправте її на сторінці якості' : ''" (click)="solve()">
+<button class="btn-solve" type="button" [disabled]="isRunning() || hexCount() === 0" (click)="solve()">
   <ng-container *ngIf="isRunning(); else idle">Розрахунок… {{ progressPercent() }}%</ng-container>
   <ng-template #idle>▶ Розрахувати</ng-template>
 </button>

@@ -39,6 +39,17 @@ h5 {
   border-radius: 8px;
 }
 
+.verdict-note {
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #e0a458;
+
+  &[data-level='blocked'] {
+    color: #e0675d;
+  }
+}
+
 .hint {
   margin-bottom: 4px;
   font-size: 11px;

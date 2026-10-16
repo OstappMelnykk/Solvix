@@ -77,17 +77,17 @@ describe('QualityControlsComponent', () => {
   it('says by Solvix\'s criterion alone whether the mesh is accepted, with how many elements fail and by which measure', () => {
     const root = render().nativeElement as HTMLElement;
 
-    expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');
-    expect(text(root.querySelector('.go--wide'))).toContain('(1 із 4, 25%)');
+    expect(text(root.querySelector('.verdict-note'))).toContain('Сітка не приймається');
+    expect(text(root.querySelector('.verdict-note'))).toContain('(1 із 4, 25%)');
   });
 
-  it('blocks the way to the solver (disabled, red) while the mesh is not accepted', () => {
+  it('does not block the way to the solver: the verdict is a note, the user decides', () => {
     const root = render().nativeElement as HTMLElement;
     const go = root.querySelector<HTMLButtonElement>('.go--wide')!;
 
-    expect(text(go)).toContain('Сітка не приймається');
-    expect(go.disabled).toBeTrue();
-    expect(go.classList).toContain('go--no');
+    expect(text(root.querySelector('.verdict-note'))).toContain('Рішення за вами');
+    expect(text(go)).toContain('Перейти до розрахунку');
+    expect(go.disabled).toBeFalse();
   });
 
   it('shows each measure with its limit, the worst value, pass or fail', () => {
@@ -277,7 +277,7 @@ describe('QualityControlsComponent', () => {
       root.querySelectorAll<HTMLButtonElement>('.pill')[1].click();
       fixture.detectChanges();
       expect(solver.setQualityCompare).toHaveBeenCalledWith(1, 'cubit');
-      expect(text(root.querySelector('.go--wide'))).toContain('Сітка не приймається');       // Solvix's own, not Cubit's
+      expect(text(root.querySelector('.verdict-note'))).toContain('Сітка не приймається');       // Solvix's own, not Cubit's
       expect(text(root.querySelector('.legend'))).toContain('Cubit (Sandia)');
 
       link(root, 'Закрити').click();

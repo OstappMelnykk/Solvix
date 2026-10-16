@@ -218,11 +218,7 @@ export class QualityControlsComponent implements DoCheck {
     return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
   }
 
-  // The button to the solver is always there: it is the user who decides to go on. It only says what to expect.
-  goLabel(level: DecisionLevel): string {
-    return level === 'ok' ? 'Перейти до розрахунку' : level === 'bad' ? 'Все одно перейти до розрахунку' : 'Перейти до розрахунку (не запуститься)';
-  }
-
+  // The way to the solver is always open: it is the user who decides to go on; the verdict only says what to expect.
   goToSolver(): void {
     this.activeWorld.selectCurrentWorld(SOLVER_WORLD_INDEX);
   }

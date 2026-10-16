@@ -242,16 +242,13 @@ describe('SolverControlsComponent', () => {
         worst: {}, limits: [], flagged: []
       });
 
-      it('does not solve, and the button is disabled, while the mesh is not accepted', () => {
-        solver.solvixQuality.and.returnValue(solvix(3, 0));
-        component.solve();
-        expect(solver.solve).not.toHaveBeenCalled();
-        expect(component.meshRejected()).toBeTrue();
-
-        solver.solvixQuality.and.returnValue(solvix(0, 0));
-        component.solve();
-        expect(solver.solve).toHaveBeenCalledWith(1);
-        expect(component.meshRejected()).toBeFalse();
+      it('solves whatever the quality of the mesh: the user decides', () => {
+        for (const [rejected, invalid] of [[3, 0], [0, 2], [0, 0]]) {
+          solver.solve.calls.reset();
+          solver.solvixQuality.and.returnValue(solvix(rejected, invalid));
+          component.solve();
+          expect(solver.solve).toHaveBeenCalledWith(1);
+        }
       });
     });
 
