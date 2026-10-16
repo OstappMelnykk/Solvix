@@ -39,6 +39,16 @@ public sealed class HexMeshEditor
     /// <summary>Adds a ready-made body (see <see cref="HexMesh.AddBody"/>) as one undo step.</summary>
     public EditResult AddBody(BodyPlan plan) => Apply(() => Run(() => Mesh.AddBody(plan)));
 
+    /// <summary>
+    /// Adds a template body as one undo step: the mesh keeps only one template body, so the one that was added
+    /// before is removed, and the new one is put with its centre at the origin.
+    /// </summary>
+    public EditResult AddTemplateBody(BodyPlan plan) => Apply(() => Run(() =>
+    {
+        foreach (int id in Mesh.Hexes.Where(h => h.IsTemplate).Select(h => h.Id).ToList()) Mesh.RemoveHex(id);
+        Mesh.AddBody(plan, centred: true, template: true);
+    }));
+
     public EditResult LinkFaces(FaceRef first, FaceRef second, LinkFit fit) => Apply(() =>
         Mesh.TryLinkFaces(first, second, fit, out var error) ? EditResult.Success : EditResult.Fail(error ?? "Link refused."));
 

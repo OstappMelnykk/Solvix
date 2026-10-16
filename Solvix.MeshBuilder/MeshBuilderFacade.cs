@@ -38,14 +38,14 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
     {
         if (!TryBuild(request, out var plan, out var error)) return new MeshTemplatePreviewDto(false, error, null, 0);
         var scratch = new HexMeshEditor();
-        scratch.AddBody(plan!);
+        scratch.AddTemplateBody(plan!);
         return new MeshTemplatePreviewDto(true, null, MeshStateMapper.ToDto(scratch), scratch.Mesh.InvalidHexes().Count);
     }
 
     public MeshCommandResultDto AddTemplate(int sessionId, MeshTemplateRequestDto request)
     {
         if (!TryBuild(request, out var plan, out var error)) return Reject(sessionId, error!);
-        return Command(sessionId, e => e.AddBody(plan!));
+        return Command(sessionId, e => e.AddTemplateBody(plan!));
     }
 
     // Unknown kinds, out-of-range values and impossible combinations come back as a message, not an exception.
