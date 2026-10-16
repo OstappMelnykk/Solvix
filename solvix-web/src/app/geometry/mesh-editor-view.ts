@@ -267,6 +267,33 @@ export function withNodeMoved(state: MeshStateDto, nodeId: number, position: THR
   };
 }
 
+// The state as it would be with a whole face dragged by `delta` (a preview while
+// the pointer is still down), matching the server's MoveFace: the 8 face nodes
+// move fully, the midpoints of the edges joining the face to the opposite one
+// move by half. Shared nodes carry every hex that owns them, since the move is
+// keyed by node id. Everything else follows through the isoparametric map.
+export function withFaceMoved(state: MeshStateDto, hexId: number, face: HexFaceName, delta: THREE.Vector3Like): MeshStateDto {
+  const hex = state.hexes.find(h => h.id === hexId);
+  if (!hex) return state;
+  const onFace = new Set(faceSlots(face));
+  const full = new Set<number>([...onFace].map(slot => hex.nodeIds[slot]));
+  const half = new Set<number>();
+  EDGE_CORNERS.forEach(([a, b], k) => {
+    if (onFace.has(a) !== onFace.has(b)) {
+      const id = hex.nodeIds[8 + k];
+      if (!full.has(id)) half.add(id);
+    }
+  });
+  return {
+    ...state,
+    nodes: state.nodes.map(n =>
+      full.has(n.id) ? { ...n, x: n.x + delta.x, y: n.y + delta.y, z: n.z + delta.z }
+        : half.has(n.id) ? { ...n, x: n.x + delta.x / 2, y: n.y + delta.y / 2, z: n.z + delta.z / 2 }
+        : n
+    )
+  };
+}
+
 // Of the things a ray passes through, nearest first: a node that can be reached through other cubes wins over whatever
 // is in front of it; otherwise the nearest.
 export function preferredHit<T extends { object: { userData: Record<string, unknown> } }>(hits: readonly T[]): T | undefined {

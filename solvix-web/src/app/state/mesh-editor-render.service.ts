@@ -10,8 +10,8 @@ import { NodeSizeService } from './node-size.service';
 import { SurfaceAttachmentService } from './surface-attachment.service';
 import { buildCubeOutline, buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
 import { remapMesh } from '../geometry/fem-remap';
-import { MeshStateDto } from '../api/mesh-editor-api.service';
-import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withNodeMoved } from '../geometry/mesh-editor-view';
+import { MeshStateDto, HexFaceName } from '../api/mesh-editor-api.service';
+import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withFaceMoved, withNodeMoved } from '../geometry/mesh-editor-view';
 
 // The width of the refined mesh's edges, in CSS pixels: a plain line is one device pixel (half of this on a Retina screen), so this is a little thicker, not a lot.
 const EDGE_WIDTH = 1.8;
@@ -41,15 +41,26 @@ export class MeshEditorRenderService {
   private readonly nodeSize = inject(NodeSizeService);
   private readonly cache = new Map<string, Cached>();
 
-  // A node being dragged right now: the Real World shows it (and what follows from it) before the server has
-  // answered. It drops away once the state moves on to a newer version.
-  private preview: { sessionId: number; nodeId: number; position: { x: number; y: number; z: number }; carry: boolean; version: number; token: number } | null = null;
+  // A node OR a face being dragged right now: the Real World shows it (and what
+  // follows from it) before the server has answered. It drops away once the
+  // state moves on to a newer version.
+  private preview:
+    | { kind: 'node'; sessionId: number; nodeId: number; position: { x: number; y: number; z: number }; carry: boolean; version: number; token: number }
+    | { kind: 'face'; sessionId: number; hexId: number; face: HexFaceName; delta: { x: number; y: number; z: number }; version: number; token: number }
+    | null = null;
   private previewToken = 0;
 
   setDragPreview(sessionId: number, nodeId: number, position: { x: number; y: number; z: number }, carry: boolean): void {
     const version = this.editor.getState(sessionId)?.version;
     if (version === undefined) return;
-    this.preview = { sessionId, nodeId, position, carry, version, token: ++this.previewToken };
+    this.preview = { kind: 'node', sessionId, nodeId, position, carry, version, token: ++this.previewToken };
+  }
+
+  // A face being dragged: show the whole body following it live, like a node drag.
+  setFaceDragPreview(sessionId: number, hexId: number, face: HexFaceName, delta: { x: number; y: number; z: number }): void {
+    const version = this.editor.getState(sessionId)?.version;
+    if (version === undefined) return;
+    this.preview = { kind: 'face', sessionId, hexId, face, delta, version, token: ++this.previewToken };
   }
 
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
@@ -67,7 +78,8 @@ export class MeshEditorRenderService {
     const preview = this.preview;
     if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
-    if (live) state = withNodeMoved(state, live.nodeId, live.position, live.carry);
+    if (live?.kind === 'node') state = withNodeMoved(state, live.nodeId, live.position, live.carry);
+    else if (live?.kind === 'face') state = withFaceMoved(state, live.hexId, live.face, live.delta);
     const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}:${this.solver.isLocal(sessionId) ? `local${this.solver.mesh(sessionId) ? '+' : '-'}${this.solver.revision(sessionId)}${this.solver.refineMode(sessionId)}` : `${this.solver.refineMode(sessionId)}:${[...this.solver.refineSelection(sessionId)].join(',')}`}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;

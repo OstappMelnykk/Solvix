@@ -243,8 +243,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // face dots follow live; the server does the real move on drop.
   private gizmoFace: { hex: number; face: HexFaceName } | null = null;
   private faceDragStart = new THREE.Vector3();
-  // Where each dragged dot (full and half) sat when the drag began, by node id.
-  private readonly faceDragOrigins = new Map<number, THREE.Vector3>();
   // Mirrors gridHelper.visible for the template - a real default from
   // construction, same reasoning as `cameraMode` above: the template can
   // read isGridVisible() during Angular's very first change detection
@@ -560,7 +558,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.nodeGizmo.addEventListener('objectChange', () => {
       if (this.gizmoFace !== null) {
         const delta = this.nodeProxy.position.clone().sub(this.faceDragStart);
-        this.applyFaceDragPreview(delta);
         this.faceDragging.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: delta.x, y: delta.y, z: delta.z } });
         return;
       }
@@ -577,7 +574,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       if (this.gizmoFace !== null) {
         if (event.value) {
           this.faceDragStart.copy(this.nodeProxy.position);
-          this.captureFaceDragOrigins();
           return;
         }
         const r = (value: number) => Math.round(value * 1e6) / 1e6;
@@ -1025,32 +1021,6 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // Neither: detach.
     this.gizmoFace = null;
     if (this.nodeGizmo.object) this.nodeGizmo.detach();
-  }
-
-  // Remembers where each face dot sat when a face drag began, so the live
-  // preview can place them at origin + delta (full) or origin + delta/2 (half).
-  private captureFaceDragOrigins(): void {
-    this.faceDragOrigins.clear();
-    const face = this.draggableFace;
-    if (!face) return;
-    for (const id of [...face.fullNodeIds, ...face.halfNodeIds]) {
-      const mesh = this.currentMeshView?.nodeMeshes.get(id);
-      if (mesh) this.faceDragOrigins.set(id, mesh.position.clone());
-    }
-  }
-
-  // Moves the face dots as the gizmo is dragged: the 8 face nodes by the full
-  // delta, the connecting edge midpoints by half - matching the server's MoveFace.
-  private applyFaceDragPreview(delta: THREE.Vector3): void {
-    const face = this.draggableFace;
-    if (!face) return;
-    const place = (id: number, scale: number) => {
-      const origin = this.faceDragOrigins.get(id);
-      const mesh = this.currentMeshView?.nodeMeshes.get(id);
-      if (origin && mesh) mesh.position.copy(origin).addScaledVector(delta, scale);
-    };
-    for (const id of face.fullNodeIds) place(id, 1);
-    for (const id of face.halfNodeIds) place(id, 0.5);
   }
 
   private updateMeshView(): void {

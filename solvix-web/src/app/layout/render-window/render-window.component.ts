@@ -266,6 +266,13 @@ export class RenderWindowComponent {
     this.meshEditor.moveFace(sessionId, event.hex, event.face, event.delta);
   }
 
+  // The face gizmo is being dragged: redraw the whole Real World live from the
+  // isoparametric map (curved edges, inner grid, neighbours), as for a node drag.
+  onFaceDragging(event: { hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId !== null) this.meshEditorRender.setFaceDragPreview(sessionId, event.hex, event.face, event.delta);
+  }
+
   // Building with the mouse is for the Ideal and the Real World, when the user has it on.
   isBuildOn(worldIndex: number): boolean {
     const sessionId = this.sessions.activeSessionId();
