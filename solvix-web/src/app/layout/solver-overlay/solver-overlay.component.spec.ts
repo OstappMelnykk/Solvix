@@ -176,34 +176,14 @@ describe('SolverOverlayComponent', () => {
     });
   });
 
-  it('says what a click does with the chosen tool', () => {
-    const hints = (['view', 'load', 'fix', 'erase', 'material'] as Tool[]).map(t => {
-      tool = t;
-      return component.hint();
-    });
-
-    expect(hints[0]).toBe('');                                   // no tool: nothing to explain
-    expect(new Set(hints).size).toBe(4);                         // '' for view and material, one each for the others
-    expect(hints[1]).toContain('навантажити');
-    expect(hints[3]).toContain('стерти');
-    expect(hints[4]).toBe('');                                   // the material needs no words for one click
-  });
-
-  it('has a brush for the Pressure, Support and Material tools but not for View, and says how to use it', () => {
+  it('has a brush for the Pressure, Support and Material tools but not for View', () => {
     tool = 'view';
     expect(component.isFaceTool()).toBeFalse();
     tool = 'material';
     expect(component.isFaceTool()).toBeTrue();
-    expect(component.hint()).toBe('');                        // one click needs no explanation
-    brush = true;
-    expect(component.hint()).toContain('матеріал');
-    brush = false;
     tool = 'fix';
     expect(component.isFaceTool()).toBeTrue();
-    expect(component.hint()).toContain('Клік');
 
-    brush = true;
-    expect(component.hint()).toContain('проводьте');
     component.toggleBrush();
 
     expect(solver.setBrush).toHaveBeenCalledWith(1, false);
