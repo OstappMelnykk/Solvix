@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { HexFaceName, MeshHexDto, MeshStateDto } from '../api/mesh-editor-api.service';
 import { QualityGradeName, SolverFaceDto, SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
+import { createDepthFade } from '../rendering/depth-fade';
 import { markForWeightedOit } from '../rendering/weighted-oit';
 import { buildDisplacementArrows } from './displacement-arrows';
 import { QualityMetric, Result, measuredGrade, resultOf } from './quality-grading';
@@ -61,6 +62,8 @@ export interface SectionCut {
 
 const EDGE_SEGMENTS = 8;
 const EDGE_COLOR = 0x1a1d23;
+// the edges of a quality view: pale, like the Real World's, so they read on the dark scene
+const QUALITY_EDGE_COLOR = 0xd5d9e0;
 const FIXED_COLOR = 0x3388ff;
 const LOAD_COLOR = 0x44ff44;
 // One colour for the loads, in tones: the weaker the pressure, the paler the green; the strongest is the full one.
@@ -634,6 +637,11 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   // a flagged element that the chosen measure does not grade excellent
   const isBad = (hex: number, ex: number, ey: number, ez: number): boolean => (qualityColors?.get(`${hex}:${ex}:${ey}:${ez}`) ?? 'excellent') !== 'excellent';
   const seeThrough = qualityColors !== null && opacity < 1;
+  // the quality view's lines and dots are lifted a hair towards the camera, so the ones lying ON a face win over it (no fade: the body is not see-through here)
+  const lift = <T extends THREE.Material>(material: T): T => {
+    if (qualityColors) createDepthFade(new THREE.Vector3(), 1, 1).patch(material);
+    return material;
+  };
   const hexById = new Map(state.hexes.map(h => [h.id, h]));
   const links = new Map<string, { hex: number; face: HexFaceName }>();
   for (const f of state.faces) if (f.status === 'Linked' && f.otherHex !== null && f.otherFace !== null) links.set(`${f.hex}:${f.face}`, { hex: f.otherHex, face: f.otherFace });
@@ -794,6 +802,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       bodyGeometry.dispose();
       bodyGeometry = clipped.geometry;
       faceOfTriangle = clipped.faceOfTriangle;
+      if (lit) bodyGeometry.computeVertexNormals();             // the cut made a new geometry: a lit face needs its normals again
     }
     const mesh = new THREE.Mesh(bodyGeometry, material);
     // a click lands on a triangle; its small face is the triangle's number divided by the triangles of one small face
@@ -892,9 +901,36 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     const shownLines = input.section ? clipSegmentsToPlane(lines, input.section) : lines;
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(input.section ? shiftAlong(shownLines, input.section.axis, layer) : shownLines, 3));
     if (displaced) deformables.push(deformable(buffer, lines, movedLines));
-    const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
+    const edges = new THREE.LineSegments(buffer, lift(new THREE.LineBasicMaterial({ color: qualityColors ? QUALITY_EDGE_COLOR : EDGE_COLOR })));
     edges.userData['edges'] = true;
     root.add(edges);
+  }
+
+  // only the bad elements: their vertices are drawn like the cut's (cube corners white, midpoints yellow), so they can be seen and counted
+  if (qualityColors && input.onlyBad && !input.section) {
+    const cornerKeys = new Set<string>();
+    const found = new Map<string, { at: THREE.Vector3; corner: boolean }>();
+    const keyOf = (v: THREE.Vector3) => `${v.x.toFixed(5)},${v.y.toFixed(5)},${v.z.toFixed(5)}`;
+    for (const hexNodeId of state.hexes.flatMap(h => h.nodeIds.slice(0, 8))) {
+      const n = state.nodes.find(x => x.id === hexNodeId);
+      if (n) cornerKeys.add(keyOf(new THREE.Vector3(n.x, n.y, n.z)));
+    }
+    for (const faces of drawn.values()) {
+      for (const face of faces) {
+        const small = geometry.smallFace(face.drawer, face.axis, face.t, face.p, face.q);
+        small.positions.forEach((v: THREE.Vector3) => {
+          const key = keyOf(v);
+          if (!found.has(key)) found.set(key, { at: v, corner: cornerKeys.has(key) });
+        });
+      }
+    }
+    for (const [wanted, colour, size] of [[true, 0xffffff, 7], [false, 0xf0b429, 5]] as const) {
+      const points = Array.from(found.values()).filter(f => f.corner === wanted);
+      if (points.length === 0) continue;
+      const pointGeometry = new THREE.BufferGeometry();
+      pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(f => [f.at.x, f.at.y, f.at.z]), 3));
+      root.add(new THREE.Points(pointGeometry, lift(new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false }))));
+    }
   }
 
   // the displacement vectors: arrows at the nodes, shown or hidden without a rebuild (userData.vectors)
@@ -969,8 +1005,15 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       const capGeometry = new THREE.BufferGeometry();
       capGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(capPositions, cut.axis, -layer), 3));
       capGeometry.setAttribute('color', new THREE.Float32BufferAttribute(capColors, 3));
-      const capMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
-      markForWeightedOit(capMaterial);
+      // in the quality view the cut is lit like the faces around it (its normal is the plane's)
+      const capMaterial: THREE.MeshBasicMaterial | THREE.MeshLambertMaterial = qualityColors
+        ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
+        : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid });
+      if (qualityColors) {
+        const normal = [0, 0, 0];
+        normal[cut.axis] = 1;
+        capGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(capPositions.map((_, i) => normal[i % 3]), 3));
+      } else markForWeightedOit(capMaterial);
       capMaterial.polygonOffset = true;               // behind its own outline, which lies in the same plane
       capMaterial.polygonOffsetFactor = 1;
       capMaterial.polygonOffsetUnits = 1;
@@ -983,7 +1026,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     if (structure.length > 0) {
       const lineGeometry = new THREE.BufferGeometry();
       lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(structure, cut.axis, layer), 3));
-      const inside = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({ color: EDGE_COLOR }));
+      const inside = new THREE.LineSegments(lineGeometry, lift(new THREE.LineBasicMaterial({ color: qualityColors ? QUALITY_EDGE_COLOR : EDGE_COLOR })));
       inside.userData['sectionStructure'] = true;
       root.add(inside);
     }
@@ -997,7 +1040,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       if (points.length === 0) continue;
       const pointGeometry = new THREE.BufferGeometry();
       pointGeometry.setAttribute('position', new THREE.Float32BufferAttribute(shiftAlong(points.flatMap(n => [n.x, n.y, n.z]), cut.axis, 2 * layer), 3));
-      const dots = new THREE.Points(pointGeometry, new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false, depthTest: true }));
+      const dots = new THREE.Points(pointGeometry, lift(new THREE.PointsMaterial({ color: colour, size, sizeAttenuation: false, depthTest: true })));
       dots.userData['sectionNodes'] = wanted ? 'corners' : 'midpoints';
       root.add(dots);
     }

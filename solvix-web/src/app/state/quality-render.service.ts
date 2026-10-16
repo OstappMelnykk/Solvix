@@ -53,7 +53,7 @@ export class QualityRenderService {
       showLoads: this.solver.marks(sessionId, 'quality').loads,
       onlyBad: looking.onlyBad,
       section: looking.section.enabled ? sectionOf(state, looking.section) : undefined,
-      edges: lookedAtWhole
+      edges: !lookedAtWhole
     };
     const view = buildSolverView(input);
     if (lookedAtWhole) {

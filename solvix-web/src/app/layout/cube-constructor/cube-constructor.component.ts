@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CubeConstructorService } from '../../state/cube-constructor.service';
 import { MeshShapeParametersDto } from '../../api/mesh-editor-api.service';
 import { NodeDrag, roundedPosition } from '../../geometry/mesh-editor-drag';
+import { buildSceneLights } from '../../geometry/scene-objects/scene-lights';
 import { MeshPick, MeshView, buildMeshView, disposeMeshView } from '../../geometry/mesh-editor-view';
 import {
   CONSTRUCTOR_REGIONS,
@@ -191,6 +192,7 @@ export class CubeConstructorComponent implements OnDestroy {
     this.renderer.setClearColor(0x1e1f22);
     this.renderer.setScissorTest(true);
     this.scene.add(new THREE.AxesHelper(0.6));
+    this.scene.add(buildSceneLights());                  // the faces are lit like the worlds' (without light they are black)
     this.perspective = perspectiveCameraFor(positionsBounds(this.draft.positions), 1);
     this.controls = new OrbitControls(this.perspective, canvas);
     this.controls.enableDamping = false;
