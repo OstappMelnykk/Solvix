@@ -1,3 +1,4 @@
+import { setMaterialColors } from '../geometry/solver-view';
 import { Injectable, effect, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { KeyedStore } from './keyed-store';
@@ -952,6 +953,7 @@ export class SolverService {
 
   private acceptSetup(sessionId: number, setup: SolverSetupDto): void {
     this.entry(sessionId).setup = setup;
+    setMaterialColors(setup.materials);
     this.touch(sessionId);
   }
 

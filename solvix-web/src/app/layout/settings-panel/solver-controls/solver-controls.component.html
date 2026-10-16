@@ -3,7 +3,6 @@
 
 <div class="group">
   <div class="group-label"><span class="step">1</span> Матеріали</div>
-  <div class="hint">Оберіть матеріал у списку й фарбуйте ним елементи на сцені (інструмент «Матеріал»). Око ховає матеріал, щоб бачити, що за ним.</div>
   <div class="materials">
     <div
       *ngFor="let material of materials()"
@@ -38,6 +37,7 @@
   <div *ngIf="isMaterialFormOpen">
     <label class="row"><span>Назва</span><input type="text" [value]="newLabel" (input)="newLabel = $any($event.target).value" /></label>
     <label class="row"><span>E, ГПа</span><input type="number" step="1" min="0" [value]="newYoungGPa" (change)="onYoung($event)" /></label>
+    <label class="row"><span>Колір</span><input type="color" [value]="newColor" (input)="newColor = $any($event.target).value" aria-label="Колір матеріалу" /></label>
     <label class="row"><span>ν (0…0.5)</span><input type="number" step="0.01" min="0" max="0.49" [value]="newPoisson" (change)="onPoisson($event)" /></label>
     <button class="btn" type="button" [disabled]="!canAddMaterial()" (click)="addMaterial()">Додати матеріал</button>
   </div>

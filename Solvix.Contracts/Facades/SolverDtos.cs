@@ -16,7 +16,8 @@ public sealed record FemMeshDto(
     IReadOnlyList<int> FoldedHexes);
 
 /// <summary>Isotropic linear elastic material. E in Pa.</summary>
-public sealed record SolverMaterialDto(string Name, string Label, double E, double Nu);
+/// <summary>A material; <c>Color</c> is the colour it has on the scene as #rrggbb (optional: a material without one gets a colour from its name).</summary>
+public sealed record SolverMaterialDto(string Name, string Label, double E, double Nu, string? Color = null);
 
 /// <summary>A face of a cube, or one small face of it: <c>P</c>, <c>Q</c> are the cell in the side's grid (p along the lower of the face's two tangent axes, q along the higher); null means the whole side.</summary>
 public sealed record SolverFaceDto(int Hex, string Face, int? P = null, int? Q = null);

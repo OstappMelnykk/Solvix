@@ -162,6 +162,20 @@ public class SolverTests
     }
 
     [Test]
+    public void A_material_of_ones_own_keeps_its_colour_and_a_bad_colour_is_refused()
+    {
+        var facade = NewFacade();
+
+        facade.UpsertMaterial(Session, new SolverMaterialDto("mine", "Mine", 1e9, 0.3, "#12ab34"));
+        facade.UpsertMaterial(Session, new SolverMaterialDto("bad-colour", "Bad", 1e9, 0.3, "red"));
+
+        var setup = facade.GetSetup(Session);
+        Assert.That(setup.Materials.Single(m => m.Name == "mine").Color, Is.EqualTo("#12ab34"));
+        Assert.That(setup.Materials.Select(m => m.Name), Does.Not.Contain("bad-colour"));
+        Assert.That(setup.Materials.First(m => m.Name == "steel").Color, Is.Null);
+    }
+
+    [Test]
     public void A_material_can_be_replaced_and_the_default_changed()
     {
         var facade = NewFacade();

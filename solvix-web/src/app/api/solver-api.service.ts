@@ -14,6 +14,8 @@ export interface SolverMaterialDto {
   readonly e: number;
   // Poisson's ratio, [0, 0.5).
   readonly nu: number;
+  // The colour on the scene, #rrggbb; without it the colour comes from the name.
+  readonly color?: string;
 }
 
 // A face of a cube, or one small face of it: p, q are the cell in the side's grid (p along the lower of the face's

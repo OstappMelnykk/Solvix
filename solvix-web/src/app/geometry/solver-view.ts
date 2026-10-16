@@ -117,7 +117,17 @@ export const GRADE_COLORS: Record<QualityGradeName, number> = {
 export const RESULT_COLORS: Record<Result, number> = { accepted: 0x2fbf4f, rejected: 0xe02b2b };
 
 // A stable colour per material name, so the same material looks the same everywhere.
+// The colours the user gave to materials of his own (by name); set from the solver's set-up whenever it arrives.
+const customColors = new Map<string, string>();
+
+export function setMaterialColors(materials: readonly { readonly name: string; readonly color?: string }[]): void {
+  customColors.clear();
+  for (const m of materials) if (m.color) customColors.set(m.name, m.color);
+}
+
 export function materialColor(name: string): THREE.Color {
+  const own = customColors.get(name);
+  if (own !== undefined) return new THREE.Color(own);
   const known = KNOWN_COLORS[name];
   if (known !== undefined) return new THREE.Color(known);
   let hash = 0;

@@ -34,6 +34,7 @@ export class SolverControlsComponent implements DoCheck {
   newLabel = '';
   newYoungGPa = 70;
   newPoisson = 0.3;
+  newColor = '#4a8fe3';
   isMaterialFormOpen = false;
 
   // --- the mesh of small elements ---
@@ -112,7 +113,7 @@ export class SolverControlsComponent implements DoCheck {
     if (!this.canAddMaterial()) return;
     const label = this.newLabel.trim();
     const name = `custom-${label.toLowerCase().replace(/[^a-z0-9а-яіїєґ]+/gi, '-')}`;
-    this.solver.upsertMaterial(this.sessionId, { name, label, e: this.newYoungGPa * GPA, nu: this.newPoisson });
+    this.solver.upsertMaterial(this.sessionId, { name, label, e: this.newYoungGPa * GPA, nu: this.newPoisson, color: this.newColor });
     this.solver.setActiveMaterial(this.sessionId, name);
     this.newLabel = '';
     this.isMaterialFormOpen = false;

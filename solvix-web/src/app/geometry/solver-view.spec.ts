@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MeshStateDto } from '../api/mesh-editor-api.service';
 import { SolverQualityDto, SolverResultDto, SolverSetupDto } from '../api/solver-api.service';
 import { LOCAL_COORDS, PickedFace, disposeMeshView, mapHex } from './mesh-editor-view';
-import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, elementCentreOf, elementSectionLoops, triangulateLoop, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
+import { GRADE_COLORS, SolverViewInput, buildHighlight, buildSolverView, setMaterialColors, elementCentreOf, elementSectionLoops, triangulateLoop, faceName, faceResolution, fieldRange, fieldValues, gridPoints, materialColor, pressureColor, rampColor } from './solver-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 const setup = (over: Partial<SolverSetupDto> = {}): SolverSetupDto => ({
@@ -82,6 +82,17 @@ const faceVertex = (view: ReturnType<typeof buildSolverView>, hex: number, face:
 
 describe('solver-view', () => {
   describe('colours', () => {
+    it('a material of the user\'s own has the colour he gave it, and the others keep theirs', () => {
+      const before = materialColor('steel').getHexString();
+      setMaterialColors([{ name: 'mine', color: '#12ab34' }, { name: 'plain' }]);
+
+      expect(materialColor('mine').getHexString()).toBe('12ab34');
+      expect(materialColor('plain').getHexString()).toBe(materialColor('plain').getHexString());
+      expect(materialColor('steel').getHexString()).toBe(before);
+      setMaterialColors([]);
+      expect(materialColor('mine').getHexString()).not.toBe('12ab34');
+    });
+
     it('the ramp runs from blue to red and clamps what is outside', () => {
       expect(rampColor(0).getHex()).toBe(0x2b3cc4);
       expect(rampColor(1).getHex()).toBe(0xe4572e);
