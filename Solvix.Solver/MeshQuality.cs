@@ -11,7 +11,7 @@ internal static class MeshQuality
 {
     public static SolverQualityReportDto Evaluate(SolverSetup setup, FemMeshDto mesh)
     {
-        if (mesh.ElementCount == 0) return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, null, Array.Empty<ElementMeasures>())).ToList());
+        if (mesh.ElementCount == 0) return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, null, Array.Empty<ElementMeasures>(), new[] { 1, 1, 1 })).ToList());
 
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
@@ -23,7 +23,7 @@ internal static class MeshQuality
                 for (int c = 0; c < 3; c++) xyz[i, c] = fine.Positions[fine.Connectivity[e, i], c];
             measures[e] = new ElementMeasures(ElementQuality.Of(xyz), LinearHexMetrics.Of(xyz), BrickShape.Of(xyz));
         });
-        return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, (mesh, fine), measures)).ToList());
+        return new SolverQualityReportDto(QualityProfiles.All.Select(p => Report(p, (mesh, fine), measures, new[] { nx, ny, nz })).ToList());
     }
 
     /// <summary>Every standard's judgement of one small element, with its value of every measure of that standard.</summary>
@@ -42,7 +42,7 @@ internal static class MeshQuality
         return new SolverElementReportDto(hex, ex, ey, ez, profiles);
     }
 
-    private static SolverQualityDto Report(QualityProfile profile, (FemMeshDto Mesh, FineMesh Fine)? where, ElementMeasures[] measures)
+    private static SolverQualityDto Report(QualityProfile profile, (FemMeshDto Mesh, FineMesh Fine)? where, ElementMeasures[] measures, int[] counts)
     {
         var grades = new Dictionary<string, int> { ["excellent"] = 0, ["good"] = 0, ["acceptable"] = 0, ["poor"] = 0, ["invalid"] = 0 };
         var worst = new Dictionary<string, double>();
@@ -63,7 +63,8 @@ internal static class MeshQuality
             }
             if (grade == QualityGrade.Excellent || where is null) continue;
             var (mesh, fine) = where.Value;
-            flagged.Add(new SolverElementQualityDto(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e], Name(grade), values));
+            var cell = SetupBinding.CellOf(fine.Mesh, e, mesh.ElementIds[fine.Mesh.RootOf(e)], counts);
+            flagged.Add(new SolverElementQualityDto(cell.Hex, cell.Ex, cell.Ey, cell.Ez, Name(grade), values));
         }
 
         if (measures.Length == 0)

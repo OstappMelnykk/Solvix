@@ -198,34 +198,35 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     // ---- set-up + mesh -> solver input ------------------------------------------------------
 
-    private static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh)
+    internal static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh)
     {
         // every cube cut into nx*ny*nz small elements, as the solver's own mesh does
         var (nx, ny, nz) = setup.Divisions;
         var fine = FineMesh.Build(mesh, nx, ny, nz);
 
+        // From here on the solver works on the mesh of finite elements (IFemMesh): the setup's cells are bound to its elements and faces by
+        // SetupBinding, and nothing below asks which cube an element came from or how it was cut.
+        var femMesh = fine.Mesh;
+        var counts = new[] { nx, ny, nz };
+
         var byName = setup.MaterialsByName.ToDictionary(m => m.Key, m => Material.Isotropic(m.Value.E, m.Value.Nu, m.Key));
-        var materials = new Material[fine.ElementCount];
-        for (int e = 0; e < fine.ElementCount; e++)
-            materials[e] = byName[setup.MaterialOf(new ElementKey(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e]))];
+        var materials = new Material[femMesh.ElementCount];
+        for (int e = 0; e < femMesh.ElementCount; e++)
+            materials[e] = byName[setup.MaterialOf(SetupBinding.CellOf(femMesh, e, mesh.ElementIds[femMesh.RootOf(e)], counts))];
 
         var cubeIndex = new Dictionary<int, int>();
         for (int e = 0; e < mesh.ElementCount; e++) cubeIndex[mesh.ElementIds[e]] = e;
-        // a small face of a cube is the outward face of the one small element behind it
-        ElementFace Face(SubFace f)
-        {
-            var (element, face) = fine.BoundaryElement(cubeIndex[f.Hex], f.Face, f.P, f.Q);
-            return new ElementFace(element, face);
-        }
         bool Known(SubFace f) => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face);
+        // a cell of a side of a cube is the outward face (or faces) of the element(s) behind it
+        IEnumerable<ElementFace> Faces(SubFace f) => SetupBinding.FacesOf(femMesh, cubeIndex[f.Hex], f.Face, f.P, f.Q, counts);
 
         var loads = new LoadCase
         {
-            Fixed = setup.Fixed.Where(Known).Select(Face).ToList(),
+            Fixed = setup.Fixed.Where(Known).SelectMany(Faces).Distinct().ToList(),
             // Pn is the solver's: along the outward normal, negative = compression
-            Pressures = setup.Loads.Where(l => Known(l.Key)).Select(l => new FacePressure(Face(l.Key), l.Value)).ToList()
+            Pressures = setup.Loads.Where(l => Known(l.Key)).SelectMany(l => Faces(l.Key).Select(face => new FacePressure(face, l.Value))).ToList()
         };
-        return new SolverProblem(fine, new FemModel(fine.Positions, fine.Connectivity, materials), loads);
+        return new SolverProblem(fine, new FemModel(femMesh.Positions, femMesh.Connectivity, materials), loads);
     }
 }
 
