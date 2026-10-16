@@ -2,7 +2,7 @@
 <div class="stats">Куби: {{ hexCount() }} · елементів СЕ: {{ elementCount() }}</div>
 
 <div class="group">
-  <div class="group-label"><span class="step">1</span> Матеріали</div>
+  <div class="group-label">Матеріали</div>
   <div class="materials">
     <div
       *ngFor="let material of materials()"
@@ -74,7 +74,7 @@
 </div>
 
 <div class="group">
-  <div class="group-label"><span class="step">2</span> Навантаження і опори</div>
+  <div class="group-label">Навантаження і опори</div>
   <label class="field" title="Нормальне рівномірне тиснення на обраних гранях (Па). Від'ємне значення — стиск, додатне — розтяг">
     Pn — тиск для нових граней (Па)
     <input type="number" step="100000" [value]="pressure()" (change)="onPressure($event)" />
