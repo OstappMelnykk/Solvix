@@ -123,6 +123,11 @@ export class MeshEditorService {
     this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints), then);
   }
 
+  // Moves a whole face by one displacement (one undo step). `then` runs after the new state arrives.
+  moveFace(sessionId: number, hexId: number, face: HexFaceName, delta: MeshPointDto, then?: () => void): void {
+    this.run(sessionId, this.api.moveFace(sessionId, hexId, face, delta), then);
+  }
+
   undo(sessionId: number): void {
     this.run(sessionId, this.api.undo(sessionId));
   }
