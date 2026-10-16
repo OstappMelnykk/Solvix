@@ -16,7 +16,8 @@ import { QualityRenderService } from '../../state/quality-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshEditorService } from '../../state/mesh-editor.service';
-import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
+import { HexFaceName } from '../../api/mesh-editor-api.service';
+import { EDGE_CORNERS, MeshPick, MeshView, faceSlots } from '../../geometry/mesh-editor-view';
 import { GroundCell } from '../../geometry/ground-cell';
 import { buildCommandFor } from '../../geometry/mesh-build';
 import { MeshCountsComponent } from './mesh-counts/mesh-counts.component';
@@ -213,6 +214,56 @@ export class RenderWindowComponent {
     if (sessionId !== null) {
       this.meshEditor.moveNode(sessionId, event.nodeId, event.position, this.meshEditor.carryEdgeMidpoints);
     }
+  }
+
+  // The face a plain click picked, draggable only in the Real World and only
+  // while no node is picked (a node takes priority). Resolved into the ids the
+  // canvas needs: the 8 face nodes (full delta) and the connecting edge midpoints
+  // (half), plus the face centre the gizmo sits at.
+  getDraggableFace(worldIndex: number): {
+    hex: number;
+    face: HexFaceName;
+    fullNodeIds: number[];
+    halfNodeIds: number[];
+    center: { x: number; y: number; z: number };
+  } | null {
+    const sessionId = this.sessions.activeSessionId();
+    if (worldIndex !== REAL_WORLD_INDEX || sessionId === null) return null;
+    if (this.meshSelection.nodeId(sessionId) !== null) return null; // a picked node wins
+    const face = this.meshSelection.face(sessionId);
+    const state = this.meshEditor.getState(sessionId);
+    if (!face || !state) return null;
+    const hex = state.hexes.find(h => h.id === face.hex);
+    if (!hex) return null;
+
+    const onFace = new Set(faceSlots(face.face));
+    const fullNodeIds = [...onFace].map(slot => hex.nodeIds[slot]);
+    // Connecting edges: one corner on the face, the other off it; their midpoint moves by half.
+    const halfSlots = EDGE_CORNERS
+      .map(([a, b], k) => (onFace.has(a) !== onFace.has(b) ? 8 + k : -1))
+      .filter(slot => slot >= 0 && !onFace.has(slot));
+    const halfNodeIds = halfSlots.map(slot => hex.nodeIds[slot]);
+
+    const nodeById = new Map(state.nodes.map(n => [n.id, n]));
+    const center = { x: 0, y: 0, z: 0 };
+    for (const id of fullNodeIds) {
+      const n = nodeById.get(id);
+      if (n) {
+        center.x += n.x / fullNodeIds.length;
+        center.y += n.y / fullNodeIds.length;
+        center.z += n.z / fullNodeIds.length;
+      }
+    }
+    return { hex: face.hex, face: face.face, fullNodeIds, halfNodeIds, center };
+  }
+
+  // The face gizmo was dropped: send the displacement to the server (one undo step).
+  onFaceMoved(event: { hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    const { x, y, z } = event.delta;
+    if (x === 0 && y === 0 && z === 0) return;
+    this.meshEditor.moveFace(sessionId, event.hex, event.face, event.delta);
   }
 
   // Building with the mouse is for the Ideal and the Real World, when the user has it on.

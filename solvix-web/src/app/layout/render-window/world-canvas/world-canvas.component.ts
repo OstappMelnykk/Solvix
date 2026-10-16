@@ -27,6 +27,7 @@ import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { buildImportedReferenceClone, disposeImportedReferenceClone } from '../../../geometry/scene-objects/imported-reference';
 import { WeightedOitRenderer } from '../../../rendering/weighted-oit';
 import { MeshPick, MeshView, disposeMeshView, preferredHit } from '../../../geometry/mesh-editor-view';
+import { HexFaceName } from '../../../api/mesh-editor-api.service';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
@@ -143,6 +144,24 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Output() readonly nodeAttach = new EventEmitter<{ nodeId: number; attached: boolean }>();
   @Output() readonly nodeMoved = new EventEmitter<{ nodeId: number; position: { x: number; y: number; z: number } }>();
 
+  // A whole face that may be dragged with the translate gizmo (Real World only),
+  // or null. The caller (RenderWindowComponent) resolves it from the session
+  // state into the ids this canvas needs: the 8 face nodes that move by the full
+  // delta, the connecting edge midpoints that move by half, and the face centre
+  // the gizmo sits at. The server does the real move on drop; this only drags the
+  // dots live for feedback.
+  @Input() draggableFace: {
+    readonly hex: number;
+    readonly face: HexFaceName;
+    readonly fullNodeIds: readonly number[];
+    readonly halfNodeIds: readonly number[];
+    readonly center: { x: number; y: number; z: number };
+  } | null = null;
+  // Fired continuously while the face gizmo is dragged: the displacement so far.
+  @Output() readonly faceDragging = new EventEmitter<{ hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }>();
+  // Fired once when the face gizmo is dropped: the total displacement.
+  @Output() readonly faceMoved = new EventEmitter<{ hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }>();
+
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   // Bumped only when this canvas's WebGL context was lost and the browser
@@ -219,6 +238,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private nodeGizmo!: TransformControls;
   private readonly nodeProxy = new THREE.Object3D();
   private gizmoNodeId: number | null = null;
+  // Face drag: a second translate gizmo sitting at the picked face's centre.
+  // Its proxy starts at the face centre; the displacement from there is applied
+  // to the face dots live and sent to the server on drop.
+  private faceGizmo!: TransformControls;
+  private readonly faceProxy = new THREE.Object3D();
+  private gizmoFace: { hex: number; face: HexFaceName } | null = null;
+  private faceDragStart = new THREE.Vector3();
+  // Where each dragged dot (full and half) sat when the drag began, by node id.
+  private readonly faceDragOrigins = new Map<number, THREE.Vector3>();
   // Mirrors gridHelper.visible for the template - a real default from
   // construction, same reasoning as `cameraMode` above: the template can
   // read isGridVisible() during Angular's very first change detection
@@ -329,7 +357,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
-    if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging) {
+    if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging && !this.faceGizmo.dragging) {
       this.painting = true;
       this.lastPaintKey = '';
       this.canvasRef.nativeElement.setPointerCapture?.(event.pointerId);
@@ -550,6 +578,32 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       });
     });
 
+    // The face gizmo: dragging it slides the whole picked face. The dots of the
+    // face (and the connecting midpoints, by half) follow live; the server does
+    // the real geometry change on drop.
+    this.faceGizmo = new TransformControls(this.camera, this.renderer.domElement);
+    this.faceGizmo.setMode('translate');
+    this.faceGizmo.setSize(0.9);
+    this.scene.add(this.faceGizmo.getHelper());
+    this.faceGizmo.addEventListener('objectChange', () => {
+      if (this.gizmoFace === null) return;
+      const delta = this.faceProxy.position.clone().sub(this.faceDragStart);
+      this.applyFaceDragPreview(delta);
+      this.faceDragging.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: delta.x, y: delta.y, z: delta.z } });
+    });
+    this.faceGizmo.addEventListener('dragging-changed', event => {
+      if (this.gizmoFace === null) return;
+      if (event.value) {
+        // Drag starting: remember the face centre and every dot's position.
+        this.faceDragStart.copy(this.faceProxy.position);
+        this.captureFaceDragOrigins();
+        return;
+      }
+      const round = (value: number) => Math.round(value * 1e6) / 1e6;
+      const delta = this.faceProxy.position.clone().sub(this.faceDragStart);
+      this.faceMoved.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: round(delta.x), y: round(delta.y), z: round(delta.z) } });
+    });
+
     // Fires continuously while dragging a ring - keep the dimension-lines/
     // ruler overlays' ORIENTATION following live (cheap: just copies the
     // quaternion onto separate objects, doesn't feed back into the gizmo's
@@ -612,9 +666,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
     this.scene.remove(this.rotateGizmo.getHelper());
     this.scene.remove(this.nodeGizmo.getHelper());
+    this.scene.remove(this.faceGizmo.getHelper());
     this.controls.dispose();
     this.rotateGizmo.dispose();
     this.nodeGizmo.dispose();
+    this.faceGizmo.dispose();
     this.oitRenderer.dispose();
     this.renderer.dispose();
 
@@ -970,6 +1026,51 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.gizmoNodeId = id;
   }
 
+  // Remembers where each face dot sat when a face drag began, so the live
+  // preview can place them at origin + delta (full) or origin + delta/2 (half).
+  private captureFaceDragOrigins(): void {
+    this.faceDragOrigins.clear();
+    const face = this.draggableFace;
+    if (!face) return;
+    for (const id of [...face.fullNodeIds, ...face.halfNodeIds]) {
+      const mesh = this.currentMeshView?.nodeMeshes.get(id);
+      if (mesh) this.faceDragOrigins.set(id, mesh.position.clone());
+    }
+  }
+
+  // Moves the face dots as the gizmo is dragged: the 8 face nodes by the full
+  // delta, the connecting edge midpoints by half - matching the server's MoveFace.
+  private applyFaceDragPreview(delta: THREE.Vector3): void {
+    const face = this.draggableFace;
+    if (!face) return;
+    const place = (id: number, scale: number) => {
+      const origin = this.faceDragOrigins.get(id);
+      const mesh = this.currentMeshView?.nodeMeshes.get(id);
+      if (origin && mesh) mesh.position.copy(origin).addScaledVector(delta, scale);
+    };
+    for (const id of face.fullNodeIds) place(id, 1);
+    for (const id of face.halfNodeIds) place(id, 0.5);
+  }
+
+  // Keeps the face gizmo at the picked face's centre (Real World only), removed
+  // when no face is picked or a node is being dragged instead.
+  private syncFaceGizmo(): void {
+    const face = this.draggableFace;
+    if (!face) {
+      if (this.faceGizmo.object) this.faceGizmo.detach();
+      this.gizmoFace = null;
+      return;
+    }
+    if (this.faceGizmo.dragging) {
+      return;
+    }
+    this.faceProxy.position.set(face.center.x, face.center.y, face.center.z);
+    if (this.faceGizmo.object !== this.faceProxy) {
+      this.faceGizmo.attach(this.faceProxy);
+    }
+    this.gizmoFace = { hex: face.hex, face: face.face };
+  }
+
   private updateMeshView(): void {
     const source = this.meshView;
     if (this.lastMeshView === source) {
@@ -1003,7 +1104,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const down = this.pointerDownClient;
     this.pointerDownClient = null;
     // A press on a gizmo handle is not a click on the scene.
-    if (!down || event.button !== 0 || !this.active || this.rotateGizmo.dragging || this.nodeGizmo.dragging || this.nodeGizmo.axis !== null) {
+    if (!down || event.button !== 0 || !this.active || this.rotateGizmo.dragging || this.nodeGizmo.dragging || this.nodeGizmo.axis !== null || this.faceGizmo.dragging || this.faceGizmo.axis !== null) {
       return;
     }
     if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > CLICK_MOVE_THRESHOLD_PX) {
@@ -1190,6 +1291,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.updateHoleHighlight();
       this.updateMeshView();
       this.syncNodeGizmo();
+      this.syncFaceGizmo();
       this.updateSession();
       this.updateSettleAnimation();
 
@@ -1213,7 +1315,10 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       const nodeGizmoWanted = this.active && this.nodeGizmo.object !== undefined;
       this.nodeGizmo.getHelper().visible = nodeGizmoWanted;
       this.nodeGizmo.enabled = nodeGizmoWanted;
-      this.controls.enabled = this.active && !this.rotateGizmo.dragging && !this.nodeGizmo.dragging && !this.painting;
+      const faceGizmoWanted = this.active && this.faceGizmo.object !== undefined;
+      this.faceGizmo.getHelper().visible = faceGizmoWanted;
+      this.faceGizmo.enabled = faceGizmoWanted;
+      this.controls.enabled = this.active && !this.rotateGizmo.dragging && !this.nodeGizmo.dragging && !this.faceGizmo.dragging && !this.painting;
       // with the brush the left button paints and the right one rotates
       this.controls.mouseButtons.LEFT = this.paintEnabled ? null as never : THREE.MOUSE.ROTATE;
       this.controls.mouseButtons.RIGHT = this.paintEnabled ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
