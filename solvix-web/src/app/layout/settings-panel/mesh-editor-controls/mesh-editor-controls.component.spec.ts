@@ -71,6 +71,12 @@ describe('MeshEditorControlsComponent', () => {
       for (const gone of ['Скасувати', 'Повернути', 'Клік по грані', 'Перевірка мапінгу', 'Вузли видно', 'Внутрішня сітка', 'Куби:']) expect(text).not.toContain(gone);
     });
 
+    it('has the block of the node only in the Real World, where the nodes are moved', () => {
+      const labels = (root: HTMLElement) => Array.from(root.querySelectorAll('.group-label')).map(e => e.textContent!.trim());
+      expect(labels(render(IDEAL_WORLD_INDEX))).not.toContain('Вузол');
+      expect(labels(render(REAL_WORLD_INDEX))).toContain('Вузол');
+    });
+
     it('has the uniform division as a header and three bare fields X Y Z, with no explanation', () => {
       const root = render(REAL_WORLD_INDEX);
       const group = Array.from(root.querySelectorAll('.group')).find(g => g.querySelector('.group-label')?.textContent?.trim() === 'Згущення')!;

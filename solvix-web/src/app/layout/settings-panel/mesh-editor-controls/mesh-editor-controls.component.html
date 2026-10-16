@@ -118,12 +118,12 @@
   </div>
 </div>
 
-<div class="group">
+<div class="group" *ngIf="isRealWorld">
   <div class="group-label">Вузол</div>
   <ng-container *ngIf="selectedNodeId() !== null; else noNode">
     <div class="selected"><b>Вузол {{ selectedNodeId() }}</b> (глобальний id)</div>
     <div class="hint">{{ nodeOwnersText() }}</div>
-    <ng-container *ngIf="isRealWorld; else idealHint">
+    <ng-container>
       <div class="hint">Тягніть стрілки на сцені, вводьте число або тисніть клавіші: ← → (X), ↑ ↓ (Z), PageUp/PageDown (Y); Shift — ×10.</div>
       <label class="row" *ngFor="let axis of axes">
         <span>{{ axis.toUpperCase() }}</span>
@@ -146,9 +146,8 @@
         <button class="chip chip--wide" type="button" (click)="detachNode()">Відкріпити</button>
       </div>
     </ng-container>
-    <ng-template #idealHint><div class="hint">Вузли рухаються у вкладці <b>Real World</b> — перемкніться туди.</div></ng-template>
   </ng-container>
-  <ng-template #noNode><div class="hint">Клік по вузлу (точці) на сцені. Рухати вузли можна у вкладці Real World.</div></ng-template>
+  <ng-template #noNode><div class="hint">Клік по вузлу (точці) на сцені.</div></ng-template>
 </div>
 
 <div class="group">
