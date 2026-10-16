@@ -88,6 +88,7 @@ public sealed class UniformRefinement(int nx, int ny, int nz) : IMeshRefinement
         var connectivity = new int[count, 20];
         var roots = new int[count];
         var keys = new string[count];
+        var boxes = new ParametricBox[count];
         var sides = new string?[count, 6];
         for (int e = 0; e < cubes; e++)
             for (int ez = 0; ez < Nz; ez++)
@@ -97,6 +98,7 @@ public sealed class UniformRefinement(int nx, int ny, int nz) : IMeshRefinement
                         int fine = e * per + (ez * Ny + ey) * Nx + ex;
                         roots[fine] = e;
                         keys[fine] = $"{coarse.ElementIds[e]}:{ex},{ey},{ez}";
+                        boxes[fine] = new ParametricBox(Edge(ex, Nx), Edge(ey, Ny), Edge(ez, Nz), Edge(ex + 1, Nx), Edge(ey + 1, Ny), Edge(ez + 1, Nz));
                         for (int k = 0; k < 20; k++)
                             connectivity[fine, k] = gridNodes[e * g + gridIndex[(2 * ex + ElementLocal.Nodes[k, 0] + 1, 2 * ey + ElementLocal.Nodes[k, 1] + 1, 2 * ez + ElementLocal.Nodes[k, 2] + 1)]];
                         // a face of the element lies on a side of the cube when the element is the last one in that direction
@@ -111,8 +113,11 @@ public sealed class UniformRefinement(int nx, int ny, int nz) : IMeshRefinement
         var flat = new double[positions.Count, 3];
         for (int n = 0; n < positions.Count; n++)
             for (int c = 0; c < 3; c++) flat[n, c] = positions[n][c];
-        return new FemMesh(flat, connectivity, roots, keys, sides);
+        return new FemMesh(flat, connectivity, roots, keys, boxes, sides);
     }
+
+    /// <summary>The coordinate of the i-th of n equal cuts of [-1, 1]; one formula for every place that needs it, so equal places are equal numbers.</summary>
+    public static double Edge(int i, int n) => -1.0 + 2.0 * i / n;
 
     private int Count(int axis) => axis == 0 ? Nx : axis == 1 ? Ny : Nz;
 

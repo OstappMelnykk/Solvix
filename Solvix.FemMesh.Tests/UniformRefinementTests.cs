@@ -86,3 +86,74 @@ public class UniformRefinementTests
         Assert.That(mesh.NodeCount, Is.EqualTo(20 + 16 + 10 + 10));
     }
 }
+
+public class ParametricBoxTests
+{
+    private static IFemMesh Build(int cubes, int nx, int ny, int nz) => new UniformRefinement(nx, ny, nz).Build(Support.Export(Support.Bar(cubes)));
+
+    [TestCase(1, 1, 1, 1)]
+    [TestCase(1, 3, 3, 3)]
+    [TestCase(2, 2, 5, 3)]
+    [TestCase(3, 8, 1, 2)]
+    public void The_boxes_of_the_elements_of_a_cube_tile_it_exactly(int cubes, int nx, int ny, int nz)
+    {
+        var mesh = Build(cubes, nx, ny, nz);
+
+        for (int cube = 0; cube < cubes; cube++)
+        {
+            double volume = 0;
+            foreach (int e in mesh.ElementsOf(cube))
+            {
+                var box = mesh.BoxOf(e);
+                volume += (box.X1 - box.X0) * (box.Y1 - box.Y0) * (box.Z1 - box.Z0);
+                for (int axis = 0; axis < 3; axis++)
+                {
+                    Assert.That(box.Lo(axis), Is.GreaterThanOrEqualTo(-1.0));
+                    Assert.That(box.Hi(axis), Is.LessThanOrEqualTo(1.0));
+                    Assert.That(box.Hi(axis), Is.GreaterThan(box.Lo(axis)));
+                }
+            }
+            Assert.That(volume, Is.EqualTo(8.0).Within(1e-9), "a cube is [-1,1]^3, volume 8");
+            Assert.That(mesh.ElementsOf(cube).Count, Is.EqualTo(nx * ny * nz));
+        }
+    }
+
+    [Test]
+    public void The_faces_on_a_side_tile_that_side_and_lie_at_its_end()
+    {
+        var mesh = Build(1, 3, 2, 4);
+
+        foreach (var (side, axis, sign) in new[] { ("XMinus", 0, -1), ("XPlus", 0, 1), ("YMinus", 1, -1), ("YPlus", 1, 1), ("ZMinus", 2, -1), ("ZPlus", 2, 1) })
+        {
+            double area = 0;
+            foreach (var face in mesh.FacesOnSide(0, side))
+            {
+                var flat = mesh.BoxOf(face.Element).Face(axis, sign);
+                Assert.That(flat.Lo(axis), Is.EqualTo(sign), side);
+                Assert.That(flat.Hi(axis), Is.EqualTo(sign), side);
+                double w = 1;
+                for (int a = 0; a < 3; a++) if (a != axis) w *= flat.Hi(a) - flat.Lo(a);
+                area += w;
+            }
+            Assert.That(area, Is.EqualTo(4.0).Within(1e-9), $"{side}: the side of the cube is [-1,1]^2");
+        }
+    }
+
+    [Test]
+    public void A_cell_of_a_grid_owns_the_centres_inside_it_and_each_centre_has_exactly_one_owner_even_on_the_borders()
+    {
+        foreach (int n in new[] { 1, 2, 3, 5, 7, 8 })
+            for (int m = 1; m <= 8; m++)
+            {
+                // centres of the cells of a finer or coarser grid m, against the cells of grid n
+                for (int j = 0; j < m; j++)
+                {
+                    var centre = new ParametricBox(UniformRefinement.Edge(j, m), 0, 0, UniformRefinement.Edge(j + 1, m), 0, 0);
+                    int owners = 0;
+                    for (int i = 0; i < n; i++)
+                        if (centre.CentreInside(new ParametricBox(UniformRefinement.Edge(i, n), -1, -1, UniformRefinement.Edge(i + 1, n), 1, 1), new[] { 0 })) owners++;
+                    Assert.That(owners, Is.EqualTo(1), $"cell {j} of {m} against grid {n}");
+                }
+            }
+    }
+}

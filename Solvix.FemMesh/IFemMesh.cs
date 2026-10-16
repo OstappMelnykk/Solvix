@@ -27,6 +27,12 @@ public interface IFemMesh
     /// <summary>The cube of the editor's mesh (its index in the exported mesh) the element lies in.</summary>
     int RootOf(int element);
 
+    /// <summary>Where the element lies inside its cube, in the cube's own coordinates (see <see cref="ParametricBox"/>).</summary>
+    ParametricBox BoxOf(int element);
+
+    /// <summary>The elements that lie in a cube.</summary>
+    IReadOnlyList<int> ElementsOf(int root);
+
     /// <summary>A key of the element that does not change when the mesh is built anew from the same cubes by the same rule.</summary>
     string KeyOf(int element);
 

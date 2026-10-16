@@ -9,26 +9,42 @@ public sealed class FemMesh : IFemMesh
 {
     private readonly int[] _root;
     private readonly string[] _key;
+    private readonly ParametricBox[] _box;
+    private readonly Dictionary<int, List<int>> _elementsOfRoot = new();
+    private readonly Dictionary<(int Root, int Side), List<ElementFace>> _facesOnSide = new();
     private readonly ElementFace?[] _neighbour;            // [element * 6 + face]
     private readonly int[] _side;                          // [element * 6 + face]: the editor side (index into SideNames) the face lies on, or -1
 
     private static readonly string[] SideNames = { "XMinus", "XPlus", "YMinus", "YPlus", "ZMinus", "ZPlus" };
 
     /// <param name="side">For every face of every element ([element, solver face]): the side of the editor cube it lies on (as the editor names it), or null.</param>
-    public FemMesh(double[,] positions, int[,] connectivity, int[] root, string[] key, string?[,] side)
+    public FemMesh(double[,] positions, int[,] connectivity, int[] root, string[] key, ParametricBox[] box, string?[,] side)
     {
         Positions = positions;
         Connectivity = connectivity;
         NodeCount = positions.GetLength(0);
         ElementCount = connectivity.GetLength(0);
-        if (root.Length != ElementCount || key.Length != ElementCount || side.GetLength(0) != ElementCount)
-            throw new ArgumentException("Every element needs its cube, its key and its sides.");
+        if (root.Length != ElementCount || key.Length != ElementCount || box.Length != ElementCount || side.GetLength(0) != ElementCount)
+            throw new ArgumentException("Every element needs its cube, its key, its box and its sides.");
         _root = root;
         _key = key;
+        _box = box;
         _side = new int[ElementCount * 6];
         for (int e = 0; e < ElementCount; e++)
             for (int f = 0; f < 6; f++) _side[e * 6 + f] = side[e, f] is { } name ? Array.IndexOf(SideNames, name) : -1;
         _neighbour = FindNeighbours();
+        for (int e = 0; e < ElementCount; e++)
+        {
+            if (!_elementsOfRoot.TryGetValue(_root[e], out var list)) _elementsOfRoot[_root[e]] = list = new();
+            list.Add(e);
+            for (int f = 0; f < 6; f++)
+            {
+                if (_side[e * 6 + f] < 0) continue;
+                var at = (_root[e], _side[e * 6 + f]);
+                if (!_facesOnSide.TryGetValue(at, out var faces)) _facesOnSide[at] = faces = new();
+                faces.Add(new ElementFace(e, f));
+            }
+        }
     }
 
     public int NodeCount { get; }
@@ -39,6 +55,10 @@ public sealed class FemMesh : IFemMesh
     public int RootOf(int element) => _root[element];
 
     public string KeyOf(int element) => _key[element];
+
+    public ParametricBox BoxOf(int element) => _box[element];
+
+    public IReadOnlyList<int> ElementsOf(int root) => _elementsOfRoot.TryGetValue(root, out var list) ? list : Array.Empty<int>();
 
     public ElementFace? Neighbour(ElementFace face) => _neighbour[face.Element * 6 + face.Face];
 
@@ -52,13 +72,7 @@ public sealed class FemMesh : IFemMesh
     public IEnumerable<ElementFace> FacesOnSide(int root, string side)
     {
         int index = Array.IndexOf(SideNames, side);
-        if (index < 0) yield break;
-        for (int e = 0; e < ElementCount; e++)
-        {
-            if (_root[e] != root) continue;
-            for (int f = 0; f < 6; f++)
-                if (_side[e * 6 + f] == index) yield return new ElementFace(e, f);
-        }
+        return index >= 0 && _facesOnSide.TryGetValue((root, index), out var faces) ? faces : Enumerable.Empty<ElementFace>();
     }
 
     private ElementFace?[] FindNeighbours()
