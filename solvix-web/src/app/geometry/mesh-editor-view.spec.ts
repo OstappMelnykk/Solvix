@@ -578,23 +578,25 @@ describe('mesh-editor-view', () => {
     });
   });
 
-  it('draws the dots of the nodes at the size asked for, with the click targets never smaller than the usual ones', () => {
-    const radius = (scale: number | undefined) => {
-      const view = buildMeshView(singleCubeState(), 'real', { hexes: [], face: null, hoverFace: null, nodeId: null }, { subdivisions: 1, nodeScale: scale });
-      const sphere = Array.from(view.nodeMeshes.values())[0].geometry as THREE.SphereGeometry;
-      const hit = (view.pickables.find(p => (p.userData['pick'] as { kind: string }).kind === 'node') as THREE.Mesh).geometry as THREE.SphereGeometry;
+  it('draws the dots of the corners and of the midpoints each at the size asked for, with the click targets never smaller than the usual ones', () => {
+    const radii = (scale: { corner: number; mid: number } | undefined) => {
+      const state = singleCubeState();
+      const view = buildMeshView(state, 'real', { hexes: [], face: null, hoverFace: null, nodeId: null }, { subdivisions: 1, nodeScale: scale });
+      const cornerId = state.hexes[0].nodeIds[0], midId = state.hexes[0].nodeIds[8];
+      const dot = (id: number) => (view.nodeMeshes.get(id)!.geometry as THREE.SphereGeometry).parameters.radius;
+      const hit = (id: number) => ((view.pickables.find(p => (p.userData['pick'] as { nodeId?: number }).nodeId === id) as THREE.Mesh).geometry as THREE.SphereGeometry).parameters.radius;
+      const out = { corner: dot(cornerId), mid: dot(midId), cornerHit: hit(cornerId), midHit: hit(midId) };
       disposeMeshView(view);
-      return { dot: sphere.parameters.radius, hit: hit.parameters.radius };
+      return out;
     };
 
-    const usual = radius(undefined);
-    const big = radius(3);
-    const small = radius(0.3);
+    const usual = radii(undefined);
+    const mixed = radii({ corner: 3, mid: 0.3 });
 
-    expect(radius(1).dot).toBeCloseTo(usual.dot, 9);
-    expect(big.dot).toBeCloseTo(usual.dot * 3, 9);
-    expect(small.dot).toBeCloseTo(usual.dot * 0.3, 9);
-    expect(small.hit).toBeCloseTo(usual.hit, 9);
-    expect(big.hit).toBeGreaterThanOrEqual(usual.hit);
+    expect(radii({ corner: 1, mid: 1 }).corner).toBeCloseTo(usual.corner, 9);
+    expect(mixed.corner).toBeCloseTo(usual.corner * 3, 9);
+    expect(mixed.mid).toBeCloseTo(usual.mid * 0.3, 9);
+    expect(mixed.midHit).toBeCloseTo(usual.midHit, 9);
+    expect(mixed.cornerHit).toBeGreaterThanOrEqual(usual.cornerHit);
   });
 });

@@ -191,10 +191,10 @@
     />
     <div class="slider__scale"><span>прозоро</span><span>суцільно</span></div>
   </div>
-  <div class="slider" *ngIf="isRealWorld">
+  <div class="slider">
     <div class="slider__head">
-      <span>Розмір вершин</span>
-      <b>{{ nodeSizePercent() }}%</b>
+      <span>Розмір вершин кубів</span>
+      <b>{{ nodeSizePercent('corner') }}%</b>
     </div>
     <input
       class="slider__range"
@@ -202,10 +202,28 @@
       [min]="nodeSizeMin"
       [max]="nodeSizeMax"
       step="5"
-      [value]="nodeSizePercent()"
-      [style.--p]="(nodeSizePercent() - nodeSizeMin) / (nodeSizeMax - nodeSizeMin)"
-      (input)="onNodeSize($event)"
-      aria-label="Розмір вершин"
+      [value]="nodeSizePercent('corner')"
+      [style.--p]="(nodeSizePercent('corner') - nodeSizeMin) / (nodeSizeMax - nodeSizeMin)"
+      (input)="onNodeSize('corner', $event)"
+      aria-label="Розмір вершин кубів"
+    />
+    <div class="slider__scale"><span>дрібні</span><span>великі</span></div>
+  </div>
+  <div class="slider">
+    <div class="slider__head">
+      <span>Розмір середніх вузлів</span>
+      <b>{{ nodeSizePercent('mid') }}%</b>
+    </div>
+    <input
+      class="slider__range"
+      type="range"
+      [min]="nodeSizeMin"
+      [max]="nodeSizeMax"
+      step="5"
+      [value]="nodeSizePercent('mid')"
+      [style.--p]="(nodeSizePercent('mid') - nodeSizeMin) / (nodeSizeMax - nodeSizeMin)"
+      (input)="onNodeSize('mid', $event)"
+      aria-label="Розмір середніх вузлів"
     />
     <div class="slider__scale"><span>дрібні</span><span>великі</span></div>
   </div>
