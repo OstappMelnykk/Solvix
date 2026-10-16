@@ -321,4 +321,20 @@ describe('the sides of the Quality World view', () => {
     expect(inward).toBe(0);
     disposeMeshView(view);
   });
+
+  it('draws the dots of the corners and of the midpoints at the sizes asked for', () => {
+    const radii = (nodeScale?: { corner: number; mid: number }) => {
+      const view = buildQualityView(input({ quality: quality([]), nodeScale }));
+      const sizes = view.root.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh).map(m => (m.geometry as THREE.SphereGeometry).parameters.radius).sort((a, b) => a - b);
+      disposeMeshView(view);
+      return sizes;
+    };
+
+    const usual = radii();
+    const sized = radii({ corner: 3, mid: 0.5 });
+
+    expect(usual.length).toBe(2);
+    expect(sized[0]).toBeCloseTo(usual[0] * 0.5, 9);          // the midpoints
+    expect(sized[1]).toBeCloseTo(usual[1] * 3, 9);            // the corners
+  });
 });

@@ -39,6 +39,8 @@ export interface QualityViewInput {
   // The same view also draws the body of the Solver World while it is being set up (nothing coloured by grade, no dots of the nodes):
   // the colour of a body without grades (default the blue of the Real World), what colours an element of its own (a material), the elements
   // not drawn (a hidden material), the faces between the elements drawn too, the dots of the nodes (default yes) and the edges (default yes).
+  // how large the dots of the cubes' corners and midpoints are, each as a share of the usual size (default 1)
+  readonly nodeScale?: { readonly corner: number; readonly mid: number };
   readonly bodyColor?: number;
   readonly colorOfElement?: (hex: number, ex: number, ey: number, ez: number) => number | null;
   readonly hidden?: (hex: number, ex: number, ey: number, ez: number) => boolean;
@@ -386,7 +388,7 @@ export function buildQualityView(input: QualityViewInput): MeshView {
       clippingPlanes: clip
     });
     fade.patch(sphereMaterial);
-    const spheres = new THREE.InstancedMesh(new THREE.SphereGeometry(kind === 'corner' ? CORNER_RADIUS : MIDPOINT_RADIUS, ...DOT_SPHERE_SEGMENTS), sphereMaterial, points.length);
+    const spheres = new THREE.InstancedMesh(new THREE.SphereGeometry((kind === 'corner' ? CORNER_RADIUS * (input.nodeScale?.corner ?? 1) : MIDPOINT_RADIUS * (input.nodeScale?.mid ?? 1)), ...DOT_SPHERE_SEGMENTS), sphereMaterial, points.length);
     fade.track(spheres);
     const placed = new THREE.Object3D();
     points.forEach((f, i) => {

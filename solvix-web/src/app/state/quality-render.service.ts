@@ -6,6 +6,7 @@ import { buildQualityView } from '../geometry/quality-view';
 import { SectionCut, SolverViewInput, buildHighlight } from '../geometry/solver-view';
 import { QualityExploreService, SectionSettings } from './quality-explore.service';
 import { MeshEditorService } from './mesh-editor.service';
+import { NodeSizeService } from './node-size.service';
 import { SolverService } from './solver.service';
 
 interface Cached {
@@ -21,6 +22,7 @@ export class QualityRenderService {
   private readonly editor = inject(MeshEditorService);
   private readonly solver = inject(SolverService);
   private readonly explore = inject(QualityExploreService);
+  private readonly nodeSize = inject(NodeSizeService);
   private readonly cache = new Map<number, Cached>();
 
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
@@ -32,7 +34,7 @@ export class QualityRenderService {
     }
     const quality = this.solver.quality(sessionId);
     const looking = this.explore.get(sessionId);
-    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${this.explore.revision(sessionId)}`;
+    const key = `${state.version}:${state.hexes.length}:${this.solver.divisions(sessionId).join('x')}:${this.solver.qualityMetric(sessionId)}:${JSON.stringify(this.solver.qualityPick(sessionId))}:${quality ? this.solver.revision(sessionId) : 'none'}:${this.solver.marks(sessionId, 'quality').fixed}${this.solver.marks(sessionId, 'quality').loads}:${this.explore.revision(sessionId)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}`;
     const cached = this.cache.get(sessionId);
     if (cached && cached.key === key) return cached.view;
 
@@ -53,6 +55,7 @@ export class QualityRenderService {
       look: looking.filled ? { kind: 'solid' } : { kind: 'edges' },
       onlyBad: looking.onlyBad,
       section: looking.section.enabled ? sectionOf(state, looking.section) : undefined,
+      nodeScale: { corner: this.nodeSize.get(sessionId, 'corner'), mid: this.nodeSize.get(sessionId, 'mid') },
       showFixed: marks.fixed,
       showLoads: marks.loads
     });
