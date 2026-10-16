@@ -13,7 +13,9 @@ public sealed record FemMeshDto(
     IReadOnlyList<int> Connectivity,
     IReadOnlyList<int> NodeIds,
     IReadOnlyList<int> ElementIds,
-    IReadOnlyList<int> FoldedHexes);
+    IReadOnlyList<int> FoldedHexes,
+    // The cell (I, J, K) of the editor's lattice of each cube, three numbers per element in the order of ElementIds (empty when not known).
+    IReadOnlyList<int>? Cells = null);
 
 /// <summary>Isotropic linear elastic material. E in Pa.</summary>
 /// <summary>A material; <c>Color</c> is the colour it has on the scene as #rrggbb (optional: a material without one gets a colour from its name).</summary>
@@ -30,6 +32,12 @@ public sealed record SolverElementMaterialDto(int Hex, int Ex, int Ey, int Ez, s
 /// <param name="Pressure">Uniform normal pressure Pn in Pa along the outward normal, as in the solver: negative = pressing into the body (compression), positive = pulling out.</param>
 public sealed record SolverLoadDto(int Hex, string Face, double Pressure, int? P = null, int? Q = null);
 
+/// <summary>
+/// One local refinement: the leaves (by their keys, which do not change as the mesh gets finer; a whole cube is named by <c>"&lt;cube number&gt;|1|0,0,0;..."</c> as the mesh says),
+/// the number of parts along each axis (at least 2) and the width of the transition zone round them (0, 1 or 2).
+/// </summary>
+public sealed record RefinementStepDto(IReadOnlyList<string> Leaves, int NI, int NJ, int NK, int TransitionDepth = 0);
+
 /// <summary>Everything the user sets for a solve: materials (a library, one per cube), supports and pressures on faces.</summary>
 /// <param name="Divisions">How many small elements each cube is cut into along its three axes (the solver's Nx, Ny, Nz).</param>
 public sealed record SolverSetupDto(
@@ -42,7 +50,9 @@ public sealed record SolverSetupDto(
     IReadOnlyList<SolverFaceDto> Fixed,
     IReadOnlyList<SolverLoadDto> Loads,
     bool CanUndo = false,
-    bool CanRedo = false);
+    bool CanRedo = false,
+    // The local refinement, one step after another; empty means the cubes are cut evenly by Divisions. With refinement, Divisions is 1 x 1 x 1.
+    IReadOnlyList<RefinementStepDto>? Refinements = null);
 
 /// <param name="Severity">"error" blocks the solve; "warning" does not.</param>
 public sealed record SolverIssueDto(string Severity, string Message);
@@ -106,7 +116,8 @@ public sealed record SolverQualityDto(
 /// One small element that is not excellent by a profile: the cube it lies in, its place (Ex, Ey, Ez) in that cube,
 /// its grade and its value of every measure of the profile (by key).
 /// </summary>
-public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, IReadOnlyDictionary<string, double> Values);
+/// <param name="Key">The key of the element in the mesh (the one thing that names it whatever the rule that made the mesh); Hex, Ex, Ey, Ez name the cell of the setup's grid it lies in.</param>
+public sealed record SolverElementQualityDto(int Hex, int Ex, int Ey, int Ez, string Grade, IReadOnlyDictionary<string, double> Values, string? Key = null);
 
 /// <summary>One standard's judgement of a single small element: its grade and its value of every measure of the standard.</summary>
 public sealed record SolverElementProfileDto(string Id, string Grade, IReadOnlyDictionary<string, double> Values);
@@ -126,3 +137,33 @@ public sealed record SolverElementReportDto(int Hex, int Ex, int Ey, int Ez, IRe
 public sealed record SolverQualityLimitDto(
     string Key, string Label, string Short, string Tech, string Hint,
     bool HigherIsBetter, int Levels, IReadOnlyList<double> Bounds, string Unit, int Decimals, string Kind, double? ErrorBound = null);
+
+/// <summary>A face of an element of the mesh the solver works on, named by the element's key (it does not change when the mesh is built again) and the solver's local face index (0 bottom, 1 top, 2 front, 3 back, 4 left, 5 right).</summary>
+public sealed record ElementFaceRefDto(string Key, int Face);
+
+/// <summary>
+/// The mesh of finite elements the solver works on, with what is set on it - exactly what a solve would take: the same elements, the same faces. The elements are flat
+/// (nothing here says how the mesh was made); a face or an element is named by its key.
+/// </summary>
+/// <param name="Rule">A short name of the rule that made the mesh ("uniform 3x3x3", "local (2 steps)").</param>
+/// <param name="Positions">x, y, z of each node: length 3 * NodeCount.</param>
+/// <param name="Connectivity">The 20 nodes of each element (slots 0..7 corners, 8..19 edge midpoints): length 20 * ElementCount.</param>
+/// <param name="HexIds">The editor cube each element lies in.</param>
+/// <param name="Keys">The key of each element.</param>
+/// <param name="Materials">The material of each element.</param>
+/// <param name="SurfaceFaces">The faces on the surface of the body, as pairs (element, local face): length 2 * count.</param>
+/// <param name="FixedFaces">The clamped faces, as pairs (element, local face).</param>
+/// <param name="LoadedFaces">The pressed faces, as pairs (element, local face); <see cref="Pressures"/> is the pressure of each.</param>
+public sealed record SolverMeshDto(
+    string Rule,
+    int NodeCount,
+    int ElementCount,
+    IReadOnlyList<double> Positions,
+    IReadOnlyList<int> Connectivity,
+    IReadOnlyList<int> HexIds,
+    IReadOnlyList<string> Keys,
+    IReadOnlyList<string> Materials,
+    IReadOnlyList<int> SurfaceFaces,
+    IReadOnlyList<int> FixedFaces,
+    IReadOnlyList<int> LoadedFaces,
+    IReadOnlyList<double> Pressures);

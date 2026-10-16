@@ -12,6 +12,11 @@ public record FixedFacesRequest(IReadOnlyList<SolverFaceDto> Faces, bool Fixed, 
 
 public record DivisionsRequest(int Nx, int Ny, int Nz);
 
+/// <param name="Action">"fix", "unfix", "load" (with Pressure) or "unload".</param>
+public record SelectFacesRequest(IReadOnlyList<ElementFaceRefDto> Faces, string Action, double? Pressure = null);
+
+public record PaintElementsRequest(IReadOnlyList<string> ElementKeys, string? Material);
+
 public record ElementMaterialRequest(IReadOnlyList<SolverElementDto> Elements, string? Material);
 
 /// <param name="Replace">When true (with a pressure), exactly these faces carry it, replacing every earlier pressure.</param>
@@ -43,6 +48,35 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     [HttpPut("divisions")]
     public ActionResult<SolverSetupDto> SetDivisions(int sessionId, [FromBody] DivisionsRequest request) =>
         solver.SetDivisions(sessionId, request.Nx, request.Ny, request.Nz);
+
+    /// <summary>
+    /// Refines the body locally: the leaves of the step (the keys the mesh gives them) are cut into NI x NJ x NK, the cells round them by transition templates.
+    /// 400 when the step cannot be done (nothing named, a bad number, nothing left to refine, too fine).
+    /// </summary>
+    [HttpPost("refinement")]
+    public ActionResult<SolverSetupDto> AddLocalRefinement(int sessionId, [FromBody] RefinementStepDto step)
+    {
+        try { return bridge.AddLocalRefinement(sessionId, step); }
+        catch (ArgumentException exception) { return BadRequest(new { error = exception.Message }); }
+    }
+
+    /// <summary>Takes the whole local refinement away.</summary>
+    [HttpDelete("refinement")]
+    public ActionResult<SolverSetupDto> ClearLocalRefinement(int sessionId) => solver.ClearLocalRefinement(sessionId);
+
+    /// <summary>The mesh of finite elements as it would be solved - nodes, elements, the faces on the surface - with the materials, clamps and pressures set on it.</summary>
+    [HttpGet("mesh")]
+    public ActionResult<SolverMeshDto> GetMesh(int sessionId) => bridge.GetMesh(sessionId);
+
+    /// <summary>Clamps, unclamps, presses or clears the pressure of exactly the faces of the mesh that were pointed at (faces named by element key and local face).</summary>
+    [HttpPut("mesh/faces")]
+    public ActionResult<SolverSetupDto> SelectFaces(int sessionId, [FromBody] SelectFacesRequest request) =>
+        bridge.SelectFaces(sessionId, request.Faces, request.Action, request.Pressure);
+
+    /// <summary>Gives exactly the elements of the mesh that were pointed at (named by key) a material.</summary>
+    [HttpPut("mesh/elements/material")]
+    public ActionResult<SolverSetupDto> PaintElements(int sessionId, [FromBody] PaintElementsRequest request) =>
+        bridge.PaintElements(sessionId, request.ElementKeys, request.Material);
 
     /// <summary>Gives small elements of divided cubes a material of their own; a null or empty name makes them follow their cube again.</summary>
     [HttpPut("elements/material")]
@@ -84,6 +118,11 @@ public class SolverController(ISolverFacade solver, Bridge.Bridge bridge) : Cont
     [HttpGet("quality/element")]
     public ActionResult<SolverElementReportDto> QualityOfElement(int sessionId, [FromQuery] int hex, [FromQuery] int ex, [FromQuery] int ey, [FromQuery] int ez) =>
         bridge.QualityOfElement(sessionId, hex, ex, ey, ez) is { } report ? report : NotFound();
+
+    /// <summary>The details of one element named by its key.</summary>
+    [HttpGet("quality/element-by-key")]
+    public ActionResult<SolverElementReportDto> QualityOfElementByKey(int sessionId, [FromQuery] string key) =>
+        bridge.QualityOfElementByKey(sessionId, key) is { } report ? report : NotFound();
 
     [HttpPost("solve")]
     public ActionResult<SolverJobDto> Solve(int sessionId) => bridge.StartSolve(sessionId);

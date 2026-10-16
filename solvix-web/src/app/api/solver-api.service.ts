@@ -44,6 +44,41 @@ export interface SolverLoadDto extends SolverFaceDto {
   readonly pressure: number;
 }
 
+// One local refinement: the leaves (a whole cube as "hex:<id>", or a leaf key the mesh has given) cut into ni x nj x nk, with a transition zone of this width (0, 1 or 2) round them.
+export interface RefinementStepDto {
+  readonly leaves: readonly string[];
+  readonly ni: number;
+  readonly nj: number;
+  readonly nk: number;
+  readonly transitionDepth: number;
+}
+
+// A face of an element of the solver's mesh: the element's key (it does not change when the mesh is built again) and the solver's local face (0 bottom, 1 top, 2 front, 3 back, 4 left, 5 right).
+export interface ElementFaceRefDto {
+  readonly key: string;
+  readonly face: number;
+}
+
+// The mesh of finite elements as it would be solved, with what is set on it: flat elements, nothing in it says how it was made. Faces and elements are named by key.
+export interface SolverMeshDto {
+  readonly rule: string;
+  readonly nodeCount: number;
+  readonly elementCount: number;
+  // x, y, z of each node.
+  readonly positions: readonly number[];
+  // The 20 nodes of each element (0..7 corners, 8..19 edge midpoints).
+  readonly connectivity: readonly number[];
+  // The editor's cube each element lies in.
+  readonly hexIds: readonly number[];
+  readonly keys: readonly string[];
+  readonly materials: readonly string[];
+  // Pairs (element, local face): the faces on the surface of the body, the clamped ones, the pressed ones (with pressures).
+  readonly surfaceFaces: readonly number[];
+  readonly fixedFaces: readonly number[];
+  readonly loadedFaces: readonly number[];
+  readonly pressures: readonly number[];
+}
+
 export interface SolverSetupDto {
   readonly version: number;
   // whether the last change of the set-up can be taken back, or a taken-back one put back
@@ -57,6 +92,8 @@ export interface SolverSetupDto {
   readonly hexMaterials: Readonly<Record<string, string>>;
   // Small elements with a material of their own, different from their cube's.
   readonly elementMaterials: readonly SolverElementMaterialDto[];
+  // The local refinement, one step after another; absent when the cubes are cut evenly by `divisions`.
+  readonly refinements?: readonly RefinementStepDto[] | null;
   readonly fixed: readonly SolverFaceDto[];
   readonly loads: readonly SolverLoadDto[];
 }
@@ -133,6 +170,8 @@ export interface SolverElementQualityDto {
   readonly ez: number;
   readonly grade: QualityGradeName;
   readonly values: Readonly<Record<string, number>>;
+  // The key of the element in the solver's mesh (what names it whatever made the mesh).
+  readonly key?: string | null;
 }
 
 // How one standard (profile) judges the mesh, cut at the current division, element by element: counts per grade,
@@ -198,6 +237,33 @@ export class SolverApiService {
   // How many small elements each cube is cut into along its axes (1..8 each).
   setDivisions(sessionId: number, nx: number, ny: number, nz: number): Observable<SolverSetupDto> {
     return this.http.put<SolverSetupDto>(this.url(sessionId, 'divisions'), { nx, ny, nz });
+  }
+
+  // Refines locally; the server refuses (400, with the reason) a step that cannot be done.
+  addRefinement(sessionId: number, step: RefinementStepDto): Observable<SolverSetupDto> {
+    return this.http.post<SolverSetupDto>(this.url(sessionId, 'refinement'), step);
+  }
+
+  clearRefinement(sessionId: number): Observable<SolverSetupDto> {
+    return this.http.delete<SolverSetupDto>(this.url(sessionId, 'refinement'));
+  }
+
+  getMesh(sessionId: number): Observable<SolverMeshDto> {
+    return this.http.get<SolverMeshDto>(this.url(sessionId, 'mesh'));
+  }
+
+  // Clamps ('fix'), unclamps ('unfix'), presses ('load', with a pressure) or clears the pressure ('unload') of exactly these faces.
+  selectFaces(sessionId: number, faces: readonly ElementFaceRefDto[], action: 'fix' | 'unfix' | 'load' | 'unload', pressure?: number): Observable<SolverSetupDto> {
+    return this.http.put<SolverSetupDto>(this.url(sessionId, 'mesh/faces'), { faces, action, pressure });
+  }
+
+  // Gives exactly these elements (by key) a material; a null or empty name makes them follow their cube again.
+  paintElements(sessionId: number, elementKeys: readonly string[], material: string | null): Observable<SolverSetupDto> {
+    return this.http.put<SolverSetupDto>(this.url(sessionId, 'mesh/elements/material'), { elementKeys, material });
+  }
+
+  qualityOfElementByKey(sessionId: number, key: string): Observable<SolverElementReportDto> {
+    return this.http.get<SolverElementReportDto>(this.url(sessionId, 'quality/element-by-key'), { params: { key } });
   }
 
   // Gives small elements a material of their own; a null or empty name makes them follow their cube again.

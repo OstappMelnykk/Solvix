@@ -7,9 +7,11 @@ import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geo
 import { DEFAULT_NODE_SIZE, MAX_NODE_SIZE, MIN_NODE_SIZE, NodeKind, NodeSizeService } from '../../../state/node-size.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
+import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
 import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
+import { Scope } from '../../../geometry/solver-targets';
 
 const FACE_LABELS: Record<HexFaceName, string> = {
   XMinus: 'X−',
@@ -71,6 +73,7 @@ export class MeshEditorControlsComponent {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
+  private readonly notifications = inject(NotificationService);
   private readonly attachments = inject(SurfaceAttachmentService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly nodeSize = inject(NodeSizeService);
@@ -80,11 +83,12 @@ export class MeshEditorControlsComponent {
 
   adaptSecond = true;
 
-  // Local refinement: UI stub, not wired to anything yet.
+  // Local refinement: the picked cubes are cut into localDivisions with a transition zone of this width round them.
   readonly transitionWidths = [0, 1, 2];
-  localDivisions: number[] = [1, 1, 1];
+  localDivisions: number[] = [2, 2, 2];
   transitionWidth = 0;
-  localRunMode: 'steps' | 'at-once' = 'steps';
+  // "By steps" (a wizard that shows the algorithm's stages) is not made yet: only "at once" runs.
+  localRunMode: 'steps' | 'at-once' = 'at-once';
   nudgeStep = 0.1;
   isHelpOpen = false;
   readonly shortcuts = SHORTCUTS;
@@ -450,8 +454,70 @@ export class MeshEditorControlsComponent {
     this.transitionWidth = Number((event.target as HTMLSelectElement).value);
   }
 
+  // Cuts the elements chosen with "Вибір елементів" (the cubes before the first refinement, the leaves after it), laying the step on top of the ones made before.
   runLocalRefinement(): void {
-    // Stub: the local refinement run is not connected yet.
+    if (this.sessionId === null) return;
+    const chosen = [...this.solver.refineSelection(this.sessionId)];
+    if (chosen.length === 0) {
+      this.notifications.warning('Натисніть «Вибір елементів» і виберіть на сцені, що згущувати.');
+      return;
+    }
+    const sessionId = this.sessionId;
+    const step = {
+      leaves: chosen,
+      ni: this.localDivisions[0],
+      nj: this.localDivisions[1],
+      nk: this.localDivisions[2],
+      transitionDepth: this.transitionWidth
+    };
+    this.solver.addRefinement(sessionId, step);
+  }
+
+  // How many elements are chosen with the Refinement tool.
+  chosenCount(): number {
+    return this.sessionId === null ? 0 : this.solver.refineSelection(this.sessionId).size;
+  }
+
+  clearChosen(): void {
+    if (this.sessionId !== null) this.solver.clearRefineSelection(this.sessionId);
+  }
+
+  readonly pickScopes: readonly { scope: Scope; label: string; title: string }[] = [
+    { scope: 'cell', label: 'Один', title: 'Лише елемент, на який клікнули' },
+    { scope: 'column', label: 'Стовпчик', title: 'Ряд елементів від грані вглиб тіла (так дістаються внутрішні)' },
+    { scope: 'cube', label: 'Куб', title: 'Усі елементи куба' }
+  ];
+
+  pickingElements(): boolean {
+    return this.sessionId !== null && this.solver.refineMode(this.sessionId);
+  }
+
+  togglePicking(): void {
+    if (this.sessionId !== null) this.solver.setRefineMode(this.sessionId, !this.pickingElements());
+  }
+
+  pickDepth(): number {
+    return this.sessionId === null ? 0 : this.solver.refineDepth(this.sessionId);
+  }
+
+  deeper(step: number): void {
+    if (this.sessionId !== null) this.solver.setRefineDepth(this.sessionId, this.pickDepth() + step);
+  }
+
+  pickScope(): Scope {
+    return this.sessionId === null ? 'cell' : this.solver.refineScope(this.sessionId);
+  }
+
+  setPickScope(scope: Scope): void {
+    if (this.sessionId !== null) this.solver.setRefineScope(this.sessionId, scope);
+  }
+
+  isLocalRefined(): boolean {
+    return this.sessionId !== null && this.solver.isLocal(this.sessionId);
+  }
+
+  clearLocalRefinement(): void {
+    if (this.sessionId !== null) this.solver.clearRefinement(this.sessionId);
   }
 
   onNudgeStepChange(event: Event): void {

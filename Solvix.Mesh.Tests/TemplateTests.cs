@@ -31,6 +31,18 @@ public class TemplateTests
         }
     }
 
+    [TestCase("plate-10", 100)]
+    [TestCase("cube-10", 1000)]
+    public void The_big_blocks_are_in_the_library_with_the_cubes_they_name(string name, int cubes)
+    {
+        var preset = HexTemplates.Presets.Single(p => p.Name == name);
+
+        var mesh = Build(preset.Kind, preset.Values).Mesh;
+
+        Assert.That(mesh.Hexes.Count, Is.EqualTo(cubes));
+        Assert.That(mesh.InvalidHexes(), Is.Empty);
+    }
+
     [Test]
     public void Preset_names_are_unique_and_point_at_existing_kinds_with_valid_values()
     {

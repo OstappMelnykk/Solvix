@@ -208,4 +208,98 @@ public class SolverApiTests
         Assert.That(materials.GetProperty("elementMaterials").GetArrayLength(), Is.EqualTo(1));
         Assert.That(materials.GetProperty("elementMaterials")[0].GetProperty("material").GetString(), Is.EqualTo("rubber"));
     }
+
+    // ---- the local refinement, over HTTP ----
+
+    private async Task<HttpResponseMessage> Raw(HttpMethod method, string url, object? body = null)
+    {
+        var request = new HttpRequestMessage(method, url);
+        if (body is not null) request.Content = JsonContent.Create(body);
+        return await _client.SendAsync(request);
+    }
+
+    private static IEnumerable<(int Element, int Face)> Pairs(JsonElement array)
+    {
+        var values = array.EnumerateArray().Select(v => v.GetInt32()).ToList();
+        for (int i = 0; i < values.Count; i += 2) yield return (values[i], values[i + 1]);
+    }
+
+    [Test]
+    public async Task A_cube_refined_locally_gives_a_mesh_whose_faces_can_be_pointed_at_and_solved()
+    {
+        await BuildBar(3);
+        await Send(HttpMethod.Put, "/api/solver/1/hexes/material", new { hexIds = new[] { 99 }, material = "rubber" });         // nothing: no such cube
+
+        var setup = await Send(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:1" }, ni = 2, nj = 2, nk = 2, transitionDepth = 0 });
+        Assert.That(setup.GetProperty("refinements").GetArrayLength(), Is.EqualTo(1));
+
+        var mesh = await Send(HttpMethod.Get, "/api/solver/1/mesh");
+        int elements = mesh.GetProperty("elementCount").GetInt32();
+        Assert.That(elements, Is.GreaterThan(3 + 7));
+        Assert.That(mesh.GetProperty("rule").GetString(), Does.Contain("local"));
+        var keys = mesh.GetProperty("keys").EnumerateArray().Select(k => k.GetString()!).ToList();
+        var hexIds = mesh.GetProperty("hexIds").EnumerateArray().Select(h => h.GetInt32()).ToList();
+        var surface = Pairs(mesh.GetProperty("surfaceFaces")).ToList();
+
+        // a face of the refined cube's top, as a click would name it: its element's key and its local face
+        var top = surface.First(f => f.Face == 1 && hexIds[f.Element] == 1);
+        var fixedSetup = await Send(HttpMethod.Put, "/api/solver/1/mesh/faces", new { faces = new[] { new { key = keys[top.Element], face = top.Face } }, action = "fix" });
+        Assert.That(fixedSetup.GetProperty("canUndo").GetBoolean(), Is.True);
+        var after = await Send(HttpMethod.Get, "/api/solver/1/mesh");
+        Assert.That(Pairs(after.GetProperty("fixedFaces")).ToList(), Is.EqualTo(new[] { top }), "exactly the face that was pointed at");
+
+        // the material of one small element
+        await Send(HttpMethod.Put, "/api/solver/1/mesh/elements/material", new { elementKeys = new[] { keys[top.Element] }, material = "rubber" });
+        var painted = await Send(HttpMethod.Get, "/api/solver/1/mesh");
+        Assert.That(painted.GetProperty("materials").EnumerateArray().Select(m => m.GetString()).Count(m => m == "rubber"), Is.EqualTo(1));
+
+        // clamp an end and pull the other, solve, read the result: it is on the same nodes as the mesh
+        var end0 = surface.Where(f => f.Face == 4 && hexIds[f.Element] == 0).Select(f => new { key = keys[f.Element], face = f.Face }).ToList();
+        var end2 = surface.Where(f => f.Face == 5 && hexIds[f.Element] == 2).Select(f => new { key = keys[f.Element], face = f.Face }).ToList();
+        await Send(HttpMethod.Put, "/api/solver/1/mesh/faces", new { faces = end0, action = "fix" });
+        await Send(HttpMethod.Put, "/api/solver/1/mesh/faces", new { faces = end2, action = "load", pressure = 1e5 });
+        var validation = await Send(HttpMethod.Post, "/api/solver/1/validate");
+        Assert.That(validation.GetProperty("canSolve").GetBoolean(), Is.True, validation.ToString());
+
+        await Send(HttpMethod.Post, "/api/solver/1/solve");
+        var job = await WaitForJob();
+        Assert.That(job.GetProperty("state").GetString(), Is.EqualTo("done"), job.ToString());
+        var result = await Send(HttpMethod.Get, "/api/solver/1/result");
+        Assert.That(result.GetProperty("ux").GetArrayLength(), Is.EqualTo(mesh.GetProperty("nodeCount").GetInt32()));
+        Assert.That(result.GetProperty("gridNodes").GetArrayLength(), Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task A_refinement_that_cannot_be_done_is_a_400_with_the_reason_and_changes_nothing()
+    {
+        await BuildBar(2);
+
+        var nothing = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = Array.Empty<string>(), ni = 2, nj = 2, nk = 2 });
+        var one = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:0" }, ni = 0, nj = 2, nk = 2 });
+        var gone = await Raw(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:77" }, ni = 2, nj = 2, nk = 2 });
+
+        foreach (var response in new[] { nothing, one, gone })
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That(Root(response).GetProperty("error").GetString(), Is.Not.Empty);
+        }
+        var setup = await Send(HttpMethod.Get, "/api/solver/1/setup");
+        Assert.That(setup.TryGetProperty("refinements", out var r) && r.ValueKind == JsonValueKind.Array && r.GetArrayLength() > 0, Is.False);
+    }
+
+    [Test]
+    public async Task The_refinement_can_be_taken_away_and_the_mesh_is_cut_evenly_again()
+    {
+        await BuildBar(2);
+        await Send(HttpMethod.Post, "/api/solver/1/refinement", new { leaves = new[] { "hex:0" }, ni = 3, nj = 3, nk = 3 });
+        var refined = await Send(HttpMethod.Get, "/api/solver/1/mesh");
+
+        var setup = await Send(HttpMethod.Delete, "/api/solver/1/refinement");
+        var even = await Send(HttpMethod.Get, "/api/solver/1/mesh");
+
+        Assert.That(refined.GetProperty("elementCount").GetInt32(), Is.GreaterThan(2));
+        Assert.That(setup.TryGetProperty("refinements", out var r) && r.ValueKind == JsonValueKind.Array, Is.False);
+        Assert.That(even.GetProperty("elementCount").GetInt32(), Is.EqualTo(2));
+        Assert.That(even.GetProperty("rule").GetString(), Does.Contain("uniform"));
+    }
 }

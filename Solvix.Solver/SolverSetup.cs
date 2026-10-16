@@ -1,4 +1,7 @@
 using Solvix.Contracts.Facades;
+using Solvix.FemMesh;
+using Solvix.FemMesh.Local;
+using Solvix.Solver.Selections;
 
 namespace Solvix.Solver;
 
@@ -10,18 +13,24 @@ internal readonly record struct SubFace(int Hex, string Face, int P, int Q);
 internal readonly record struct ElementKey(int Hex, int Ex, int Ey, int Ez);
 
 /// <summary>
-/// What the user has set up for one session: a library of materials, which cube and which small element has which,
-/// and the small faces that are clamped or pressed. Plain data keyed by editor hex ids; a stale id (a deleted cube)
-/// is harmless and is dropped by <see cref="Prune"/>. Everything finer than a cube is stored for the current division,
-/// and follows a change of the division: a selected region stays the same region, cut into more (or fewer) cells.
+/// What the user has set up for one session: a library of materials, which cube and which part of a cube has which, and the faces that are clamped or pressed.
+/// Plain data keyed by editor hex ids; a stale id (a deleted cube) is harmless and is dropped by <see cref="Prune"/>.
+/// <para>
+/// Everything finer than a cube is stored as REGIONS of the cube in the cube's own coordinates (a rectangle on a side, a box inside), not as cells of a division and
+/// not as elements of any mesh. A region means the same place whatever the body is cut into: the mesh binds it to its own faces and elements (<see cref="SetupBinding"/>),
+/// so changing the division, or refining locally, changes no selection - the same regions simply cover more or fewer elements. The old way of speaking (a cell
+/// (p, q) or (ex, ey, ez) of the current division) is kept at the edge: a request names cells, they become regions, and the lists handed out name the cells whose centre
+/// lies in a region.
+/// </para>
 /// </summary>
 internal sealed class SolverSetup
 {
     private readonly Dictionary<string, SolverMaterialDto> _materials = Materials.Presets.ToDictionary(m => m.Name);
     private readonly Dictionary<int, string> _hexMaterials = new();
-    private readonly Dictionary<ElementKey, string> _elementMaterials = new();
-    private readonly HashSet<SubFace> _fixed = new();
-    private readonly Dictionary<SubFace, double> _loads = new();
+    private readonly Dictionary<int, RegionMap<string>> _elementMaterials = new();
+    private readonly Dictionary<(int Hex, string Side), RegionMap<bool>> _fixed = new();
+    private readonly Dictionary<(int Hex, string Side), RegionMap<double>> _loads = new();
+    private List<RefinementStep> _refinements = new();
 
     public int Version { get; private set; }
     public string DefaultMaterial { get; private set; } = Materials.DefaultName;
@@ -31,11 +40,67 @@ internal sealed class SolverSetup
 
     public IReadOnlyDictionary<string, SolverMaterialDto> MaterialsByName => _materials;
     public IReadOnlyDictionary<int, string> HexMaterials => _hexMaterials;
-    public IReadOnlyDictionary<ElementKey, string> ElementMaterials => _elementMaterials;
-    public IReadOnlyCollection<SubFace> Fixed => _fixed;
-    public IReadOnlyDictionary<SubFace, double> Loads => _loads;
+
+    /// <summary>The local refinement, one step after another (empty: the cubes are cut evenly by <see cref="Divisions"/>).</summary>
+    public IReadOnlyList<RefinementStep> Refinements => _refinements;
+
+    /// <summary>The rule that turns the cubes into the mesh of finite elements: the local refinement when there is one, else the even cut.</summary>
+    public IMeshRefinement Rule() => _refinements.Count > 0 ? new LocalRefinement(_refinements) : new UniformRefinement(Divisions.Nx, Divisions.Ny, Divisions.Nz);
+
+    /// <summary>The cells of the current division that have a material of their own (the cell whose centre lies in a region).</summary>
+    public IReadOnlyDictionary<ElementKey, string> ElementMaterials
+    {
+        get
+        {
+            var result = new Dictionary<ElementKey, string>();
+            foreach (var (hex, map) in _elementMaterials)
+                for (int ex = 0; ex < Divisions.Nx; ex++)
+                    for (int ey = 0; ey < Divisions.Ny; ey++)
+                        for (int ez = 0; ez < Divisions.Nz; ez++)
+                        {
+                            var key = new ElementKey(hex, ex, ey, ez);
+                            if (map.TryGetValueAt(Centre(SetupBinding.RegionOf(key, Counts)), out var name)) result[key] = name;
+                        }
+            return result;
+        }
+    }
+
+    /// <summary>The cells of the current division that are clamped (the cell whose centre lies in a clamped region).</summary>
+    public IReadOnlyCollection<SubFace> Fixed => CellsOf(_fixed).Select(c => c.Face).ToList();
+
+    /// <summary>The cells of the current division that are pressed, and how hard.</summary>
+    public IReadOnlyDictionary<SubFace, double> Loads => CellsOf(_loads).ToDictionary(c => c.Face, c => c.Value);
 
     private int[] Counts => new[] { Divisions.Nx, Divisions.Ny, Divisions.Nz };
+
+    private static ParametricPoint Centre(ParametricRegion r) => new(0.5 * (r.X0 + r.X1), 0.5 * (r.Y0 + r.Y1), 0.5 * (r.Z0 + r.Z1));
+
+    private IEnumerable<(SubFace Face, T Value)> CellsOf<T>(Dictionary<(int Hex, string Side), RegionMap<T>> maps) where T : notnull
+    {
+        foreach (var ((hex, side), map) in maps)
+        {
+            var (t0, t1) = Tangents(side);
+            for (int p = 0; p < Counts[t0]; p++)
+                for (int q = 0; q < Counts[t1]; q++)
+                    if (map.TryGetValueAt(Centre(SetupBinding.RegionOf(side, p, q, Counts)), out var value)) yield return (new SubFace(hex, side, p, q), value);
+        }
+    }
+
+    // ---- what the mesh asks: for a place in a cube, what is set there --------------------------------------------
+
+    /// <summary>The material of the part of a cube that holds a place: its own region's, else its cube's, else the default one.</summary>
+    public string MaterialAt(int hex, ParametricPoint at) =>
+        _elementMaterials.TryGetValue(hex, out var map) && map.TryGetValueAt(at, out var name) && _materials.ContainsKey(name) ? name : MaterialOf(hex);
+
+    /// <summary>Whether the face whose centre is at a place on a side of a cube is clamped.</summary>
+    public bool IsFixedAt(int hex, string side, ParametricPoint at) => _fixed.TryGetValue((hex, side), out var map) && map.TryGetValueAt(at, out _);
+
+    /// <summary>The pressure on the face whose centre is at a place on a side of a cube, if any.</summary>
+    public double? LoadAt(int hex, string side, ParametricPoint at) => _loads.TryGetValue((hex, side), out var map) && map.TryGetValueAt(at, out double p) ? p : null;
+
+    public bool HasFixed(int hex, string side) => _fixed.ContainsKey((hex, side));
+
+    public bool HasLoads(int hex, string side) => _loads.ContainsKey((hex, side));
 
     // ---- history -----------------------------------------------------------------------------------
 
@@ -48,20 +113,30 @@ internal sealed class SolverSetup
 
     /// <summary>Everything the user can set here, as it was at one moment (the version is not part of it).</summary>
     private sealed record Snapshot(
-        Dictionary<string, SolverMaterialDto> Materials, Dictionary<int, string> HexMaterials, Dictionary<ElementKey, string> ElementMaterials,
-        HashSet<SubFace> Fixed, Dictionary<SubFace, double> Loads, string DefaultMaterial, (int, int, int) Divisions)
+        Dictionary<string, SolverMaterialDto> Materials, Dictionary<int, string> HexMaterials, Dictionary<int, RegionMap<string>> ElementMaterials,
+        Dictionary<(int, string), RegionMap<bool>> Fixed, Dictionary<(int, string), RegionMap<double>> Loads, string DefaultMaterial, (int, int, int) Divisions,
+        List<RefinementStep> Refinements)
     {
         public bool SameAs(Snapshot other) =>
-            DefaultMaterial == other.DefaultMaterial && Divisions == other.Divisions
-            && Fixed.SetEquals(other.Fixed)
-            && SameDictionary(HexMaterials, other.HexMaterials) && SameDictionary(ElementMaterials, other.ElementMaterials)
-            && SameDictionary(Loads, other.Loads) && SameDictionary(Materials, other.Materials);
+            DefaultMaterial == other.DefaultMaterial && Divisions == other.Divisions && SameSteps(Refinements, other.Refinements)
+            && SameMaps(Fixed, other.Fixed) && SameMaps(ElementMaterials, other.ElementMaterials) && SameMaps(Loads, other.Loads)
+            && SameDictionary(HexMaterials, other.HexMaterials) && SameDictionary(Materials, other.Materials);
+
+        private static bool SameSteps(List<RefinementStep> a, List<RefinementStep> b) =>
+            a.Count == b.Count && a.Zip(b).All(p => p.First.NI == p.Second.NI && p.First.NJ == p.Second.NJ && p.First.NK == p.Second.NK
+                && p.First.TransitionDepth == p.Second.TransitionDepth && p.First.Leaves.SequenceEqual(p.Second.Leaves));
 
         private static bool SameDictionary<TKey, TValue>(Dictionary<TKey, TValue> a, Dictionary<TKey, TValue> b) where TKey : notnull =>
             a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var v) && EqualityComparer<TValue>.Default.Equals(p.Value, v));
+
+        private static bool SameMaps<TKey, TValue>(Dictionary<TKey, RegionMap<TValue>> a, Dictionary<TKey, RegionMap<TValue>> b) where TKey : notnull where TValue : notnull =>
+            a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var m) && p.Value.SameAs(m));
     }
 
-    private Snapshot Take() => new(new(_materials), new(_hexMaterials), new(_elementMaterials), new(_fixed), new(_loads), DefaultMaterial, Divisions);
+    private static Dictionary<TKey, RegionMap<TValue>> CopyMaps<TKey, TValue>(Dictionary<TKey, RegionMap<TValue>> maps) where TKey : notnull where TValue : notnull =>
+        maps.ToDictionary(p => p.Key, p => p.Value.Copy());
+
+    private Snapshot Take() => new(new(_materials), new(_hexMaterials), CopyMaps(_elementMaterials), CopyMaps(_fixed), CopyMaps(_loads), DefaultMaterial, Divisions, new(_refinements));
 
     private void Restore(Snapshot snapshot)
     {
@@ -70,13 +145,14 @@ internal sealed class SolverSetup
         _hexMaterials.Clear();
         foreach (var (k, v) in snapshot.HexMaterials) _hexMaterials[k] = v;
         _elementMaterials.Clear();
-        foreach (var (k, v) in snapshot.ElementMaterials) _elementMaterials[k] = v;
+        foreach (var (k, v) in snapshot.ElementMaterials) _elementMaterials[k] = v.Copy();
         _fixed.Clear();
-        foreach (var f in snapshot.Fixed) _fixed.Add(f);
+        foreach (var (k, v) in snapshot.Fixed) _fixed[k] = v.Copy();
         _loads.Clear();
-        foreach (var (k, v) in snapshot.Loads) _loads[k] = v;
+        foreach (var (k, v) in snapshot.Loads) _loads[k] = v.Copy();
         DefaultMaterial = snapshot.DefaultMaterial;
         Divisions = snapshot.Divisions;
+        _refinements = new(snapshot.Refinements);
         Version++;
     }
 
@@ -84,8 +160,13 @@ internal sealed class SolverSetup
     private void Edit(Action change)
     {
         var before = Take();
+        int version = Version;
         change();
-        if (Take().SameAs(before)) return;
+        if (Take().SameAs(before))
+        {
+            Version = version;                                           // nothing changed: nothing to tell anyone about
+            return;
+        }
         _undo.Add(before);
         if (_undo.Count > MaxHistory) _undo.RemoveAt(0);
         _redo.Clear();
@@ -139,55 +220,46 @@ internal sealed class SolverSetup
 
     public string MaterialOf(int hex) => _hexMaterials.TryGetValue(hex, out var name) && _materials.ContainsKey(name) ? name : DefaultMaterial;
 
-    public string MaterialOf(ElementKey element) =>
-        _elementMaterials.TryGetValue(element, out var name) && _materials.ContainsKey(name) ? name : MaterialOf(element.Hex);
+    /// <summary>The material of a cell of a cube's grid: of the region that holds its centre, else of its cube.</summary>
+    public string MaterialOf(ElementKey element) => MaterialAt(element.Hex, Centre(SetupBinding.RegionOf(element, Counts)));
 
     // ---- the division ------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Changes the grid in whose cells requests and lists are put. Nothing that was set changes: it is stored as regions of the cube, which no grid owns; the new
+    /// grid just names the cells whose centres lie in them.
+    /// </summary>
     public bool SetDivisions(int nx, int ny, int nz)
     {
         if (new[] { nx, ny, nz }.Any(n => n < 1 || n > MaxDivision)) return false;
-        Edit(() => ApplyDivisions(nx, ny, nz));
+        Edit(() =>
+        {
+            // the even cut and the local refinement are two rules for one mesh: choosing the even cut drops the refinement
+            if (Divisions == (nx, ny, nz) && _refinements.Count == 0) return;
+            Divisions = (nx, ny, nz);
+            _refinements = new();
+            Version++;
+        });
         return true;
     }
 
-    private void ApplyDivisions(int nx, int ny, int nz)
-    {
-        var before = Counts;
-        var after = new[] { nx, ny, nz };
-        if (before.SequenceEqual(after)) return;
+    // ---- the local refinement -----------------------------------------------------------------------
 
-        // regions follow the new grid: a new cell belongs to an old one when its centre lies inside it
-        var fixedNow = _fixed.SelectMany(f => RemapFace(f, before, after)).ToList();
-        var loadsNow = _loads.SelectMany(l => RemapFace(l.Key, before, after).Select(f => (f, l.Value))).ToList();
-        var elementsNow = _elementMaterials.SelectMany(m => RemapElement(m.Key, before, after).Select(e => (e, m.Value))).ToList();
-        Divisions = (nx, ny, nz);
-        _fixed.Clear();
-        foreach (var f in fixedNow) _fixed.Add(f);
-        _loads.Clear();
-        foreach (var (f, pressure) in loadsNow) _loads[f] = pressure;
-        _elementMaterials.Clear();
-        foreach (var (e, name) in elementsNow) _elementMaterials[e] = name;
+    /// <summary>Adds a local refinement to the end of the history. The even cut gives way to it (the division goes back to 1 x 1 x 1: what is set stays, as it is stored in regions).</summary>
+    public void AddRefinement(RefinementStep step) => Edit(() =>
+    {
+        Divisions = (1, 1, 1);
+        _refinements.Add(step);
         Version++;
-    }
+    });
 
-    // Indices of a new grid of n2 cells whose centre falls into cell `index` of a grid of n1 cells.
-    private static IEnumerable<int> Inside(int index, int n1, int n2) =>
-        Enumerable.Range(0, n2).Where(j => (int)Math.Floor((j + 0.5) / n2 * n1) == index);
-
-    private static IEnumerable<SubFace> RemapFace(SubFace f, int[] before, int[] after)
+    /// <summary>Takes the whole local refinement away.</summary>
+    public void ClearRefinements() => Edit(() =>
     {
-        var (t0, t1) = Tangents(f.Face);
-        foreach (int p in Inside(f.P, before[t0], after[t0]))
-            foreach (int q in Inside(f.Q, before[t1], after[t1])) yield return f with { P = p, Q = q };
-    }
-
-    private static IEnumerable<ElementKey> RemapElement(ElementKey e, int[] before, int[] after)
-    {
-        foreach (int x in Inside(e.Ex, before[0], after[0]))
-            foreach (int y in Inside(e.Ey, before[1], after[1]))
-                foreach (int z in Inside(e.Ez, before[2], after[2])) yield return e with { Ex = x, Ey = y, Ez = z };
-    }
+        if (_refinements.Count == 0) return;
+        _refinements = new();
+        Version++;
+    });
 
     // ---- materials ---------------------------------------------------------------------------------
 
@@ -202,7 +274,8 @@ internal sealed class SolverSetup
     {
         if (name == DefaultMaterial || !_materials.Remove(name)) return;
         foreach (int hex in _hexMaterials.Where(h => h.Value == name).Select(h => h.Key).ToList()) _hexMaterials.Remove(hex);
-        foreach (var key in _elementMaterials.Where(e => e.Value == name).Select(e => e.Key).ToList()) _elementMaterials.Remove(key);
+        foreach (var map in _elementMaterials.Values) map.RemoveValue(name);
+        DropEmpty(_elementMaterials);
         Version++;
     });
 
@@ -212,7 +285,7 @@ internal sealed class SolverSetup
         Version++;
     });
 
-    /// <summary>Gives whole cubes a material (their individual small elements go back to following it).</summary>
+    /// <summary>Gives whole cubes a material (what was given to parts of them goes back to following it).</summary>
     public void SetMaterial(IEnumerable<int> hexes, string? name) => Edit(() =>
     {
         var set = hexes.ToHashSet();
@@ -220,31 +293,81 @@ internal sealed class SolverSetup
         {
             if (string.IsNullOrEmpty(name) || name == DefaultMaterial) _hexMaterials.Remove(hex);
             else _hexMaterials[hex] = name;
+            _elementMaterials.Remove(hex);
         }
-        foreach (var key in _elementMaterials.Keys.Where(k => set.Contains(k.Hex)).ToList()) _elementMaterials.Remove(key);
         Version++;
     });
 
-    /// <summary>Gives small elements a material of their own (null or empty: they follow their cube again).</summary>
+    /// <summary>Gives cells of a cube's grid a material of their own (null or empty: they follow their cube again).</summary>
     public void SetElementMaterial(IEnumerable<ElementKey> elements, string? name) => Edit(() =>
     {
-        foreach (var element in elements.Where(IsValidElement))
-        {
-            if (string.IsNullOrEmpty(name) || name == MaterialOf(element.Hex)) _elementMaterials.Remove(element);
-            else _elementMaterials[element] = name;
-        }
+        foreach (var element in elements.Where(IsValidElement)) SetMaterialOn(element.Hex, new BoxShape(Cuboid.Of(SetupBinding.RegionOf(element, Counts))), name);
+        Version++;
+    });
+
+    /// <summary>Gives a shape of a cube (a place in its own coordinates) a material of its own (null or empty: it follows the cube again).</summary>
+    public void SetMaterialOn(int hex, Shape region, string? name)
+    {
+        if (!_elementMaterials.TryGetValue(hex, out var map)) _elementMaterials[hex] = map = new RegionMap<string>();
+        if (string.IsNullOrEmpty(name) || name == MaterialOf(hex)) map.Clear(region);
+        else map.Set(region, name);
+        if (map.Count == 0) _elementMaterials.Remove(hex);
+    }
+
+    /// <summary>Gives the places of elements a material of their own (null or empty: they follow their cube again); all of it is one step to undo.</summary>
+    public void SetMaterialsOn(IEnumerable<(int Hex, Shape Shape)> elements, string? name) => Edit(() =>
+    {
+        foreach (var (hex, shape) in elements) SetMaterialOn(hex, shape, name);
         Version++;
     });
 
     // ---- faces -------------------------------------------------------------------------------------
 
+    private static Shape CellBox(SubFace f, int[] counts) => new BoxShape(Cuboid.Of(SetupBinding.RegionOf(f.Face, f.P, f.Q, counts)));
+
+    private static RegionMap<T> MapOf<T>(Dictionary<(int Hex, string Side), RegionMap<T>> maps, int hex, string side) where T : notnull =>
+        maps.TryGetValue((hex, side), out var map) ? map : maps[(hex, side)] = new RegionMap<T>();
+
+    private static void DropEmpty<TKey, TValue>(Dictionary<TKey, RegionMap<TValue>> maps) where TKey : notnull where TValue : notnull
+    {
+        foreach (var key in maps.Where(m => m.Value.Count == 0).Select(m => m.Key).ToList()) maps.Remove(key);
+    }
+
     public void SetFixed(IEnumerable<SubFace> faces, bool isFixed) => Edit(() =>
     {
         foreach (var face in faces)
         {
-            if (isFixed) _fixed.Add(face);
-            else _fixed.Remove(face);
+            var map = MapOf(_fixed, face.Hex, face.Face);
+            if (isFixed) map.Set(CellBox(face, Counts), true);
+            else map.Clear(CellBox(face, Counts));
         }
+        DropEmpty(_fixed);
+        Version++;
+    });
+
+    /// <summary>Clamps (or unclamps) the places of faces on sides of cubes, all of it one step to undo.</summary>
+    public void SetFixedOn(IEnumerable<(int Hex, string Side, Shape Shape)> faces, bool isFixed) => Edit(() =>
+    {
+        foreach (var (hex, side, shape) in faces)
+        {
+            var map = MapOf(_fixed, hex, side);
+            if (isFixed) map.Set(shape, true);
+            else map.Clear(shape);
+        }
+        DropEmpty(_fixed);
+        Version++;
+    });
+
+    /// <summary>Presses (or, with nothing, clears the pressure of) the places of faces on sides of cubes, all of it one step to undo.</summary>
+    public void SetLoadsOn(IEnumerable<(int Hex, string Side, Shape Shape)> faces, double? pressure) => Edit(() =>
+    {
+        foreach (var (hex, side, shape) in faces)
+        {
+            var map = MapOf(_loads, hex, side);
+            if (pressure is double p) map.Set(shape, p);
+            else map.Clear(shape);
+        }
+        DropEmpty(_loads);
         Version++;
     });
 
@@ -252,7 +375,7 @@ internal sealed class SolverSetup
     {
         var list = faces.ToList();
         _fixed.Clear();
-        foreach (var face in list) _fixed.Add(face);
+        foreach (var face in list) MapOf(_fixed, face.Hex, face.Face).Set(CellBox(face, Counts), true);
         Version++;
     });
 
@@ -260,7 +383,7 @@ internal sealed class SolverSetup
     {
         var list = faces.ToList();
         _loads.Clear();
-        foreach (var face in list) _loads[face] = pressure;
+        foreach (var face in list) MapOf(_loads, face.Hex, face.Face).Set(CellBox(face, Counts), pressure);
         Version++;
     });
 
@@ -268,9 +391,11 @@ internal sealed class SolverSetup
     {
         foreach (var face in faces)
         {
-            if (pressure is double p) _loads[face] = p;
-            else _loads.Remove(face);
+            var map = MapOf(_loads, face.Hex, face.Face);
+            if (pressure is double p) map.Set(CellBox(face, Counts), p);
+            else map.Clear(CellBox(face, Counts));
         }
+        DropEmpty(_loads);
         Version++;
     });
 
@@ -288,22 +413,29 @@ internal sealed class SolverSetup
         var alive = existing as ISet<int> ?? new HashSet<int>(existing);
         bool changed = false;
         foreach (int hex in _hexMaterials.Keys.Where(h => !alive.Contains(h)).ToList()) { _hexMaterials.Remove(hex); changed = true; }
-        foreach (var key in _elementMaterials.Keys.Where(k => !alive.Contains(k.Hex)).ToList()) { _elementMaterials.Remove(key); changed = true; }
-        changed |= _fixed.RemoveWhere(f => !alive.Contains(f.Hex)) > 0;
+        foreach (int hex in _elementMaterials.Keys.Where(h => !alive.Contains(h)).ToList()) { _elementMaterials.Remove(hex); changed = true; }
+        foreach (var key in _fixed.Keys.Where(k => !alive.Contains(k.Hex)).ToList()) { _fixed.Remove(key); changed = true; }
         foreach (var key in _loads.Keys.Where(k => !alive.Contains(k.Hex)).ToList()) { _loads.Remove(key); changed = true; }
         if (changed) Version++;
     }
 
-    public SolverSetupDto ToDto() => new(
-        Version,
-        new[] { Divisions.Nx, Divisions.Ny, Divisions.Nz },
-        _materials.Values.ToList(),
-        DefaultMaterial,
-        new Dictionary<int, string>(_hexMaterials),
-        _elementMaterials.OrderBy(m => m.Key.Hex).ThenBy(m => m.Key.Ez).ThenBy(m => m.Key.Ey).ThenBy(m => m.Key.Ex)
-            .Select(m => new SolverElementMaterialDto(m.Key.Hex, m.Key.Ex, m.Key.Ey, m.Key.Ez, m.Value)).ToList(),
-        _fixed.OrderBy(f => f.Hex).ThenBy(f => f.Face).ThenBy(f => f.P).ThenBy(f => f.Q).Select(f => new SolverFaceDto(f.Hex, f.Face, f.P, f.Q)).ToList(),
-        _loads.OrderBy(l => l.Key.Hex).ThenBy(l => l.Key.Face).ThenBy(l => l.Key.P).ThenBy(l => l.Key.Q)
-            .Select(l => new SolverLoadDto(l.Key.Hex, l.Key.Face, l.Value, l.Key.P, l.Key.Q)).ToList(),
-        CanUndo, CanRedo);
+    public SolverSetupDto ToDto()
+    {
+        var fixedNow = Fixed;
+        var loadsNow = Loads;
+        var elementMaterials = ElementMaterials;
+        return new(
+            Version,
+            new[] { Divisions.Nx, Divisions.Ny, Divisions.Nz },
+            _materials.Values.ToList(),
+            DefaultMaterial,
+            new Dictionary<int, string>(_hexMaterials),
+            elementMaterials.OrderBy(m => m.Key.Hex).ThenBy(m => m.Key.Ez).ThenBy(m => m.Key.Ey).ThenBy(m => m.Key.Ex)
+                .Select(m => new SolverElementMaterialDto(m.Key.Hex, m.Key.Ex, m.Key.Ey, m.Key.Ez, m.Value)).ToList(),
+            fixedNow.OrderBy(f => f.Hex).ThenBy(f => f.Face).ThenBy(f => f.P).ThenBy(f => f.Q).Select(f => new SolverFaceDto(f.Hex, f.Face, f.P, f.Q)).ToList(),
+            loadsNow.OrderBy(l => l.Key.Hex).ThenBy(l => l.Key.Face).ThenBy(l => l.Key.P).ThenBy(l => l.Key.Q)
+                .Select(l => new SolverLoadDto(l.Key.Hex, l.Key.Face, l.Value, l.Key.P, l.Key.Q)).ToList(),
+            CanUndo, CanRedo,
+            _refinements.Count == 0 ? null : _refinements.Select(r => new RefinementStepDto(r.Leaves.ToList(), r.NI, r.NJ, r.NK, r.TransitionDepth)).ToList());
+    }
 }

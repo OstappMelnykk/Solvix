@@ -9,6 +9,7 @@ import { SessionsService } from '../../../state/sessions.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
+import { NotificationService } from '../../../state/notification.service';
 import { NodeSizeService } from '../../../state/node-size.service';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { linkedPairState, singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
@@ -34,8 +35,9 @@ describe('MeshEditorControlsComponent', () => {
     editor.carryEdgeMidpoints = false;
     Object.defineProperty(editor, 'busy', { get: () => busy });
     constructorWindow = jasmine.createSpyObj<CubeConstructorService>('CubeConstructorService', ['open']);
-    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions']);
+    solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement', 'refineSelection', 'clearRefineSelection', 'refineMode', 'setRefineMode', 'refineScope', 'setRefineScope', 'refineDepth', 'setRefineDepth']);
     solver.divisions.and.returnValue([1, 2, 3]);
+    solver.refineSelection.and.returnValue(new Set<string>());
     TestBed.configureTestingModule({
       providers: [
         { provide: MeshEditorService, useValue: editor },
@@ -775,6 +777,52 @@ describe('MeshEditorControlsComponent', () => {
       expect(sizes.get(1, 'corner')).toBe(1);
       expect(sizes.get(1, 'mid')).toBe(1);
       expect(component.nodeSizePercent('corner')).toBe(100);
+    });
+  });
+  describe('local refinement', () => {
+    beforeEach(() => {
+      state = linkedPairState();
+      component.localDivisions = [2, 3, 4];
+      component.transitionWidth = 1;
+    });
+
+    it('asks to choose what to refine when nothing is chosen', () => {
+      component.runLocalRefinement();
+
+      expect(solver.addRefinement).not.toHaveBeenCalled();
+      expect(TestBed.inject(NotificationService).toasts()[0].kind).toBe('warning');
+    });
+
+    it('cuts what was chosen into the chosen numbers with the chosen transition, whatever cubes are picked the old way', () => {
+      selection.toggleHex(1, 0);
+      solver.refineSelection.and.returnValue(new Set(['hex:0', 'hex:1']));
+      component.runLocalRefinement();
+
+      expect(solver.addRefinement).toHaveBeenCalledWith(1, { leaves: ['hex:0', 'hex:1'], ni: 2, nj: 3, nk: 4, transitionDepth: 1 });
+      expect(solver.clearRefinement).not.toHaveBeenCalled();
+    });
+
+    it('refines the leaves chosen, children included', () => {
+      solver.refineSelection.and.returnValue(new Set(['0|2|k1', '0|2|k2']));
+      component.runLocalRefinement();
+
+      expect(solver.addRefinement).toHaveBeenCalledWith(1, jasmine.objectContaining({ leaves: ['0|2|k1', '0|2|k2'] }));
+    });
+
+    it('starts with 2 parts along each axis and runs at once, the step by steps being not made yet', () => {
+      const fresh = TestBed.runInInjectionContext(() => new MeshEditorControlsComponent());
+      expect(fresh.localDivisions).toEqual([2, 2, 2]);
+      expect(fresh.localRunMode).toBe('at-once');
+    });
+
+    it('lays each step on top of the ones made before, never clearing them', () => {
+      solver.refineSelection.and.returnValue(new Set(['4|2|k1']));
+      solver.isLocal.and.returnValue(true);
+
+      component.runLocalRefinement();
+
+      expect(solver.clearRefinement).not.toHaveBeenCalled();
+      expect(solver.addRefinement).toHaveBeenCalledWith(1, jasmine.objectContaining({ leaves: ['4|2|k1'] }));
     });
   });
 });

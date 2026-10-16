@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Solvix.Contracts\Solvix.Contracts.csproj" />
     <ProjectReference Include="..\Solvix.Fem\Solvix.Fem.csproj" />
+    <ProjectReference Include="..\Solvix.FemMesh\Solvix.FemMesh.csproj" />
   </ItemGroup>
 
   <ItemGroup>

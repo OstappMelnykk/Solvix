@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import { IDEAL_WORLD_INDEX, QUALITY_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 
-// How opaque the body is drawn by default: translucent enough to see the inner lines and nodes, the nearer ones stronger and the farther dimmer.
-export const DEFAULT_BODY_OPACITY = 0.7;
+// How opaque the body is drawn by default: solid (100 %); the slider makes it translucent to see the inner lines and nodes, the nearer ones stronger and the farther dimmer.
+export const DEFAULT_BODY_OPACITY = 1;
 
 // The lowest opacity of the body.
 export const MIN_BODY_OPACITY = 0.05;

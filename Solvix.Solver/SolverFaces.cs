@@ -9,6 +9,9 @@ internal static class SolverFaces
         ["XMinus"] = 4, ["XPlus"] = 5, ["YMinus"] = 2, ["YPlus"] = 3, ["ZMinus"] = 0, ["ZPlus"] = 1,
     };
 
+    /// <summary>The editor's names of the sides of a cube.</summary>
+    public static IEnumerable<string> Names => Index.Keys;
+
     public static bool TryParse(string name, out int solverFace) => Index.TryGetValue(name, out solverFace);
 
     public static bool IsValid(string name) => Index.ContainsKey(name);

@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using Solvix.Fem;
 using Solvix.Contracts.Facades;
+using IFemMesh = Solvix.FemMesh.IFemMesh;
+using Solvix.FemMesh.Local;
+using Solvix.Solver.Selections;
 
 namespace Solvix.Solver;
 
@@ -37,6 +40,74 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
     public SolverSetupDto SetDivisions(int sessionId, int nx, int ny, int nz) => sessions.With(sessionId, s =>
     {
         s.Setup.SetDivisions(nx, ny, nz);
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto AddLocalRefinement(int sessionId, FemMeshDto mesh, RefinementStepDto step) => sessions.With(sessionId, s =>
+    {
+        if (step.Leaves.Count == 0) throw new ArgumentException("Оберіть, що згущувати.");
+        if (new[] { step.NI, step.NJ, step.NK }.Any(n => n < 1 || n > SolverSetup.MaxDivision)) throw new ArgumentException($"Кількість частин по кожній осі має бути від 1 до {SolverSetup.MaxDivision}.");
+        if (step.TransitionDepth is < 0 or > 2) throw new ArgumentException("Ширина перехідної зони: 0, 1 або 2.");
+        if (mesh.ElementCount == 0) throw new ArgumentException("Немає жодного куба.");
+        try
+        {
+            var before = new LocalRefinement(s.Setup.Refinements.ToList()).Replay(mesh);
+            // "hex:7" names the whole cube 7 as it is now (what a click on a cube means): every leaf the cube is made of at the moment, the cube itself when it has not been refined;
+            // any other key is a leaf key the mesh has given
+            var present = before.Cells.Values.ToDictionary(c => LocalRefinement.LeafKey(before, c, mesh.ElementIds), c => c);
+            var leaves = new List<string>();
+            foreach (var k in step.Leaves)
+            {
+                if (k.StartsWith("hex:") && int.TryParse(k.AsSpan(4), out int id))
+                    leaves.AddRange(before.Cells.Values.Where(c => mesh.ElementIds[c.Root] == id).Select(c => LocalRefinement.LeafKey(before, c, mesh.ElementIds)));
+                else leaves.Add(k);
+            }
+            leaves = leaves.Distinct().ToList();
+            // the step must name something that is there, and the whole refinement must still be possible with it
+            if (!leaves.Any(present.ContainsKey)) throw new ArgumentException("Обраних ділянок уже немає в сітці.");
+            var candidate = new RefinementStep(leaves, step.NI, step.NJ, step.NK, step.TransitionDepth);
+            var after = new LocalRefinement(s.Setup.Refinements.Append(candidate).ToList()).Build(mesh);
+            if (after.ElementCount > 4 * SolverValidator.MaxElements) throw new ArgumentException($"Забагато елементів ({after.ElementCount}).");
+            s.Setup.AddRefinement(candidate);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new ArgumentException($"Згущення неможливе: {exception.Message}");
+        }
+        s.Result = null;
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto ClearLocalRefinement(int sessionId) => sessions.With(sessionId, s =>
+    {
+        s.Setup.ClearRefinements();
+        s.Result = null;
+        return s.Setup.ToDto();
+    });
+
+    public SolverMeshDto GetMesh(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => SolverMeshView.Of(s.Setup, mesh));
+
+    public SolverSetupDto SelectFaces(int sessionId, FemMeshDto mesh, IReadOnlyList<ElementFaceRefDto> faces, string action, double? pressure) => sessions.With(sessionId, s =>
+    {
+        if (mesh.ElementCount == 0) return s.Setup.ToDto();
+        var built = SolverMeshes.Build(s.Setup, mesh).Mesh;
+        var targets = SolverMeshView.FacesOf(built, mesh, faces).Select(t => (t.Hex, t.Side, t.Shape)).ToList();
+        switch (action)
+        {
+            case "fix": s.Setup.SetFixedOn(targets, true); break;
+            case "unfix": s.Setup.SetFixedOn(targets, false); break;
+            case "load" when pressure is double p && double.IsFinite(p): s.Setup.SetLoadsOn(targets, p); break;
+            case "unload": s.Setup.SetLoadsOn(targets, null); break;
+        }
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto PaintElements(int sessionId, FemMeshDto mesh, IReadOnlyList<string> elementKeys, string? material) => sessions.With(sessionId, s =>
+    {
+        if (mesh.ElementCount == 0) return s.Setup.ToDto();
+        if (!string.IsNullOrEmpty(material) && !s.Setup.MaterialsByName.ContainsKey(material)) return s.Setup.ToDto();
+        var built = SolverMeshes.Build(s.Setup, mesh).Mesh;
+        s.Setup.SetMaterialsOn(SolverMeshView.ElementsOf(built, mesh, elementKeys), material);
         return s.Setup.ToDto();
     });
 
@@ -104,6 +175,9 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
     public SolverElementReportDto? QualityOfElement(int sessionId, FemMeshDto mesh, int hex, int ex, int ey, int ez) =>
         sessions.With(sessionId, s => MeshQuality.OfElement(s.Setup, mesh, hex, ex, ey, ez));
 
+    public SolverElementReportDto? QualityOfElementByKey(int sessionId, FemMeshDto mesh, string key) =>
+        sessions.With(sessionId, s => MeshQuality.OfElementKey(s.Setup, mesh, key));
+
     public SolverQualityReportDto Quality(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => MeshQuality.Evaluate(s.Setup, mesh));
 
     public SolverValidationDto Validate(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => SolverValidator.Validate(s.Setup, mesh));
@@ -156,7 +230,7 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
                 Publish(sessionId, ticket, new SolverJobDto("failed", 1, "", $"Ітерації не збіглися (нев'язка {output.Residual:E1}): система погано обумовлена, спробуйте менший контраст матеріалів або менше кубів.", ticket));
                 return;
             }
-            var fine = input.Fine;
+            var fine = input.Mesh;
             int n = fine.NodeCount;
             var ux = new double[n]; var uy = new double[n]; var uz = new double[n]; var positions = new double[3 * n];
             for (int i = 0; i < n; i++)
@@ -165,7 +239,9 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
                 for (int c = 0; c < 3; c++) positions[3 * i + c] = fine.Positions[i, c];
             }
             double maxDisplacement = Enumerable.Range(0, n).Max(i => Math.Sqrt(ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]));
-            var result = new SolverResultDto(ticket, new[] { fine.Divisions.Nx, fine.Divisions.Ny, fine.Divisions.Nz }, positions, mesh.ElementIds, fine.GridNodes,
+            // an evenly cut body also says which node sits at each grid point of each cube (what the cube-by-cube view draws from); any other mesh is shown from the mesh itself
+            var even = input.Fine;
+            var result = new SolverResultDto(ticket, even is null ? new[] { 1, 1, 1 } : new[] { even.Divisions.Nx, even.Divisions.Ny, even.Divisions.Nz }, positions, mesh.ElementIds, even?.GridNodes ?? Array.Empty<int>(),
                 ux, uy, uz, output.VonMises, maxDisplacement, output.VonMises.Max(), clock.Elapsed.TotalSeconds);
             sessions.With(sessionId, s =>
             {
@@ -198,36 +274,47 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     // ---- set-up + mesh -> solver input ------------------------------------------------------
 
-    private static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh)
+    internal static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh) => BuildInput(setup, mesh, SolverMeshes.Build(setup, mesh));
+
+    // From here on the solver works on the mesh of finite elements (IFemMesh): the setup's regions are bound to its elements and faces by what is at their centres,
+    // and nothing below asks which cube an element came from or how it was cut.
+    internal static SolverProblem BuildInput(SolverSetup setup, FemMeshDto mesh, BuiltMesh built) => BuildProblem(setup, mesh, built.Mesh, built.Uniform);
+
+    /// <summary>
+    /// The solver's input on ANY mesh of finite elements: what the setup says (materials, clamps, pressures, set on regions of the cubes) is bound to the
+    /// elements and faces of the mesh, whatever rule made it. The grid the setup is spoken of in plays no part here: a region is a place in the cube, and the
+    /// faces and elements of the mesh whose centres lie in it are what it means.
+    /// </summary>
+    internal static SolverProblem BuildProblem(SolverSetup setup, FemMeshDto mesh, IFemMesh femMesh, FineMesh? fine = null)
     {
-        // every cube cut into nx*ny*nz small elements, as the solver's own mesh does
-        var (nx, ny, nz) = setup.Divisions;
-        var fine = FineMesh.Build(mesh, nx, ny, nz);
-
         var byName = setup.MaterialsByName.ToDictionary(m => m.Key, m => Material.Isotropic(m.Value.E, m.Value.Nu, m.Key));
-        var materials = new Material[fine.ElementCount];
-        for (int e = 0; e < fine.ElementCount; e++)
-            materials[e] = byName[setup.MaterialOf(new ElementKey(mesh.ElementIds[fine.ParentOf[e]], fine.Ex[e], fine.Ey[e], fine.Ez[e]))];
+        var materials = new Material[femMesh.ElementCount];
+        for (int e = 0; e < femMesh.ElementCount; e++)
+            materials[e] = byName[setup.MaterialAt(mesh.ElementIds[femMesh.RootOf(e)], femMesh.CentreOf(e))];
 
-        var cubeIndex = new Dictionary<int, int>();
-        for (int e = 0; e < mesh.ElementCount; e++) cubeIndex[mesh.ElementIds[e]] = e;
-        // a small face of a cube is the outward face of the one small element behind it
-        ElementFace Face(SubFace f)
+        var clamped = new HashSet<ElementFace>();
+        var pressures = new List<FacePressure>();
+        for (int cube = 0; cube < mesh.ElementCount; cube++)
         {
-            var (element, face) = fine.BoundaryElement(cubeIndex[f.Hex], f.Face, f.P, f.Q);
-            return new ElementFace(element, face);
+            int hex = mesh.ElementIds[cube];
+            foreach (var side in SolverFaces.Names)
+            {
+                bool anyFixed = setup.HasFixed(hex, side), anyLoad = setup.HasLoads(hex, side);
+                if (!anyFixed && !anyLoad) continue;
+                foreach (var face in femMesh.FacesOnSide(cube, side))
+                {
+                    var at = femMesh.FaceCentreOf(face);
+                    var solverFace = new ElementFace(face.Element, face.Face);
+                    if (anyFixed && setup.IsFixedAt(hex, side, at)) clamped.Add(solverFace);
+                    // Pn is the solver's: along the outward normal, negative = compression
+                    if (anyLoad && setup.LoadAt(hex, side, at) is double pn) pressures.Add(new FacePressure(solverFace, pn));
+                }
+            }
         }
-        bool Known(SubFace f) => cubeIndex.ContainsKey(f.Hex) && SolverFaces.IsValid(f.Face);
-
-        var loads = new LoadCase
-        {
-            Fixed = setup.Fixed.Where(Known).Select(Face).ToList(),
-            // Pn is the solver's: along the outward normal, negative = compression
-            Pressures = setup.Loads.Where(l => Known(l.Key)).Select(l => new FacePressure(Face(l.Key), l.Value)).ToList()
-        };
-        return new SolverProblem(fine, new FemModel(fine.Positions, fine.Connectivity, materials), loads);
+        var loads = new LoadCase { Fixed = clamped.ToList(), Pressures = pressures };
+        return new SolverProblem(femMesh, fine, new FemModel(femMesh.Positions, femMesh.Connectivity, materials), loads);
     }
 }
 
 /// <summary>The divided mesh with its model and load case - what one solve works on.</summary>
-internal sealed record SolverProblem(FineMesh Fine, FemModel Model, LoadCase Loads);
+internal sealed record SolverProblem(IFemMesh Mesh, FineMesh? Fine, FemModel Model, LoadCase Loads);

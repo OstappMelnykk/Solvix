@@ -91,6 +91,172 @@ describe('SolverService', () => {
     expect(solver.materialOf(sessionId, 0)).toBe('steel');
   });
 
+  describe('local refinement', () => {
+    const step = { leaves: ['hex:1'], ni: 2, nj: 2, nk: 2, transitionDepth: 1 };
+    const refined = { ...emptySetup, version: 2, refinements: [step] };
+
+    it('is local only once the set-up holds a refinement', () => {
+      loadSetup();
+      expect(solver.isLocal(sessionId)).toBe(false);
+      expect(solver.mesh(sessionId)).toBeNull();
+      http.expectNone(`${api}/${sessionId}/mesh`);
+    });
+
+    it('takes the set-up the server answers with and forgets the old result', () => {
+      loadSetup();
+      solver.addRefinement(sessionId, step);
+      http.expectOne(`${api}/${sessionId}/refinement`).flush(refined);
+
+      expect(solver.isLocal(sessionId)).toBe(true);
+      expect(solver.result(sessionId)).toBeNull();
+    });
+
+    it('says why the server refused a step', () => {
+      loadSetup();
+      solver.addRefinement(sessionId, step);
+      http.expectOne(`${api}/${sessionId}/refinement`).flush({ error: 'не можна' }, { status: 400, statusText: 'Bad Request' });
+
+      expect(notifications.toasts().at(-1)?.message).toContain('не можна');
+      expect(solver.isLocal(sessionId)).toBe(false);
+    });
+
+    it('asks for the mesh once per state of the set-up', () => {
+      loadSetup(refined);
+      expect(solver.mesh(sessionId)).toBeNull();
+      expect(solver.mesh(sessionId)).toBeNull();
+      const request = http.expectOne(`${api}/${sessionId}/mesh`);
+      request.flush({ rule: 'local', nodeCount: 0, elementCount: 0, keys: [] });
+
+      expect(solver.mesh(sessionId)?.rule).toBe('local');
+      http.expectNone(`${api}/${sessionId}/mesh`);
+    });
+
+    // two elements of cube 0 side by side, both with a face on the XPlus side (the mesh the picks refer to)
+    function loadMesh(more: Record<string, unknown> = {}): void {
+      loadSetup(refined);
+      solver.mesh(sessionId);
+      http.expectOne(`${api}/${sessionId}/mesh`).flush({
+        rule: 'local', nodeCount: 0, elementCount: 2, positions: [], connectivity: [], hexIds: [0, 0], keys: ['a', 'b'], materials: ['', ''],
+        surfaceFaces: [0, 5, 1, 5], fixedFaces: [], loadedFaces: [], pressures: [], ...more
+      });
+    }
+    const pointAt = (key: string, localFace = 5) => ({ kind: 'face' as const, hex: 0, face: 'XPlus' as const, elementKey: key, localFace });
+
+    it('clamps exactly the face that was pointed at, by the key of its element', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'fix');
+      solver.pick(sessionId, pointAt('b'));
+
+      const request = http.expectOne(`${api}/${sessionId}/mesh/faces`);
+      expect(request.request.body).toEqual(jasmine.objectContaining({ faces: [{ key: 'b', face: 5 }], action: 'fix' }));
+    });
+
+    it('takes the clamping off when the face already has it', () => {
+      loadMesh({ fixedFaces: [1, 5] });
+      solver.setTool(sessionId, 'fix');
+      solver.pick(sessionId, pointAt('b'));
+
+      expect(http.expectOne(`${api}/${sessionId}/mesh/faces`).request.body.action).toBe('unfix');
+    });
+
+    it('presses the whole side of the cube with the chosen pressure', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'load');
+      solver.setScope(sessionId, 'cube');
+      solver.pick(sessionId, pointAt('a'));
+
+      const body = http.expectOne(`${api}/${sessionId}/mesh/faces`).request.body;
+      expect(body.action).toBe('load');
+      expect(body.faces).toEqual([{ key: 'a', face: 5 }, { key: 'b', face: 5 }]);
+      expect(body.pressure).toBe(-1e6);
+    });
+
+    it('gives a material to one element by key, and a stroke gathers its elements into one request', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'material');
+      solver.setActiveMaterial(sessionId, 'rubber');
+      solver.pick(sessionId, pointAt('a'));
+      expect(http.expectOne(`${api}/${sessionId}/mesh/elements/material`).request.body).toEqual({ elementKeys: ['a'], material: 'rubber' });
+
+      solver.setBrush(sessionId, true);
+      solver.paintStart(sessionId, pointAt('a'));
+      solver.paintTo(sessionId, pointAt('b'));
+      expect(solver.isPainting(sessionId)).toBeTrue();
+      expect(solver.femHighlight(sessionId)?.elements).toEqual(['a', 'b']);
+      solver.paintEnd(sessionId);
+      expect(http.expectOne(`${api}/${sessionId}/mesh/elements/material`).request.body.elementKeys).toEqual(['a', 'b']);
+    });
+
+    it('asks for the quality of a picked element by its key, and tells two picks apart by it', () => {
+      loadMesh();
+      solver.setQualityPick(sessionId, { hex: 0, ex: 0, ey: 0, ez: 0, key: 'a' });
+      http.expectOne(r => r.url === `${api}/${sessionId}/quality/element-by-key` && r.params.get('key') === 'a').flush({ hex: 0, ex: 0, ey: 0, ez: 0, profiles: [] });
+
+      solver.setQualityPick(sessionId, { hex: 0, ex: 0, ey: 0, ez: 0, key: 'b' });
+      expect(solver.qualityPick(sessionId)?.key).toBe('b');
+      http.expectOne(r => r.url === `${api}/${sessionId}/quality/element-by-key` && r.params.get('key') === 'b');
+    });
+
+    it('chooses the elements to refine by pointing at them in the Ideal and Real Worlds, and a second pick takes them off', () => {
+      loadMesh();
+      solver.chooseByPick(sessionId, pointAt('a'));
+      solver.chooseByPick(sessionId, pointAt('b'));
+      expect([...solver.refineSelection(sessionId)]).toEqual(['a', 'b']);
+      http.expectNone(`${api}/${sessionId}/mesh/faces`);
+
+      solver.chooseByPick(sessionId, pointAt('a'));
+      expect([...solver.refineSelection(sessionId)]).toEqual(['b']);
+    });
+
+    it('a pick reaches the element, or its whole cube, as the scope says, and refining empties the choice', () => {
+      loadMesh();
+      solver.setRefineScope(sessionId, 'cube');
+      solver.chooseByPick(sessionId, pointAt('a'));
+      expect([...solver.refineSelection(sessionId)]).toEqual(['a', 'b']);
+
+      solver.addRefinement(sessionId, { leaves: ['a', 'b'], ni: 2, nj: 2, nk: 2, transitionDepth: 0 });
+      http.expectOne(`${api}/${sessionId}/refinement`).flush({ ...refined, version: 3 });
+      expect(solver.refineSelection(sessionId).size).toBe(0);
+    });
+
+    it('a pick reaches the element that deep inward from the face when the depth says so', () => {
+      loadMesh();
+      expect(solver.refineTargets(sessionId, pointAt('a'))).toEqual(['a']);
+      solver.setRefineDepth(sessionId, 3);
+      expect(solver.refineDepth(sessionId)).toBe(3);
+      expect(solver.refineTargets(sessionId, { kind: 'face', hex: 0, face: 'XPlus', p: 0, q: 0 })).toEqual([]);
+    });
+
+    it('before the first refinement the elements to pick are the cubes themselves', () => {
+      loadSetup();
+      solver.setRefineMode(sessionId, true);
+      expect(solver.refineMode(sessionId)).toBeTrue();
+
+      solver.chooseByPick(sessionId, { kind: 'face', hex: 3, face: 'XPlus' });
+      solver.chooseByPick(sessionId, { kind: 'face', hex: 5, face: 'XPlus' });
+      expect([...solver.refineSelection(sessionId)]).toEqual(['hex:3', 'hex:5']);
+      solver.chooseByPick(sessionId, { kind: 'face', hex: 3, face: 'YPlus' });
+      expect([...solver.refineSelection(sessionId)]).toEqual(['hex:5']);
+    });
+
+    it('highlights what a click would reach, and offers the scopes a refined body has', () => {
+      loadMesh();
+      solver.setTool(sessionId, 'fix');
+      solver.setHover(sessionId, pointAt('b'));
+
+      expect(solver.femHighlight(sessionId)).toEqual({ faces: [{ key: 'b', face: 5 }], elements: [], pointed: { key: 'b', face: 5 } });
+      expect(solver.scopesOf('material', sessionId)).toEqual(['cell', 'cube']);
+    });
+
+    it('goes back to the even division when the refinement is cleared', () => {
+      loadSetup(refined);
+      solver.clearRefinement(sessionId);
+      http.expectOne(`${api}/${sessionId}/refinement`).flush(emptySetup);
+
+      expect(solver.isLocal(sessionId)).toBe(false);
+    });
+  });
+
   describe('choosing faces, as in the solver', () => {
     const faces = (request: { request: { body: { faces: unknown } } }) => request.request.body.faces;
 

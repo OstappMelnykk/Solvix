@@ -676,6 +676,7 @@ public sealed partial class HexMesh
             Connectivity = connectivity,
             NodeIds = nodeIds,
             ElementIds = elementIds,
+            Cells = elementIds.SelectMany(id => new[] { _hexes[id].Cell.I, _hexes[id].Cell.J, _hexes[id].Cell.K }).ToArray(),
         };
     }
 

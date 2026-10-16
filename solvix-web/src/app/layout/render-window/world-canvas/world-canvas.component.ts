@@ -37,6 +37,12 @@ const CLICK_MOVE_THRESHOLD_PX = 4;
 // Both cameras' starting point (initScene) and what resetCamera() below
 // restores - a single shared constant so the two can never drift apart.
 const DEFAULT_ORTHO_HALF_HEIGHT = 5;
+// How the camera moves in fine mode (Alt held) against the normal one: a quarter of a wheel step, a fifth of the orbit speed, a fifth of the pan speed.
+const ROTATE_SPEED = 0.5;
+const FINE_ZOOM_SPEED = 0.25;
+const FINE_ROTATE_SPEED = 0.1;
+const FINE_PAN_SPEED = 0.2;
+
 const DEFAULT_ORBIT_TARGET: [number, number, number] = [0, 0, 0];
 
 // One of exactly 3 instances for the whole app - one per World (Ideal/Real/
@@ -310,6 +316,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private lastPaintKey = '';
   private paintFrame = 0;
 
+  // With Alt held the camera moves in fine steps: the wheel zooms a quarter as far, and a drag orbits and pans at a fraction of the speed (read at the moment of each event).
+  private onWheelSpeed = (event: WheelEvent) => {
+    if (this.controls) this.controls.zoomSpeed = event.altKey ? FINE_ZOOM_SPEED : 1;
+  };
+
+  private onDragSpeed = (event: PointerEvent) => {
+    if (!this.controls) return;
+    this.controls.rotateSpeed = event.altKey ? FINE_ROTATE_SPEED : ROTATE_SPEED;
+    this.controls.panSpeed = event.altKey ? FINE_PAN_SPEED : 1;
+  };
+
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
     if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging) {
@@ -347,7 +364,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.paintFrame = requestAnimationFrame(() => {
         this.paintFrame = 0;
         const pick = this.pickAt(x, y);
-        const key = pick && pick.kind === 'face' ? `${pick.hex}:${pick.face}:${pick.p}:${pick.q}:${pick.element?.join(',')}` : '';
+        const key = pick && pick.kind === 'face' ? `${pick.hex}:${pick.face}:${pick.p}:${pick.q}:${pick.element?.join(',')}:${pick.elementKey}:${pick.localFace}` : '';
         if (key !== '' && key !== this.lastPaintKey) {
           this.lastPaintKey = key;
           this.paint.emit({ phase: 'move', pick });
@@ -446,6 +463,9 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     canvas.removeEventListener('pointerdown', this.onPointerDown);
     canvas.removeEventListener('pointerup', this.onPointerUp);
     canvas.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('wheel', this.onWheelSpeed, true);
+    window.removeEventListener('pointerdown', this.onDragSpeed, true);
+    window.removeEventListener('pointermove', this.onDragSpeed, true);
     canvas.removeEventListener('pointerleave', this.onPointerLeave);
     canvas.removeEventListener('contextmenu', this.onContextMenu);
     if (this.hoverFrame !== 0) cancelAnimationFrame(this.hoverFrame);
@@ -481,7 +501,15 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // No inertia - the camera stops the instant the drag/scroll gesture
     // ends, rather than easing to a stop on its own afterward.
     this.controls.enableDamping = false;
-    this.controls.rotateSpeed = 0.5;
+    this.controls.rotateSpeed = ROTATE_SPEED;
+    // The wheel zooms towards what is under the pointer (the orbit centre follows), so tiny elements can be approached however far the centre of the body is.
+    this.controls.zoomToCursor = true;
+    this.controls.minDistance = 0.0005;
+    // Each wheel step takes a fixed share of the distance to what is under the pointer, so the nearer the surface, the finer the step; with Alt held it is a quarter of that (Shift turns the wheel sideways in browsers),
+    // for placing the view exactly on a tiny element.
+    window.addEventListener('wheel', this.onWheelSpeed, true);
+    window.addEventListener('pointerdown', this.onDragSpeed, true);
+    window.addEventListener('pointermove', this.onDragSpeed, true);
 
     // Rotate mode draws exactly the 3 draggable ring arcs (X/Y/Z, plus a
     // 4th screen-space ring) the user asked for - dragging one spins the
@@ -628,7 +656,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // the near:far ratio 100000:1, which would ordinarily risk z-fighting
     // (depth-buffer precision is spread across the whole range) - logarithmicDepthBuffer
     // on the renderer below is what actually keeps that safe, not the specific numbers here.
-    this.perspectiveCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
+    this.perspectiveCamera = new THREE.PerspectiveCamera(50, width / height, 0.0005, 10000);
     this.perspectiveCamera.position.set(...DEFAULT_CAMERA_POSITION);
     // Frustum bounds are placeholders here - updateCameraFrustum() (called
     // below via checkResize's first pass, and again on every toggle/resize)

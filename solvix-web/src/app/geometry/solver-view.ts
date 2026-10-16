@@ -73,8 +73,8 @@ export function rampColor(t: number): THREE.Color {
   return RAMP[i].clone().lerp(RAMP[i + 1], x - i);
 }
 
-const RAMP_STEPS = 256;
-const RAMP_TABLE: readonly (readonly [number, number, number])[] = Array.from({ length: RAMP_STEPS + 1 }, (_, i) => {
+export const RAMP_STEPS = 256;
+export const RAMP_TABLE: readonly (readonly [number, number, number])[] = Array.from({ length: RAMP_STEPS + 1 }, (_, i) => {
   const c = rampColor(i / RAMP_STEPS);
   return [c.r, c.g, c.b] as const;
 });
@@ -82,7 +82,7 @@ const RAMP_TABLE: readonly (readonly [number, number, number])[] = Array.from({ 
 // A geometry that moves with the deformation: its vertices are base + scale * displacement (the surface is linear in
 // the nodes, so the displacement of a vertex is fixed once and any scale is a single pass over a buffer), and its
 // colours can follow a new range of the field without rebuilding anything.
-interface Deformable {
+export interface Deformable {
   readonly geometry: THREE.BufferGeometry;
   readonly base: Float32Array;
   readonly displacement: Float32Array;
@@ -719,14 +719,14 @@ export function buildSolverView(input: SolverViewInput): MeshView {
   return view;
 }
 
-function deformable(geometry: THREE.BufferGeometry, base: number[], moved: number[], values?: number[], light?: Float32Array): Deformable {
+export function deformable(geometry: THREE.BufferGeometry, base: number[], moved: number[], values?: number[], light?: Float32Array): Deformable {
   const displacement = new Float32Array(base.length);
   for (let i = 0; i < base.length; i++) displacement[i] = moved[i] - base[i];
   return { geometry, base: Float32Array.from(base), displacement, values: values ? Float32Array.from(values) : undefined, light };
 }
 
 // Every vertex to base + scale * displacement - one pass over each buffer, no allocation.
-function applyDeformation(deformables: readonly Deformable[], scale: number): void {
+export function applyDeformation(deformables: readonly Deformable[], scale: number): void {
   for (const d of deformables) {
     const position = d.geometry.getAttribute('position') as THREE.BufferAttribute;
     const out = position.array as Float32Array;
@@ -738,7 +738,7 @@ function applyDeformation(deformables: readonly Deformable[], scale: number): vo
 }
 
 // The colours of the field surfaces for a new top of the ramp (values above it get the last colour).
-function applyColorRange(deformables: readonly Deformable[], max: number): void {
+export function applyColorRange(deformables: readonly Deformable[], max: number): void {
   for (const d of deformables) {
     if (!d.values || !d.light) continue;
     const color = d.geometry.getAttribute('color') as THREE.BufferAttribute;

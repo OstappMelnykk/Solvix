@@ -122,10 +122,10 @@ export class QualityControlsComponent implements DoCheck {
     const at = this.badPosition();
     const target = list[at === 0 ? (step === 1 ? 0 : list.length - 1) : (at - 1 + step + list.length) % list.length];
     const current = this.pickedElement();
-    if (!current || !sameElement(current, target)) this.solver.setQualityPick(this.sessionId, { hex: target.hex, ex: target.ex, ey: target.ey, ez: target.ez });
+    if (!current || !sameElement(current, target)) this.solver.setQualityPick(this.sessionId, { hex: target.hex, ex: target.ex, ey: target.ey, ez: target.ez, ...(this.solver.isLocal(this.sessionId) && target.key ? { key: target.key } : {}) });
     const cut = this.looking().section;
     const state = this.editor.getState(this.sessionId);
-    if (cut.enabled && state) {
+    if (cut.enabled && state && !this.solver.isLocal(this.sessionId)) {
       const centre = elementCentreOf(state, this.solver.divisions(this.sessionId), target);
       if (centre) {
         const along = (p: { x: number; y: number; z: number }) => (cut.axis === 0 ? p.x : cut.axis === 1 ? p.y : p.z);
@@ -311,6 +311,7 @@ export class QualityControlsComponent implements DoCheck {
 
   // A cube is cut into more than one element only when the division says so.
   placeText(pick: QualityPick): string {
+    if (pick.key != null) return `Куб ${pick.hex}, елемент згущеної сітки`;
     return this.solver.divisions(this.sessionId).some(n => n > 1) ? `Куб ${pick.hex}, елемент (${pick.ex}, ${pick.ey}, ${pick.ez})` : `Куб ${pick.hex}`;
   }
 

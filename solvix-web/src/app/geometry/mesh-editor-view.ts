@@ -20,6 +20,9 @@ export interface PickedFace {
   readonly element?: readonly [number, number, number];
   // ... and whether the face lies inside the body (between small elements) rather than on its outside.
   readonly inner?: boolean;
+  // Solver World, locally refined body: the element's key and its local face (0..5) - what names a face of a mesh whatever made it.
+  readonly elementKey?: string;
+  readonly localFace?: number;
 }
 
 export interface PickedNode {
@@ -165,6 +168,12 @@ const FAR_ALPHA = 0.15;
 // the opacity from which the hidden (inner) lines and nodes begin to fade away: at this opacity and below they are fully there, at 100% they are gone, in between they
 // fade evenly - so there is no jump between 99 % and 100 %
 const GHOST_FULL_AT = 0.7;
+
+// How much of the inner lines of a body of this opacity is seen through it: all of it at GHOST_FULL_AT and below, none for a solid body.
+export function ghostOf(faceOpacity: number): number {
+  const opacity = Math.min(1, Math.max(0, faceOpacity));
+  return opacity < 1 ? Math.min(1, Math.max(0, (1 - opacity) / (1 - GHOST_FULL_AT))) : 0;
+}
 const BASE_HEX_COLOR = 0x39c5f2;
 const ADAPTING_HEX_COLOR = 0xc77dff;
 const PREVIEW_FACE_COLOR = 0x6ee06e;
@@ -432,12 +441,12 @@ export function buildMeshView(
     const material =
       opacity <= 0
         ? new THREE.MeshBasicMaterial({ color, opacity: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide })
-        : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, depthTest: solid });
+        : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, depthTest: solid, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     const mesh = new THREE.Mesh(geometry, material);
     // A translucent outside face also writes depth, invisibly, before the lines: what is in front of a line is then known, and the line is full strength
     // only where nothing is in front of it.
     if (!solid && !inside && opacity > 0) {
-      const depthOnly = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+      const depthOnly = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
       depthOnly.renderOrder = 0;
       root.add(depthOnly);
     }

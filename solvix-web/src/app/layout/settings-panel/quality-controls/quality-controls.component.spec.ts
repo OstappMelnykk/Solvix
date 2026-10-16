@@ -34,7 +34,7 @@ describe('QualityControlsComponent', () => {
     picked = null;
     solver = jasmine.createSpyObj<SolverService>('SolverService', [
       'quality', 'solvixQuality', 'qualityReport', 'qualityCompare', 'setQualityCompare', 'qualityMetric', 'setQualityMetric', 'qualityPick', 'setQualityPick',
-      'qualityDetail', 'marks', 'setMarks', 'ensureQuality', 'divisions'
+      'qualityDetail', 'marks', 'setMarks', 'ensureQuality', 'divisions', 'isLocal'
     ]);
     solver.qualityReport.and.returnValue(report);
     solver.solvixQuality.and.returnValue(report.profiles[0]);

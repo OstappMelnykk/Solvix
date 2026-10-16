@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { SOLVER_WORLD_INDEX } from '../config/app-settings';
 import { MeshView } from '../geometry/mesh-editor-view';
+import { buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
 import { buildQualityView } from '../geometry/quality-view';
 import { SolverViewInput, buildHighlight, buildSolverView, fieldRange, fieldValues, materialColor } from '../geometry/solver-view';
 import { MeshEditorService } from './mesh-editor.service';
@@ -66,7 +67,32 @@ export class SolverRenderService {
       hiddenMaterials: this.solver.hiddenMaterials(sessionId),
       showInner: this.solver.showInner(sessionId)
     };
-    const view = input.result ? buildSolverView(input) : this.buildSetupView(sessionId, input);
+    const mesh = this.solver.mesh(sessionId);
+    // a locally refined body is drawn from the solver's own mesh of elements (until it arrives, nothing); the cached key follows the solver's revision, which the arrival bumps
+    const view = this.solver.isLocal(sessionId)
+      ? mesh
+        ? buildFemMeshView({
+            mesh,
+            defaultMaterial: input.setup?.defaultMaterial ?? 'steel',
+            bodyColor: SETUP_BODY_COLOR,
+            opacity: input.opacity,
+            hiddenMaterials: this.solver.hiddenMaterials(sessionId),
+            showFixed: input.showFixed,
+            showLoads: input.showLoads,
+            edges: display.edges,
+            edgeWidth: 1.8,
+            allFaces: input.showInner === true,
+            result: input.result,
+            field: input.field,
+            deformationScale: input.deformationScale,
+            colorMax: input.colorMax,
+            vectors: input.vectors,
+            marksOpacity: input.marksOpacity
+          })
+        : null
+      : input.result
+        ? buildSolverView(input)
+        : this.buildSetupView(sessionId, input);
     this.cache.set(sessionId, { key, view, input, scale: display.deformationScale, colorMax: display.colorMax, edges: true, vectors: display.vectors });
     this.applyHighlight(sessionId);
     return view;
@@ -148,6 +174,13 @@ export class SolverRenderService {
   private applyHighlight(sessionId: number): void {
     const cached = this.cache.get(sessionId);
     if (!cached?.view?.setHighlight) return;
+    if (this.solver.isLocal(sessionId)) {
+      const mesh = this.solver.mesh(sessionId);
+      const index = this.solver.meshIndex(sessionId);
+      const wanted = this.solver.femHighlight(sessionId);
+      cached.view.setHighlight(mesh && index && wanted ? buildFemHighlight(mesh, index, wanted, this.solver.isPainting(sessionId) ? 6000 : 400) : null);
+      return;
+    }
     const targets = this.solver.highlightTargets(sessionId);
     // a stroke can reach far more small faces than a click does
     cached.view.setHighlight(targets ? buildHighlight(cached.input, targets, this.solver.isPainting(sessionId) ? 6000 : 400) : null);

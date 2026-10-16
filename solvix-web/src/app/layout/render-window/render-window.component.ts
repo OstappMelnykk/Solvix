@@ -19,6 +19,7 @@ import { MeshEditorService } from '../../state/mesh-editor.service';
 import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
 import { GroundCell } from '../../geometry/ground-cell';
 import { buildCommandFor } from '../../geometry/mesh-build';
+import { MeshCountsComponent } from './mesh-counts/mesh-counts.component';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -34,7 +35,7 @@ const NO_NODES: ReadonlySet<number> = new Set<number>();
 @Component({
   selector: 'app-render-window',
   standalone: true,
-  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent],
+  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent, MeshCountsComponent],
   templateUrl: './render-window.component.html',
   styleUrl: './render-window.component.scss'
 })
@@ -61,6 +62,13 @@ export class RenderWindowComponent {
 
   readonly worlds = WORLDS_CONFIG;
   readonly solverWorldIndex = SOLVER_WORLD_INDEX;
+
+  // Where the pointer is followed to show what a click would act on: the Solver World, and the Ideal and Real Worlds while elements are being picked.
+  hoverOn(worldIndex: number): boolean {
+    if (worldIndex === SOLVER_WORLD_INDEX) return true;
+    const sessionId = this.sessions.activeSessionId();
+    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null && this.solver.refineMode(sessionId);
+  }
 
   // null when there's no active session - never matches a real worldIndex,
   // so every WorldCanvasComponent ends up [hidden] and inactive, same as if
@@ -247,6 +255,11 @@ export class RenderWindowComponent {
   onMeshHover(pick: MeshPick | null): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
+    const world = this.activeWorldIndex();
+    if (world === IDEAL_WORLD_INDEX || world === REAL_WORLD_INDEX) {
+      this.meshEditorRender.setRefineHover(sessionId, world, pick);
+      return;
+    }
     if (this.solver.setHover(sessionId, pick?.kind === 'face' ? pick : null)) this.solverRender.refreshHighlight(sessionId);
   }
 
@@ -255,11 +268,18 @@ export class RenderWindowComponent {
   onMeshPick(pick: MeshPick | null, additive: boolean): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
+    // while the elements of a refined body are being picked, a click in the Ideal and Real Worlds chooses elements to refine
+    const world = this.activeWorldIndex();
+    if ((world === IDEAL_WORLD_INDEX || world === REAL_WORLD_INDEX) && this.solver.refineMode(sessionId)) {
+      this.solver.chooseByPick(sessionId, pick?.kind === 'face' ? pick : null);
+      return;
+    }
     // in the Solver World a click acts through the chosen tool (see SolverService.pick)
     if (this.activeWorldIndex() === SOLVER_WORLD_INDEX) this.solver.pick(sessionId, pick?.kind === 'face' ? pick : null);
     else if (this.activeWorldIndex() === QUALITY_WORLD_INDEX) {
       // a click on a small element picks it in the quality list; a click on nothing clears the pick
-      if (pick?.kind === 'face' && pick.element) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: pick.element[0], ey: pick.element[1], ez: pick.element[2] });
+      if (pick?.kind === 'face' && pick.elementKey !== undefined) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: 0, ey: 0, ez: 0, key: pick.elementKey });
+      else if (pick?.kind === 'face' && pick.element) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: pick.element[0], ey: pick.element[1], ez: pick.element[2] });
       else if (this.solver.qualityPick(sessionId) !== null) this.solver.setQualityPick(sessionId, null);
     } else this.meshSelection.applyPick(sessionId, pick, additive);
   }

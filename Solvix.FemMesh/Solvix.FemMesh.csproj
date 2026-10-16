@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- the lattice refinement's internals are checked directly by its tests -->
+    <InternalsVisibleTo Include="Solvix.FemMesh.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Solvix.Contracts\Solvix.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
