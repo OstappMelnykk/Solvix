@@ -62,7 +62,7 @@ describe('MeshEditorControlsComponent', () => {
       const labels = Array.from(root.querySelectorAll('.group-label')).map(e => e.textContent!.trim());
       expect(labels.slice(0, 2)).toEqual(['Початок', 'Робота з шестигранником']);
       expect(labels).toContain('Налаштування сітки');
-      expect(labels[labels.length - 1]).toBe('Згущення');
+      expect(labels.slice(-2)).toEqual(['Рівномірне згущення', 'Локальне згущення']);
 
       const start = root.querySelector('.group')!;
       expect(Array.from(start.querySelectorAll('.pair button')).map(b => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['Перший куб N', 'Конструктор куба… C']);
@@ -101,10 +101,9 @@ describe('MeshEditorControlsComponent', () => {
       expect(labels(render(REAL_WORLD_INDEX))).toContain('Вузол');
     });
 
-    it('has the uniform division as a header and three bare fields X Y Z, with no explanation', () => {
+    it('has the uniform division as a block of its own, like the local one, with three bare fields X Y Z and no explanation', () => {
       const root = render(REAL_WORLD_INDEX);
-      const group = Array.from(root.querySelectorAll('.group')).find(g => g.querySelector('.group-label')?.textContent?.trim() === 'Згущення')!;
-      expect(group.querySelector('.sub-label')?.textContent?.trim()).toBe('Рівномірне');
+      const group = Array.from(root.querySelectorAll('.group')).find(g => g.querySelector('.group-label')?.textContent?.trim() === 'Рівномірне згущення')!;
       expect(Array.from(group.querySelectorAll('.row span')).map(e => e.textContent!.trim())).toEqual(['X', 'Y', 'Z']);
       expect(group.querySelectorAll('input').length).toBe(3);
       expect(group.querySelector('.hint')).toBeNull();

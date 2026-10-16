@@ -138,6 +138,21 @@ h4 {
     color: #b8bcc4;
   }
 
+  select {
+    background: $field-bg;
+    color: #dfe1e5;
+    border: 1px solid $field-border;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 12px;
+    font-family: inherit;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+
   input[type='number'] {
     background: $field-bg;
     color: #dfe1e5;

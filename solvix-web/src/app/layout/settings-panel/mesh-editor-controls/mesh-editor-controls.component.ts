@@ -77,6 +77,12 @@ export class MeshEditorControlsComponent {
   @Input({ required: true }) worldIndex!: number | null;
 
   adaptSecond = true;
+
+  // Local refinement: UI stub, not wired to anything yet.
+  readonly transitionWidths = [0, 1, 2];
+  localDivisions: number[] = [1, 1, 1];
+  transitionWidth = 0;
+  localRunMode: 'steps' | 'at-once' = 'steps';
   nudgeStep = 0.1;
   isHelpOpen = false;
   readonly shortcuts = SHORTCUTS;
@@ -408,6 +414,20 @@ export class MeshEditorControlsComponent {
     const next = [...this.divisions()];
     next[axis] = Math.min(8, Math.max(1, value));
     this.solver.setDivisions(this.sessionId, next[0], next[1], next[2]);
+  }
+
+  onLocalDivisionChange(axis: number, event: Event): void {
+    const value = Math.floor(Number((event.target as HTMLInputElement).value));
+    if (!Number.isFinite(value)) return;
+    this.localDivisions[axis] = Math.min(8, Math.max(1, value));
+  }
+
+  onTransitionWidthChange(event: Event): void {
+    this.transitionWidth = Number((event.target as HTMLSelectElement).value);
+  }
+
+  runLocalRefinement(): void {
+    // Stub: the local refinement run is not connected yet.
   }
 
   onNudgeStepChange(event: Event): void {
