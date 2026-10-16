@@ -2,6 +2,8 @@ using System.Diagnostics;
 using Solvix.Fem;
 using Solvix.Contracts.Facades;
 using IFemMesh = Solvix.FemMesh.IFemMesh;
+using Solvix.FemMesh.Local;
+using Solvix.Solver.Selections;
 
 namespace Solvix.Solver;
 
@@ -38,6 +40,64 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
     public SolverSetupDto SetDivisions(int sessionId, int nx, int ny, int nz) => sessions.With(sessionId, s =>
     {
         s.Setup.SetDivisions(nx, ny, nz);
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto AddLocalRefinement(int sessionId, FemMeshDto mesh, RefinementStepDto step) => sessions.With(sessionId, s =>
+    {
+        if (step.Leaves.Count == 0) throw new ArgumentException("Оберіть, що згущувати.");
+        if (new[] { step.NI, step.NJ, step.NK }.Any(n => n < 2 || n > SolverSetup.MaxDivision)) throw new ArgumentException($"Кількість частин по кожній осі має бути від 2 до {SolverSetup.MaxDivision}.");
+        if (step.TransitionDepth is < 0 or > 2) throw new ArgumentException("Ширина перехідної зони: 0, 1 або 2.");
+        if (mesh.ElementCount == 0) throw new ArgumentException("Немає жодного куба.");
+        var candidate = new RefinementStep(step.Leaves.ToList(), step.NI, step.NJ, step.NK, step.TransitionDepth);
+        try
+        {
+            // the step must name something that is there, and the whole refinement must still be possible with it
+            var before = new LocalRefinement(s.Setup.Refinements.ToList()).Replay(mesh);
+            var wanted = step.Leaves.ToHashSet();
+            if (!before.Cells.Values.Any(c => wanted.Contains(LocalRefinement.LeafKey(before, c)))) throw new ArgumentException("Обраних ділянок уже немає в сітці.");
+            var after = new LocalRefinement(s.Setup.Refinements.Append(candidate).ToList()).Build(mesh);
+            if (after.ElementCount > 4 * SolverValidator.MaxElements) throw new ArgumentException($"Забагато елементів ({after.ElementCount}).");
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new ArgumentException($"Згущення неможливе: {exception.Message}");
+        }
+        s.Setup.AddRefinement(candidate);
+        s.Result = null;
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto ClearLocalRefinement(int sessionId) => sessions.With(sessionId, s =>
+    {
+        s.Setup.ClearRefinements();
+        s.Result = null;
+        return s.Setup.ToDto();
+    });
+
+    public SolverMeshDto GetMesh(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => SolverMeshView.Of(s.Setup, mesh));
+
+    public SolverSetupDto SelectFaces(int sessionId, FemMeshDto mesh, IReadOnlyList<ElementFaceRefDto> faces, string action, double? pressure) => sessions.With(sessionId, s =>
+    {
+        if (mesh.ElementCount == 0) return s.Setup.ToDto();
+        var built = SolverMeshes.Build(s.Setup, mesh).Mesh;
+        var targets = SolverMeshView.FacesOf(built, mesh, faces).Select(t => (t.Hex, t.Side, t.Shape)).ToList();
+        switch (action)
+        {
+            case "fix": s.Setup.SetFixedOn(targets, true); break;
+            case "unfix": s.Setup.SetFixedOn(targets, false); break;
+            case "load" when pressure is double p && double.IsFinite(p): s.Setup.SetLoadsOn(targets, p); break;
+            case "unload": s.Setup.SetLoadsOn(targets, null); break;
+        }
+        return s.Setup.ToDto();
+    });
+
+    public SolverSetupDto PaintElements(int sessionId, FemMeshDto mesh, IReadOnlyList<string> elementKeys, string? material) => sessions.With(sessionId, s =>
+    {
+        if (mesh.ElementCount == 0) return s.Setup.ToDto();
+        if (!string.IsNullOrEmpty(material) && !s.Setup.MaterialsByName.ContainsKey(material)) return s.Setup.ToDto();
+        var built = SolverMeshes.Build(s.Setup, mesh).Mesh;
+        s.Setup.SetMaterialsOn(SolverMeshView.ElementsOf(built, mesh, elementKeys), material);
         return s.Setup.ToDto();
     });
 
@@ -104,6 +164,9 @@ internal sealed class SolverFacade(SolverSessions sessions, ISolverProgressNotif
 
     public SolverElementReportDto? QualityOfElement(int sessionId, FemMeshDto mesh, int hex, int ex, int ey, int ez) =>
         sessions.With(sessionId, s => MeshQuality.OfElement(s.Setup, mesh, hex, ex, ey, ez));
+
+    public SolverElementReportDto? QualityOfElementByKey(int sessionId, FemMeshDto mesh, string key) =>
+        sessions.With(sessionId, s => MeshQuality.OfElementKey(s.Setup, mesh, key));
 
     public SolverQualityReportDto Quality(int sessionId, FemMeshDto mesh) => sessions.With(sessionId, s => MeshQuality.Evaluate(s.Setup, mesh));
 

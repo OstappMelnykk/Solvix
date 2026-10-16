@@ -137,3 +137,33 @@ public sealed record SolverElementReportDto(int Hex, int Ex, int Ey, int Ez, IRe
 public sealed record SolverQualityLimitDto(
     string Key, string Label, string Short, string Tech, string Hint,
     bool HigherIsBetter, int Levels, IReadOnlyList<double> Bounds, string Unit, int Decimals, string Kind, double? ErrorBound = null);
+
+/// <summary>A face of an element of the mesh the solver works on, named by the element's key (it does not change when the mesh is built again) and the solver's local face index (0 bottom, 1 top, 2 front, 3 back, 4 left, 5 right).</summary>
+public sealed record ElementFaceRefDto(string Key, int Face);
+
+/// <summary>
+/// The mesh of finite elements the solver works on, with what is set on it - exactly what a solve would take: the same elements, the same faces. The elements are flat
+/// (nothing here says how the mesh was made); a face or an element is named by its key.
+/// </summary>
+/// <param name="Rule">A short name of the rule that made the mesh ("uniform 3x3x3", "local (2 steps)").</param>
+/// <param name="Positions">x, y, z of each node: length 3 * NodeCount.</param>
+/// <param name="Connectivity">The 20 nodes of each element (slots 0..7 corners, 8..19 edge midpoints): length 20 * ElementCount.</param>
+/// <param name="HexIds">The editor cube each element lies in.</param>
+/// <param name="Keys">The key of each element.</param>
+/// <param name="Materials">The material of each element.</param>
+/// <param name="SurfaceFaces">The faces on the surface of the body, as pairs (element, local face): length 2 * count.</param>
+/// <param name="FixedFaces">The clamped faces, as pairs (element, local face).</param>
+/// <param name="LoadedFaces">The pressed faces, as pairs (element, local face); <see cref="Pressures"/> is the pressure of each.</param>
+public sealed record SolverMeshDto(
+    string Rule,
+    int NodeCount,
+    int ElementCount,
+    IReadOnlyList<double> Positions,
+    IReadOnlyList<int> Connectivity,
+    IReadOnlyList<int> HexIds,
+    IReadOnlyList<string> Keys,
+    IReadOnlyList<string> Materials,
+    IReadOnlyList<int> SurfaceFaces,
+    IReadOnlyList<int> FixedFaces,
+    IReadOnlyList<int> LoadedFaces,
+    IReadOnlyList<double> Pressures);

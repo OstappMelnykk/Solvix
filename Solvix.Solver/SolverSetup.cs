@@ -160,8 +160,13 @@ internal sealed class SolverSetup
     private void Edit(Action change)
     {
         var before = Take();
+        int version = Version;
         change();
-        if (Take().SameAs(before)) return;
+        if (Take().SameAs(before))
+        {
+            Version = version;                                           // nothing changed: nothing to tell anyone about
+            return;
+        }
         _undo.Add(before);
         if (_undo.Count > MaxHistory) _undo.RemoveAt(0);
         _redo.Clear();
@@ -309,6 +314,13 @@ internal sealed class SolverSetup
         if (map.Count == 0) _elementMaterials.Remove(hex);
     }
 
+    /// <summary>Gives the places of elements a material of their own (null or empty: they follow their cube again); all of it is one step to undo.</summary>
+    public void SetMaterialsOn(IEnumerable<(int Hex, Shape Shape)> elements, string? name) => Edit(() =>
+    {
+        foreach (var (hex, shape) in elements) SetMaterialOn(hex, shape, name);
+        Version++;
+    });
+
     // ---- faces -------------------------------------------------------------------------------------
 
     private static Shape CellBox(SubFace f, int[] counts) => new BoxShape(Cuboid.Of(SetupBinding.RegionOf(f.Face, f.P, f.Q, counts)));
@@ -330,6 +342,32 @@ internal sealed class SolverSetup
             else map.Clear(CellBox(face, Counts));
         }
         DropEmpty(_fixed);
+        Version++;
+    });
+
+    /// <summary>Clamps (or unclamps) the places of faces on sides of cubes, all of it one step to undo.</summary>
+    public void SetFixedOn(IEnumerable<(int Hex, string Side, Shape Shape)> faces, bool isFixed) => Edit(() =>
+    {
+        foreach (var (hex, side, shape) in faces)
+        {
+            var map = MapOf(_fixed, hex, side);
+            if (isFixed) map.Set(shape, true);
+            else map.Clear(shape);
+        }
+        DropEmpty(_fixed);
+        Version++;
+    });
+
+    /// <summary>Presses (or, with nothing, clears the pressure of) the places of faces on sides of cubes, all of it one step to undo.</summary>
+    public void SetLoadsOn(IEnumerable<(int Hex, string Side, Shape Shape)> faces, double? pressure) => Edit(() =>
+    {
+        foreach (var (hex, side, shape) in faces)
+        {
+            var map = MapOf(_loads, hex, side);
+            if (pressure is double p) map.Set(shape, p);
+            else map.Clear(shape);
+        }
+        DropEmpty(_loads);
         Version++;
     });
 

@@ -25,6 +25,27 @@ public interface ISolverFacade
     /// <summary>How many small elements each cube is cut into along its axes (1..8 each), as the solver's Nx, Ny, Nz; invalid values change nothing.</summary>
     SolverSetupDto SetDivisions(int sessionId, int nx, int ny, int nz);
 
+    /// <summary>
+    /// Refines locally: the leaves of the step (keys as the mesh gives them) are cut into NI x NJ x NK, the cells round them by transition templates. The step is tried on the cubes
+    /// first and refused (<see cref="ArgumentException"/>) if it cannot be done. The even cut gives way to it.
+    /// </summary>
+    SolverSetupDto AddLocalRefinement(int sessionId, FemMeshDto mesh, RefinementStepDto step);
+
+    /// <summary>Takes the whole local refinement away (the cubes are cut evenly by the division again).</summary>
+    SolverSetupDto ClearLocalRefinement(int sessionId);
+
+    /// <summary>The mesh of finite elements as it would be solved, with the materials, clamps and pressures that are on it.</summary>
+    SolverMeshDto GetMesh(int sessionId, FemMeshDto mesh);
+
+    /// <summary>
+    /// Clamps (<paramref name="action"/> "fix"), unclamps ("unfix"), presses ("load", with <paramref name="pressure"/>) or clears the pressure ("unload") of exactly these faces of the mesh
+    /// - the faces the user pointed at, not the faces of the cube behind them. Faces that are not on a side of a cube, or that the mesh does not have, are ignored.
+    /// </summary>
+    SolverSetupDto SelectFaces(int sessionId, FemMeshDto mesh, IReadOnlyList<ElementFaceRefDto> faces, string action, double? pressure);
+
+    /// <summary>Gives exactly these elements of the mesh a material (an empty or null name makes them follow their cube again).</summary>
+    SolverSetupDto PaintElements(int sessionId, FemMeshDto mesh, IReadOnlyList<string> elementKeys, string? material);
+
     /// <summary>Makes exactly these faces the clamped ones (a side picked as a whole replaces what was clamped before).</summary>
     SolverSetupDto ReplaceFixedFaces(int sessionId, IReadOnlyList<SolverFaceDto> faces);
 
@@ -53,6 +74,9 @@ public interface ISolverFacade
 
     /// <summary>Every standard's judgement of one small element of the mesh (null when there is no such element).</summary>
     SolverElementReportDto? QualityOfElement(int sessionId, FemMeshDto mesh, int hex, int ex, int ey, int ez);
+
+    /// <summary>The same for one element named by its key.</summary>
+    SolverElementReportDto? QualityOfElementByKey(int sessionId, FemMeshDto mesh, string key);
 
     SolverValidationDto Validate(int sessionId, FemMeshDto mesh);
 
