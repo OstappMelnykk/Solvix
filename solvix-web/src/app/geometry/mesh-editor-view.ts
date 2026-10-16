@@ -133,6 +133,10 @@ export interface MeshViewOptions {
   readonly xrayNodes?: boolean;
   // How opaque the faces are (0..1): the opacity of a linked face; the other states scale with it. Default 0.22.
   readonly faceOpacity?: number;
+  // Draw the faces (default on); off when another view draws them and only the lines and nodes are wanted.
+  readonly faces?: boolean;
+  // Make the nodes clickable (default on); off for a view that is only looked at.
+  readonly pickable?: boolean;
 }
 
 const GRID_LINE_SAMPLES = 12;
@@ -397,7 +401,7 @@ export function buildMeshView(
   const hexById = new Map(state.hexes.map(hex => [hex.id, hex]));
   for (const face of state.faces) {
     const hex = hexById.get(face.hex);
-    if (!hex || !shouldDrawFace(face)) continue;
+    if (options.faces === false || !hex || !shouldDrawFace(face)) continue;
     const axis = faceAxis(face.face);
     const tangent = [0, 1, 2].filter(d => d !== axis);
     const slots = faceSlots(face.face);
@@ -490,6 +494,7 @@ export function buildMeshView(
       root.add(hidden);
     }
 
+    if (options.pickable === false) continue;
     const hit = new THREE.Mesh(isCorner ? cornerHitGeometry : midHitGeometry, hitMaterial);
     hit.position.copy(mesh.position);
     hit.userData['pick'] = { kind: 'node', nodeId: node.id } satisfies PickedNode;

@@ -49,6 +49,8 @@ export interface SolverViewInput {
   // A cut through the body: the elements whose centre lies on the other side of the plane (the real coordinate `axis`
   // equal to `at`) are not drawn, so the cut shows what is inside. `keep` is the side that stays.
   readonly section?: SectionCut;
+  // Draw the dark edges of the small elements (default yes); the Quality World leaves them out when the Real World's own lines and nodes are laid over the faces.
+  readonly edges?: boolean;
 }
 
 export interface SectionCut {
@@ -776,10 +778,15 @@ export function buildSolverView(input: SolverViewInput): MeshView {
       values ? rampColor(span > 0 ? (value - range.min) / span : 0) : qualityColors ? new THREE.Color(RESULT_COLORS[resultOf(qualityColors.get(`${face.owner.id}:${face.element.join(':')}`) ?? 'excellent')]) : materialColor(materialOf(face.owner.id, ...face.element));
     const addBody = (subset: readonly DrawnFace[], subsetOpacity: number): void => {
     const subsetSolid = subsetOpacity >= 1;
-    const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });
+    // The quality view is lit and matt like the Real World's body (the colours are the grades); the other views keep a light baked into their colours.
+    const lit = qualityColors !== null;
+    const material: THREE.Material = lit
+      ? new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid })
+      : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !subsetSolid, opacity: subsetOpacity, depthWrite: subsetSolid });
     // see-through: handed to the order-independent transparency pass, which blends without sorting
-    markForWeightedOit(material);
-    let bodyGeometry = faceGeometry(subset, colorOf, true, values !== null);
+    if (!lit) markForWeightedOit(material);
+    let bodyGeometry = faceGeometry(subset, colorOf, !lit, values !== null);
+    if (lit) bodyGeometry.computeVertexNormals();
     let faceOfTriangle: number[] | null = null;
     if (input.section) {
       // the plane of a section cuts the faces it runs through: what is on the kept side stays, to the very plane
@@ -798,6 +805,13 @@ export function buildSolverView(input: SolverViewInput): MeshView {
         : null;
     };
     mesh.userData['pick'] = mesh.userData['resolvePick'](0);
+    if (lit) mesh.renderOrder = 1;
+    // a translucent outside also writes depth, invisibly, so the lines laid over it are full strength only where nothing of the body is in front of them
+    if (lit && !subsetSolid && subset.every(f => f.outer)) {
+      const depthOnly = new THREE.Mesh(bodyGeometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+      depthOnly.renderOrder = 0;
+      root.add(depthOnly);
+    }
     root.add(mesh);
     pickables.push(mesh);
     };
@@ -873,7 +887,7 @@ export function buildSolverView(input: SolverViewInput): MeshView {
     root.add(overlay);
   }
 
-  if (lines.length > 0) {
+  if (lines.length > 0 && input.edges !== false) {
     const buffer = new THREE.BufferGeometry();
     const shownLines = input.section ? clipSegmentsToPlane(lines, input.section) : lines;
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(input.section ? shiftAlong(shownLines, input.section.axis, layer) : shownLines, 3));
