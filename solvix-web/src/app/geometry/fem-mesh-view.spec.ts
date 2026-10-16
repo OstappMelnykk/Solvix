@@ -162,3 +162,20 @@ describe('buildFemMeshView edges seen through a body', () => {
     expect((twin.material as THREE.LineBasicMaterial).depthTest).toBeFalse();
   });
 });
+
+describe('buildFemMeshView with wide edges', () => {
+  it('draws the edges as wide lines of the width asked for, and the plain thin ones for a result', () => {
+    const wide = buildFemMeshView(input(oneElement(), { edgeWidth: 3 }));
+    const edges = wide.root.children.find(o => o.userData['edges']) as unknown as { material: { linewidth: number } };
+    expect(edges.material.linewidth).toBe(3);
+
+    const result = { ticket: 1, divisions: [1, 1, 1], positions: LOCAL_COORDS.flatMap(c => [...c]), hexIds: [7], gridNodes: [], ux: LOCAL_COORDS.map(() => 0), uy: LOCAL_COORDS.map(() => 0), uz: LOCAL_COORDS.map(() => 0), vonMises: LOCAL_COORDS.map(() => 1), maxDisplacement: 0, maxVonMises: 1, elapsedSeconds: 0 };
+    const thin = buildFemMeshView(input(oneElement(), { edgeWidth: 3, result, field: 'vonMises' }));
+    expect(thin.root.children.find(o => o.userData['edges'])).toBeInstanceOf(THREE.LineSegments);
+  });
+
+  it('pushes the faces back a little so the edges lying on them are not hidden', () => {
+    const body = buildFemMeshView(input(oneElement())).pickables[0] as THREE.Mesh;
+    expect((body.material as THREE.MeshBasicMaterial).polygonOffset).toBeTrue();
+  });
+});

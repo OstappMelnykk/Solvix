@@ -93,7 +93,7 @@ export class MeshEditorRenderService {
     const index = this.solver.meshIndex(sessionId);
     if (!mesh || !index) return { view };
     const placed = remapMesh(mesh, state, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real');
-    const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
+    const fem = buildFemMeshView({ mesh: placed, defaultMaterial: 'steel', bodyColor: 0xffffff, opacity: 1, look: 'edges', innerEdges: true, edgeWidth: 2.5, ghostEdges: ghostOf(this.opacity.get(sessionId, worldIndex)), showFixed: false, showLoads: false });
     view.root.add(fem.root);
     const chosen = [...this.solver.refineSelection(sessionId)];
     if (chosen.length > 0) view.root.add(buildFemHighlight(placed, index, { faces: [], elements: chosen, pointed: null }, 4000));

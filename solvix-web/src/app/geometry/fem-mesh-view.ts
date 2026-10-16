@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { ElementFaceRefDto, SolverMeshDto, SolverResultDto } from '../api/solver-api.service';
 import { disposeObject3D } from './dispose-object3d';
 import { markForWeightedOit } from '../rendering/weighted-oit';
@@ -35,6 +38,19 @@ export interface FemMeshViewInput {
   readonly innerEdges?: boolean;
   // Draw the edges once more over everything, with this strength (0..1): what shows through a see-through body (the edges inside it). 0 = only where nothing is in front.
   readonly ghostEdges?: number;
+  // The width of the edges in pixels (default one pixel line). Not for a result: its edges move with the deformation, which needs the plain line.
+  readonly edgeWidth?: number;
+}
+
+// Edges that are a few pixels wide: one line segment per pair of points, coloured per point.
+function wideLines(points: readonly number[], colors: readonly number[], width: number, options: { opacity?: number; depthTest?: boolean } = {}): LineSegments2 {
+  const geometry = new LineSegmentsGeometry();
+  geometry.setPositions(points as number[]);
+  geometry.setColors(colors as number[]);
+  const material = new LineMaterial({ linewidth: width, vertexColors: true, transparent: options.opacity !== undefined, opacity: options.opacity ?? 1, depthTest: options.depthTest ?? true });
+  const lines = new LineSegments2(geometry, material);
+  lines.renderOrder = 2;
+  return lines;
 }
 
 const RESOLUTION = 3;
@@ -189,7 +205,7 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
       return materialOf(f.element) === input.defaultMaterial ? new THREE.Color(input.bodyColor) : materialColor(materialOf(f.element));
     }, true, values !== null),
     // with only the edges drawn the faces are there to be pointed at, not to be seen
-    wire ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }) : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid })
+    wire ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0, depthWrite: false }) : new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })
   );
   markForWeightedOit(body.material as THREE.Material);
   // a click lands on a triangle; its face is the triangle's number divided by the triangles of one face
@@ -267,17 +283,21 @@ export function buildFemMeshView(input: FemMeshViewInput): MeshView {
     }
   }
   if (lines.length > 0) {
+    const wide = !result && (input.edgeWidth ?? 0) > 1;
     const buffer = new THREE.BufferGeometry();
     buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
     buffer.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
     if (result) deformables.push(deformable(buffer, lines, movedLines));
-    const edges = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true }));
+    const ghost = input.ghostEdges ?? 0;
+    const edges: THREE.Object3D = wide ? wideLines(lines, lineColors, input.edgeWidth!) : new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true }));
     edges.userData['edges'] = true;
     edges.visible = input.edges !== false;
     edges.renderOrder = 2;
     root.add(edges);
-    if ((input.ghostEdges ?? 0) > 0.01) {
-      const through = new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: input.ghostEdges, depthTest: false }));
+    if (ghost > 0.01) {
+      const through: THREE.Object3D = wide
+        ? wideLines(lines, lineColors, input.edgeWidth!, { opacity: ghost, depthTest: false })
+        : new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: ghost, depthTest: false }));
       through.userData['edges'] = true;
       through.visible = input.edges !== false;
       through.renderOrder = 2;
@@ -383,9 +403,8 @@ export function buildFemHighlight(mesh: SolverMeshDto, index: FemIndex, target: 
     group.add(new THREE.Mesh(buffer, new THREE.MeshBasicMaterial({ color: HIGHLIGHT_COLOR, transparent: true, opacity: 0.45, depthWrite: false, depthTest: false, side: THREE.DoubleSide })));
   }
   if (lines.length > 0) {
-    const buffer = new THREE.BufferGeometry();
-    buffer.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-    group.add(new THREE.LineSegments(buffer, new THREE.LineBasicMaterial({ color: HIGHLIGHT_COLOR, depthTest: false })));
+    const yellow = new THREE.Color(HIGHLIGHT_COLOR);
+    group.add(wideLines(lines, lines.flatMap((_, i) => (i % 3 === 0 ? [yellow.r, yellow.g, yellow.b] : [])), 3, { opacity: 1, depthTest: false }));
   }
   group.renderOrder = 10;
   group.traverse(o => (o.frustumCulled = false));

@@ -19,6 +19,7 @@ import { MeshEditorService } from '../../state/mesh-editor.service';
 import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
 import { GroundCell } from '../../geometry/ground-cell';
 import { buildCommandFor } from '../../geometry/mesh-build';
+import { MeshCountsComponent } from './mesh-counts/mesh-counts.component';
 import { WorldTabsComponent } from './world-tabs/world-tabs.component';
 import { WorldCanvasComponent } from './world-canvas/world-canvas.component';
 import * as THREE from 'three';
@@ -34,7 +35,7 @@ const NO_NODES: ReadonlySet<number> = new Set<number>();
 @Component({
   selector: 'app-render-window',
   standalone: true,
-  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent],
+  imports: [NgFor, NgIf, WorldTabsComponent, WorldCanvasComponent, SolverOverlayComponent, SolverViewerComponent, MeshCountsComponent],
   templateUrl: './render-window.component.html',
   styleUrl: './render-window.component.scss'
 })

@@ -31,6 +31,7 @@
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />
+  <app-mesh-counts *ngIf="sessions.activeSessionId() !== null && !isViewer" [sessionId]="sessions.activeSessionId()!" />
   <app-solver-overlay *ngIf="activeWorldIndex() === solverWorldIndex && sessions.activeSessionId() !== null && !isViewer" [sessionId]="sessions.activeSessionId()!" />
   <app-solver-viewer *ngIf="isViewer" [sessionId]="sessions.activeSessionId()!" />
 </div>

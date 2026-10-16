@@ -441,12 +441,12 @@ export function buildMeshView(
     const material =
       opacity <= 0
         ? new THREE.MeshBasicMaterial({ color, opacity: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide })
-        : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, depthTest: solid });
+        : new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, transparent: !solid, opacity, depthWrite: solid, depthTest: solid, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     const mesh = new THREE.Mesh(geometry, material);
     // A translucent outside face also writes depth, invisibly, before the lines: what is in front of a line is then known, and the line is full strength
     // only where nothing is in front of it.
     if (!solid && !inside && opacity > 0) {
-      const depthOnly = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+      const depthOnly = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
       depthOnly.renderOrder = 0;
       root.add(depthOnly);
     }
