@@ -162,12 +162,11 @@ describe('mesh-editor-view', () => {
         expect(overEverything(view, state.hexes[1].nodeIds[6])).toBeTrue();
       });
 
-      it('with x-ray every node is drawn over the cubes and wins a click', () => {
+      it('with x-ray every node wins a click over the faces in front of it (and is seen through the body, weaker the more opaque it is)', () => {
         const state = linkedPairState();
         const view = buildMeshView(state, 'real', noSelection, { subdivisions: 1, xrayNodes: true });
 
         for (const node of state.nodes) {
-          expect(overEverything(view, node.id)).toBeTrue();
           expect(nodeHit(view, node.id).userData['priority']).toBeTrue();
         }
       });
@@ -404,9 +403,51 @@ describe('mesh-editor-view', () => {
     });
   });
 
+  describe('the opacity has no jump', () => {
+    // the strength of what is hidden by the body: the opacity of the weaker copy of the edges (the copy over everything)
+    const hiddenStrength = (opacity: number) => {
+      const view = buildMeshView(linkedPairState(), 'real', noSelection, { subdivisions: 1, faceOpacity: opacity });
+      const copy = view.root.children.find(c => c instanceof THREE.LineSegments && (c.material as THREE.Material).depthTest === false) as THREE.LineSegments | undefined;
+      disposeMeshView(view);
+      return copy ? (copy.material as THREE.LineBasicMaterial).opacity : 0;
+    };
+
+    it('what is hidden by the body fades evenly to nothing as it becomes solid', () => {
+      expect(hiddenStrength(0.22)).toBe(1);
+      expect(hiddenStrength(0.7)).toBeCloseTo(1, 6);
+      expect(hiddenStrength(0.85)).toBeCloseTo(0.5, 6);
+      expect(hiddenStrength(0.95)).toBeCloseTo(1 / 6, 6);
+      expect(hiddenStrength(0.99)).toBeLessThan(0.05);               // 99 % is almost what 100 % is
+      expect(hiddenStrength(1)).toBe(0);
+
+      let previous = Infinity;
+      for (const opacity of [0.5, 0.7, 0.8, 0.9, 0.97, 0.99, 1]) {
+        const strength = hiddenStrength(opacity);
+        expect(strength).toBeLessThanOrEqual(previous);
+        previous = strength;
+      }
+    });
+
+    it('the faces are lit the same way solid or not (matt, no reflections of the light), and a translucent body writes its depth before the lines', () => {
+      const faceMaterials = (opacity: number) => {
+        const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: 1, faceOpacity: opacity });
+        const faces = (view.pickables as THREE.Mesh[]).filter(o => (o.userData['pick'] as MeshPick).kind === 'face').map(f => f.material as THREE.Material);
+        const depthOnly = view.root.children.filter(c => c instanceof THREE.Mesh && (c.material as THREE.Material).colorWrite === false).length;
+        disposeMeshView(view);
+        return { faces, depthOnly };
+      };
+      const solid = faceMaterials(1);
+      const nearlySolid = faceMaterials(0.99);
+      expect(solid.faces.every(m => m.type === 'MeshLambertMaterial')).toBeTrue();
+      expect(nearlySolid.faces.every(m => m.type === 'MeshLambertMaterial')).toBeTrue();        // no jump of the look at 100 %
+      expect(solid.depthOnly).toBe(0);
+      expect(nearlySolid.depthOnly).toBeGreaterThan(0);
+    });
+  });
+
   describe('inner grid', () => {
     const segmentsOf = (view: ReturnType<typeof buildMeshView>) =>
-      view.root.children.filter((c): c is THREE.LineSegments => c instanceof THREE.LineSegments);
+      view.root.children.filter((c): c is THREE.LineSegments => c instanceof THREE.LineSegments && (c.material as THREE.Material).depthTest !== false);     // not the weaker copy over everything
 
     it('is off by default: only the cube edges are lines', () => {
       expect(segmentsOf(buildMeshView(singleCubeState(), 'real', noSelection)).length).toBe(1);
@@ -422,7 +463,7 @@ describe('mesh-editor-view', () => {
     });
 
     describe('the nodes of the divided cube', () => {
-      const pointsOf = (view: ReturnType<typeof buildMeshView>) => view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points);
+      const pointsOf = (view: ReturnType<typeof buildMeshView>) => view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points && (c.material as THREE.Material).depthTest !== false);
 
       it('are absent without a division', () => {
         expect(pointsOf(buildMeshView(singleCubeState(), 'real', noSelection)).length).toBe(0);
@@ -479,7 +520,7 @@ describe('mesh-editor-view', () => {
     it('can divide each axis by its own number, like the solver\'s Nx, Ny, Nz', () => {
       const view = buildMeshView(singleCubeState(), 'real', noSelection, { subdivisions: [2, 1, 1] });
       const lines = segmentsOf(view)[1].geometry.getAttribute('position');
-      const points = view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points)[0];
+      const points = view.root.children.filter((c): c is THREE.Points => c instanceof THREE.Points && (c.material as THREE.Material).depthTest !== false)[0];
 
       expect(lines.count).toBe(4 * 12 * 2);                                          // the middle plane x = 0.5 only: 2 lines along y and 2 along z, 12 samples each
       expect(points.geometry.getAttribute('position').count).toBe(12);              // 32 nodes of a 2x1x1 division, 20 of them the cube's own

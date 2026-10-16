@@ -147,7 +147,7 @@ describe('QualityControlsComponent', () => {
 
     expect(root.querySelector('app-smoothing-controls')).not.toBeNull();
     const slider = root.querySelector<HTMLInputElement>('.opacity input')!;
-    expect(text(root.querySelector('.opacity'))).toContain('100%');
+    expect(text(root.querySelector('.opacity'))).toContain('70%');          // the one opacity of the body
 
     slider.value = '40';
     slider.dispatchEvent(new Event('input'));
