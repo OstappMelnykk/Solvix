@@ -185,7 +185,7 @@ describe('SolverOverlayComponent', () => {
     expect(new Set(hints).size).toBe(5);
     expect(hints[1]).toContain('навантажити');
     expect(hints[3]).toContain('стерти');
-    expect(hints[4]).toContain('пофарбувати');
+    expect(hints[4]).toBe('');                                   // the material needs no words for one click
   });
 
   it('has a brush for the Pressure, Support and Material tools but not for View, and says how to use it', () => {
