@@ -36,6 +36,21 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade 
         return NoContent();
     }
 
+    /// <summary>
+    /// The outer skin of the body as a binary STL file. <c>density</c> (1..64, default 8) is how many squares each outer face is cut into per side;
+    /// the headers <c>X-Shell-Faces</c>, <c>X-Shell-Triangles</c> and <c>X-Shell-Deviation</c> say what came out.
+    /// </summary>
+    [HttpGet("shell.stl")]
+    public IActionResult ExportShell(int sessionId, [FromQuery] int density = 8)
+    {
+        var shell = meshBuilder.ExportShell(sessionId, density);
+        if (shell is null) return BadRequest($"Nothing to export: the density must be 1..64 and the mesh must have cubes.");
+        Response.Headers["X-Shell-Faces"] = shell.Faces.ToString();
+        Response.Headers["X-Shell-Triangles"] = shell.Triangles.ToString();
+        Response.Headers["X-Shell-Deviation"] = shell.MaxDeviation.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        return File(shell.Stl, "model/stl", "shell.stl");
+    }
+
     [HttpGet("state")]
     public ActionResult<MeshStateDto> GetState(int sessionId) => meshBuilder.GetState(sessionId);
 

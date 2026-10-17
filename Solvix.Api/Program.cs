@@ -20,6 +20,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:4200")
             .AllowAnyHeader()
             .AllowAnyMethod()
+            .WithExposedHeaders("X-Shell-Faces", "X-Shell-Triangles", "X-Shell-Deviation")
             .AllowCredentials());   // SignalR's negotiation sends credentials
 });
 

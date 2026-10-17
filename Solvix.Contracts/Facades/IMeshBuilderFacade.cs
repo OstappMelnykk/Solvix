@@ -57,6 +57,12 @@ public interface IMeshBuilderFacade
     /// <summary>The mesh as the FEM solver wants it (shared nodes once, the 20-node connectivity), plus the folded cubes.</summary>
     FemMeshDto ExportFemMesh(int sessionId);
 
+    /// <summary>
+    /// The outer skin of the body as a closed STL: every face with nothing on its other side is cut into <paramref name="density"/> x <paramref name="density"/>
+    /// squares (two triangles each) whose corners lie exactly on the curved surface. Null when the density is out of range or there is nothing to export.
+    /// </summary>
+    MeshShellDto? ExportShell(int sessionId, int density);
+
     /// <summary>The library of typical bodies (pipes, cylinders, spheres...) with their parameters and presets.</summary>
     MeshTemplateLibraryDto TemplateLibrary();
 
