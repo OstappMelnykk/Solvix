@@ -292,4 +292,43 @@ describe('MeshEditorSelectionService', () => {
     selection.setXrayNodes(1, false);
     expect(selection.revision(1)).toBe(revision + 1);
   });
+
+  describe('several faces', () => {
+    const a = { hex: 0, face: 'XPlus' as const };
+    const b = { hex: 1, face: 'YPlus' as const };
+
+    it('a plain click replaces the picked face', () => {
+      selection.selectFace(1, a);
+      selection.selectFace(1, b);
+
+      expect(selection.faces(1)).toEqual([b]);
+    });
+
+    it('a together-click adds a face, and takes it away when it is picked', () => {
+      selection.selectFace(1, a);
+      selection.selectFace(1, b, true);
+      expect(selection.faces(1)).toEqual([a, b]);
+      expect(selection.face(1)).toEqual(b);
+
+      selection.selectFace(1, a, true);
+      expect(selection.faces(1)).toEqual([b]);
+    });
+
+    it('the switch makes a plain click add the face', () => {
+      selection.setMultiFace(1, true);
+      selection.applyPick(1, { kind: 'face', hex: 0, face: 'XPlus' } as never, false);
+      selection.applyPick(1, { kind: 'face', hex: 1, face: 'YPlus' } as never, false);
+
+      expect(selection.faces(1).length).toBe(2);
+    });
+
+    it('picking a cube, a node or an edge lets go of all the faces', () => {
+      selection.selectFace(1, a);
+      selection.selectFace(1, b, true);
+
+      selection.selectNode(1, 5);
+
+      expect(selection.faces(1)).toEqual([]);
+    });
+  });
 });

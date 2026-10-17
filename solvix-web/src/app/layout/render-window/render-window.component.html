@@ -12,7 +12,7 @@
     [ruler]="getRuler(i)"
     [holeHighlight]="getHoleHighlight(i)"
     [meshView]="getMeshView(i)"
-    (meshPick)="onMeshPick($event.pick, $event.additive)"
+    (meshPick)="onMeshPick($event.pick, $event.additive, $event.together)"
     [hoverEnabled]="hoverOn(i)"
     (meshHover)="onMeshHover($event)"
     [buildEnabled]="isBuildOn(i)"

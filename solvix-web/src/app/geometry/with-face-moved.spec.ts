@@ -1,4 +1,4 @@
-import { withFaceMoved, faceSlots, EDGE_CORNERS } from './mesh-editor-view';
+import { withFaceMoved, withFacesMoved, faceSlots, EDGE_CORNERS } from './mesh-editor-view';
 import { linkedPairState, singleCubeState } from './mesh-state.fixture.spec';
 
 // withFaceMoved mirrors the backend's HexMesh.MoveFace: the 8 nodes on the face
@@ -54,5 +54,23 @@ describe('withFaceMoved', () => {
         expect(pm.y).withContext(`cube ${hex.id} edge ${k}`).toBeCloseTo((pa.y + pb.y) / 2, 9);
         expect(pm.z).withContext(`cube ${hex.id} edge ${k}`).toBeCloseTo((pa.z + pb.z) / 2, 9);
       });
+  });
+
+  it('several faces move together: a node of both moves once, by the whole delta', () => {
+    const state = linkedPairState();
+    const delta = { x: 0.2, y: 0.1, z: 0 };
+    const one = withFacesMoved(state, [{ hex: state.hexes[0].id, face: 'YPlus' }], delta);
+    const same = withFaceMoved(state, state.hexes[0].id, 'YPlus', delta);
+    expect(one.nodes).toEqual(same.nodes);
+
+    const both = withFacesMoved(state, [{ hex: state.hexes[0].id, face: 'YPlus' }, { hex: state.hexes[0].id, face: 'XPlus' }], delta);
+    const hex = state.hexes[0];
+    const shared = new Set(faceSlots('YPlus').filter(s => faceSlots('XPlus').includes(s)).map(s => hex.nodeIds[s]));
+    expect(shared.size).toBeGreaterThan(0);
+    const before = new Map(state.nodes.map(n => [n.id, n]));
+    for (const n of both.nodes) {
+      if (!shared.has(n.id)) continue;
+      expect(n.x).toBeCloseTo(before.get(n.id)!.x + delta.x, 12);
+    }
   });
 });
