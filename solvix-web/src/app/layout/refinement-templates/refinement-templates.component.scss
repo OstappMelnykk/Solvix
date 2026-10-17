@@ -1,0 +1,157 @@
+$bg: #1e1f22;
+$border: rgba(255, 255, 255, 0.14);
+$text: #dfe1e5;
+$muted: #8b919b;
+$accent: #da680b;
+
+// Over the cube constructor (1100), under toasts (1200).
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  pointer-events: none;
+}
+
+.rt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  font-family: sans-serif;
+  color: $text;
+}
+
+.rt__box {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 94vw);
+  height: min(600px, 90vh);
+  background: $bg;
+  border: 1px solid $border;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.rt__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid $border;
+  font-size: 14px;
+}
+
+.rt__title {
+  font-weight: 700;
+}
+
+.rt__close {
+  background: none;
+  border: none;
+  color: $muted;
+  font-size: 16px;
+  cursor: pointer;
+
+  &:hover {
+    color: $text;
+  }
+}
+
+.rt__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.rt__canvas {
+  flex: 1;
+  min-width: 0;
+  cursor: grab;
+  touch-action: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.rt__side {
+  flex: none;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-left: 1px solid $border;
+  font-size: 13px;
+}
+
+.rt__label {
+  margin-top: 6px;
+  color: $muted;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rt__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rt__choice,
+.rt__n button {
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid $border;
+  border-radius: 6px;
+  color: $text;
+  cursor: pointer;
+  text-align: left;
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.rt__choice--on {
+  background: rgba(218, 104, 11, 0.25);
+  border-color: $accent;
+}
+
+.rt__n {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  span {
+    min-width: 20px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  button {
+    text-align: center;
+    width: 34px;
+  }
+}
+
+.rt__info {
+  margin-top: 10px;
+  line-height: 1.5;
+
+  p {
+    margin: 0 0 6px;
+  }
+}
+
+.rt__hint {
+  color: $muted;
+  font-size: 12px;
+}

@@ -1,0 +1,30 @@
+<div class="rt" *ngIf="popup.isOpen()" (click)="close()">
+  <div class="rt__box" role="dialog" aria-label="Шаблони згущення" (click)="$event.stopPropagation()">
+    <div class="rt__header">
+      <span class="rt__title">Шаблони згущення</span>
+      <button type="button" class="rt__close" (click)="close()" aria-label="Закрити">✕</button>
+    </div>
+    <div class="rt__body">
+      <canvas #canvas class="rt__canvas" (pointerdown)="onDown($event)" (pointermove)="onMove($event)" (pointerup)="onUp()" (pointercancel)="onUp()" (wheel)="onWheel($event)"></canvas>
+      <div class="rt__side">
+        <div class="rt__label">Шаблон</div>
+        <div class="rt__choices" role="radiogroup" aria-label="Шаблон">
+          <button *ngFor="let t of templates" type="button" role="radio" class="rt__choice" [class.rt__choice--on]="kind === t.kind" [attr.aria-checked]="kind === t.kind" (click)="pick(t.kind)">{{ t.label }}</button>
+        </div>
+        <div class="rt__label">Поділ n</div>
+        <div class="rt__n">
+          <button type="button" [disabled]="n <= minN" (click)="setN(-1)" aria-label="Менше">−</button>
+          <span>{{ n }}</span>
+          <button type="button" [disabled]="n >= maxN" (click)="setN(1)" aria-label="Більше">+</button>
+        </div>
+        <label class="rt__label" for="rt-explode">Розсунути</label>
+        <input id="rt-explode" type="range" min="0" max="1" step="0.05" [value]="explode" (input)="onExplode($event)" />
+        <div class="rt__info">
+          <p><b>{{ info.marked }}</b> (помаранчевим)</p>
+          <p>Дітей: <b>{{ info.formula }} = {{ count }}</b></p>
+          <p class="rt__hint">Тягніть, щоб повернути; колесо — масштаб.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
