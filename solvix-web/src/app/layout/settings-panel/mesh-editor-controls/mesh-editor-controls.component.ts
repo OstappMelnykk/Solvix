@@ -333,17 +333,20 @@ export class MeshEditorControlsComponent {
     this.dropNodes(hexIds.flatMap(id => state.hexes.find(h => h.id === id)?.nodeIds ?? []));
   }
 
-  // Only the picked face goes to the surface: its 8 nodes (the corners and the midpoints), not the whole cube.
-  canDropFace(): boolean {
-    return this.canDrop() && this.activeFace() !== null;
+  // Only the picked faces go to the surface (one or several): the 8 nodes of each (its corners and midpoints), not the whole cube; a node shared by two of them goes once.
+  canDropFaces(): boolean {
+    return this.canDrop() && this.pickedFaces().length > 0;
   }
 
-  dropFace(): void {
-    const face = this.activeFace();
+  dropFaces(): void {
     const state = this.state;
-    const hex = face && state ? state.hexes.find(h => h.id === face.hex) : undefined;
-    if (!face || !hex) return;
-    this.dropNodes(faceSlots(face.face).map(slot => hex.nodeIds[slot]));
+    if (!state) return;
+    this.dropNodes(
+      this.pickedFaces().flatMap(face => {
+        const hex = state.hexes.find(h => h.id === face.hex);
+        return hex ? faceSlots(face.face).map(slot => hex.nodeIds[slot]) : [];
+      })
+    );
   }
 
   // Only the picked vertex goes to the surface.

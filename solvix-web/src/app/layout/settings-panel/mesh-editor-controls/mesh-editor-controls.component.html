@@ -60,8 +60,8 @@
       Опустити вибрані на STL
     </button>
     <button class="tool" type="button" title="Те саме для всіх кубів тіла" (click)="dropAll()">Опустити всі на STL</button>
-    <button class="tool" type="button" [disabled]="!canDropFace()" title="Лише вибрана грань: 8 її вузлів (кути й середини) опускаються на найближчу точку STL і прилипають. Решта куба лишається." (click)="dropFace()">
-      Опустити вибрану грань на STL
+    <button class="tool" type="button" [disabled]="!canDropFaces()" title="Лише вибрані грані (одна чи кілька): 8 вузлів кожної (кути й середини) опускаються на найближчу точку STL і прилипають. Решта куба лишається." (click)="dropFaces()">
+      Опустити вибрані грані на STL
     </button>
     <button class="tool" type="button" [disabled]="!canDropEdge()" title="Лише вибране ребро: два кути й середина" (click)="dropEdge()">Опустити вибране ребро на STL</button>
     <button class="tool" type="button" [disabled]="!canDropNode()" title="Лише вибрана вершина" (click)="dropNode()">Опустити вибрану вершину на STL</button>
