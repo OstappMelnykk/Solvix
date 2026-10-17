@@ -69,7 +69,7 @@ export const LOCAL_COORDS: readonly (readonly [number, number, number])[] = [
 ];
 
 // Edge k carries midpoint slot 8 + k.
-const EDGE_CORNERS: readonly (readonly [number, number])[] = [
+export const EDGE_CORNERS: readonly (readonly [number, number])[] = [
   [0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]
 ];
 
@@ -262,6 +262,43 @@ export function withNodeMoved(state: MeshStateDto, nodeId: number, position: THR
     nodes: state.nodes.map(n =>
       n.id === nodeId ? { ...n, x: position.x, y: position.y, z: position.z }
         : carried.has(n.id) ? { ...n, x: n.x + delta.x / 2, y: n.y + delta.y / 2, z: n.z + delta.z / 2 }
+        : n
+    )
+  };
+}
+
+// The nodes a whole-face move carries, as the server's HexMesh.MoveFace does: the 8 nodes of the face (full delta), and the midpoints of the edges that leave the
+// face's corners - in every cube that owns such a corner, so a linked neighbour's edges too - by half, so those edges stay straight.
+export function faceMoveSets(state: MeshStateDto, hexId: number, face: HexFaceName): { full: Set<number>; half: Set<number> } | null {
+  const hex = state.hexes.find(h => h.id === hexId);
+  if (!hex) return null;
+  const slots = faceSlots(face);
+  const full = new Set<number>(slots.map(slot => hex.nodeIds[slot]));
+  const corners = new Set<number>(slots.filter(slot => slot < 8).map(slot => hex.nodeIds[slot]));
+  const half = new Set<number>();
+  for (const owner of state.hexes) {
+    EDGE_CORNERS.forEach(([a, b], k) => {
+      const nodeA = owner.nodeIds[a];
+      const nodeB = owner.nodeIds[b];
+      // an edge that leaves a moved corner: its other end is not on the face; an edge between two moved corners lies in the face (a full node)
+      if (corners.has(nodeA) !== corners.has(nodeB)) half.add(owner.nodeIds[8 + k]);
+    });
+  }
+  for (const id of full) half.delete(id);
+  return { full, half };
+}
+
+// The state as it would be with a whole face dragged by `delta` (a preview while the pointer is still down), matching the server's MoveFace
+// (see faceMoveSets). Everything else follows through the isoparametric map.
+export function withFaceMoved(state: MeshStateDto, hexId: number, face: HexFaceName, delta: THREE.Vector3Like): MeshStateDto {
+  const sets = faceMoveSets(state, hexId, face);
+  if (!sets) return state;
+  const { full, half } = sets;
+  return {
+    ...state,
+    nodes: state.nodes.map(n =>
+      full.has(n.id) ? { ...n, x: n.x + delta.x, y: n.y + delta.y, z: n.z + delta.z }
+        : half.has(n.id) ? { ...n, x: n.x + delta.x / 2, y: n.y + delta.y / 2, z: n.z + delta.z / 2 }
         : n
     )
   };

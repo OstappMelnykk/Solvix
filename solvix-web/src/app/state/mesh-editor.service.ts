@@ -123,6 +123,11 @@ export class MeshEditorService {
     this.run(sessionId, this.api.moveNode(sessionId, nodeId, position, carryEdgeMidpoints), then);
   }
 
+  // Moves a whole face by one displacement (one undo step). `then` runs after the new state arrives.
+  moveFace(sessionId: number, hexId: number, face: HexFaceName, delta: MeshPointDto, then?: () => void): void {
+    this.run(sessionId, this.api.moveFace(sessionId, hexId, face, delta), then);
+  }
+
   undo(sessionId: number): void {
     this.run(sessionId, this.api.undo(sessionId));
   }
@@ -154,7 +159,11 @@ export class MeshEditorService {
     this.busy.set(true);
     request.subscribe({
       next: result => {
+        const invalidBefore = new Set(this.getState(sessionId)?.invalidHexes ?? []);
         this.accept(sessionId, result.state);
+        // a move that folds a cube is never refused (the solver checks before solving), but it is said at once, so it is seen while it can still be taken back
+        const folded = result.state.invalidHexes.filter(id => !invalidBefore.has(id));
+        if (result.ok && folded.length > 0) this.notifications.warning(`Куб ${folded.join(', ')} вивернуто або виродилось: скасуйте крок або виправте перед розрахунком.`);
         if (!result.ok && result.error) this.notifications.warning(result.error);
         else if (result.ok && result.info) this.notifications.info(result.info);
         this.busy.set(false);

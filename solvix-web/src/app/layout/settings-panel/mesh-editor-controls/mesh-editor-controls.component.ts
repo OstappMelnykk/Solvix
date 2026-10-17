@@ -27,7 +27,7 @@ type Axis = 'x' | 'y' | 'z';
 // What the info popup lists - kept next to the handler it describes
 // (onKeyDown) and mirrored in docs/EDITOR_SHORTCUTS.md.
 export const SHORTCUTS: readonly { readonly keys: string; readonly action: string }[] = [
-  { keys: 'Клік по грані', action: 'вибрати грань' },
+  { keys: 'Клік по грані', action: 'вибрати грань (Real World: стрілки рухають усю грань)' },
   { keys: 'Shift + клік', action: 'вибрати куб (1-й — основа, 2-й приєднується)' },
   { keys: 'Клік по точці', action: 'вибрати вузол (Real World: стрілки для drag)' },
   { keys: 'N', action: 'перший куб' },
@@ -40,8 +40,8 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Esc', action: 'зняти виділення' },
   { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
   { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
-  { keys: '← →  ↑ ↓', action: 'зсув вузла по X і Z (Shift — ×10, перший крок до цілого)' },
-  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла по Y: вгору / вниз (Shift — ×10, перший крок до цілого)' },
+  { keys: '← →  ↑ ↓', action: 'зсув вузла/грані по X і Z (Shift — ×10; для вузла перший крок до цілого)' },
+  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла/грані по Y: вгору / вниз (Shift — ×10; для вузла перший крок до цілого)' },
   { keys: '?', action: 'ця підказка' }
 ];
 
@@ -424,6 +424,17 @@ export class MeshEditorControlsComponent {
     return !this.busy && this.isRealWorld && this.selectedNodeId() !== null;
   }
 
+  // A face can be nudged in the Real World when a face is picked and no node is
+  // (a node takes priority, matching the single-target feel of the arrow keys).
+  canMoveFace(): boolean {
+    return !this.busy && this.isRealWorld && this.selectedNodeId() === null && this.activeFace() !== null;
+  }
+
+  // What the arrow keys act on right now: the node if one is picked, else the face.
+  canNudge(): boolean {
+    return this.canMoveNode() || this.canMoveFace();
+  }
+
   onCarryChange(event: Event): void {
     this.carryEdgeMidpoints = (event.target as HTMLInputElement).checked;
   }
@@ -534,8 +545,13 @@ export class MeshEditorControlsComponent {
   }
 
   // One step along an axis. A coarse step (multiplier above 1, the Shift key) first goes to the nearest whole number in its direction; from a whole
-  // number it is the step times the multiplier.
+  // number it is the step times the multiplier. Acts on the picked node, or - when
+  // none is picked - on the whole picked face (shifted by the same delta).
   nudge(axis: Axis, direction: 1 | -1, multiplier = 1): void {
+    if (this.selectedNodeId() === null && this.canMoveFace()) {
+      this.nudgeFace(axis, direction, multiplier);
+      return;
+    }
     const value = this.nodeCoord(axis);
     let next = value + direction * this.nudgeStep * multiplier;
     if (multiplier > 1 && Math.abs(value - Math.round(value)) > 1e-9) {
@@ -547,6 +563,17 @@ export class MeshEditorControlsComponent {
       z: this.nodeCoord('z'),
       [axis]: next
     });
+  }
+
+  // Shifts the whole picked face by one step along an axis (the 8 face nodes
+  // fully, the connecting edge midpoints by half - the backend decides that).
+  // A coarse step is just the step times the multiplier; a face has no single
+  // coordinate to snap to a whole number.
+  private nudgeFace(axis: Axis, direction: 1 | -1, multiplier = 1): void {
+    const face = this.activeFace();
+    if (this.sessionId === null || face === null || !this.canMoveFace()) return;
+    const delta = { x: 0, y: 0, z: 0, [axis]: direction * this.nudgeStep * multiplier };
+    this.editor.moveFace(this.sessionId, face.hex, face.face, delta);
   }
 
   private moveSelectedNode(position: MeshPointDto): void {
@@ -663,7 +690,7 @@ export class MeshEditorControlsComponent {
     }
 
     if (!mod && event.altKey && (key === 'arrowup' || key === 'arrowdown')) {     // Alt + up/down: Y (a short keyboard has no PageUp/PageDown)
-      if (this.canMoveNode()) this.nudge('y', key === 'arrowup' ? 1 : -1, event.shiftKey ? 10 : 1);
+      if (this.canNudge()) this.nudge('y', key === 'arrowup' ? 1 : -1, event.shiftKey ? 10 : 1);
     } else if (mod || event.altKey) {            // (Cmd/Ctrl+Z and +Shift+Z are the whole app's: GlobalShortcutsComponent)
       handled = false;
     } else if (key === 'a') {
@@ -683,10 +710,10 @@ export class MeshEditorControlsComponent {
     } else if (key === 'escape') {
       this.clearSelection();
     } else if (event.code === 'BracketRight' || event.code === 'BracketLeft') {   // ] up, [ down along Y, wherever the keys are on the layout
-      if (this.canMoveNode()) this.nudge('y', event.code === 'BracketRight' ? 1 : -1, event.shiftKey ? 10 : 1);
+      if (this.canNudge()) this.nudge('y', event.code === 'BracketRight' ? 1 : -1, event.shiftKey ? 10 : 1);
     } else if (NUDGE_KEYS[key]) {
       const [axis, direction] = NUDGE_KEYS[key];
-      if (this.canMoveNode()) this.nudge(axis, direction, event.shiftKey ? 10 : 1);
+      if (this.canNudge()) this.nudge(axis, direction, event.shiftKey ? 10 : 1);
     } else {
       handled = false;
     }

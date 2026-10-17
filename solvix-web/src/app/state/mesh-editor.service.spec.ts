@@ -81,6 +81,19 @@ describe('MeshEditorService', () => {
     expect(editor.getState(sessionId)!.version).toBe(3);
   });
 
+  it('says at once when a move has folded a cube, and only about the cubes that were not folded before', () => {
+    loadInitialState(singleCubeState());
+
+    editor.moveFace(sessionId, 0, 'XPlus', { x: -3, y: 0, z: 0 });
+    http.expectOne(url('hexes/0/faces/XPlus/move')).flush({ ok: true, error: null, state: { ...singleCubeState(2), invalidHexes: [0] } });
+    expect(notifications.toasts().filter(t => t.kind === 'warning').length).toBe(1);
+    expect(notifications.toasts().at(-1)?.message).toContain('Куб 0');
+
+    editor.moveFace(sessionId, 0, 'XPlus', { x: -1, y: 0, z: 0 });      // still folded: nothing new to say
+    http.expectOne(url('hexes/0/faces/XPlus/move')).flush({ ok: true, error: null, state: { ...singleCubeState(3), invalidHexes: [0] } });
+    expect(notifications.toasts().filter(t => t.kind === 'warning').length).toBe(1);
+  });
+
   it('shows the reason of a refused command as a warning and still takes the returned state', () => {
     loadInitialState(singleCubeState());
 

@@ -20,6 +20,7 @@
     [paintEnabled]="isBrushOn(i)"
     (paint)="onPaint($event)"
     [draggableNodeId]="getDraggableNodeId(i)"
+    [draggableFace]="getDraggableFace(i)"
     [attachedNodeIds]="getAttachedNodes(i)"
     [snapShare]="snapShare()"
     [snapEnabled]="snapEnabled()"
@@ -28,6 +29,8 @@
     (nodeAttach)="onNodeAttach($event)"
     (nodeDragging)="onNodeDragging($event)"
     (nodeMoved)="onNodeMoved($event)"
+    (faceDragging)="onFaceDragging($event)"
+    (faceMoved)="onFaceMoved($event)"
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />

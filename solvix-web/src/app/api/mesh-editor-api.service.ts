@@ -233,6 +233,12 @@ export class MeshEditorApiService {
     return this.http.put<MeshCommandResultDto>(this.url(sessionId, `nodes/${nodeId}`), { ...position, carryEdgeMidpoints });
   }
 
+  // Moves a whole face by one displacement { dx, dy, dz }: the 8 face nodes fully,
+  // the midpoints of the edges joining it to the opposite face by half (one undo step).
+  moveFace(sessionId: number, hexId: number, face: HexFaceName, delta: MeshPointDto): Observable<MeshCommandResultDto> {
+    return this.http.put<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}/faces/${face}/move`), { dx: delta.x, dy: delta.y, dz: delta.z });
+  }
+
   undo(sessionId: number): Observable<MeshCommandResultDto> {
     return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'undo'), {});
   }

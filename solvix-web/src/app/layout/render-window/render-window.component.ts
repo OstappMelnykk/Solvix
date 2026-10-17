@@ -16,7 +16,8 @@ import { QualityRenderService } from '../../state/quality-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
 import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshEditorService } from '../../state/mesh-editor.service';
-import { MeshPick, MeshView } from '../../geometry/mesh-editor-view';
+import { HexFaceName } from '../../api/mesh-editor-api.service';
+import { MeshPick, MeshView, faceMoveSets } from '../../geometry/mesh-editor-view';
 import { GroundCell } from '../../geometry/ground-cell';
 import { buildCommandFor } from '../../geometry/mesh-build';
 import { MeshCountsComponent } from './mesh-counts/mesh-counts.component';
@@ -213,6 +214,64 @@ export class RenderWindowComponent {
     if (sessionId !== null) {
       this.meshEditor.moveNode(sessionId, event.nodeId, event.position, this.meshEditor.carryEdgeMidpoints);
     }
+  }
+
+  // The face a plain click picked, draggable only in the Real World and only
+  // while no node is picked (a node takes priority). Resolved into the ids the
+  // canvas needs: the 8 face nodes (full delta) and the connecting edge midpoints
+  // (half), plus the face centre the gizmo sits at.
+  getDraggableFace(worldIndex: number): {
+    hex: number;
+    face: HexFaceName;
+    fullNodeIds: number[];
+    halfNodeIds: number[];
+    center: { x: number; y: number; z: number };
+  } | null {
+    const sessionId = this.sessions.activeSessionId();
+    if (worldIndex !== REAL_WORLD_INDEX || sessionId === null) return null;
+    if (this.meshSelection.nodeId(sessionId) !== null) return null; // a picked node wins
+    const face = this.meshSelection.face(sessionId);
+    const state = this.meshEditor.getState(sessionId);
+    if (!face || !state) return null;
+    const sets = faceMoveSets(state, face.hex, face.face);
+    if (!sets) return null;
+    const fullNodeIds = [...sets.full];
+    const halfNodeIds = [...sets.half];
+
+    const nodeById = new Map(state.nodes.map(n => [n.id, n]));
+    const pending = this.meshEditorRender.facePreviewDelta(sessionId);
+    const center = { x: 0, y: 0, z: 0 };
+    for (const id of fullNodeIds) {
+      const n = nodeById.get(id);
+      if (n) {
+        center.x += n.x / fullNodeIds.length;
+        center.y += n.y / fullNodeIds.length;
+        center.z += n.z / fullNodeIds.length;
+      }
+    }
+    // dragged and dropped, and the server has not answered yet: the gizmo stays where it was dropped
+    if (pending) {
+      center.x += pending.x;
+      center.y += pending.y;
+      center.z += pending.z;
+    }
+    return { hex: face.hex, face: face.face, fullNodeIds, halfNodeIds, center };
+  }
+
+  // The face gizmo was dropped: send the displacement to the server (one undo step).
+  onFaceMoved(event: { hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    const { x, y, z } = event.delta;
+    if (x === 0 && y === 0 && z === 0) return;
+    this.meshEditor.moveFace(sessionId, event.hex, event.face, event.delta);
+  }
+
+  // The face gizmo is being dragged: redraw the whole Real World live from the
+  // isoparametric map (curved edges, inner grid, neighbours), as for a node drag.
+  onFaceDragging(event: { hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId !== null) this.meshEditorRender.setFaceDragPreview(sessionId, event.hex, event.face, event.delta);
   }
 
   // Building with the mouse is for the Ideal and the Real World, when the user has it on.

@@ -27,6 +27,12 @@ public interface IMeshBuilderFacade
     /// <param name="carryEdgeMidpoints">A dragged corner also moves its edges' midpoints by half.</param>
     MeshCommandResultDto MoveNode(int sessionId, int nodeId, MeshPointDto position, bool carryEdgeMidpoints);
 
+    /// <summary>
+    /// Moves a whole face of a hex by one displacement (one undo step). The 8 face
+    /// nodes move fully; the midpoints of the edges joining it to the opposite face move by half.
+    /// </summary>
+    MeshCommandResultDto MoveFace(int sessionId, int hexId, string face, MeshPointDto delta);
+
     MeshCommandResultDto Undo(int sessionId);
 
     MeshCommandResultDto Redo(int sessionId);

@@ -532,6 +532,42 @@ public sealed partial class HexMesh
     /// <summary>Moves a single node without touching any other.</summary>
     public void SetNodePosition(int nodeId, Vec3 position) => _nodes[nodeId].Position = position;
 
+    /// <summary>
+    /// Moves a whole face of a hex by one displacement. The face's 8 nodes
+    /// (4 corners and the 4 midpoints lying on the face) move by the full
+    /// <paramref name="delta"/>; the midpoints of the edges that leave the
+    /// face's corners (in every hex that owns such a corner, so a linked
+    /// neighbour's edges too) move by half of it, so those edges stay straight
+    /// instead of bending. The same rule as <see cref="DragNode"/>, for four corners at once.
+    /// </summary>
+    public void MoveFace(FaceRef face, Vec3 delta)
+    {
+        var hex = _hexes[face.Hex];
+        var full = new HashSet<int>();
+        foreach (int slot in face.Face.Slots()) full.Add(hex.NodeIds[slot]);
+        var corners = face.Face.Slots().Where(Hex20Reference.IsCorner).Select(slot => hex.NodeIds[slot]).ToHashSet();
+
+        // An edge that leaves a moved corner: its other end is not on the face, so its midpoint (8 + k) moves by half. An edge between two moved
+        // corners lies in the face and is already among the full ones.
+        var half = new HashSet<int>();
+        foreach (int corner in corners)
+            foreach (var (hexId, slot) in _owners[corner])
+            {
+                var owner = _hexes[hexId];
+                for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
+                {
+                    var (ca, cb) = Hex20Reference.EdgeCorners[k];
+                    if (ca != slot && cb != slot) continue;
+                    if (corners.Contains(owner.NodeIds[ca == slot ? cb : ca])) continue;
+                    half.Add(owner.NodeIds[8 + k]);
+                }
+            }
+        half.ExceptWith(full);
+
+        foreach (int id in full) _nodes[id].Position += delta;
+        foreach (int id in half) _nodes[id].Position += delta * 0.5;
+    }
+
     /// <summary>Hexes whose map is folded or degenerate. Never blocks editing; the solver checks it before solving.</summary>
     public IReadOnlyList<int> InvalidHexes() => _hexes.Values.Where(h => !h.IsValid()).Select(h => h.Id).OrderBy(i => i).ToList();
 
