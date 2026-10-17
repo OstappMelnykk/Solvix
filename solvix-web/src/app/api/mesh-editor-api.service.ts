@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -237,6 +237,11 @@ export class MeshEditorApiService {
   // the midpoints of the edges joining it to the opposite face by half (one undo step).
   moveFace(sessionId: number, hexId: number, face: HexFaceName, delta: MeshPointDto): Observable<MeshCommandResultDto> {
     return this.http.put<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}/faces/${face}/move`), { dx: delta.x, dy: delta.y, dz: delta.z });
+  }
+
+  // The outer skin of the body as a binary STL (the file itself; the counts come in the X-Shell-* headers).
+  exportShell(sessionId: number, density: number): Observable<HttpResponse<Blob>> {
+    return this.http.get(this.url(sessionId, `shell.stl?density=${density}`), { observe: 'response', responseType: 'blob' });
   }
 
   // Puts several nodes at the given places in one undo step.

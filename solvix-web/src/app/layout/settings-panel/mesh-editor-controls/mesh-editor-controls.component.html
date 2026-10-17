@@ -281,3 +281,17 @@
   <button class="tool tool--primary" type="button" (click)="runLocalRefinement()">Запустити</button>
   <button *ngIf="isLocalRefined()" class="tool" type="button" (click)="clearLocalRefinement()">Скинути згущення</button>
 </div>
+
+<div class="group">
+  <div class="group-label">Оболонка в STL</div>
+  <label class="row" title="Скільки квадратів на бік кожної зовнішньої грані (кожен — два трикутники). Усі вершини лежать точно на кривій поверхні.">
+    <span>Квадратів на бік грані</span>
+    <select [value]="shellDensity" (change)="onShellDensityChange($event)" aria-label="Квадратів на бік грані">
+      <option *ngFor="let d of shellDensities" [value]="d" [selected]="d === shellDensity">{{ d }}</option>
+    </select>
+  </label>
+  <button class="tool" type="button" [disabled]="!canExportShell()" title="Зберегти лише зовнішню оболонку тіла як закритий STL: без кубів і внутрішніх граней" (click)="exportShell()">
+    Зберегти оболонку в STL
+  </button>
+  <div class="advice" *ngIf="shellResult">{{ shellResultText() }}</div>
+</div>

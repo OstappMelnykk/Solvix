@@ -66,3 +66,7 @@ public sealed record MeshShapePresetDto(string Name, string Label, MeshShapePara
 
 /// <param name="Found">False when the point lies outside the body.</param>
 public sealed record MeshMappingResultDto(bool Found, MeshPointDto? Point);
+
+/// <summary>The outer skin of the body as a binary STL, with what a client shows about it.</summary>
+/// <param name="MaxDeviation">The largest distance (model units) between a flat triangle and the curved surface it samples; an estimate.</param>
+public sealed record MeshShellDto(byte[] Stl, int Faces, int Triangles, double MaxDeviation);

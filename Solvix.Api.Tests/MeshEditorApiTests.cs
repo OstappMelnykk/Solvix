@@ -316,4 +316,22 @@ public class MeshEditorApiTests
         var refused = await Post("/api/mesh-editor/1/bodies", new { kind = "nope" });
         Assert.That(refused.GetProperty("ok").GetBoolean(), Is.False);
     }
+
+    [Test]
+    public async Task The_outer_skin_is_downloaded_as_a_binary_stl_and_a_bad_request_is_refused()
+    {
+        await Post("/api/mesh-editor/1/hexes/first");
+
+        var response = await _client.GetAsync("/api/mesh-editor/1/shell.stl?density=4");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("model/stl"));
+        Assert.That(response.Headers.GetValues("X-Shell-Faces").Single(), Is.EqualTo("6"));
+        Assert.That(response.Headers.GetValues("X-Shell-Triangles").Single(), Is.EqualTo((6 * 4 * 4 * 2).ToString()));
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        Assert.That(bytes, Has.Length.EqualTo(84 + 50 * 6 * 4 * 4 * 2));
+
+        Assert.That((await _client.GetAsync("/api/mesh-editor/1/shell.stl?density=0")).StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.That((await _client.GetAsync("/api/mesh-editor/2/shell.stl")).StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));   // nothing in that session
+    }
 }
