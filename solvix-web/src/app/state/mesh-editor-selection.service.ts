@@ -21,6 +21,8 @@ interface Selection {
   otherFaces: FaceRef[];
   // With the switch on a plain click on a face adds it to the picked ones (or takes it away) instead of replacing them.
   multiFace: boolean;
+  // The face brush: a stroke over the faces picks every face it passes (the Ideal and the Real World).
+  faceBrush: boolean;
   edge: EdgeRef | null;
   nodeId: number | null;
   hoverFace: FaceRef | null;
@@ -63,6 +65,30 @@ export class MeshEditorSelectionService {
   faces(sessionId: number): readonly FaceRef[] {
     const selection = this.selection(sessionId);
     return selection.face === null ? [] : [...selection.otherFaces, selection.face];
+  }
+
+  isFaceBrush(sessionId: number): boolean {
+    return this.selection(sessionId).faceBrush;
+  }
+
+  setFaceBrush(sessionId: number, on: boolean): void {
+    const selection = this.selection(sessionId);
+    if (selection.faceBrush === on) return;
+    selection.faceBrush = on;
+    selection.revision++;
+  }
+
+  // What a stroke of the face brush does to a face under it: picks it, together with the faces already picked (a face already picked stays; nothing is redrawn then).
+  brushFace(sessionId: number, face: FaceRef): void {
+    const selection = this.selection(sessionId);
+    const all = selection.face === null ? [] : [...selection.otherFaces, selection.face];
+    if (all.some(f => f.hex === face.hex && f.face === face.face)) return;
+    selection.otherFaces = all;
+    selection.face = face;
+    selection.edge = null;
+    selection.nodeId = null;
+    selection.hexes = [];
+    selection.revision++;
   }
 
   isMultiFace(sessionId: number): boolean {
@@ -247,6 +273,6 @@ export class MeshEditorSelectionService {
   }
 
   private selection(sessionId: number): Selection {
-    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, otherFaces: [], multiFace: false, edge: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
+    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, otherFaces: [], multiFace: false, faceBrush: false, edge: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
   }
 }

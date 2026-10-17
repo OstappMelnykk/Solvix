@@ -47,6 +47,10 @@
   <button class="tool" type="button" [class.tool--on]="isMultiFace()" [attr.aria-pressed]="isMultiFace()" title="Увімкнено: клік по грані додає її до вибраних (або знімає). Те саме робить Ctrl/Cmd+клік. Вибрані грані тягнуться разом одним гізмо." (click)="toggleMultiFace()">
     Вибір кількох граней
   </button>
+  <button class="tool" type="button" [class.tool--on]="isFaceBrush()" [attr.aria-pressed]="isFaceBrush()" title="Утримуйте ліву кнопку й ведіть по гранях — кожна, якої торкнулись, стане вибраною. Права кнопка обертає вид." (click)="toggleFaceBrush()">
+    Пензель граней
+  </button>
+  <button class="tool" type="button" *ngIf="pickedFaces().length > 0" (click)="clearPickedFaces()">Зняти вибір граней</button>
   <div class="pick pick--face" *ngIf="activeEdge()">
     <b>Ребро</b>
     <span class="status">{{ activeEdgeText() }}</span>

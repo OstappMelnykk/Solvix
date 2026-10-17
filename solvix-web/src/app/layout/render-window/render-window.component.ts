@@ -326,7 +326,10 @@ export class RenderWindowComponent {
   // The brush paints in the Solver World with the Pressure, Support or Material tool.
   isBrushOn(worldIndex: number): boolean {
     const sessionId = this.sessions.activeSessionId();
-    if (worldIndex !== SOLVER_WORLD_INDEX || sessionId === null) return false;
+    if (sessionId === null) return false;
+    // the face brush picks faces in the Ideal and the Real World (not while elements are being chosen for refinement)
+    if (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) return this.meshSelection.isFaceBrush(sessionId) && !this.solver.refineMode(sessionId);
+    if (worldIndex !== SOLVER_WORLD_INDEX) return false;
     const tool = this.solver.tool(sessionId);
     return this.solver.brush(sessionId) && tool !== 'view';
   }
@@ -335,6 +338,11 @@ export class RenderWindowComponent {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
     const pick = event.pick?.kind === 'face' ? event.pick : null;
+    const world = this.activeWorldIndex();
+    if (world === IDEAL_WORLD_INDEX || world === REAL_WORLD_INDEX) {
+      if (pick) this.meshSelection.brushFace(sessionId, { hex: pick.hex, face: pick.face });
+      return;
+    }
     if (event.phase === 'start') this.solver.paintStart(sessionId, pick);
     else if (event.phase === 'move') this.solver.paintTo(sessionId, pick);
     else this.solver.paintEnd(sessionId);

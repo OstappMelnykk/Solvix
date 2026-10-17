@@ -322,6 +322,23 @@ describe('MeshEditorSelectionService', () => {
       expect(selection.faces(1).length).toBe(2);
     });
 
+    it('the brush picks every face it passes, once each, together with the picked ones', () => {
+      selection.brushFace(1, a);
+      selection.brushFace(1, b);
+      const revision = selection.revision(1);
+      selection.brushFace(1, a);                                         // already picked: nothing changes
+
+      expect(selection.faces(1)).toEqual([a, b]);
+      expect(selection.revision(1)).toBe(revision);
+    });
+
+    it('the brush is a switch per session', () => {
+      expect(selection.isFaceBrush(1)).toBeFalse();
+      selection.setFaceBrush(1, true);
+      expect(selection.isFaceBrush(1)).toBeTrue();
+      expect(selection.isFaceBrush(2)).toBeFalse();
+    });
+
     it('picking a cube, a node or an edge lets go of all the faces', () => {
       selection.selectFace(1, a);
       selection.selectFace(1, b, true);

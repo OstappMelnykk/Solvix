@@ -323,6 +323,19 @@ export class MeshEditorControlsComponent {
     return this.sessionId !== null && this.selection.isMultiFace(this.sessionId);
   }
 
+  isFaceBrush(): boolean {
+    return this.sessionId !== null && this.selection.isFaceBrush(this.sessionId);
+  }
+
+  // The brush: hold the left button and move over the faces to pick them (the right button turns the view).
+  toggleFaceBrush(): void {
+    if (this.sessionId !== null) this.selection.setFaceBrush(this.sessionId, !this.isFaceBrush());
+  }
+
+  clearPickedFaces(): void {
+    if (this.sessionId !== null) this.selection.clear(this.sessionId);
+  }
+
   toggleMultiFace(): void {
     if (this.sessionId !== null) this.selection.setMultiFace(this.sessionId, !this.isMultiFace());
   }
