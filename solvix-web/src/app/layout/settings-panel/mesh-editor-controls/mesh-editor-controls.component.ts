@@ -13,7 +13,7 @@ import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
 import { ShellExportResult, ShellExportService } from '../../../state/shell-export.service';
 import { EdgeRef, FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
-import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
+import { EDGE_CORNERS, LOCAL_COORDS, faceSlots } from '../../../geometry/mesh-editor-view';
 import { Scope } from '../../../geometry/solver-targets';
 
 const FACE_LABELS: Record<HexFaceName, string> = {
@@ -314,10 +314,53 @@ export class MeshEditorControlsComponent {
 
   private drop(hexIds: readonly number[]): void {
     const state = this.state;
+    if (!state) return;
+    this.dropNodes(hexIds.flatMap(id => state.hexes.find(h => h.id === id)?.nodeIds ?? []));
+  }
+
+  // Only the picked face goes to the surface: its 8 nodes (the corners and the midpoints), not the whole cube.
+  canDropFace(): boolean {
+    return this.canDrop() && this.activeFace() !== null;
+  }
+
+  dropFace(): void {
+    const face = this.activeFace();
+    const state = this.state;
+    const hex = face && state ? state.hexes.find(h => h.id === face.hex) : undefined;
+    if (!face || !hex) return;
+    this.dropNodes(faceSlots(face.face).map(slot => hex.nodeIds[slot]));
+  }
+
+  // Only the picked vertex goes to the surface.
+  canDropNode(): boolean {
+    return this.canDrop() && this.selectedNodeId() !== null;
+  }
+
+  dropNode(): void {
+    const id = this.selectedNodeId();
+    if (id !== null) this.dropNodes([id]);
+  }
+
+  // The picked edge: its two corners and the midpoint.
+  canDropEdge(): boolean {
+    return this.canDrop() && this.activeEdge() !== null;
+  }
+
+  dropEdge(): void {
+    const edge = this.activeEdge();
+    const state = this.state;
+    const hex = edge && state ? state.hexes.find(h => h.id === edge.hex) : undefined;
+    if (!edge || !hex) return;
+    const [a, b] = EDGE_CORNERS[edge.edge];
+    this.dropNodes([hex.nodeIds[a], hex.nodeIds[b], hex.nodeIds[8 + edge.edge]]);
+  }
+
+  private dropNodes(nodeIds: readonly number[]): void {
+    const state = this.state;
     if (this.sessionId === null || !state || !this.canDrop()) return;
     const sessionId = this.sessionId;
     const nodes = new Map(state.nodes.map(n => [n.id, n]));
-    const ids = [...new Set(hexIds.flatMap(id => state.hexes.find(h => h.id === id)?.nodeIds ?? []))].filter(id => nodes.has(id));
+    const ids = [...new Set(nodeIds)].filter(id => nodes.has(id));
     if (ids.length === 0) return;
     const places = this.surfaceProjection.nearestPoints(ids.map(id => new THREE.Vector3(nodes.get(id)!.x, nodes.get(id)!.y, nodes.get(id)!.z)));
     const round = (value: number) => Math.round(value * 1e6) / 1e6;

@@ -505,6 +505,36 @@ describe('MeshEditorControlsComponent', () => {
       expect(attachments.count(1)).toBe(20);
     });
 
+    it('drops only the picked face: its 8 nodes, not the whole cube', () => {
+      state = singleCubeState();
+      TestBed.inject(SurfaceProjectionService).register(plane);
+      editor.moveNodes.and.callFake((_session, _moves, then) => then?.());
+      expect(component.canDropFace()).toBeFalse();
+
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+      expect(component.canDropFace()).toBeTrue();
+      component.dropFace();
+
+      const moves = editor.moveNodes.calls.mostRecent().args[1];
+      expect(moves.length).toBe(8);
+      expect(moves.every(m => m.y === -2)).toBeTrue();
+    });
+
+    it('drops only the picked vertex, or only the picked edge (two corners and the midpoint)', () => {
+      state = singleCubeState();
+      TestBed.inject(SurfaceProjectionService).register(plane);
+      editor.moveNodes.and.callFake((_session, _moves, then) => then?.());
+
+      selection.selectNode(1, 6);
+      component.dropNode();
+      expect(editor.moveNodes.calls.mostRecent().args[1].map(m => m.nodeId)).toEqual([6]);
+
+      selection.selectEdge(1, { hex: 0, edge: 0 });
+      expect(component.canDropNode()).toBeFalse();
+      component.dropEdge();
+      expect(editor.moveNodes.calls.mostRecent().args[1].length).toBe(3);
+    });
+
     it('drops every cube of the body on request, and each shared node once', () => {
       state = linkedPairState();
       TestBed.inject(SurfaceProjectionService).register(plane);
