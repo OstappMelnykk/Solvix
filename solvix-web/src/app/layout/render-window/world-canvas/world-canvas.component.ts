@@ -368,13 +368,18 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private onPointerDown = (event: PointerEvent) => {
     this.pointerDownClient = { x: event.clientX, y: event.clientY };
-    if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging) {
+    if (this.paintEnabled && this.active && event.button === 0 && this.currentMeshView && !this.nodeGizmo.dragging && !this.overGizmoHandle()) {
       this.painting = true;
       this.lastPaintKey = '';
       this.canvasRef.nativeElement.setPointerCapture?.(event.pointerId);
       this.paint.emit({ phase: 'start', pick: this.pickAt(event.clientX, event.clientY) });
     }
   };
+  // The pointer is over a handle of the gizmo (a press there drags the gizmo, it does not start a stroke).
+  private overGizmoHandle(): boolean {
+    return this.nodeGizmo.object !== undefined && this.nodeGizmo.axis !== null;
+  }
+
   private onPointerUp = (event: PointerEvent) => {
     if (event.button === 2) {
       this.handleRightClick(event);
