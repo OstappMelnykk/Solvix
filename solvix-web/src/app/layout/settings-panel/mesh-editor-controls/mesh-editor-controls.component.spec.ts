@@ -14,6 +14,7 @@ import { SurfaceAttachmentService } from '../../../state/surface-attachment.serv
 import { SurfaceProjectionService } from '../../../state/surface-projection.service';
 import { SurfaceSnapper } from '../../../geometry/surface-snap';
 import * as THREE from 'three';
+import { ShellExportResult, ShellExportService } from '../../../state/shell-export.service';
 import { NodeSizeService } from '../../../state/node-size.service';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { linkedPairState, singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
@@ -26,6 +27,7 @@ describe('MeshEditorControlsComponent', () => {
   let component: MeshEditorControlsComponent;
   let constructorWindow: jasmine.SpyObj<CubeConstructorService>;
   let solver: jasmine.SpyObj<SolverService>;
+  let shellExport: jasmine.SpyObj<ShellExportService>;
 
   const emptyState: MeshStateDto = { version: 0, canUndo: false, canRedo: false, nodes: [], hexes: [], links: [], faces: [], invalidHexes: [] };
 
@@ -42,8 +44,10 @@ describe('MeshEditorControlsComponent', () => {
     solver = jasmine.createSpyObj<SolverService>('SolverService', ['forget', 'divisions', 'setDivisions', 'isLocal', 'addRefinement', 'clearRefinement', 'refineSelection', 'clearRefineSelection', 'refineMode', 'setRefineMode', 'refineScope', 'setRefineScope', 'refineDepth', 'setRefineDepth']);
     solver.divisions.and.returnValue([1, 2, 3]);
     solver.refineSelection.and.returnValue(new Set<string>());
+    shellExport = jasmine.createSpyObj<ShellExportService>('ShellExportService', ['save'], { densities: [2, 4, 8, 16, 32, 64] });
     TestBed.configureTestingModule({
       providers: [
+        { provide: ShellExportService, useValue: shellExport },
         { provide: MeshEditorService, useValue: editor },
         { provide: CubeConstructorService, useValue: constructorWindow },
         { provide: SolverService, useValue: solver }
@@ -70,7 +74,7 @@ describe('MeshEditorControlsComponent', () => {
       const labels = Array.from(root.querySelectorAll('.group-label')).map(e => (e.querySelector('span') ?? e).textContent!.trim());
       expect(labels.slice(0, 2)).toEqual(['Початок', 'Робота з шестигранником']);
       expect(labels).toContain('Налаштування сітки');
-      expect(labels.slice(-2)).toEqual(['Рівномірне згущення', 'Локальне згущення']);
+      expect(labels.slice(-3)).toEqual(['Рівномірне згущення', 'Локальне згущення', 'Оболонка в STL']);
 
       const start = root.querySelector('.group')!;
       expect(Array.from(start.querySelectorAll('.pair button')).map(b => b.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['Перший куб N', 'Конструктор куба… C']);
@@ -431,6 +435,35 @@ describe('MeshEditorControlsComponent', () => {
     component.worldIndex = IDEAL_WORLD_INDEX;
     component.nudge('x', 1);
     expect(editor.moveEdge).not.toHaveBeenCalled();
+  });
+
+  describe('saving the outer skin as an STL', () => {
+    it('cannot be saved with no cubes, and saves the chosen density when there are some', () => {
+      state = emptyState;
+      expect(component.canExportShell()).toBeFalse();
+
+      state = singleCubeState();
+      expect(component.canExportShell()).toBeTrue();
+      component.onShellDensityChange({ target: { value: '16' } } as unknown as Event);
+      shellExport.save.and.callFake((_session, _density, done) => done({ triangles: 1536, faces: 6, deviation: 0.002 }));
+      component.exportShell();
+
+      expect(shellExport.save).toHaveBeenCalledWith(1, 16, jasmine.any(Function));
+      expect(component.shellResult as ShellExportResult | null).toEqual({ triangles: 1536, faces: 6, deviation: 0.002 });
+      expect(component.shellResultText()).toContain('1536 трикутників');
+    });
+
+    it('is a block of its own with the density and the button', () => {
+      state = singleCubeState();
+      const fixture = TestBed.createComponent(MeshEditorControlsComponent);
+      fixture.componentInstance.sessionId = 1;
+      fixture.componentInstance.worldIndex = IDEAL_WORLD_INDEX;
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+
+      expect(root.textContent).toContain('Оболонка в STL');
+      expect(root.querySelector('select[aria-label="Квадратів на бік грані"]')).not.toBeNull();
+    });
   });
 
   describe('dropping points on the STL', () => {

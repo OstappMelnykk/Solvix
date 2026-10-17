@@ -11,6 +11,7 @@ import { SurfaceAttachmentService } from '../../../state/surface-attachment.serv
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
+import { ShellExportResult, ShellExportService } from '../../../state/shell-export.service';
 import { EdgeRef, FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
 import { Scope } from '../../../geometry/solver-targets';
@@ -76,6 +77,7 @@ export class MeshEditorControlsComponent {
   private readonly selection = inject(MeshEditorSelectionService);
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
+  private readonly shellExport = inject(ShellExportService);
   private readonly notifications = inject(NotificationService);
   private readonly attachments = inject(SurfaceAttachmentService);
   private readonly surfaceProjection = inject(SurfaceProjectionService);
@@ -90,6 +92,10 @@ export class MeshEditorControlsComponent {
   // Local refinement: the picked cubes are cut into localDivisions with a transition zone of this width round them.
   readonly transitionWidths = [0, 1, 2];
   localDivisions: number[] = [2, 2, 2];
+  readonly shellDensities = this.shellExport.densities;
+  shellDensity = 8;
+  shellResult: ShellExportResult | null = null;
+  shellSaving = false;
   transitionWidth = 0;
   // "By steps" (a wizard that shows the algorithm's stages) is not made yet: only "at once" runs.
   localRunMode: 'steps' | 'at-once' = 'at-once';
@@ -256,6 +262,33 @@ export class MeshEditorControlsComponent {
   // The face a plain click picked, and whether a cube can be built on it.
   activeFace(): FaceRef | null {
     return this.sessionId === null ? null : this.selection.face(this.sessionId);
+  }
+
+  // --- the outer skin as an STL file ---
+
+  canExportShell(): boolean {
+    return !this.busy && !this.shellSaving && this.hexCount() > 0;
+  }
+
+  onShellDensityChange(event: Event): void {
+    this.shellDensity = Number((event.target as HTMLSelectElement).value);
+    this.shellResult = null;
+  }
+
+  // Saves the outer skin (only the shell: no cubes, no inner faces) as an STL whose vertices lie on the real curved surface.
+  exportShell(): void {
+    if (this.sessionId === null || !this.canExportShell()) return;
+    this.shellSaving = true;
+    this.shellExport.save(this.sessionId, this.shellDensity, result => {
+      this.shellSaving = false;
+      this.shellResult = result;
+    });
+  }
+
+  shellResultText(): string {
+    const r = this.shellResult;
+    if (!r) return '';
+    return `${r.triangles} трикутників · ${r.faces} зовнішніх граней · найбільше відхилення від поверхні ${r.deviation.toPrecision(2)}`;
   }
 
   // --- dropping points on the STL ---
