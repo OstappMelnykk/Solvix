@@ -72,6 +72,22 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.edge(1)).toBeNull();
   });
 
+  it('picking a node lets go of the face or the edge, and taking the node off brings nothing back', () => {
+    selection.selectFace(1, { hex: 0, face: 'XPlus' });
+    selection.selectNode(1, 6);
+    expect(selection.nodeId(1)).toBe(6);
+    expect(selection.face(1)).toBeNull();
+
+    selection.selectEdge(1, { hex: 0, edge: 4 });
+    selection.selectNode(1, 7);
+    expect(selection.edge(1)).toBeNull();
+
+    selection.selectNode(1, 7);                                    // the same node again: deselected
+    expect(selection.nodeId(1)).toBeNull();
+    expect(selection.face(1)).toBeNull();
+    expect(selection.edge(1)).toBeNull();
+  });
+
   it('picking a face or an edge lets go of the picked node, so the arrows and the gizmo move what was picked last', () => {
     selection.selectNode(1, 6);
     selection.selectFace(1, { hex: 0, face: 'XPlus' });
@@ -184,10 +200,10 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.face(1)).toBeNull();
   });
 
-  it('a node pick does not disturb the face or cube pick', () => {
+  it('a node pick lets go of the face, but not of the picked cubes', () => {
     selection.selectFace(1, { hex: 2, face: 'XPlus' });
     selection.selectNode(1, 8);
-    expect(selection.face(1)).not.toBeNull();
+    expect(selection.face(1)).toBeNull();
 
     selection.toggleHex(1, 3);
     selection.selectNode(1, 9);

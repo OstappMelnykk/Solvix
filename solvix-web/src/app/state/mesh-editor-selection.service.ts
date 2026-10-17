@@ -163,6 +163,11 @@ export class MeshEditorSelectionService {
   selectNode(sessionId: number, nodeId: number | null): void {
     const selection = this.selection(sessionId);
     selection.nodeId = selection.nodeId === nodeId ? null : nodeId;
+    // a node picked lets go of the face or the edge: what was picked last is what the arrows and the gizmo move
+    if (selection.nodeId !== null) {
+      selection.face = null;
+      selection.edge = null;
+    }
     selection.revision++;
   }
 
