@@ -1,10 +1,12 @@
 import { Component, HostListener, Input, inject } from '@angular/core';
+import * as THREE from 'three';
 import { NgFor, NgIf } from '@angular/common';
 import { REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { HexFaceName, MeshPointDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { MeshEditorService } from '../../../state/mesh-editor.service';
 import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
 import { DEFAULT_NODE_SIZE, MAX_NODE_SIZE, MIN_NODE_SIZE, NodeKind, NodeSizeService } from '../../../state/node-size.service';
+import { SurfaceProjectionService } from '../../../state/surface-projection.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { NotificationService } from '../../../state/notification.service';
@@ -76,6 +78,7 @@ export class MeshEditorControlsComponent {
   private readonly solver = inject(SolverService);
   private readonly notifications = inject(NotificationService);
   private readonly attachments = inject(SurfaceAttachmentService);
+  private readonly surfaceProjection = inject(SurfaceProjectionService);
   private readonly geometryOpacity = inject(GeometryOpacityService);
   private readonly nodeSize = inject(NodeSizeService);
 
@@ -253,6 +256,41 @@ export class MeshEditorControlsComponent {
   // The face a plain click picked, and whether a cube can be built on it.
   activeFace(): FaceRef | null {
     return this.sessionId === null ? null : this.selection.face(this.sessionId);
+  }
+
+  // --- dropping points on the STL ---
+
+  // Whether the points of the cubes can be dropped on the imported surface: the Real World, and a surface in it.
+  canDrop(): boolean {
+    return !this.busy && this.isRealWorld && this.surfaceProjection.hasSurface();
+  }
+
+  canDropPicked(): boolean {
+    return this.canDrop() && this.selectedHexes().length > 0;
+  }
+
+  // Drops every node of the picked cubes (all 20 of each: the corners and the midpoints) on the nearest point of the surface - the foot of the perpendicular from it - in
+  // one undo step, and sticks them to it (they slide along it from now on, until they are let go).
+  dropPicked(): void {
+    this.drop(this.selectedHexes());
+  }
+
+  dropAll(): void {
+    this.drop(this.state?.hexes.map(h => h.id) ?? []);
+  }
+
+  private drop(hexIds: readonly number[]): void {
+    const state = this.state;
+    if (this.sessionId === null || !state || !this.canDrop()) return;
+    const sessionId = this.sessionId;
+    const nodes = new Map(state.nodes.map(n => [n.id, n]));
+    const ids = [...new Set(hexIds.flatMap(id => state.hexes.find(h => h.id === id)?.nodeIds ?? []))].filter(id => nodes.has(id));
+    if (ids.length === 0) return;
+    const places = this.surfaceProjection.nearestPoints(ids.map(id => new THREE.Vector3(nodes.get(id)!.x, nodes.get(id)!.y, nodes.get(id)!.z)));
+    const round = (value: number) => Math.round(value * 1e6) / 1e6;
+    const moves = ids.flatMap((id, i) => (places[i] ? [{ nodeId: id, x: round(places[i]!.x), y: round(places[i]!.y), z: round(places[i]!.z) }] : []));
+    if (moves.length === 0) return;
+    this.editor.moveNodes(sessionId, moves, () => moves.forEach(m => this.attachments.attach(sessionId, m.nodeId)));
   }
 
   // The edge a click near an edge picked.

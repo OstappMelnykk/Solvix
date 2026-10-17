@@ -52,6 +52,13 @@
     Додати куб на грань <kbd>A</kbd>
   </button>
 
+  <ng-container *ngIf="canDrop()">
+    <button class="tool" type="button" [disabled]="!canDropPicked()" title="Усі вузли вибраних кубів (кути й середини) опускаються перпендикулярами на найближчу точку STL і прилипають до неї. Один крок скасування." (click)="dropPicked()">
+      Опустити вибрані на STL
+    </button>
+    <button class="tool" type="button" title="Те саме для всіх кубів тіла" (click)="dropAll()">Опустити всі на STL</button>
+  </ng-container>
+
   <div class="pick pick--base" *ngIf="selectedHexes()[0] !== undefined">
     <b>{{ selectedHexes().length === 2 ? 'Основа' : 'Куб' }}: Куб {{ selectedHexes()[0] }}</b>
     <span class="status">{{ neighborsText(selectedHexes()[0]) }}</span>

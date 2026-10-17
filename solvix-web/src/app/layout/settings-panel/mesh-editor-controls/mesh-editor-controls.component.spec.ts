@@ -10,6 +10,10 @@ import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../../../config/app-settings';
 import { DEFAULT_BODY_OPACITY, GeometryOpacityService } from '../../../state/geometry-opacity.service';
 import { NotificationService } from '../../../state/notification.service';
+import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
+import { SurfaceProjectionService } from '../../../state/surface-projection.service';
+import { SurfaceSnapper } from '../../../geometry/surface-snap';
+import * as THREE from 'three';
 import { NodeSizeService } from '../../../state/node-size.service';
 import { MeshFaceDto, MeshStateDto } from '../../../api/mesh-editor-api.service';
 import { linkedPairState, singleCubeState } from '../../../geometry/mesh-state.fixture.spec';
@@ -29,7 +33,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'moveFace', 'moveEdge', 'undo', 'redo', 'reset'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'moveNodes', 'moveFace', 'moveEdge', 'undo', 'redo', 'reset'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
@@ -427,6 +431,57 @@ describe('MeshEditorControlsComponent', () => {
     component.worldIndex = IDEAL_WORLD_INDEX;
     component.nudge('x', 1);
     expect(editor.moveEdge).not.toHaveBeenCalled();
+  });
+
+  describe('dropping points on the STL', () => {
+    // the plane y = -2 under the cube, as two triangles
+    const plane = () => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute([-9, -2, -9, 9, -2, -9, 9, -2, 9, -9, -2, -9, 9, -2, 9, -9, -2, 9], 3));
+      return new SurfaceSnapper(new THREE.Mesh(geometry));
+    };
+
+    it('is offered only in the Real World, with a surface there, and for the picked cubes only when some is picked', () => {
+      state = singleCubeState();
+      expect(component.canDrop()).toBeFalse();                         // no surface
+      TestBed.inject(SurfaceProjectionService).register(plane);
+      expect(component.canDrop()).toBeTrue();
+      expect(component.canDropPicked()).toBeFalse();                   // no cube picked
+      selection.toggleHex(1, 0);
+      expect(component.canDropPicked()).toBeTrue();
+      component.worldIndex = IDEAL_WORLD_INDEX;
+      expect(component.canDrop()).toBeFalse();
+    });
+
+    it('drops all 20 nodes of the picked cube straight down onto the surface in one step and sticks them to it', () => {
+      state = singleCubeState();
+      const attachments = TestBed.inject(SurfaceAttachmentService);
+      TestBed.inject(SurfaceProjectionService).register(plane);
+      selection.toggleHex(1, 0);
+      editor.moveNodes.and.callFake((_session, _moves, then) => then?.());
+
+      component.dropPicked();
+
+      expect(editor.moveNodes).toHaveBeenCalledTimes(1);
+      const moves = editor.moveNodes.calls.mostRecent().args[1];
+      expect(moves.length).toBe(20);
+      expect(moves.every(m => m.y === -2)).toBeTrue();
+      const node = state!.nodes.find(n => n.id === moves[0].nodeId)!;
+      expect(moves[0].x).toBeCloseTo(node.x, 6);                       // the perpendicular: only the height changes
+      expect(moves[0].z).toBeCloseTo(node.z, 6);
+      expect(attachments.count(1)).toBe(20);
+    });
+
+    it('drops every cube of the body on request, and each shared node once', () => {
+      state = linkedPairState();
+      TestBed.inject(SurfaceProjectionService).register(plane);
+
+      component.dropAll();
+
+      const moves = editor.moveNodes.calls.mostRecent().args[1];
+      expect(moves.length).toBe(32);                                    // 2 cubes, 8 nodes shared
+      expect(new Set(moves.map(m => m.nodeId)).size).toBe(32);
+    });
   });
 
   it('sets one coordinate from the input and ignores non-numbers', () => {

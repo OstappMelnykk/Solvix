@@ -128,6 +128,11 @@ export class MeshEditorService {
     this.run(sessionId, this.api.moveFace(sessionId, hexId, face, delta), then);
   }
 
+  // Puts several nodes at the given places (one undo step); `then` runs after the new state arrives, when the server did it.
+  moveNodes(sessionId: number, moves: readonly { nodeId: number; x: number; y: number; z: number }[], then?: () => void): void {
+    this.run(sessionId, this.api.moveNodes(sessionId, moves), then);
+  }
+
   // Moves a whole edge by one displacement (one undo step).
   moveEdge(sessionId: number, hexId: number, edge: number, delta: MeshPointDto, then?: () => void): void {
     this.run(sessionId, this.api.moveEdge(sessionId, hexId, edge, delta), then);
