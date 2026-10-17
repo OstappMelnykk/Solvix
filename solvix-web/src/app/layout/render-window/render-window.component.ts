@@ -64,11 +64,11 @@ export class RenderWindowComponent {
   readonly worlds = WORLDS_CONFIG;
   readonly solverWorldIndex = SOLVER_WORLD_INDEX;
 
-  // Where the pointer is followed to show what a click would act on: the Solver World, and the Ideal and Real Worlds while elements are being picked.
+  // Where the pointer is followed to show what a click would act on: the Solver World, and the Ideal and Real Worlds (the face or edge under it goes red).
   hoverOn(worldIndex: number): boolean {
     if (worldIndex === SOLVER_WORLD_INDEX) return true;
     const sessionId = this.sessions.activeSessionId();
-    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null && this.solver.refineMode(sessionId);
+    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null;
   }
 
   // null when there's no active session - never matches a real worldIndex,

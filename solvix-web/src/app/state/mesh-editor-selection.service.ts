@@ -99,6 +99,7 @@ export class MeshEditorSelectionService {
     const same = selection.face?.hex === face.hex && selection.face.face === face.face;
     selection.face = same ? null : face;
     selection.edge = null;
+    selection.nodeId = null;          // picking a face lets go of the node: the node would take the arrows and the gizmo from it
     selection.hexes = [];
     selection.revision++;
   }
@@ -109,6 +110,7 @@ export class MeshEditorSelectionService {
     const same = selection.edge?.hex === edge.hex && selection.edge.edge === edge.edge;
     selection.edge = same ? null : edge;
     selection.face = null;
+    selection.nodeId = null;          // and so does picking an edge
     selection.hexes = [];
     selection.revision++;
   }

@@ -72,6 +72,18 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.edge(1)).toBeNull();
   });
 
+  it('picking a face or an edge lets go of the picked node, so the arrows and the gizmo move what was picked last', () => {
+    selection.selectNode(1, 6);
+    selection.selectFace(1, { hex: 0, face: 'XPlus' });
+    expect(selection.nodeId(1)).toBeNull();
+    expect(selection.face(1)).toEqual({ hex: 0, face: 'XPlus' });
+
+    selection.selectNode(1, 6);
+    selection.selectEdge(1, { hex: 0, edge: 4 });
+    expect(selection.nodeId(1)).toBeNull();
+    expect(selection.edge(1)).toEqual({ hex: 0, edge: 4 });
+  });
+
   it('forgets the edge of a cube that is gone, and a clear drops it', () => {
     selection.selectEdge(1, { hex: 4, edge: 7 });
     selection.retain(1, id => id !== 4, () => true);

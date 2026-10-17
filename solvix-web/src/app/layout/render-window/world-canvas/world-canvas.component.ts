@@ -413,7 +413,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const y = event.clientY;
     this.hoverFrame = requestAnimationFrame(() => {
       this.hoverFrame = 0;
-      this.meshHover.emit(this.pickAt(x, y));
+      this.meshHover.emit(this.pickForPointer(x, y));
     });
   };
   // The right button builds: no browser menu on top of it.
@@ -1104,29 +1104,41 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!this.currentMeshView) {
       return;
     }
-    let pick = this.pickAt(event.clientX, event.clientY);
+    const pick = this.pickAt(event.clientX, event.clientY);
     if (this.placeOnSurface && this.worldIndex === REAL_WORLD_INDEX) {
       this.placeOrPick(event, pick);
       return;
     }
-    // An edge is picked by where it is on the screen: a click close to one, on a face or on nothing, picks the edge (a node still wins).
-    if (this.worldIndex === REAL_WORLD_INDEX && !this.buildEnabled && pick?.kind !== 'node') pick = this.edgeNear(event) ?? pick;
+    const picked = this.withEdge(pick, event.clientX, event.clientY);
     // While building a left click on a cube removes it; a click on a node still picks the node (to move it).
     if (this.buildEnabled && pick?.kind === 'face') {
       this.meshBuild.emit({ action: 'remove', pick, ground: null });
       return;
     }
-    this.meshPick.emit({ pick, additive: event.shiftKey });
+    this.meshPick.emit({ pick: picked, additive: event.shiftKey });
   }
 
   // The edge within a few pixels of the pointer that is not behind what the ray hit (the faces in front of it hide it), or null.
-  private edgeNear(event: PointerEvent): MeshPick | null {
+  // What is under the pointer, as a click would take it: the ray's pick, or - in the Real World - an edge close to the pointer.
+  private pickForPointer(clientX: number, clientY: number): MeshPick | null {
+    return this.withEdge(this.pickAt(clientX, clientY), clientX, clientY);
+  }
+
+  // An edge is picked by where it is on the screen: a pointer close to one, on a face or on nothing, picks the edge. A node still wins, and so do the elements
+  // of a refined mesh being picked (their faces are what is wanted then), and building (it works on faces).
+  private withEdge(pick: MeshPick | null, clientX: number, clientY: number): MeshPick | null {
+    if (this.worldIndex !== REAL_WORLD_INDEX || this.buildEnabled || pick?.kind === 'node') return pick;
+    if (pick?.kind === 'face' && pick.elementKey !== undefined) return pick;
+    return this.edgeNear(clientX, clientY) ?? pick;
+  }
+
+  private edgeNear(clientX: number, clientY: number): MeshPick | null {
     const curves = this.currentMeshView?.edges;
     if (!curves || curves.length === 0) return null;
     const rect = this.canvasRef.nativeElement.getBoundingClientRect();
     const hit = this.lastHitDistance;
     const maxDepth = hit === null ? Infinity : hit * 1.01 + 0.02;
-    const near = nearestEdgeOnScreen(curves, this.camera, rect.width, rect.height, new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top), EDGE_PICK_PIXELS, maxDepth);
+    const near = nearestEdgeOnScreen(curves, this.camera, rect.width, rect.height, new THREE.Vector2(clientX - rect.left, clientY - rect.top), EDGE_PICK_PIXELS, maxDepth);
     return near ? { kind: 'edge', hex: near.hex, edge: near.edge } : null;
   }
 
