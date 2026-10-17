@@ -509,15 +509,29 @@ describe('MeshEditorControlsComponent', () => {
       state = singleCubeState();
       TestBed.inject(SurfaceProjectionService).register(plane);
       editor.moveNodes.and.callFake((_session, _moves, then) => then?.());
-      expect(component.canDropFace()).toBeFalse();
+      expect(component.canDropFaces()).toBeFalse();
 
       selection.selectFace(1, { hex: 0, face: 'XPlus' });
-      expect(component.canDropFace()).toBeTrue();
-      component.dropFace();
+      expect(component.canDropFaces()).toBeTrue();
+      component.dropFaces();
 
       const moves = editor.moveNodes.calls.mostRecent().args[1];
       expect(moves.length).toBe(8);
       expect(moves.every(m => m.y === -2)).toBeTrue();
+    });
+
+    it('drops the nodes of several picked faces together, a shared node once', () => {
+      state = singleCubeState();
+      TestBed.inject(SurfaceProjectionService).register(plane);
+      editor.moveNodes.and.callFake((_session, _moves, then) => then?.());
+      selection.selectFace(1, { hex: 0, face: 'XPlus' });
+      selection.selectFace(1, { hex: 0, face: 'YPlus' }, true);
+
+      component.dropFaces();
+
+      const ids = editor.moveNodes.calls.mostRecent().args[1].map(m => m.nodeId);
+      expect(ids.length).toBe(new Set(ids).size);                      // each node once
+      expect(ids.length).toBe(13);                                      // 8 + 8 minus the 3 nodes of the common edge
     });
 
     it('drops only the picked vertex, or only the picked edge (two corners and the midpoint)', () => {
