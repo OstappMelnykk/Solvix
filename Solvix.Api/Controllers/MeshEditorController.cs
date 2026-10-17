@@ -14,6 +14,8 @@ public record MoveNodeRequest(double X, double Y, double Z, bool CarryEdgeMidpoi
 
 public record MoveFaceRequest(double Dx, double Dy, double Dz);
 
+public record MoveNodesRequest(IReadOnlyList<NodeMoveDto>? Moves);
+
 /// <summary>
 /// Manual hex editor, one mesh per client session. Every editing command
 /// answers 200 with <c>{ ok, error, state }</c> - a refused command is a normal
@@ -70,6 +72,11 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade 
     [HttpPut("nodes/{nodeId:int}")]
     public ActionResult<MeshCommandResultDto> MoveNode(int sessionId, int nodeId, [FromBody] MoveNodeRequest request) =>
         meshBuilder.MoveNode(sessionId, nodeId, new MeshPointDto(request.X, request.Y, request.Z), request.CarryEdgeMidpoints);
+
+    /// <summary>Puts several nodes at the given places in one undo step: <c>{ moves: [{ nodeId, x, y, z }] }</c>.</summary>
+    [HttpPut("nodes")]
+    public ActionResult<MeshCommandResultDto> MoveNodes(int sessionId, [FromBody] MoveNodesRequest request) =>
+        meshBuilder.MoveNodes(sessionId, request.Moves ?? Array.Empty<NodeMoveDto>());
 
     /// <summary>Moves a whole face by one displacement <c>{ dx, dy, dz }</c> (one undo step).</summary>
     [HttpPut("hexes/{hexId:int}/faces/{face}/move")]

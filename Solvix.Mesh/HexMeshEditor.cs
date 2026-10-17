@@ -116,6 +116,22 @@ public sealed class HexMeshEditor
     });
 
     /// <summary>
+    /// Puts several nodes at the places given, as a single undoable step. Each node is set alone (its edges' midpoints stay where they are). Nothing moves if one of
+    /// the nodes is unknown or one of the places is not finite.
+    /// </summary>
+    public EditResult MoveNodes(IReadOnlyList<(int NodeId, Vec3 Position)> moves) => Apply(() =>
+    {
+        if (moves.Count == 0) return EditResult.Fail("There is nothing to move.");
+        foreach (var (nodeId, position) in moves)
+        {
+            if (!Mesh.HasNode(nodeId)) return EditResult.Fail($"Unknown node {nodeId}.");
+            if (!IsFinite(position)) return EditResult.Fail("The position must be a finite number.");
+        }
+        foreach (var (nodeId, position) in moves) Mesh.SetNodePosition(nodeId, position);
+        return EditResult.Success;
+    });
+
+    /// <summary>
     /// Moves a whole face by one displacement, as a single undoable step. The 8
     /// face nodes move by the full delta; the midpoints of the edges joining the
     /// face to the opposite one move by half, keeping those edges straight.

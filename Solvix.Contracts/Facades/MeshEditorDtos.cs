@@ -31,6 +31,9 @@ public sealed record MeshCommandResultDto(bool Ok, string? Error, MeshStateDto S
 
 public sealed record MeshPointDto(double X, double Y, double Z);
 
+/// <summary>One node and the place it is to be put at.</summary>
+public sealed record NodeMoveDto(int NodeId, double X, double Y, double Z);
+
 /// <summary>A cube designed on its own: the 20 node positions in slot order (0..7 corners, 8..19 edge midpoints).</summary>
 public sealed record MeshShapeDto(IReadOnlyList<MeshPointDto> Positions);
 
