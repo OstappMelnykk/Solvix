@@ -48,6 +48,18 @@ describe('MeshEditorRenderService', () => {
     expect(render.getView(sessionId, IDEAL_WORLD_INDEX)).toBeNull();
   });
 
+  it('keeps the dragged face where it was dropped until the server answers, so the gizmo does not jump back', () => {
+    loadState(singleCubeState(1));
+    expect(render.facePreviewDelta(sessionId)).toBeNull();
+
+    render.setFaceDragPreview(sessionId, 0, 'XPlus', { x: 0.3, y: 0, z: 0 });
+    expect(render.facePreviewDelta(sessionId)).toEqual({ x: 0.3, y: 0, z: 0 });
+
+    editor.moveFace(sessionId, 0, 'XPlus', { x: 0.3, y: 0, z: 0 });
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}/hexes/0/faces/XPlus/move`).flush({ ok: true, error: null, state: singleCubeState(2) });
+    expect(render.facePreviewDelta(sessionId)).toBeNull();
+  });
+
   it('has nothing to draw in the Solver World', () => {
     loadState(singleCubeState());
 

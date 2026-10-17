@@ -63,6 +63,13 @@ export class MeshEditorRenderService {
     this.preview = { kind: 'face', sessionId, hexId, face, delta, version, token: ++this.previewToken };
   }
 
+  // How far the face being dragged (or just dropped, until the server has answered) is from where the state has it - the gizmo sits there, so it does not jump back and forth.
+  facePreviewDelta(sessionId: number): { x: number; y: number; z: number } | null {
+    const preview = this.preview;
+    const version = this.editor.getState(sessionId)?.version;
+    return preview?.kind === 'face' && preview.sessionId === sessionId && preview.version === version ? preview.delta : null;
+  }
+
   getView(sessionId: number | null, worldIndex: number): MeshView | null {
     if (sessionId === null || (worldIndex !== IDEAL_WORLD_INDEX && worldIndex !== REAL_WORLD_INDEX)) return null;
     let state = this.editor.getState(sessionId);

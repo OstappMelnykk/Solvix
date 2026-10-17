@@ -239,6 +239,7 @@ export class RenderWindowComponent {
     const halfNodeIds = [...sets.half];
 
     const nodeById = new Map(state.nodes.map(n => [n.id, n]));
+    const pending = this.meshEditorRender.facePreviewDelta(sessionId);
     const center = { x: 0, y: 0, z: 0 };
     for (const id of fullNodeIds) {
       const n = nodeById.get(id);
@@ -247,6 +248,12 @@ export class RenderWindowComponent {
         center.y += n.y / fullNodeIds.length;
         center.z += n.z / fullNodeIds.length;
       }
+    }
+    // dragged and dropped, and the server has not answered yet: the gizmo stays where it was dropped
+    if (pending) {
+      center.x += pending.x;
+      center.y += pending.y;
+      center.z += pending.z;
     }
     return { hex: face.hex, face: face.face, fullNodeIds, halfNodeIds, center };
   }
