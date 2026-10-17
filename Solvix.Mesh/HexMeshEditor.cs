@@ -128,6 +128,19 @@ public sealed class HexMeshEditor
         return EditResult.Success;
     });
 
+    /// <summary>
+    /// Moves a whole edge (index 0..11 of the hex's edges) by one displacement, as a single undoable step: its 2 corners and midpoint move fully, the midpoints of
+    /// the other edges leaving the corners by half, keeping those edges straight.
+    /// </summary>
+    public EditResult MoveEdge(int hex, int edge, Vec3 delta) => Apply(() =>
+    {
+        if (!Mesh.HasHex(hex)) return EditResult.Fail($"Unknown hex {hex}.");
+        if (edge < 0 || edge >= Hex20Reference.EdgeCorners.Length) return EditResult.Fail($"Unknown edge {edge}: a hex has edges 0..{Hex20Reference.EdgeCorners.Length - 1}.");
+        if (!IsFinite(delta)) return EditResult.Fail("The displacement must be a finite number.");
+        Mesh.MoveEdge(hex, edge, delta);
+        return EditResult.Success;
+    });
+
     public EditResult Reset() => Apply(() =>
     {
         Mesh = new HexMesh();

@@ -170,6 +170,68 @@ public class EditorTests
     }
 
     [Test]
+    public void Moving_an_edge_shifts_its_2_corners_and_midpoint_fully_and_the_midpoints_of_the_edges_leaving_the_corners_by_half()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        var hex = editor.Mesh.Hex(0);
+        const int edge = 4;                                   // the edge (4, 5): along x on the +z side of the -y face
+        var (ca, cb) = Hex20Reference.EdgeCorners[edge];
+        var before = Enumerable.Range(0, 20).ToDictionary(s => s, s => editor.Mesh.Node(hex.NodeIds[s]).Position);
+        var delta = new Vec3(0, 0.3, 0.2);
+
+        Assert.That(editor.MoveEdge(0, edge, delta).Ok, Is.True);
+
+        for (int slot = 0; slot < 20; slot++)
+        {
+            bool full = slot == ca || slot == cb || slot == 8 + edge;
+            bool leaving = slot >= 8 && slot != 8 + edge && Hex20Reference.EdgeCorners[slot - 8] is var (a, b) && (a == ca || a == cb || b == ca || b == cb);
+            var expected = before[slot] + (full ? delta : leaving ? delta * 0.5 : Vec3.Zero);
+            Assert.That((editor.Mesh.Node(hex.NodeIds[slot]).Position - expected).Length, Is.LessThan(1e-12), $"slot {slot}");
+        }
+    }
+
+    [Test]
+    public void Moving_a_shared_edge_keeps_every_edge_of_every_owner_straight()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        editor.AddHexOnFace(0, HexFace.XPlus);
+        editor.AddHexOnFace(0, HexFace.YPlus);
+        // the edge the first cube shares with the second one: the one on its +x face and on its -z face (corners 1 and 2)
+        int shared = Enumerable.Range(0, 12).First(k => Hex20Reference.EdgeCorners[k] == (1, 2));
+
+        Assert.That(editor.MoveEdge(0, shared, new Vec3(0.3, -0.1, 0.2)).Ok, Is.True);
+
+        foreach (var hex in editor.Mesh.Hexes)
+            for (int k = 0; k < Hex20Reference.EdgeCorners.Length; k++)
+            {
+                var (ca, cb) = Hex20Reference.EdgeCorners[k];
+                var a = editor.Mesh.Node(hex.NodeIds[ca]).Position;
+                var b = editor.Mesh.Node(hex.NodeIds[cb]).Position;
+                var mid = editor.Mesh.Node(hex.NodeIds[8 + k]).Position;
+                Assert.That((mid - (a + b) * 0.5).Length, Is.LessThan(1e-12), $"cube {hex.Id}, edge {k} is bent");
+            }
+    }
+
+    [Test]
+    public void Moving_an_edge_is_one_undo_step_and_fails_on_bad_input()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        var before = editor.Mesh.ToState();
+
+        Assert.That(editor.MoveEdge(0, 7, new Vec3(0, 0.5, 0)).Ok, Is.True);
+        Assert.That(editor.Undo(), Is.True);
+        Assert.That(editor.Mesh.ToState().Nodes, Is.EquivalentTo(before.Nodes));
+
+        Assert.That(editor.MoveEdge(99, 0, new Vec3(0, 0, 1)).Ok, Is.False);                 // unknown hex
+        Assert.That(editor.MoveEdge(0, 12, new Vec3(0, 0, 1)).Ok, Is.False);                 // an edge that does not exist
+        Assert.That(editor.MoveEdge(0, -1, new Vec3(0, 0, 1)).Ok, Is.False);
+        Assert.That(editor.MoveEdge(0, 0, new Vec3(double.NaN, 0, 0)).Ok, Is.False);        // not finite
+    }
+
+    [Test]
     public void Moving_a_face_is_one_undo_step_and_fails_on_bad_input()
     {
         var editor = new HexMeshEditor();

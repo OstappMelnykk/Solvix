@@ -55,6 +55,26 @@ public class MeshEditorApiTests
     }
 
     [Test]
+    public async Task A_whole_edge_is_moved_over_http_and_a_bad_edge_is_refused()
+    {
+        await Post("/api/mesh-editor/1/hexes/first");
+
+        var moved = await _client.PutAsJsonAsync("/api/mesh-editor/1/hexes/0/edges/4/move", new { dx = 0.0, dy = 0.3, dz = 0.0 });
+        var result = Root(moved);
+        Assert.That(moved.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(result.GetProperty("ok").GetBoolean(), Is.True);
+        var nodes = result.GetProperty("state").GetProperty("nodes").EnumerateArray().ToDictionary(n => n.GetProperty("id").GetInt32(), n => n.GetProperty("y").GetDouble());
+        var ids = result.GetProperty("state").GetProperty("hexes")[0].GetProperty("nodeIds").EnumerateArray().Select(e => e.GetInt32()).ToArray();
+        Assert.That(nodes[ids[4]], Is.EqualTo(0.3).Within(1e-9));       // the two corners of edge 4 ...
+        Assert.That(nodes[ids[5]], Is.EqualTo(0.3).Within(1e-9));
+        Assert.That(nodes[ids[12]], Is.EqualTo(0.3).Within(1e-9));      // ... and its midpoint
+
+        var refused = Root(await _client.PutAsJsonAsync("/api/mesh-editor/1/hexes/0/edges/40/move", new { dx = 0.0, dy = 0.3, dz = 0.0 }));
+        Assert.That(refused.GetProperty("ok").GetBoolean(), Is.False);
+        Assert.That(refused.GetProperty("error").GetString(), Is.Not.Empty);
+    }
+
+    [Test]
     public async Task Building_linking_moving_and_undoing_over_http()
     {
         var first = await Post("/api/mesh-editor/1/hexes/first");

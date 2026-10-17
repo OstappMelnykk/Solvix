@@ -76,6 +76,11 @@ public class MeshEditorController(IMeshBuilderFacade meshBuilder, ISolverFacade 
     public ActionResult<MeshCommandResultDto> MoveFace(int sessionId, int hexId, string face, [FromBody] MoveFaceRequest request) =>
         meshBuilder.MoveFace(sessionId, hexId, face, new MeshPointDto(request.Dx, request.Dy, request.Dz));
 
+    /// <summary>Moves a whole edge (index 0..11) by one displacement <c>{ dx, dy, dz }</c> (one undo step).</summary>
+    [HttpPut("hexes/{hexId:int}/edges/{edge:int}/move")]
+    public ActionResult<MeshCommandResultDto> MoveEdge(int sessionId, int hexId, int edge, [FromBody] MoveFaceRequest request) =>
+        meshBuilder.MoveEdge(sessionId, hexId, edge, new MeshPointDto(request.Dx, request.Dy, request.Dz));
+
     [HttpPost("undo")]
     public ActionResult<MeshCommandResultDto> Undo(int sessionId) => meshBuilder.Undo(sessionId);
 

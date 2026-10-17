@@ -33,6 +33,12 @@ public interface IMeshBuilderFacade
     /// </summary>
     MeshCommandResultDto MoveFace(int sessionId, int hexId, string face, MeshPointDto delta);
 
+    /// <summary>
+    /// Moves a whole edge of a hex (index 0..11) by one displacement (one undo step): its 2 corners and its midpoint move fully, the midpoints of the other
+    /// edges that leave the corners (in every hex that owns one) by half.
+    /// </summary>
+    MeshCommandResultDto MoveEdge(int sessionId, int hexId, int edge, MeshPointDto delta);
+
     MeshCommandResultDto Undo(int sessionId);
 
     MeshCommandResultDto Redo(int sessionId);

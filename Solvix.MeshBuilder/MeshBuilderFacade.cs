@@ -108,6 +108,9 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
     public MeshCommandResultDto MoveFace(int sessionId, int hexId, string face, MeshPointDto delta) =>
         WithFace(sessionId, face, f => e => e.MoveFace(new FaceRef(hexId, f), new Vec3(delta.X, delta.Y, delta.Z)));
 
+    public MeshCommandResultDto MoveEdge(int sessionId, int hexId, int edge, MeshPointDto delta) =>
+        Command(sessionId, e => e.MoveEdge(hexId, edge, new Vec3(delta.X, delta.Y, delta.Z)));
+
     public MeshCommandResultDto Undo(int sessionId) => sessions.With(sessionId, e =>
     {
         bool ok = e.Undo();
