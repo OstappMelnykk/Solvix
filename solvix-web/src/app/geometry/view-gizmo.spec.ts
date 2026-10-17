@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { gizmoFor, hitGizmo, nearestNodeOnScreen } from './view-gizmo';
+import { gizmoFor, hitGizmo, nearestEdgeOnScreen, nearestNodeOnScreen } from './view-gizmo';
 
 function ortho(eye: THREE.Vector3, up: THREE.Vector3): THREE.OrthographicCamera {
   const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
@@ -95,5 +95,40 @@ describe('the node nearest to the pointer', () => {
     expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(201, 200))?.nodeId).toBe(1);
     expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(100, 100))).toBeNull();
     expect(nearestNodeOnScreen(nodes, camera, 400, 400, new THREE.Vector2(240, 200), 14)).toBeNull();
+  });
+});
+
+describe('the edge nearest to a point of a view', () => {
+  const camera = ortho(new THREE.Vector3(0, 0, 10), new THREE.Vector3(0, 1, 0));       // [-2, 2] over 400 px: world 1 is 100 px from the centre
+  const curve = (hex: number, edge: number, ...points: number[][]) => ({ hex, edge, points: points.map(p => new THREE.Vector3(...p)) });
+  const edges = [curve(0, 1, [-1, 1, 0], [0, 1, 0], [1, 1, 0]), curve(0, 2, [-1, -1, 3], [1, -1, 3])];
+
+  it('finds the edge a click is within the radius of, with how far it is from the camera', () => {
+    const near = nearestEdgeOnScreen(edges, camera, 400, 400, new THREE.Vector2(200, 103), 6);   // 3 px below the first edge (y = 1 is at 100 px)
+
+    expect(near?.hex).toBe(0);
+    expect(near?.edge).toBe(1);
+    expect(near?.distance).toBeCloseTo(3, 6);
+    expect(near?.depth).toBeCloseTo(Math.hypot(10, 1), 6);          // the straight distance from the camera, as a ray measures it
+  });
+
+  it('finds nothing farther than the radius, and takes the nearer of two', () => {
+    expect(nearestEdgeOnScreen(edges, camera, 400, 400, new THREE.Vector2(200, 120), 6)).toBeNull();
+    expect(nearestEdgeOnScreen(edges, camera, 400, 400, new THREE.Vector2(200, 297), 6)?.edge).toBe(2);      // y = -1 is at 300 px; this edge is nearer the camera
+    expect(nearestEdgeOnScreen(edges, camera, 400, 400, new THREE.Vector2(200, 297), 6)?.depth).toBeCloseTo(Math.hypot(7, 1), 6);
+  });
+
+  it('does not take an edge behind what is in front, even if it is nearer on the screen, but the one in front of it', () => {
+    const behind = curve(1, 0, [-1, 1, -3], [1, 1, -3]);                      // the same place on the screen as the edge at y = 1, farther from the camera
+    const near = nearestEdgeOnScreen([behind, edges[0]], camera, 400, 400, new THREE.Vector2(200, 100), 6, 11);
+
+    expect(near?.edge).toBe(1);                                                // the one in front (depth about 10), not the one at depth 13
+    expect(nearestEdgeOnScreen([behind], camera, 400, 400, new THREE.Vector2(200, 100), 6, 11)).toBeNull();
+  });
+
+  it('measures to the piece of the curve, not only to its points', () => {
+    const near = nearestEdgeOnScreen([curve(5, 0, [-1, 0, 0], [1, 0, 0])], camera, 400, 400, new THREE.Vector2(200, 202), 6);      // between the two points
+
+    expect(near?.distance).toBeCloseTo(2, 6);
   });
 });

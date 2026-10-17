@@ -543,12 +543,29 @@ public sealed partial class HexMesh
     public void MoveFace(FaceRef face, Vec3 delta)
     {
         var hex = _hexes[face.Hex];
-        var full = new HashSet<int>();
-        foreach (int slot in face.Face.Slots()) full.Add(hex.NodeIds[slot]);
+        var full = face.Face.Slots().Select(slot => hex.NodeIds[slot]).ToHashSet();
         var corners = face.Face.Slots().Where(Hex20Reference.IsCorner).Select(slot => hex.NodeIds[slot]).ToHashSet();
+        MoveWithEdges(full, corners, delta);
+    }
 
-        // An edge that leaves a moved corner: its other end is not on the face, so its midpoint (8 + k) moves by half. An edge between two moved
-        // corners lies in the face and is already among the full ones.
+    /// <summary>
+    /// Moves a whole edge of a hex (<paramref name="edge"/> is its index 0..11, the midpoint sits at slot 8 + edge) by one displacement: its 2 corners and its
+    /// midpoint move by the full <paramref name="delta"/>, the midpoints of the other edges that leave the 2 corners (in every hex that owns a corner) by half of
+    /// it, so those edges stay straight. The same rule as for a face, for two corners.
+    /// </summary>
+    public void MoveEdge(int hexId, int edge, Vec3 delta)
+    {
+        var hex = _hexes[hexId];
+        var (ca, cb) = Hex20Reference.EdgeCorners[edge];
+        var corners = new HashSet<int> { hex.NodeIds[ca], hex.NodeIds[cb] };
+        var full = new HashSet<int>(corners) { hex.NodeIds[8 + edge] };
+        MoveWithEdges(full, corners, delta);
+    }
+
+    // The nodes of `full` move by the whole delta; the midpoints of the edges that leave a moved corner (their other end is not one of `corners`) by half of it.
+    // An edge between two moved corners lies in what is moved and is among the full ones already.
+    private void MoveWithEdges(HashSet<int> full, HashSet<int> corners, Vec3 delta)
+    {
         var half = new HashSet<int>();
         foreach (int corner in corners)
             foreach (var (hexId, slot) in _owners[corner])

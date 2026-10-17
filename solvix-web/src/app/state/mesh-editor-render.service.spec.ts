@@ -60,6 +60,35 @@ describe('MeshEditorRenderService', () => {
     expect(render.facePreviewDelta(sessionId)).toBeNull();
   });
 
+  it('draws the face or edge under the pointer red, only once for the same thing, and takes it away when the pointer leaves', () => {
+    loadState(singleCubeState(1));
+    const view = render.getView(sessionId, REAL_WORLD_INDEX)!;
+    const children = () => view.root.children.length;
+    const before = children();
+
+    render.setRefineHover(sessionId, REAL_WORLD_INDEX, { kind: 'face', hex: 0, face: 'XPlus' });
+    expect(children()).toBe(before + 1);
+    render.setRefineHover(sessionId, REAL_WORLD_INDEX, { kind: 'face', hex: 0, face: 'XPlus' });      // the same face: nothing is drawn again
+    expect(children()).toBe(before + 1);
+    render.setRefineHover(sessionId, REAL_WORLD_INDEX, { kind: 'edge', hex: 0, edge: 2 });             // another thing: it replaces
+    expect(children()).toBe(before + 1);
+    render.setRefineHover(sessionId, REAL_WORLD_INDEX, null);
+    expect(children()).toBe(before);
+  });
+
+  it('keeps the dragged edge where it was dropped until the server answers', () => {
+    loadState(singleCubeState(1));
+    expect(render.edgePreviewDelta(sessionId)).toBeNull();
+
+    render.setEdgeDragPreview(sessionId, 0, 4, { x: 0, y: 0.3, z: 0 });
+    expect(render.edgePreviewDelta(sessionId)).toEqual({ x: 0, y: 0.3, z: 0 });
+    expect(render.facePreviewDelta(sessionId)).toBeNull();           // it is an edge's preview, not a face's
+
+    editor.moveEdge(sessionId, 0, 4, { x: 0, y: 0.3, z: 0 });
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}/hexes/0/edges/4/move`).flush({ ok: true, error: null, state: singleCubeState(2) });
+    expect(render.edgePreviewDelta(sessionId)).toBeNull();
+  });
+
   it('has nothing to draw in the Solver World', () => {
     loadState(singleCubeState());
 

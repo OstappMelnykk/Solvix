@@ -64,11 +64,11 @@ export class RenderWindowComponent {
   readonly worlds = WORLDS_CONFIG;
   readonly solverWorldIndex = SOLVER_WORLD_INDEX;
 
-  // Where the pointer is followed to show what a click would act on: the Solver World, and the Ideal and Real Worlds while elements are being picked.
+  // Where the pointer is followed to show what a click would act on: the Solver World, and the Ideal and Real Worlds (the face or edge under it goes red).
   hoverOn(worldIndex: number): boolean {
     if (worldIndex === SOLVER_WORLD_INDEX) return true;
     const sessionId = this.sessions.activeSessionId();
-    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null && this.solver.refineMode(sessionId);
+    return (worldIndex === IDEAL_WORLD_INDEX || worldIndex === REAL_WORLD_INDEX) && sessionId !== null;
   }
 
   // null when there's no active session - never matches a real worldIndex,
@@ -256,6 +256,35 @@ export class RenderWindowComponent {
       center.z += pending.z;
     }
     return { hex: face.hex, face: face.face, fullNodeIds, halfNodeIds, center };
+  }
+
+  // The edge picked, draggable only in the Real World and only while neither a node nor a face is picked. The gizmo sits at the edge's midpoint.
+  getDraggableEdge(worldIndex: number): { hex: number; edge: number; center: { x: number; y: number; z: number } } | null {
+    const sessionId = this.sessions.activeSessionId();
+    if (worldIndex !== REAL_WORLD_INDEX || sessionId === null) return null;
+    if (this.meshSelection.nodeId(sessionId) !== null || this.meshSelection.face(sessionId) !== null) return null;
+    const edge = this.meshSelection.edge(sessionId);
+    const state = this.meshEditor.getState(sessionId);
+    const hex = edge && state ? state.hexes.find(h => h.id === edge.hex) : undefined;
+    const mid = hex ? state!.nodes.find(n => n.id === hex.nodeIds[8 + edge!.edge]) : undefined;
+    if (!edge || !mid) return null;
+    const pending = this.meshEditorRender.edgePreviewDelta(sessionId);
+    return { hex: edge.hex, edge: edge.edge, center: { x: mid.x + (pending?.x ?? 0), y: mid.y + (pending?.y ?? 0), z: mid.z + (pending?.z ?? 0) } };
+  }
+
+  // The edge gizmo was dropped: send the displacement to the server (one undo step).
+  onEdgeMoved(event: { hex: number; edge: number; delta: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId === null) return;
+    const { x, y, z } = event.delta;
+    if (x === 0 && y === 0 && z === 0) return;
+    this.meshEditor.moveEdge(sessionId, event.hex, event.edge, event.delta);
+  }
+
+  // The edge gizmo is being dragged: redraw the whole Real World live.
+  onEdgeDragging(event: { hex: number; edge: number; delta: { x: number; y: number; z: number } }): void {
+    const sessionId = this.sessions.activeSessionId();
+    if (sessionId !== null) this.meshEditorRender.setEdgeDragPreview(sessionId, event.hex, event.edge, event.delta);
   }
 
   // The face gizmo was dropped: send the displacement to the server (one undo step).

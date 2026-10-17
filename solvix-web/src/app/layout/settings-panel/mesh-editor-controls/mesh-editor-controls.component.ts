@@ -9,7 +9,7 @@ import { SurfaceAttachmentService } from '../../../state/surface-attachment.serv
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
-import { FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
+import { EdgeRef, FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
 import { Scope } from '../../../geometry/solver-targets';
 
@@ -28,6 +28,7 @@ type Axis = 'x' | 'y' | 'z';
 // (onKeyDown) and mirrored in docs/EDITOR_SHORTCUTS.md.
 export const SHORTCUTS: readonly { readonly keys: string; readonly action: string }[] = [
   { keys: 'Клік по грані', action: 'вибрати грань (Real World: стрілки рухають усю грань)' },
+  { keys: 'Клік біля ребра', action: 'вибрати ребро (Real World: стрілки й гізмо рухають усе ребро)' },
   { keys: 'Shift + клік', action: 'вибрати куб (1-й — основа, 2-й приєднується)' },
   { keys: 'Клік по точці', action: 'вибрати вузол (Real World: стрілки для drag)' },
   { keys: 'N', action: 'перший куб' },
@@ -40,8 +41,8 @@ export const SHORTCUTS: readonly { readonly keys: string; readonly action: strin
   { keys: 'Esc', action: 'зняти виділення' },
   { keys: 'Ctrl/Cmd + Z', action: 'скасувати' },
   { keys: 'Ctrl/Cmd + Shift + Z, Ctrl + Y', action: 'повернути' },
-  { keys: '← →  ↑ ↓', action: 'зсув вузла/грані по X і Z (Shift — ×10; для вузла перший крок до цілого)' },
-  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла/грані по Y: вгору / вниз (Shift — ×10; для вузла перший крок до цілого)' },
+  { keys: '← →  ↑ ↓', action: 'зсув вузла/грані/ребра по X і Z (Shift — ×10; для вузла перший крок до цілого)' },
+  { keys: ']  [  або  Alt + ↑ ↓  (PgUp PgDn)', action: 'зсув вузла/грані/ребра по Y: вгору / вниз (Shift — ×10; для вузла перший крок до цілого)' },
   { keys: '?', action: 'ця підказка' }
 ];
 
@@ -254,6 +255,16 @@ export class MeshEditorControlsComponent {
     return this.sessionId === null ? null : this.selection.face(this.sessionId);
   }
 
+  // The edge a click near an edge picked.
+  activeEdge(): EdgeRef | null {
+    return this.sessionId === null ? null : this.selection.edge(this.sessionId);
+  }
+
+  activeEdgeText(): string {
+    const edge = this.activeEdge();
+    return edge ? `Куб ${edge.hex} · ребро ${edge.edge}` : '';
+  }
+
   activeFaceText(): string {
     const face = this.activeFace();
     if (!face) {
@@ -430,9 +441,14 @@ export class MeshEditorControlsComponent {
     return !this.busy && this.isRealWorld && this.selectedNodeId() === null && this.activeFace() !== null;
   }
 
-  // What the arrow keys act on right now: the node if one is picked, else the face.
+  // An edge can be nudged in the Real World when an edge is picked and neither a node nor a face is.
+  canMoveEdge(): boolean {
+    return !this.busy && this.isRealWorld && this.selectedNodeId() === null && this.activeFace() === null && this.activeEdge() !== null;
+  }
+
+  // What the arrow keys act on right now: the node if one is picked, else the face, else the edge.
   canNudge(): boolean {
-    return this.canMoveNode() || this.canMoveFace();
+    return this.canMoveNode() || this.canMoveFace() || this.canMoveEdge();
   }
 
   onCarryChange(event: Event): void {
@@ -552,6 +568,10 @@ export class MeshEditorControlsComponent {
       this.nudgeFace(axis, direction, multiplier);
       return;
     }
+    if (this.selectedNodeId() === null && this.canMoveEdge()) {
+      this.nudgeEdge(axis, direction, multiplier);
+      return;
+    }
     const value = this.nodeCoord(axis);
     let next = value + direction * this.nudgeStep * multiplier;
     if (multiplier > 1 && Math.abs(value - Math.round(value)) > 1e-9) {
@@ -574,6 +594,14 @@ export class MeshEditorControlsComponent {
     if (this.sessionId === null || face === null || !this.canMoveFace()) return;
     const delta = { x: 0, y: 0, z: 0, [axis]: direction * this.nudgeStep * multiplier };
     this.editor.moveFace(this.sessionId, face.hex, face.face, delta);
+  }
+
+  // Shifts the whole picked edge by one step along an axis (the 2 corners and the midpoint fully, the edges leaving the corners by half - the backend decides that).
+  private nudgeEdge(axis: Axis, direction: 1 | -1, multiplier = 1): void {
+    const edge = this.activeEdge();
+    if (this.sessionId === null || edge === null || !this.canMoveEdge()) return;
+    const delta = { x: 0, y: 0, z: 0, [axis]: direction * this.nudgeStep * multiplier };
+    this.editor.moveEdge(this.sessionId, edge.hex, edge.edge, delta);
   }
 
   private moveSelectedNode(position: MeshPointDto): void {

@@ -30,7 +30,22 @@ export interface PickedNode {
   readonly nodeId: number;
 }
 
-export type MeshPick = PickedFace | PickedNode;
+// An edge of a cube: its index 0..11 in the cube (the midpoint sits at slot 8 + edge). Found by where the pointer is on the screen, not by a ray, so it is
+// never a pick of a mesh in the scene.
+export interface PickedEdge {
+  readonly kind: 'edge';
+  readonly hex: number;
+  readonly edge: number;
+}
+
+export type MeshPick = PickedFace | PickedNode | PickedEdge;
+
+// An edge of the body as a curve on the screen: the points along it, from one corner through the midpoint to the other.
+export interface EdgeCurve {
+  readonly hex: number;
+  readonly edge: number;
+  readonly points: readonly THREE.Vector3[];
+}
 
 export interface MeshViewSelection {
   // Picked cubes in pick order: the first is the base (cyan), the second the one
@@ -41,6 +56,8 @@ export interface MeshViewSelection {
   // The face whose "add a cube" button is hovered - drawn as a preview.
   readonly hoverFace: { readonly hex: number; readonly face: HexFaceName } | null;
   readonly nodeId: number | null;
+  // The edge picked (yellow).
+  readonly edge?: { readonly hex: number; readonly edge: number } | null;
 }
 
 export interface MeshView {
@@ -57,6 +74,8 @@ export interface MeshView {
   // The visible sphere of each node, by node id - the canvas moves one while
   // its node is being dragged.
   readonly nodeMeshes: ReadonlyMap<number, THREE.Mesh>;
+  // The edges of the body, each once, to find the one under the pointer (the Ideal and Real Worlds' views).
+  readonly edges?: readonly EdgeCurve[];
 }
 
 // Same node layout as Solvix.Mesh's Hex20Reference.
@@ -181,6 +200,7 @@ const PICKED_FACE_COLOR = 0xffe14d;
 const SELECTED_NODE_COLOR = 0xff3b3b;
 const ATTACHED_NODE_COLOR = 0xff4fd8;
 const EDGE_COLOR = 0xe6e8ec;
+const PICKED_EDGE_COLOR = 0xffe14d;
 const CORNER_COLOR = 0xffffff;
 const MIDPOINT_COLOR = 0xf2d34a;
 
@@ -267,32 +287,36 @@ export function withNodeMoved(state: MeshStateDto, nodeId: number, position: THR
   };
 }
 
-// The nodes a whole-face move carries, as the server's HexMesh.MoveFace does: the 8 nodes of the face (full delta), and the midpoints of the edges that leave the
-// face's corners - in every cube that owns such a corner, so a linked neighbour's edges too - by half, so those edges stay straight.
-export function faceMoveSets(state: MeshStateDto, hexId: number, face: HexFaceName): { full: Set<number>; half: Set<number> } | null {
-  const hex = state.hexes.find(h => h.id === hexId);
-  if (!hex) return null;
-  const slots = faceSlots(face);
-  const full = new Set<number>(slots.map(slot => hex.nodeIds[slot]));
-  const corners = new Set<number>(slots.filter(slot => slot < 8).map(slot => hex.nodeIds[slot]));
+// The nodes a move of a whole face or edge carries, as the server's HexMesh.MoveFace / MoveEdge do: the `full` ones by the whole delta, and the midpoints of the
+// edges that leave the moved corners - in every cube that owns such a corner, so a linked neighbour's edges too - by half, so those edges stay straight. An edge
+// between two moved corners lies in what is moved (a full node).
+function moveSets(state: MeshStateDto, full: Set<number>, corners: Set<number>): { full: Set<number>; half: Set<number> } {
   const half = new Set<number>();
   for (const owner of state.hexes) {
     EDGE_CORNERS.forEach(([a, b], k) => {
-      const nodeA = owner.nodeIds[a];
-      const nodeB = owner.nodeIds[b];
-      // an edge that leaves a moved corner: its other end is not on the face; an edge between two moved corners lies in the face (a full node)
-      if (corners.has(nodeA) !== corners.has(nodeB)) half.add(owner.nodeIds[8 + k]);
+      if (corners.has(owner.nodeIds[a]) !== corners.has(owner.nodeIds[b])) half.add(owner.nodeIds[8 + k]);
     });
   }
   for (const id of full) half.delete(id);
   return { full, half };
 }
 
-// The state as it would be with a whole face dragged by `delta` (a preview while the pointer is still down), matching the server's MoveFace
-// (see faceMoveSets). Everything else follows through the isoparametric map.
-export function withFaceMoved(state: MeshStateDto, hexId: number, face: HexFaceName, delta: THREE.Vector3Like): MeshStateDto {
-  const sets = faceMoveSets(state, hexId, face);
-  if (!sets) return state;
+export function faceMoveSets(state: MeshStateDto, hexId: number, face: HexFaceName): { full: Set<number>; half: Set<number> } | null {
+  const hex = state.hexes.find(h => h.id === hexId);
+  if (!hex) return null;
+  const slots = faceSlots(face);
+  return moveSets(state, new Set(slots.map(slot => hex.nodeIds[slot])), new Set(slots.filter(slot => slot < 8).map(slot => hex.nodeIds[slot])));
+}
+
+export function edgeMoveSets(state: MeshStateDto, hexId: number, edge: number): { full: Set<number>; half: Set<number> } | null {
+  const hex = state.hexes.find(h => h.id === hexId);
+  if (!hex || edge < 0 || edge >= EDGE_CORNERS.length) return null;
+  const [a, b] = EDGE_CORNERS[edge];
+  const corners = new Set([hex.nodeIds[a], hex.nodeIds[b]]);
+  return moveSets(state, new Set([...corners, hex.nodeIds[8 + edge]]), corners);
+}
+
+function movedBy(state: MeshStateDto, sets: { full: Set<number>; half: Set<number> }, delta: THREE.Vector3Like): MeshStateDto {
   const { full, half } = sets;
   return {
     ...state,
@@ -302,6 +326,41 @@ export function withFaceMoved(state: MeshStateDto, hexId: number, face: HexFaceN
         : n
     )
   };
+}
+
+// The state as it would be with a whole face dragged by `delta` (a preview while the pointer is still down), matching the server's MoveFace.
+// Everything else follows through the isoparametric map.
+export function withFaceMoved(state: MeshStateDto, hexId: number, face: HexFaceName, delta: THREE.Vector3Like): MeshStateDto {
+  const sets = faceMoveSets(state, hexId, face);
+  return sets ? movedBy(state, sets, delta) : state;
+}
+
+// The same for a whole edge (the server's MoveEdge).
+export function withEdgeMoved(state: MeshStateDto, hexId: number, edge: number, delta: THREE.Vector3Like): MeshStateDto {
+  const sets = edgeMoveSets(state, hexId, edge);
+  return sets ? movedBy(state, sets, delta) : state;
+}
+
+// The edges of the body, each once (an edge shared by cubes is one), as curves through the corner, midpoint and corner nodes of the first cube that has it.
+export function edgeCurves(state: MeshStateDto, mode: MeshViewMode, samples = 8): EdgeCurve[] {
+  const nodes = new Map(state.nodes.map(n => [n.id, n]));
+  const seen = new Set<string>();
+  const curves: EdgeCurve[] = [];
+  for (const hex of state.hexes) {
+    EDGE_CORNERS.forEach(([a, b], k) => {
+      const ids = [hex.nodeIds[a], hex.nodeIds[b]].sort((x, y) => x - y);
+      const key = `${ids[0]}:${ids[1]}`;
+      if (seen.has(key) || !nodes.has(hex.nodeIds[a]) || !nodes.has(hex.nodeIds[b]) || !nodes.has(hex.nodeIds[8 + k])) return;
+      seen.add(key);
+      const start = nodePosition(nodes.get(hex.nodeIds[a])!, mode);
+      const mid = nodePosition(nodes.get(hex.nodeIds[8 + k])!, mode);
+      const end = nodePosition(nodes.get(hex.nodeIds[b])!, mode);
+      const points: THREE.Vector3[] = [];
+      for (let i = 0; i <= samples; i++) points.push(edgePoint(start, mid, end, -1 + (2 * i) / samples));
+      curves.push({ hex: hex.id, edge: k, points });
+    });
+  }
+  return curves;
 }
 
 // Of the things a ray passes through, nearest first: a node that can be reached through other cubes wins over whatever
@@ -553,7 +612,21 @@ export function buildMeshView(
     pickables.push(hit);
   }
 
-  return { root, pickables, nodeMeshes };
+  // the picked edge, drawn over everything in yellow
+  if (selection.edge) {
+    const picked = edgeCurves({ ...state, hexes: state.hexes.filter(h => h.id === selection.edge!.hex) }, mode).find(c => c.edge === selection.edge!.edge);
+    if (picked) {
+      const points: number[] = [];
+      for (let i = 0; i + 1 < picked.points.length; i++) points.push(...picked.points[i].toArray(), ...picked.points[i + 1].toArray());
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+      const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: PICKED_EDGE_COLOR, depthTest: false }));
+      line.renderOrder = 5;
+      root.add(line);
+    }
+  }
+
+  return { root, pickables, nodeMeshes, edges: edgeCurves(state, mode) };
 }
 
 // Frees everything buildMeshView made. Node spheres share two geometries, so

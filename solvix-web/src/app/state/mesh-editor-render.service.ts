@@ -10,8 +10,9 @@ import { NodeSizeService } from './node-size.service';
 import { SurfaceAttachmentService } from './surface-attachment.service';
 import { buildCubeOutline, buildFemHighlight, buildFemMeshView } from '../geometry/fem-mesh-view';
 import { remapMesh } from '../geometry/fem-remap';
+import { buildPickHighlight } from '../geometry/pick-highlight';
 import { MeshStateDto, HexFaceName } from '../api/mesh-editor-api.service';
-import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withFaceMoved, withNodeMoved } from '../geometry/mesh-editor-view';
+import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withEdgeMoved, withFaceMoved, withNodeMoved } from '../geometry/mesh-editor-view';
 
 // The width of the refined mesh's edges, in CSS pixels: a plain line is one device pixel (half of this on a Retina screen), so this is a little thicker, not a lot.
 const EDGE_WIDTH = 1.8;
@@ -21,6 +22,8 @@ interface Cached {
   readonly view: MeshView | null;
   // The outline of elements (by key) in this world, for what a pick would choose.
   readonly outline?: (keys: readonly string[]) => THREE.Object3D | null;
+  // What the pointer is over (a face, an edge), drawn red.
+  readonly hoverOf?: (pick: MeshPick) => THREE.Object3D | null;
 }
 
 // The 3D view of a session's mesh for one World: the Ideal World shows every
@@ -40,6 +43,8 @@ export class MeshEditorRenderService {
   private readonly opacity = inject(GeometryOpacityService);
   private readonly nodeSize = inject(NodeSizeService);
   private readonly cache = new Map<string, Cached>();
+  // What each view's hover highlight shows now, so the same thing is not drawn again on every move of the pointer.
+  private readonly hovered = new Map<string, string>();
 
   // A node OR a face being dragged right now: the Real World shows it (and what
   // follows from it) before the server has answered. It drops away once the
@@ -47,6 +52,7 @@ export class MeshEditorRenderService {
   private preview:
     | { kind: 'node'; sessionId: number; nodeId: number; position: { x: number; y: number; z: number }; carry: boolean; version: number; token: number }
     | { kind: 'face'; sessionId: number; hexId: number; face: HexFaceName; delta: { x: number; y: number; z: number }; version: number; token: number }
+    | { kind: 'edge'; sessionId: number; hexId: number; edge: number; delta: { x: number; y: number; z: number }; version: number; token: number }
     | null = null;
   private previewToken = 0;
 
@@ -61,6 +67,20 @@ export class MeshEditorRenderService {
     const version = this.editor.getState(sessionId)?.version;
     if (version === undefined) return;
     this.preview = { kind: 'face', sessionId, hexId, face, delta, version, token: ++this.previewToken };
+  }
+
+  // An edge being dragged: the whole body follows it live, like a node or a face.
+  setEdgeDragPreview(sessionId: number, hexId: number, edge: number, delta: { x: number; y: number; z: number }): void {
+    const version = this.editor.getState(sessionId)?.version;
+    if (version === undefined) return;
+    this.preview = { kind: 'edge', sessionId, hexId, edge, delta, version, token: ++this.previewToken };
+  }
+
+  // How far the edge being dragged (or just dropped, until the server has answered) is from where the state has it.
+  edgePreviewDelta(sessionId: number): { x: number; y: number; z: number } | null {
+    const preview = this.preview;
+    const version = this.editor.getState(sessionId)?.version;
+    return preview?.kind === 'edge' && preview.sessionId === sessionId && preview.version === version ? preview.delta : null;
   }
 
   // How far the face being dragged (or just dropped, until the server has answered) is from where the state has it - the gizmo sits there, so it does not jump back and forth.
@@ -87,6 +107,7 @@ export class MeshEditorRenderService {
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
     if (live?.kind === 'node') state = withNodeMoved(state, live.nodeId, live.position, live.carry);
     else if (live?.kind === 'face') state = withFaceMoved(state, live.hexId, live.face, live.delta);
+    else if (live?.kind === 'edge') state = withEdgeMoved(state, live.hexId, live.edge, live.delta);
     const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}:${this.solver.isLocal(sessionId) ? `local${this.solver.mesh(sessionId) ? '+' : '-'}${this.solver.revision(sessionId)}${this.solver.refineMode(sessionId)}` : `${this.solver.refineMode(sessionId)}:${[...this.solver.refineSelection(sessionId)].join(',')}`}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.key === key) return cached.view;
@@ -98,12 +119,14 @@ export class MeshEditorRenderService {
         hexes: this.selection.hexes(sessionId),
         face: this.selection.face(sessionId),
         hoverFace: this.selection.hoverFace(sessionId),
-        nodeId: this.selection.nodeId(sessionId)
+        nodeId: this.selection.nodeId(sessionId),
+        edge: this.selection.edge(sessionId)
       },
       { subdivisions: this.solver.divisions(sessionId) as [number, number, number], attachedNodeIds: worldIndex === REAL_WORLD_INDEX ? this.attachments.attached(sessionId) : undefined, xrayNodes: this.selection.xrayNodes(sessionId), faceOpacity: this.opacity.get(sessionId, worldIndex), nodeScale: { corner: this.nodeSize.get(sessionId, 'corner'), mid: this.nodeSize.get(sessionId, 'mid') } }
     );
     const refined = this.withRefinedMesh(sessionId, worldIndex, state, view);
-    this.cache.set(cacheKey, { key, view: refined.view, outline: refined.outline });
+    this.hovered.delete(cacheKey);
+    this.cache.set(cacheKey, { key, view: refined.view, outline: refined.outline, hoverOf: pick => buildPickHighlight(state!, worldIndex === IDEAL_WORLD_INDEX ? 'ideal' : 'real', pick) });
     return refined.view;
   }
 
@@ -151,11 +174,21 @@ export class MeshEditorRenderService {
     return { view: { ...view, pickables, setHighlight }, outline };
   }
 
-  // The pointer is over the body (or left it) while elements are being picked: outline what a click would choose.
+  // The pointer is over the body (or left it): outline what a click would choose - the elements to refine while they are being picked, otherwise the face or edge
+  // (red).
   setRefineHover(sessionId: number, worldIndex: number, pick: MeshPick | null): void {
-    const cached = this.cache.get(`${sessionId}:${worldIndex}`);
-    if (!cached?.view?.setHighlight || !cached.outline) return;
-    const keys = this.solver.refineMode(sessionId) && pick?.kind === 'face' ? this.solver.refineTargets(sessionId, pick) : [];
-    cached.view.setHighlight(keys.length > 0 ? cached.outline(keys) : null);
+    const cacheKey = `${sessionId}:${worldIndex}`;
+    const cached = this.cache.get(cacheKey);
+    if (!cached?.view?.setHighlight) return;
+    if (this.solver.refineMode(sessionId)) {
+      if (!cached.outline) return;
+      const keys = pick?.kind === 'face' ? this.solver.refineTargets(sessionId, pick) : [];
+      cached.view.setHighlight(keys.length > 0 ? cached.outline(keys) : null);
+      return;
+    }
+    const what = pick === null || pick.kind === 'node' ? '' : pick.kind === 'edge' ? `e${pick.hex}:${pick.edge}` : `f${pick.hex}:${pick.face}`;
+    if (this.hovered.get(cacheKey) === what) return;
+    this.hovered.set(cacheKey, what);
+    cached.view.setHighlight(what !== '' && cached.hoverOf ? cached.hoverOf(pick!) : null);
   }
 }

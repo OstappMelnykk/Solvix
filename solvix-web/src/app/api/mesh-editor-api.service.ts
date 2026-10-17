@@ -239,6 +239,11 @@ export class MeshEditorApiService {
     return this.http.put<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}/faces/${face}/move`), { dx: delta.x, dy: delta.y, dz: delta.z });
   }
 
+  // Moves a whole edge (index 0..11 of the cube's edges) by one displacement: its 2 corners and midpoint fully, the midpoints of the edges leaving the corners by half.
+  moveEdge(sessionId: number, hexId: number, edge: number, delta: MeshPointDto): Observable<MeshCommandResultDto> {
+    return this.http.put<MeshCommandResultDto>(this.url(sessionId, `hexes/${hexId}/edges/${edge}/move`), { dx: delta.x, dy: delta.y, dz: delta.z });
+  }
+
   undo(sessionId: number): Observable<MeshCommandResultDto> {
     return this.http.post<MeshCommandResultDto>(this.url(sessionId, 'undo'), {});
   }

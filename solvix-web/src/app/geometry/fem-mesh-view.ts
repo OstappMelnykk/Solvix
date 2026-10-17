@@ -47,7 +47,7 @@ export interface FemMeshViewInput {
 }
 
 // Edges that are a few pixels wide: one line segment per pair of points, coloured per point.
-function wideLines(points: readonly number[], colors: readonly number[], width: number, options: { opacity?: number; depthTest?: boolean } = {}): LineSegments2 {
+export function wideLines(points: readonly number[], colors: readonly number[], width: number, options: { opacity?: number; depthTest?: boolean } = {}): LineSegments2 {
   const geometry = new LineSegmentsGeometry();
   geometry.setPositions(points as number[]);
   geometry.setColors(colors as number[]);

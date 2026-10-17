@@ -4,6 +4,11 @@ import { SessionsService } from './sessions.service';
 import { HexFaceName } from '../api/mesh-editor-api.service';
 import { MeshPick } from '../geometry/mesh-editor-view';
 
+export interface EdgeRef {
+  readonly hex: number;
+  readonly edge: number;
+}
+
 export interface FaceRef {
   readonly hex: number;
   readonly face: HexFaceName;
@@ -12,6 +17,7 @@ export interface FaceRef {
 interface Selection {
   hexes: number[];
   face: FaceRef | null;
+  edge: EdgeRef | null;
   nodeId: number | null;
   hoverFace: FaceRef | null;
   // The nodes are drawn over the cubes and picked through them, so the ones inside the body can be reached.
@@ -49,6 +55,11 @@ export class MeshEditorSelectionService {
     return this.selection(sessionId).face;
   }
 
+  // The edge a click near an edge picked (what the arrows and the gizmo move).
+  edge(sessionId: number): EdgeRef | null {
+    return this.selection(sessionId).edge;
+  }
+
   nodeId(sessionId: number): number | null {
     return this.selection(sessionId).nodeId;
   }
@@ -71,6 +82,7 @@ export class MeshEditorSelectionService {
   toggleHex(sessionId: number, hexId: number): void {
     const selection = this.selection(sessionId);
     selection.face = null;
+    selection.edge = null;
     if (selection.hexes.includes(hexId)) {
       selection.hexes = selection.hexes.filter(id => id !== hexId);
     } else if (selection.hexes.length < MAX_HEXES) {
@@ -86,6 +98,19 @@ export class MeshEditorSelectionService {
     const selection = this.selection(sessionId);
     const same = selection.face?.hex === face.hex && selection.face.face === face.face;
     selection.face = same ? null : face;
+    selection.edge = null;
+    selection.nodeId = null;          // picking a face lets go of the node: the node would take the arrows and the gizmo from it
+    selection.hexes = [];
+    selection.revision++;
+  }
+
+  // Picking an edge drops any picked face and cubes; picking it again deselects it.
+  selectEdge(sessionId: number, edge: EdgeRef): void {
+    const selection = this.selection(sessionId);
+    const same = selection.edge?.hex === edge.hex && selection.edge.edge === edge.edge;
+    selection.edge = same ? null : edge;
+    selection.face = null;
+    selection.nodeId = null;          // and so does picking an edge
     selection.hexes = [];
     selection.revision++;
   }
@@ -98,6 +123,8 @@ export class MeshEditorSelectionService {
       if (!additive) this.clear(sessionId);
     } else if (pick.kind === 'node') {
       this.selectNode(sessionId, pick.nodeId);
+    } else if (pick.kind === 'edge') {
+      this.selectEdge(sessionId, { hex: pick.hex, edge: pick.edge });
     } else if (additive) {
       this.toggleHex(sessionId, pick.hex);
     } else {
@@ -136,6 +163,11 @@ export class MeshEditorSelectionService {
   selectNode(sessionId: number, nodeId: number | null): void {
     const selection = this.selection(sessionId);
     selection.nodeId = selection.nodeId === nodeId ? null : nodeId;
+    // a node picked lets go of the face or the edge: what was picked last is what the arrows and the gizmo move
+    if (selection.nodeId !== null) {
+      selection.face = null;
+      selection.edge = null;
+    }
     selection.revision++;
   }
 
@@ -154,11 +186,13 @@ export class MeshEditorSelectionService {
     const selection = this.selection(sessionId);
     const hexes = selection.hexes.filter(hasHex);
     const face = selection.face !== null && hasHex(selection.face.hex) ? selection.face : null;
+    const edge = selection.edge !== null && hasHex(selection.edge.hex) ? selection.edge : null;
     const nodeId = selection.nodeId !== null && hasNode(selection.nodeId) ? selection.nodeId : null;
     const hover = selection.hoverFace !== null && hasHex(selection.hoverFace.hex) ? selection.hoverFace : null;
-    if (hexes.length !== selection.hexes.length || face !== selection.face || nodeId !== selection.nodeId || hover !== selection.hoverFace) {
+    if (hexes.length !== selection.hexes.length || face !== selection.face || edge !== selection.edge || nodeId !== selection.nodeId || hover !== selection.hoverFace) {
       selection.hexes = hexes;
       selection.face = face;
+      selection.edge = edge;
       selection.nodeId = nodeId;
       selection.hoverFace = hover;
       selection.revision++;
@@ -169,12 +203,13 @@ export class MeshEditorSelectionService {
     const selection = this.selection(sessionId);
     selection.hexes = [];
     selection.face = null;
+    selection.edge = null;
     selection.nodeId = null;
     selection.hoverFace = null;
     selection.revision++;
   }
 
   private selection(sessionId: number): Selection {
-    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
+    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, edge: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
   }
 }
