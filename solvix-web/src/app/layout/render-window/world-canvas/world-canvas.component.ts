@@ -14,6 +14,7 @@ import { SharedModelService } from '../../../state/shared-model.service';
 import { ImportedReferenceStyle, ImportedReferenceDisplayService } from '../../../state/imported-reference-display.service';
 import { ImportedReferenceRenderService } from '../../../state/imported-reference-render.service';
 import { MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
+import { SurfaceProjectionService } from '../../../state/surface-projection.service';
 import { SurfaceAttachmentService } from '../../../state/surface-attachment.service';
 import { SixViewOverlayService } from '../../../state/six-view-overlay.service';
 import { recenterAtOrigin } from '../../../geometry/recenter-object3d';
@@ -262,6 +263,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private readonly sixViewOverlay = inject(SixViewOverlayService);
   private readonly meshSelection = inject(MeshEditorSelectionService);
   private readonly attachmentSettings = inject(SurfaceAttachmentService);
+  private readonly surfaceProjection = inject(SurfaceProjectionService);
+  private readonly surfaceProvider = () => this.snapper;
   private readonly cdr = inject(ChangeDetectorRef);
   // Eases the re-ground/re-center position fix-up over SETTLE_DURATION_MS
   // instead of snapping it instantly on drag end - see the 'dragging-changed'
@@ -425,6 +428,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   };
 
   ngAfterViewInit(): void {
+    // the Real World's imported surface can be asked for the nearest point (the panel's "drop on the STL")
+    if (this.worldIndex === REAL_WORLD_INDEX) this.surfaceProjection.register(this.surfaceProvider);
     this.initScene();
     this.sceneReady = true;
     // initScene() (via updateModel()) can flip modelPresent from its
@@ -479,6 +484,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnDestroy(): void {
+    this.surfaceProjection.unregister(this.surfaceProvider);
     cancelAnimationFrame(this.frameId);
     // Whatever's actually in this.currentModel RIGHT NOW - not whatever
     // SharedModelService last handed out via `representation` - is the true

@@ -232,6 +232,39 @@ public class EditorTests
     }
 
     [Test]
+    public void Several_nodes_are_put_at_their_places_in_one_undo_step_and_nothing_else_follows()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        var hex = editor.Mesh.Hex(0);
+        var before = editor.Mesh.ToState();
+        var moves = new[] { (hex.NodeIds[0], new Vec3(-0.1, -0.2, -0.3)), (hex.NodeIds[8], new Vec3(0.5, -0.4, 0)), (hex.NodeIds[6], new Vec3(1.2, 1.1, 1.3)) };
+
+        Assert.That(editor.MoveNodes(moves).Ok, Is.True);
+
+        foreach (var (id, position) in moves) Assert.That((editor.Mesh.Node(id).Position - position).Length, Is.LessThan(1e-12));
+        var moved = moves.Select(m => m.Item1).ToHashSet();
+        foreach (var node in before.Nodes.Where(n => !moved.Contains(n.Id)))
+            Assert.That(editor.Mesh.Node(node.Id).Position, Is.EqualTo(node.Position), $"node {node.Id} did not need to move");
+        Assert.That(editor.Undo(), Is.True);
+        Assert.That(editor.Mesh.ToState().Nodes, Is.EquivalentTo(before.Nodes), "one undo takes all of them back");
+    }
+
+    [Test]
+    public void Moving_several_nodes_moves_none_when_one_is_bad()
+    {
+        var editor = new HexMeshEditor();
+        editor.AddFirstHex();
+        var before = editor.Mesh.ToState();
+
+        Assert.That(editor.MoveNodes(new[] { (0, new Vec3(5, 5, 5)), (999, new Vec3(1, 1, 1)) }).Ok, Is.False);          // an unknown node
+        Assert.That(editor.MoveNodes(new[] { (0, new Vec3(5, 5, 5)), (1, new Vec3(double.NaN, 0, 0)) }).Ok, Is.False);   // a place that is not a number
+        Assert.That(editor.MoveNodes(Array.Empty<(int, Vec3)>()).Ok, Is.False);
+
+        Assert.That(editor.Mesh.ToState().Nodes, Is.EquivalentTo(before.Nodes));
+    }
+
+    [Test]
     public void Moving_a_face_is_one_undo_step_and_fails_on_bad_input()
     {
         var editor = new HexMeshEditor();

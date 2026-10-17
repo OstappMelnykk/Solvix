@@ -75,6 +75,26 @@ public class MeshEditorApiTests
     }
 
     [Test]
+    public async Task Several_nodes_are_put_at_places_over_http_in_one_step()
+    {
+        var first = await Post("/api/mesh-editor/1/hexes/first");
+        var ids = first.GetProperty("state").GetProperty("hexes")[0].GetProperty("nodeIds").EnumerateArray().Select(e => e.GetInt32()).ToArray();
+
+        var response = await _client.PutAsJsonAsync("/api/mesh-editor/1/nodes", new { moves = new[] { new { nodeId = ids[0], x = -0.5, y = -0.5, z = -0.5 }, new { nodeId = ids[6], x = 1.5, y = 1.5, z = 1.5 } } });
+        var result = Root(response);
+        Assert.That(result.GetProperty("ok").GetBoolean(), Is.True);
+        var nodes = result.GetProperty("state").GetProperty("nodes").EnumerateArray().ToDictionary(n => n.GetProperty("id").GetInt32(), n => n.GetProperty("x").GetDouble());
+        Assert.That(nodes[ids[0]], Is.EqualTo(-0.5));
+        Assert.That(nodes[ids[6]], Is.EqualTo(1.5));
+
+        var undone = await Post("/api/mesh-editor/1/undo");
+        Assert.That(undone.GetProperty("state").GetProperty("nodes").EnumerateArray().First(n => n.GetProperty("id").GetInt32() == ids[0]).GetProperty("x").GetDouble(), Is.EqualTo(0));
+
+        var refused = Root(await _client.PutAsJsonAsync("/api/mesh-editor/1/nodes", new { moves = new[] { new { nodeId = 9999, x = 0.0, y = 0.0, z = 0.0 } } }));
+        Assert.That(refused.GetProperty("ok").GetBoolean(), Is.False);
+    }
+
+    [Test]
     public async Task Building_linking_moving_and_undoing_over_http()
     {
         var first = await Post("/api/mesh-editor/1/hexes/first");

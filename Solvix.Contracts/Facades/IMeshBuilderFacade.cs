@@ -28,6 +28,12 @@ public interface IMeshBuilderFacade
     MeshCommandResultDto MoveNode(int sessionId, int nodeId, MeshPointDto position, bool carryEdgeMidpoints);
 
     /// <summary>
+    /// Puts several nodes at the places given, as ONE undo step (every node alone, none of the others follows). Nothing moves if any of the nodes is unknown
+    /// or any place is not a finite number.
+    /// </summary>
+    MeshCommandResultDto MoveNodes(int sessionId, IReadOnlyList<NodeMoveDto> moves);
+
+    /// <summary>
     /// Moves a whole face of a hex by one displacement (one undo step). The 8 face
     /// nodes move fully; the midpoints of the edges joining it to the opposite face move by half.
     /// </summary>

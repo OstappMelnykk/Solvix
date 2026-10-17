@@ -105,6 +105,9 @@ internal sealed class MeshBuilderFacade(MeshEditorSessions sessions) : IMeshBuil
     public MeshCommandResultDto MoveNode(int sessionId, int nodeId, MeshPointDto position, bool carryEdgeMidpoints) =>
         Command(sessionId, e => e.MoveNode(nodeId, new Vec3(position.X, position.Y, position.Z), carryEdgeMidpoints));
 
+    public MeshCommandResultDto MoveNodes(int sessionId, IReadOnlyList<NodeMoveDto> moves) =>
+        Command(sessionId, e => e.MoveNodes(moves.Select(m => (m.NodeId, new Vec3(m.X, m.Y, m.Z))).ToList()));
+
     public MeshCommandResultDto MoveFace(int sessionId, int hexId, string face, MeshPointDto delta) =>
         WithFace(sessionId, face, f => e => e.MoveFace(new FaceRef(hexId, f), new Vec3(delta.X, delta.Y, delta.Z)));
 
