@@ -248,6 +248,7 @@
 
 <div class="group">
   <div class="group-label">Локальне згущення</div>
+  <button class="tool" type="button" (click)="showRefinementTemplates()">Переглянути шаблони</button>
   <div class="row row--coords">
     <span>X</span><input type="number" min="1" max="8" step="1" [value]="localDivisions[0]" (change)="onLocalDivisionChange(0, $event)" />
     <span>Y</span><input type="number" min="1" max="8" step="1" [value]="localDivisions[1]" (change)="onLocalDivisionChange(1, $event)" />

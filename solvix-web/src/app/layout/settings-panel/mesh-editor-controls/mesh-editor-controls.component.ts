@@ -11,6 +11,7 @@ import { SurfaceAttachmentService } from '../../../state/surface-attachment.serv
 import { CubeConstructorService } from '../../../state/cube-constructor.service';
 import { NotificationService } from '../../../state/notification.service';
 import { SolverService } from '../../../state/solver.service';
+import { RefinementTemplatesService } from '../../../state/refinement-templates.service';
 import { ShellExportResult, ShellExportService } from '../../../state/shell-export.service';
 import { EdgeRef, FaceRef, MeshEditorSelectionService } from '../../../state/mesh-editor-selection.service';
 import { LOCAL_COORDS } from '../../../geometry/mesh-editor-view';
@@ -78,6 +79,7 @@ export class MeshEditorControlsComponent {
   private readonly constructorWindow = inject(CubeConstructorService);
   private readonly solver = inject(SolverService);
   private readonly shellExport = inject(ShellExportService);
+  private readonly refinementTemplates = inject(RefinementTemplatesService);
   private readonly notifications = inject(NotificationService);
   private readonly attachments = inject(SurfaceAttachmentService);
   private readonly surfaceProjection = inject(SurfaceProjectionService);
@@ -553,6 +555,10 @@ export class MeshEditorControlsComponent {
   }
 
   // Cuts the elements chosen with "Вибір елементів" (the cubes before the first refinement, the leaves after it), laying the step on top of the ones made before.
+  showRefinementTemplates(): void {
+    this.refinementTemplates.open();
+  }
+
   runLocalRefinement(): void {
     if (this.sessionId === null) return;
     const chosen = [...this.solver.refineSelection(this.sessionId)];
