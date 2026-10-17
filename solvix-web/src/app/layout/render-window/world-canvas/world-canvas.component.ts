@@ -1,7 +1,7 @@
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { NgFor } from '@angular/common';
 import * as THREE from 'three';
-import { nearestNodeOnScreen } from '../../../geometry/view-gizmo';
+import { nearestEdgeOnScreen, nearestNodeOnScreen } from '../../../geometry/view-gizmo';
 import { SurfaceSnapper, stick } from '../../../geometry/surface-snap';
 import { GroundCell, groundCellUnder } from '../../../geometry/ground-cell';
 import { centreIsInView } from '../../../geometry/view-check';
@@ -31,6 +31,8 @@ import { HexFaceName } from '../../../api/mesh-editor-api.service';
 
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [3, 3, 3];
 const SETTLE_DURATION_MS = 180;
+// How close to an edge (in pixels) a click picks it.
+const EDGE_PICK_PIXELS = 6;
 // Above this many CSS pixels of movement between pointerdown and pointerup the
 // gesture was an OrbitControls drag, not a click - the browser's own `click`
 // has no such threshold, so it is tracked by hand.
@@ -162,6 +164,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Fired once when the face gizmo is dropped: the total displacement.
   @Output() readonly faceMoved = new EventEmitter<{ hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }>();
 
+  // A whole edge that may be dragged with the translate gizmo (Real World only, when no node and no face is picked), or null; the gizmo sits at its midpoint.
+  @Input() draggableEdge: { readonly hex: number; readonly edge: number; readonly center: { x: number; y: number; z: number } } | null = null;
+  @Output() readonly edgeDragging = new EventEmitter<{ hex: number; edge: number; delta: { x: number; y: number; z: number } }>();
+  @Output() readonly edgeMoved = new EventEmitter<{ hex: number; edge: number; delta: { x: number; y: number; z: number } }>();
+
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
 
   // Bumped only when this canvas's WebGL context was lost and the browser
@@ -243,6 +250,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // face dots follow live; the server does the real move on drop.
   private gizmoFace: { hex: number; face: HexFaceName } | null = null;
   private faceDragStart = new THREE.Vector3();
+  private gizmoEdge: { hex: number; edge: number } | null = null;
   // Mirrors gridHelper.visible for the template - a real default from
   // construction, same reasoning as `cameraMode` above: the template can
   // read isGridVisible() during Angular's very first change detection
@@ -338,6 +346,8 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   private altHeld = false;
   private painting = false;
   private lastPaintKey = '';
+  // How far from the camera the last ray hit something (null: nothing), to tell whether an edge is in front of what was hit.
+  private lastHitDistance: number | null = null;
   private paintFrame = 0;
 
   // With Alt held the camera moves in fine steps: the wheel zooms a quarter as far, and a drag orbits and pans at a fraction of the speed (read at the moment of each event).
@@ -561,6 +571,11 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         this.faceDragging.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: delta.x, y: delta.y, z: delta.z } });
         return;
       }
+      if (this.gizmoEdge !== null) {
+        const delta = this.nodeProxy.position.clone().sub(this.faceDragStart);
+        this.edgeDragging.emit({ hex: this.gizmoEdge.hex, edge: this.gizmoEdge.edge, delta: { x: delta.x, y: delta.y, z: delta.z } });
+        return;
+      }
       if (this.gizmoNodeId !== null) this.stickToSurface(this.gizmoNodeId);
       const mesh = this.gizmoNodeId === null ? undefined : this.currentMeshView?.nodeMeshes.get(this.gizmoNodeId);
       mesh?.position.copy(this.nodeProxy.position);
@@ -579,6 +594,17 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         const r = (value: number) => Math.round(value * 1e6) / 1e6;
         const d = this.nodeProxy.position.clone().sub(this.faceDragStart);
         this.faceMoved.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: r(d.x), y: r(d.y), z: r(d.z) } });
+        return;
+      }
+      // An edge drag: the same, for the edge.
+      if (this.gizmoEdge !== null) {
+        if (event.value) {
+          this.faceDragStart.copy(this.nodeProxy.position);
+          return;
+        }
+        const r = (value: number) => Math.round(value * 1e6) / 1e6;
+        const d = this.nodeProxy.position.clone().sub(this.faceDragStart);
+        this.edgeMoved.emit({ hex: this.gizmoEdge.hex, edge: this.gizmoEdge.edge, delta: { x: r(d.x), y: r(d.y), z: r(d.z) } });
         return;
       }
       if (event.value || this.gizmoNodeId === null) {
@@ -1002,6 +1028,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // A node is picked: drive the gizmo as a node drag.
     if (mesh) {
       this.gizmoFace = null;
+      this.gizmoEdge = null;
       this.nodeProxy.position.copy(mesh.position);
       if (this.nodeGizmo.object !== this.nodeProxy) this.nodeGizmo.attach(this.nodeProxy);
       this.gizmoNodeId = id;
@@ -1015,11 +1042,23 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.nodeProxy.position.set(face.center.x, face.center.y, face.center.z);
       if (this.nodeGizmo.object !== this.nodeProxy) this.nodeGizmo.attach(this.nodeProxy);
       this.gizmoFace = { hex: face.hex, face: face.face };
+      this.gizmoEdge = null;
       return;
     }
 
-    // Neither: detach.
+    // No node and no face, but an edge is picked: drive the gizmo as an edge drag.
+    const edge = this.draggableEdge;
+    if (edge) {
+      this.nodeProxy.position.set(edge.center.x, edge.center.y, edge.center.z);
+      if (this.nodeGizmo.object !== this.nodeProxy) this.nodeGizmo.attach(this.nodeProxy);
+      this.gizmoEdge = { hex: edge.hex, edge: edge.edge };
+      this.gizmoFace = null;
+      return;
+    }
+
+    // None: detach.
     this.gizmoFace = null;
+    this.gizmoEdge = null;
     if (this.nodeGizmo.object) this.nodeGizmo.detach();
   }
 
@@ -1065,17 +1104,30 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!this.currentMeshView) {
       return;
     }
-    const pick = this.pickAt(event.clientX, event.clientY);
+    let pick = this.pickAt(event.clientX, event.clientY);
     if (this.placeOnSurface && this.worldIndex === REAL_WORLD_INDEX) {
       this.placeOrPick(event, pick);
       return;
     }
+    // An edge is picked by where it is on the screen: a click close to one, on a face or on nothing, picks the edge (a node still wins).
+    if (this.worldIndex === REAL_WORLD_INDEX && !this.buildEnabled && pick?.kind !== 'node') pick = this.edgeNear(event) ?? pick;
     // While building a left click on a cube removes it; a click on a node still picks the node (to move it).
     if (this.buildEnabled && pick?.kind === 'face') {
       this.meshBuild.emit({ action: 'remove', pick, ground: null });
       return;
     }
     this.meshPick.emit({ pick, additive: event.shiftKey });
+  }
+
+  // The edge within a few pixels of the pointer that is not behind what the ray hit (the faces in front of it hide it), or null.
+  private edgeNear(event: PointerEvent): MeshPick | null {
+    const curves = this.currentMeshView?.edges;
+    if (!curves || curves.length === 0) return null;
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    const hit = this.lastHitDistance;
+    const maxDepth = hit === null ? Infinity : hit * 1.01 + 0.02;
+    const near = nearestEdgeOnScreen(curves, this.camera, rect.width, rect.height, new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top), EDGE_PICK_PIXELS, maxDepth);
+    return near ? { kind: 'edge', hex: near.hex, edge: near.edge } : null;
   }
 
   // In place-on-surface mode: a node is picked; otherwise the point of the imported surface under the pointer is where the
@@ -1136,6 +1188,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     const hits = this.raycaster.intersectObjects(view.pickables, false);
     // a node that is reachable through other cubes (the nodes of the picked cube) wins over whatever is in front of it
     const hit = preferredHit(hits);
+    this.lastHitDistance = hit ? hit.distance : null;
     if (!hit) {
       return null;
     }

@@ -89,3 +89,35 @@ export function nearestNodeOnScreen(
   }
   return best;
 }
+
+// The edge nearest to a point of the panel among those within `radius` pixels of it (and not farther from the camera than `maxDepth`: edges behind what is in
+// front are not reachable), and how far from the camera that place of the edge is. An edge is a curve
+// (points along it); the distance is to the nearest piece of it. Used to pick an edge by where it is on the screen: it is too thin to be hit by a ray.
+export function nearestEdgeOnScreen(
+  curves: readonly { readonly hex: number; readonly edge: number; readonly points: readonly THREE.Vector3[] }[],
+  camera: THREE.Camera,
+  width: number,
+  height: number,
+  pixel: THREE.Vector2,
+  radius = 7,
+  maxDepth = Infinity
+): { hex: number; edge: number; distance: number; depth: number } | null {
+  camera.updateMatrixWorld(true);
+  const eye = camera.getWorldPosition(new THREE.Vector3());
+  let best: { hex: number; edge: number; distance: number; depth: number } | null = null;
+  for (const curve of curves) {
+    for (let i = 0; i + 1 < curve.points.length; i++) {
+      const a = toPixels(curve.points[i], camera, width, height);
+      const b = toPixels(curve.points[i + 1], camera, width, height);
+      const ab = b.clone().sub(a);
+      const length2 = ab.lengthSq();
+      const t = length2 === 0 ? 0 : Math.min(1, Math.max(0, pixel.clone().sub(a).dot(ab) / length2));
+      const distance = a.clone().add(ab.multiplyScalar(t)).distanceTo(pixel);
+      if (distance > radius || (best !== null && distance >= best.distance)) continue;
+      const depth = curve.points[i].clone().lerp(curve.points[i + 1], t).distanceTo(eye);
+      if (depth > maxDepth) continue;
+      best = { hex: curve.hex, edge: curve.edge, distance, depth };
+    }
+  }
+  return best;
+}

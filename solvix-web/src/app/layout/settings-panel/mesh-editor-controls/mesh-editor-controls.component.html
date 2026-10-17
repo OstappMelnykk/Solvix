@@ -44,6 +44,10 @@
     <b>Грань</b>
     <span class="status">{{ activeFaceText() }}</span>
   </div>
+  <div class="pick pick--face" *ngIf="activeEdge()">
+    <b>Ребро</b>
+    <span class="status">{{ activeEdgeText() }}</span>
+  </div>
   <button class="tool" type="button" [disabled]="!canAttachActiveFace()" title="Шорткат: A" (click)="attachActiveFace()">
     Додати куб на грань <kbd>A</kbd>
   </button>

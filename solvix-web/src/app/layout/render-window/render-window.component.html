@@ -21,6 +21,7 @@
     (paint)="onPaint($event)"
     [draggableNodeId]="getDraggableNodeId(i)"
     [draggableFace]="getDraggableFace(i)"
+    [draggableEdge]="getDraggableEdge(i)"
     [attachedNodeIds]="getAttachedNodes(i)"
     [snapShare]="snapShare()"
     [snapEnabled]="snapEnabled()"
@@ -31,6 +32,8 @@
     (nodeMoved)="onNodeMoved($event)"
     (faceDragging)="onFaceDragging($event)"
     (faceMoved)="onFaceMoved($event)"
+    (edgeDragging)="onEdgeDragging($event)"
+    (edgeMoved)="onEdgeMoved($event)"
     [active]="activeWorldIndex() === i"
     [hidden]="activeWorldIndex() !== i"
   />

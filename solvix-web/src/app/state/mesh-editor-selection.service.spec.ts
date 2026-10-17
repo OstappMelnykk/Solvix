@@ -57,6 +57,31 @@ describe('MeshEditorSelectionService', () => {
     expect(selection.hexes(1)).toEqual([4, 2]);
   });
 
+  it('picks an edge, drops the face and the cubes, and deselects it by picking it again', () => {
+    selection.toggleHex(1, 4);
+    selection.selectEdge(1, { hex: 4, edge: 7 });
+    expect(selection.edge(1)).toEqual({ hex: 4, edge: 7 });
+    expect(selection.hexes(1)).toEqual([]);
+
+    selection.selectFace(1, { hex: 4, face: 'XPlus' });         // a face takes the place of the edge
+    expect(selection.edge(1)).toBeNull();
+    selection.applyPick(1, { kind: 'edge', hex: 2, edge: 3 }, false);
+    expect(selection.edge(1)).toEqual({ hex: 2, edge: 3 });
+    expect(selection.face(1)).toBeNull();
+    selection.applyPick(1, { kind: 'edge', hex: 2, edge: 3 }, false);
+    expect(selection.edge(1)).toBeNull();
+  });
+
+  it('forgets the edge of a cube that is gone, and a clear drops it', () => {
+    selection.selectEdge(1, { hex: 4, edge: 7 });
+    selection.retain(1, id => id !== 4, () => true);
+    expect(selection.edge(1)).toBeNull();
+
+    selection.selectEdge(1, { hex: 5, edge: 1 });
+    selection.clear(1);
+    expect(selection.edge(1)).toBeNull();
+  });
+
   it('selects and deselects a node by clicking it again', () => {
     selection.selectNode(1, 7);
     expect(selection.nodeId(1)).toBe(7);

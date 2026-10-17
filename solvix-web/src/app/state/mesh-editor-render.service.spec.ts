@@ -60,6 +60,19 @@ describe('MeshEditorRenderService', () => {
     expect(render.facePreviewDelta(sessionId)).toBeNull();
   });
 
+  it('keeps the dragged edge where it was dropped until the server answers', () => {
+    loadState(singleCubeState(1));
+    expect(render.edgePreviewDelta(sessionId)).toBeNull();
+
+    render.setEdgeDragPreview(sessionId, 0, 4, { x: 0, y: 0.3, z: 0 });
+    expect(render.edgePreviewDelta(sessionId)).toEqual({ x: 0, y: 0.3, z: 0 });
+    expect(render.facePreviewDelta(sessionId)).toBeNull();           // it is an edge's preview, not a face's
+
+    editor.moveEdge(sessionId, 0, 4, { x: 0, y: 0.3, z: 0 });
+    http.expectOne(`${environment.apiBaseUrl}/api/mesh-editor/${sessionId}/hexes/0/edges/4/move`).flush({ ok: true, error: null, state: singleCubeState(2) });
+    expect(render.edgePreviewDelta(sessionId)).toBeNull();
+  });
+
   it('has nothing to draw in the Solver World', () => {
     loadState(singleCubeState());
 
