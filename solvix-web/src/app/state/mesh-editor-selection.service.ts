@@ -17,6 +17,10 @@ export interface FaceRef {
 interface Selection {
   hexes: number[];
   face: FaceRef | null;
+  // The faces picked together with `face` (Ctrl/Cmd+click, or the "several faces" switch): they are dragged as one.
+  otherFaces: FaceRef[];
+  // With the switch on a plain click on a face adds it to the picked ones (or takes it away) instead of replacing them.
+  multiFace: boolean;
   edge: EdgeRef | null;
   nodeId: number | null;
   hoverFace: FaceRef | null;
@@ -55,6 +59,23 @@ export class MeshEditorSelectionService {
     return this.selection(sessionId).face;
   }
 
+  // Every picked face: the last one picked (face()) and the ones picked with it. They are dragged together.
+  faces(sessionId: number): readonly FaceRef[] {
+    const selection = this.selection(sessionId);
+    return selection.face === null ? [] : [...selection.otherFaces, selection.face];
+  }
+
+  isMultiFace(sessionId: number): boolean {
+    return this.selection(sessionId).multiFace;
+  }
+
+  setMultiFace(sessionId: number, on: boolean): void {
+    const selection = this.selection(sessionId);
+    if (selection.multiFace === on) return;
+    selection.multiFace = on;
+    selection.revision++;
+  }
+
   // The edge a click near an edge picked (what the arrows and the gizmo move).
   edge(sessionId: number): EdgeRef | null {
     return this.selection(sessionId).edge;
@@ -82,6 +103,7 @@ export class MeshEditorSelectionService {
   toggleHex(sessionId: number, hexId: number): void {
     const selection = this.selection(sessionId);
     selection.face = null;
+    selection.otherFaces = [];
     selection.edge = null;
     if (selection.hexes.includes(hexId)) {
       selection.hexes = selection.hexes.filter(id => id !== hexId);
@@ -93,11 +115,21 @@ export class MeshEditorSelectionService {
     selection.revision++;
   }
 
-  // Clicking the picked face again deselects it. Picking a face drops any picked cubes.
-  selectFace(sessionId: number, face: FaceRef): void {
+  // Clicking the picked face again deselects it. Picking a face drops any picked cubes. With `together` (Ctrl/Cmd+click, or the "several faces" switch) the
+  // face joins the picked ones - or leaves them, when it is one of them - instead of replacing them.
+  selectFace(sessionId: number, face: FaceRef, together = false): void {
     const selection = this.selection(sessionId);
-    const same = selection.face?.hex === face.hex && selection.face.face === face.face;
-    selection.face = same ? null : face;
+    const sameAs = (a: FaceRef | null, b: FaceRef) => a !== null && a.hex === b.hex && a.face === b.face;
+    if (together && selection.face !== null) {
+      const all = [...selection.otherFaces, selection.face];
+      const kept = all.some(f => sameAs(f, face)) ? all.filter(f => !sameAs(f, face)) : [...all, face];
+      selection.face = kept.length > 0 ? kept[kept.length - 1] : null;
+      selection.otherFaces = kept.slice(0, -1);
+    } else {
+      const same = sameAs(selection.face, face) && selection.otherFaces.length === 0;
+      selection.face = same ? null : face;
+      selection.otherFaces = [];
+    }
     selection.edge = null;
     selection.nodeId = null;          // picking a face lets go of the node: the node would take the arrows and the gizmo from it
     selection.hexes = [];
@@ -110,6 +142,7 @@ export class MeshEditorSelectionService {
     const same = selection.edge?.hex === edge.hex && selection.edge.edge === edge.edge;
     selection.edge = same ? null : edge;
     selection.face = null;
+    selection.otherFaces = [];
     selection.nodeId = null;          // and so does picking an edge
     selection.hexes = [];
     selection.revision++;
@@ -118,7 +151,7 @@ export class MeshEditorSelectionService {
   // What a click on the 3D view means: a plain click on a face picks the face,
   // Shift+click picks its cube, a node click picks the node, and a plain click
   // on empty space clears everything (Shift+click on empty space keeps it).
-  applyPick(sessionId: number, pick: MeshPick | null, additive: boolean): void {
+  applyPick(sessionId: number, pick: MeshPick | null, additive: boolean, together = false): void {
     if (pick === null) {
       if (!additive) this.clear(sessionId);
     } else if (pick.kind === 'node') {
@@ -128,7 +161,7 @@ export class MeshEditorSelectionService {
     } else if (additive) {
       this.toggleHex(sessionId, pick.hex);
     } else {
-      this.selectFace(sessionId, { hex: pick.hex, face: pick.face });
+      this.selectFace(sessionId, { hex: pick.hex, face: pick.face }, together || this.selection(sessionId).multiFace);
     }
   }
 
@@ -166,6 +199,7 @@ export class MeshEditorSelectionService {
     // a node picked lets go of the face or the edge: what was picked last is what the arrows and the gizmo move
     if (selection.nodeId !== null) {
       selection.face = null;
+      selection.otherFaces = [];
       selection.edge = null;
     }
     selection.revision++;
@@ -186,12 +220,14 @@ export class MeshEditorSelectionService {
     const selection = this.selection(sessionId);
     const hexes = selection.hexes.filter(hasHex);
     const face = selection.face !== null && hasHex(selection.face.hex) ? selection.face : null;
+    const otherFaces = selection.otherFaces.filter(f => hasHex(f.hex));
     const edge = selection.edge !== null && hasHex(selection.edge.hex) ? selection.edge : null;
     const nodeId = selection.nodeId !== null && hasNode(selection.nodeId) ? selection.nodeId : null;
     const hover = selection.hoverFace !== null && hasHex(selection.hoverFace.hex) ? selection.hoverFace : null;
-    if (hexes.length !== selection.hexes.length || face !== selection.face || edge !== selection.edge || nodeId !== selection.nodeId || hover !== selection.hoverFace) {
+    if (hexes.length !== selection.hexes.length || otherFaces.length !== selection.otherFaces.length || face !== selection.face || edge !== selection.edge || nodeId !== selection.nodeId || hover !== selection.hoverFace) {
       selection.hexes = hexes;
       selection.face = face;
+      selection.otherFaces = face === null ? [] : otherFaces;
       selection.edge = edge;
       selection.nodeId = nodeId;
       selection.hoverFace = hover;
@@ -203,6 +239,7 @@ export class MeshEditorSelectionService {
     const selection = this.selection(sessionId);
     selection.hexes = [];
     selection.face = null;
+    selection.otherFaces = [];
     selection.edge = null;
     selection.nodeId = null;
     selection.hoverFace = null;
@@ -210,6 +247,6 @@ export class MeshEditorSelectionService {
   }
 
   private selection(sessionId: number): Selection {
-    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, edge: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
+    return this.selections.getOrCreate(sessionId, () => ({ hexes: [], face: null, otherFaces: [], multiFace: false, edge: null, nodeId: null, hoverFace: null, xray: true, build: { 0: false, 1: false }, revision: 0 }));
   }
 }

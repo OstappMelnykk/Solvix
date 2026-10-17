@@ -53,6 +53,8 @@ export interface MeshViewSelection {
   readonly hexes: readonly number[];
   // The face a plain click picked (yellow).
   readonly face: { readonly hex: number; readonly face: HexFaceName } | null;
+  // The faces picked together with `face` (yellow too): they are dragged as one.
+  readonly otherFaces?: readonly { readonly hex: number; readonly face: HexFaceName }[];
   // The face whose "add a cube" button is hovered - drawn as a preview.
   readonly hoverFace: { readonly hex: number; readonly face: HexFaceName } | null;
   readonly nodeId: number | null;
@@ -308,6 +310,21 @@ export function faceMoveSets(state: MeshStateDto, hexId: number, face: HexFaceNa
   return moveSets(state, new Set(slots.map(slot => hex.nodeIds[slot])), new Set(slots.filter(slot => slot < 8).map(slot => hex.nodeIds[slot])));
 }
 
+// The nodes a move of several faces together carries: the nodes of every picked face by the whole delta, the midpoints of the edges that leave their corners by
+// half (an edge between two moved corners lies in what is moved).
+export function facesMoveSets(state: MeshStateDto, faces: readonly { hex: number; face: HexFaceName }[]): { full: Set<number>; half: Set<number> } | null {
+  const full = new Set<number>();
+  const corners = new Set<number>();
+  for (const f of faces) {
+    const hex = state.hexes.find(h => h.id === f.hex);
+    if (!hex) continue;
+    const slots = faceSlots(f.face);
+    for (const slot of slots) full.add(hex.nodeIds[slot]);
+    for (const slot of slots) if (slot < 8) corners.add(hex.nodeIds[slot]);
+  }
+  return full.size === 0 ? null : moveSets(state, full, corners);
+}
+
 export function edgeMoveSets(state: MeshStateDto, hexId: number, edge: number): { full: Set<number>; half: Set<number> } | null {
   const hex = state.hexes.find(h => h.id === hexId);
   if (!hex || edge < 0 || edge >= EDGE_CORNERS.length) return null;
@@ -332,6 +349,12 @@ function movedBy(state: MeshStateDto, sets: { full: Set<number>; half: Set<numbe
 // Everything else follows through the isoparametric map.
 export function withFaceMoved(state: MeshStateDto, hexId: number, face: HexFaceName, delta: THREE.Vector3Like): MeshStateDto {
   const sets = faceMoveSets(state, hexId, face);
+  return sets ? movedBy(state, sets, delta) : state;
+}
+
+// The state with several faces dragged together by `delta`.
+export function withFacesMoved(state: MeshStateDto, faces: readonly { hex: number; face: HexFaceName }[], delta: THREE.Vector3Like): MeshStateDto {
+  const sets = facesMoveSets(state, faces);
   return sets ? movedBy(state, sets, delta) : state;
 }
 
@@ -523,7 +546,7 @@ export function buildMeshView(
       .sort((a, b) => a - b)[0];
     const picked = pickIndex !== undefined;
     const preview = selection.hoverFace?.hex === face.hex && selection.hoverFace.face === face.face;
-    const facePicked = selection.face?.hex === face.hex && selection.face.face === face.face;
+    const facePicked = (selection.face?.hex === face.hex && selection.face.face === face.face) || (selection.otherFaces?.some(f => f.hex === face.hex && f.face === face.face) ?? false);
     const candidate = face.status === 'Candidate';
     const color = preview ? PREVIEW_FACE_COLOR : facePicked ? PICKED_FACE_COLOR : picked ? (pickIndex === 0 ? BASE_HEX_COLOR : ADAPTING_HEX_COLOR) : candidate ? CANDIDATE_FACE_COLOR : BODY_FACE_COLOR;
     // The outside of the body has the opacity the user set (100%: solid, it hides what is behind). A face between two linked cubes is inside the body:
@@ -565,6 +588,7 @@ export function buildMeshView(
   const reachable = new Set<number>();
   const pickedHexes = new Set<number>(selection.hexes);
   if (selection.face) pickedHexes.add(selection.face.hex);
+  for (const f of selection.otherFaces ?? []) pickedHexes.add(f.hex);
   for (const hex of state.hexes) if (pickedHexes.has(hex.id)) for (const id of hex.nodeIds) reachable.add(id);
   const cornerIds = new Set<number>();
   for (const hex of state.hexes) for (let slot = 0; slot < 8; slot++) cornerIds.add(hex.nodeIds[slot]);

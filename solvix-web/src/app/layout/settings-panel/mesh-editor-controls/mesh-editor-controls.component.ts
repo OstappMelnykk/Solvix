@@ -314,6 +314,19 @@ export class MeshEditorControlsComponent {
     this.drop(this.state?.hexes.map(h => h.id) ?? []);
   }
 
+  // Every picked face (the last one picked and the ones picked with it).
+  pickedFaces(): readonly FaceRef[] {
+    return this.sessionId === null ? [] : this.selection.faces(this.sessionId);
+  }
+
+  isMultiFace(): boolean {
+    return this.sessionId !== null && this.selection.isMultiFace(this.sessionId);
+  }
+
+  toggleMultiFace(): void {
+    if (this.sessionId !== null) this.selection.setMultiFace(this.sessionId, !this.isMultiFace());
+  }
+
   private drop(hexIds: readonly number[]): void {
     const state = this.state;
     if (!state) return;
@@ -710,10 +723,9 @@ export class MeshEditorControlsComponent {
   // A coarse step is just the step times the multiplier; a face has no single
   // coordinate to snap to a whole number.
   private nudgeFace(axis: Axis, direction: 1 | -1, multiplier = 1): void {
-    const face = this.activeFace();
-    if (this.sessionId === null || face === null || !this.canMoveFace()) return;
+    if (this.sessionId === null || !this.canMoveFace()) return;
     const delta = { x: 0, y: 0, z: 0, [axis]: direction * this.nudgeStep * multiplier };
-    this.editor.moveFace(this.sessionId, face.hex, face.face, delta);
+    this.editor.moveFaces(this.sessionId, this.selection.faces(this.sessionId), delta);
   }
 
   // Shifts the whole picked edge by one step along an axis (the 2 corners and the midpoint fully, the edges leaving the corners by half - the backend decides that).

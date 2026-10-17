@@ -114,7 +114,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() meshView: MeshView | null = null;
   // A click on a node or face of meshView, or on empty space (pick: null).
   // `additive` is true for Shift+click (pick the cube instead of the face).
-  @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null; additive: boolean }>();
+  @Output() readonly meshPick = new EventEmitter<{ pick: MeshPick | null; additive: boolean; together: boolean }>();
   // Where the pointer is hovering over meshView (the Solver World highlights what a click would act on); only
   // while hoverEnabled. Null when it is over nothing.
   @Input() hoverEnabled = false;
@@ -156,14 +156,16 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() draggableFace: {
     readonly hex: number;
     readonly face: HexFaceName;
+    // every face dragged together (this one and the others picked with it)
+    readonly faces: readonly { hex: number; face: HexFaceName }[];
     readonly fullNodeIds: readonly number[];
     readonly halfNodeIds: readonly number[];
     readonly center: { x: number; y: number; z: number };
   } | null = null;
   // Fired continuously while the face gizmo is dragged: the displacement so far.
-  @Output() readonly faceDragging = new EventEmitter<{ hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }>();
+  @Output() readonly faceDragging = new EventEmitter<{ hex: number; face: HexFaceName; faces: readonly { hex: number; face: HexFaceName }[]; delta: { x: number; y: number; z: number } }>();
   // Fired once when the face gizmo is dropped: the total displacement.
-  @Output() readonly faceMoved = new EventEmitter<{ hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }>();
+  @Output() readonly faceMoved = new EventEmitter<{ hex: number; face: HexFaceName; faces: readonly { hex: number; face: HexFaceName }[]; delta: { x: number; y: number; z: number } }>();
 
   // A whole edge that may be dragged with the translate gizmo (Real World only, when no node and no face is picked), or null; the gizmo sits at its midpoint.
   @Input() draggableEdge: { readonly hex: number; readonly edge: number; readonly center: { x: number; y: number; z: number } } | null = null;
@@ -249,7 +251,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
   // Face drag reuses the single node gizmo: when a face is picked (and no node),
   // the gizmo sits at the face centre and its displacement slides the face. The
   // face dots follow live; the server does the real move on drop.
-  private gizmoFace: { hex: number; face: HexFaceName } | null = null;
+  private gizmoFace: { hex: number; face: HexFaceName; faces: readonly { hex: number; face: HexFaceName }[] } | null = null;
   private faceDragStart = new THREE.Vector3();
   private gizmoEdge: { hex: number; edge: number } | null = null;
   // Mirrors gridHelper.visible for the template - a real default from
@@ -574,7 +576,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     this.nodeGizmo.addEventListener('objectChange', () => {
       if (this.gizmoFace !== null) {
         const delta = this.nodeProxy.position.clone().sub(this.faceDragStart);
-        this.faceDragging.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: delta.x, y: delta.y, z: delta.z } });
+        this.faceDragging.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, faces: this.gizmoFace.faces, delta: { x: delta.x, y: delta.y, z: delta.z } });
         return;
       }
       if (this.gizmoEdge !== null) {
@@ -599,7 +601,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         }
         const r = (value: number) => Math.round(value * 1e6) / 1e6;
         const d = this.nodeProxy.position.clone().sub(this.faceDragStart);
-        this.faceMoved.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, delta: { x: r(d.x), y: r(d.y), z: r(d.z) } });
+        this.faceMoved.emit({ hex: this.gizmoFace.hex, face: this.gizmoFace.face, faces: this.gizmoFace.faces, delta: { x: r(d.x), y: r(d.y), z: r(d.z) } });
         return;
       }
       // An edge drag: the same, for the edge.
@@ -1047,7 +1049,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     if (face) {
       this.nodeProxy.position.set(face.center.x, face.center.y, face.center.z);
       if (this.nodeGizmo.object !== this.nodeProxy) this.nodeGizmo.attach(this.nodeProxy);
-      this.gizmoFace = { hex: face.hex, face: face.face };
+      this.gizmoFace = { hex: face.hex, face: face.face, faces: face.faces };
       this.gizmoEdge = null;
       return;
     }
@@ -1121,7 +1123,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       this.meshBuild.emit({ action: 'remove', pick, ground: null });
       return;
     }
-    this.meshPick.emit({ pick: picked, additive: event.shiftKey });
+    this.meshPick.emit({ pick: picked, additive: event.shiftKey, together: event.ctrlKey || event.metaKey });
   }
 
   // The edge within a few pixels of the pointer that is not behind what the ray hit (the faces in front of it hide it), or null.
@@ -1163,7 +1165,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
         const nodes = Array.from(this.currentMeshView?.nodeMeshes ?? [], ([id, mesh]): [number, THREE.Vector3] => [id, mesh.getWorldPosition(new THREE.Vector3())]);
         const near = nearestNodeOnScreen(nodes, this.camera, rect.width, rect.height, new THREE.Vector2(event.clientX - rect.left, event.clientY - rect.top), 9);
         if (near && near.nodeId !== nodeId) {
-          this.meshPick.emit({ pick: { kind: 'node', nodeId: near.nodeId }, additive: false });
+          this.meshPick.emit({ pick: { kind: 'node', nodeId: near.nodeId }, additive: false, together: false });
           return;
         }
         this.surfacePlace.emit({ nodeId, position: { x: hit.point.x, y: hit.point.y, z: hit.point.z } });
@@ -1171,7 +1173,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
       }
     }
     // a node is picked; a click on nothing (or on a cube, which takes no clicks here) drops the selection
-    this.meshPick.emit({ pick: pick?.kind === 'node' ? pick : null, additive: false });
+    this.meshPick.emit({ pick: pick?.kind === 'node' ? pick : null, additive: false, together: false });
   }
 
   // A right click (not a pan) while building: add a cube where the pointer is.

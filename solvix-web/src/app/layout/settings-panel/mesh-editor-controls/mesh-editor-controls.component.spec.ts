@@ -35,7 +35,7 @@ describe('MeshEditorControlsComponent', () => {
     state = emptyState;
     busy = signal(false);
     editor = jasmine.createSpyObj<MeshEditorService>('MeshEditorService', [
-      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'moveNodes', 'moveFace', 'moveEdge', 'undo', 'redo', 'reset'
+      'getState', 'addFirstHex', 'addHexOnFace', 'linkFaces', 'linkHexes', 'removeHex', 'unlinkFace', 'moveNode', 'moveNodes', 'moveFace', 'moveFaces', 'moveEdge', 'undo', 'redo', 'reset'
     ]);
     editor.getState.and.callFake(() => state);
     editor.carryEdgeMidpoints = false;
@@ -393,22 +393,22 @@ describe('MeshEditorControlsComponent', () => {
     expect(component.canNudge()).toBeTrue();
 
     component.nudge('x', 1);
-    expect(editor.moveFace).toHaveBeenCalledWith(1, 0, 'XPlus', { x: 0.3, y: 0, z: 0 });
+    expect(editor.moveFaces).toHaveBeenCalledWith(1, [{ hex: 0, face: 'XPlus' }], { x: 0.3, y: 0, z: 0 });
 
     // A picked node wins over the face: the arrows move the node, not the face.
-    editor.moveFace.calls.reset();
+    editor.moveFaces.calls.reset();
     selection.selectNode(1, 6);
     expect(component.canMoveFace()).toBeFalse();
     component.nudge('x', 1);
-    expect(editor.moveFace).not.toHaveBeenCalled();
+    expect(editor.moveFaces).not.toHaveBeenCalled();
     expect(editor.moveNode).toHaveBeenCalled();
 
     // No face nudging outside the Real World.
     selection.selectNode(1, 6); // deselect node
     component.worldIndex = IDEAL_WORLD_INDEX;
-    editor.moveFace.calls.reset();
+    editor.moveFaces.calls.reset();
     component.nudge('x', 1);
-    expect(editor.moveFace).not.toHaveBeenCalled();
+    expect(editor.moveFaces).not.toHaveBeenCalled();
   });
 
   it('nudges the whole picked edge when neither a node nor a face is picked (Real World only)', () => {

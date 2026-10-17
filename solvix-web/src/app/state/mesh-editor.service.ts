@@ -4,6 +4,7 @@ import { KeyedStore } from './keyed-store';
 import { SessionsService } from './sessions.service';
 import { NotificationService } from './notification.service';
 import { MeshEditorSelectionService } from './mesh-editor-selection.service';
+import { facesMoveSets } from '../geometry/mesh-editor-view';
 import {
   HexFaceName,
   MeshCommandResultDto,
@@ -131,6 +132,25 @@ export class MeshEditorService {
   // Puts several nodes at the given places (one undo step); `then` runs after the new state arrives, when the server did it.
   moveNodes(sessionId: number, moves: readonly { nodeId: number; x: number; y: number; z: number }[], then?: () => void): void {
     this.run(sessionId, this.api.moveNodes(sessionId, moves), then);
+  }
+
+  // Moves picked faces together by one displacement (one undo step): one face goes through the server's MoveFace; several are sent as the new places of the
+  // nodes they carry (the same sets as the live preview: the face nodes by the whole delta, the midpoints of the edges leaving their corners by half).
+  moveFaces(sessionId: number, faces: readonly { hex: number; face: HexFaceName }[], delta: MeshPointDto): void {
+    if (faces.length === 0) return;
+    if (faces.length === 1) {
+      this.moveFace(sessionId, faces[0].hex, faces[0].face, delta);
+      return;
+    }
+    const state = this.getState(sessionId);
+    const sets = state ? facesMoveSets(state, faces) : null;
+    if (!state || !sets) return;
+    const round = (value: number) => Math.round(value * 1e6) / 1e6;
+    const moves = state.nodes.flatMap(n => {
+      const k = sets.full.has(n.id) ? 1 : sets.half.has(n.id) ? 0.5 : 0;
+      return k === 0 ? [] : [{ nodeId: n.id, x: round(n.x + delta.x * k), y: round(n.y + delta.y * k), z: round(n.z + delta.z * k) }];
+    });
+    if (moves.length > 0) this.moveNodes(sessionId, moves);
   }
 
   // Moves a whole edge by one displacement (one undo step).

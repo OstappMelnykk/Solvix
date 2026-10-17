@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { disposeObject3D } from '../geometry/dispose-object3d';
 import { IDEAL_WORLD_INDEX, REAL_WORLD_INDEX } from '../config/app-settings';
 import { MeshEditorService } from './mesh-editor.service';
-import { MeshEditorSelectionService } from './mesh-editor-selection.service';
+import { FaceRef, MeshEditorSelectionService } from './mesh-editor-selection.service';
 import { SolverService } from './solver.service';
 import { GeometryOpacityService } from './geometry-opacity.service';
 import { NodeSizeService } from './node-size.service';
@@ -12,7 +12,7 @@ import { buildCubeOutline, buildFemHighlight, buildFemMeshView } from '../geomet
 import { remapMesh } from '../geometry/fem-remap';
 import { buildPickHighlight } from '../geometry/pick-highlight';
 import { MeshStateDto, HexFaceName } from '../api/mesh-editor-api.service';
-import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withEdgeMoved, withFaceMoved, withNodeMoved } from '../geometry/mesh-editor-view';
+import { MeshPick, MeshView, buildMeshView, ghostOf, nodePosition, withEdgeMoved, withFaceMoved, withFacesMoved, withNodeMoved } from '../geometry/mesh-editor-view';
 
 // The width of the refined mesh's edges, in CSS pixels: a plain line is one device pixel (half of this on a Retina screen), so this is a little thicker, not a lot.
 const EDGE_WIDTH = 1.8;
@@ -51,7 +51,7 @@ export class MeshEditorRenderService {
   // state moves on to a newer version.
   private preview:
     | { kind: 'node'; sessionId: number; nodeId: number; position: { x: number; y: number; z: number }; carry: boolean; version: number; token: number }
-    | { kind: 'face'; sessionId: number; hexId: number; face: HexFaceName; delta: { x: number; y: number; z: number }; version: number; token: number }
+    | { kind: 'face'; sessionId: number; hexId: number; face: HexFaceName; faces?: readonly FaceRef[]; delta: { x: number; y: number; z: number }; version: number; token: number }
     | { kind: 'edge'; sessionId: number; hexId: number; edge: number; delta: { x: number; y: number; z: number }; version: number; token: number }
     | null = null;
   private previewToken = 0;
@@ -63,10 +63,10 @@ export class MeshEditorRenderService {
   }
 
   // A face being dragged: show the whole body following it live, like a node drag.
-  setFaceDragPreview(sessionId: number, hexId: number, face: HexFaceName, delta: { x: number; y: number; z: number }): void {
+  setFaceDragPreview(sessionId: number, hexId: number, face: HexFaceName, delta: { x: number; y: number; z: number }, faces?: readonly FaceRef[]): void {
     const version = this.editor.getState(sessionId)?.version;
     if (version === undefined) return;
-    this.preview = { kind: 'face', sessionId, hexId, face, delta, version, token: ++this.previewToken };
+    this.preview = { kind: 'face', sessionId, hexId, face, faces, delta, version, token: ++this.previewToken };
   }
 
   // An edge being dragged: the whole body follows it live, like a node or a face.
@@ -106,7 +106,7 @@ export class MeshEditorRenderService {
     if (preview && (preview.sessionId !== sessionId || preview.version !== state.version)) this.preview = null;
     const live = this.preview !== null && worldIndex === REAL_WORLD_INDEX ? this.preview : null;
     if (live?.kind === 'node') state = withNodeMoved(state, live.nodeId, live.position, live.carry);
-    else if (live?.kind === 'face') state = withFaceMoved(state, live.hexId, live.face, live.delta);
+    else if (live?.kind === 'face') state = live.faces && live.faces.length > 1 ? withFacesMoved(state, live.faces, live.delta) : withFaceMoved(state, live.hexId, live.face, live.delta);
     else if (live?.kind === 'edge') state = withEdgeMoved(state, live.hexId, live.edge, live.delta);
     const key = `${live ? 'p' + live.token + ':' : ''}${state.version}:${state.hexes.length}:${this.selection.revision(sessionId)}:${this.solver.divisions(sessionId).join('x')}:${worldIndex === REAL_WORLD_INDEX ? this.attachments.revision(sessionId) : 0}:${this.selection.xrayNodes(sessionId)}:${this.opacity.get(sessionId, worldIndex)}:${this.nodeSize.get(sessionId, 'corner')}:${this.nodeSize.get(sessionId, 'mid')}:${this.solver.isLocal(sessionId) ? `local${this.solver.mesh(sessionId) ? '+' : '-'}${this.solver.revision(sessionId)}${this.solver.refineMode(sessionId)}` : `${this.solver.refineMode(sessionId)}:${[...this.solver.refineSelection(sessionId)].join(',')}`}`;
     const cached = this.cache.get(cacheKey);
@@ -118,6 +118,7 @@ export class MeshEditorRenderService {
       {
         hexes: this.selection.hexes(sessionId),
         face: this.selection.face(sessionId),
+        otherFaces: this.selection.faces(sessionId).slice(0, -1),
         hoverFace: this.selection.hoverFace(sessionId),
         nodeId: this.selection.nodeId(sessionId),
         edge: this.selection.edge(sessionId)

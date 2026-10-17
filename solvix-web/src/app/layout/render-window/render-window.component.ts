@@ -14,10 +14,10 @@ import { SolverService } from '../../state/solver.service';
 import { SolverRenderService } from '../../state/solver-render.service';
 import { QualityRenderService } from '../../state/quality-render.service';
 import { MeshEditorRenderService } from '../../state/mesh-editor-render.service';
-import { MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
+import { FaceRef, MeshEditorSelectionService } from '../../state/mesh-editor-selection.service';
 import { MeshEditorService } from '../../state/mesh-editor.service';
 import { HexFaceName } from '../../api/mesh-editor-api.service';
-import { MeshPick, MeshView, faceMoveSets } from '../../geometry/mesh-editor-view';
+import { MeshPick, MeshView, facesMoveSets } from '../../geometry/mesh-editor-view';
 import { GroundCell } from '../../geometry/ground-cell';
 import { buildCommandFor } from '../../geometry/mesh-build';
 import { MeshCountsComponent } from './mesh-counts/mesh-counts.component';
@@ -223,6 +223,7 @@ export class RenderWindowComponent {
   getDraggableFace(worldIndex: number): {
     hex: number;
     face: HexFaceName;
+    faces: FaceRef[];
     fullNodeIds: number[];
     halfNodeIds: number[];
     center: { x: number; y: number; z: number };
@@ -233,7 +234,8 @@ export class RenderWindowComponent {
     const face = this.meshSelection.face(sessionId);
     const state = this.meshEditor.getState(sessionId);
     if (!face || !state) return null;
-    const sets = faceMoveSets(state, face.hex, face.face);
+    const faces = [...this.meshSelection.faces(sessionId)];
+    const sets = facesMoveSets(state, faces);
     if (!sets) return null;
     const fullNodeIds = [...sets.full];
     const halfNodeIds = [...sets.half];
@@ -255,7 +257,7 @@ export class RenderWindowComponent {
       center.y += pending.y;
       center.z += pending.z;
     }
-    return { hex: face.hex, face: face.face, fullNodeIds, halfNodeIds, center };
+    return { hex: face.hex, face: face.face, faces, fullNodeIds, halfNodeIds, center };
   }
 
   // The edge picked, draggable only in the Real World and only while neither a node nor a face is picked. The gizmo sits at the edge's midpoint.
@@ -288,19 +290,19 @@ export class RenderWindowComponent {
   }
 
   // The face gizmo was dropped: send the displacement to the server (one undo step).
-  onFaceMoved(event: { hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }): void {
+  onFaceMoved(event: { hex: number; face: HexFaceName; faces: readonly FaceRef[]; delta: { x: number; y: number; z: number } }): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
     const { x, y, z } = event.delta;
     if (x === 0 && y === 0 && z === 0) return;
-    this.meshEditor.moveFace(sessionId, event.hex, event.face, event.delta);
+    this.meshEditor.moveFaces(sessionId, event.faces, event.delta);
   }
 
   // The face gizmo is being dragged: redraw the whole Real World live from the
   // isoparametric map (curved edges, inner grid, neighbours), as for a node drag.
-  onFaceDragging(event: { hex: number; face: HexFaceName; delta: { x: number; y: number; z: number } }): void {
+  onFaceDragging(event: { hex: number; face: HexFaceName; faces: readonly FaceRef[]; delta: { x: number; y: number; z: number } }): void {
     const sessionId = this.sessions.activeSessionId();
-    if (sessionId !== null) this.meshEditorRender.setFaceDragPreview(sessionId, event.hex, event.face, event.delta);
+    if (sessionId !== null) this.meshEditorRender.setFaceDragPreview(sessionId, event.hex, event.face, event.delta, event.faces);
   }
 
   // Building with the mouse is for the Ideal and the Real World, when the user has it on.
@@ -353,7 +355,7 @@ export class RenderWindowComponent {
 
   // A click on the canvas - see MeshEditorSelectionService.applyPick for what
   // each kind of click picks.
-  onMeshPick(pick: MeshPick | null, additive: boolean): void {
+  onMeshPick(pick: MeshPick | null, additive: boolean, together = false): void {
     const sessionId = this.sessions.activeSessionId();
     if (sessionId === null) return;
     // while the elements of a refined body are being picked, a click in the Ideal and Real Worlds chooses elements to refine
@@ -369,6 +371,6 @@ export class RenderWindowComponent {
       if (pick?.kind === 'face' && pick.elementKey !== undefined) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: 0, ey: 0, ez: 0, key: pick.elementKey });
       else if (pick?.kind === 'face' && pick.element) this.solver.setQualityPick(sessionId, { hex: pick.hex, ex: pick.element[0], ey: pick.element[1], ez: pick.element[2] });
       else if (this.solver.qualityPick(sessionId) !== null) this.solver.setQualityPick(sessionId, null);
-    } else this.meshSelection.applyPick(sessionId, pick, additive);
+    } else this.meshSelection.applyPick(sessionId, pick, additive, together);
   }
 }

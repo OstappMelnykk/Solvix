@@ -41,9 +41,12 @@
   <div class="group-label">Робота з шестигранником</div>
 
   <div class="pick pick--face" *ngIf="activeFace()">
-    <b>Грань</b>
-    <span class="status">{{ activeFaceText() }}</span>
+    <b>{{ pickedFaces().length > 1 ? 'Грані: ' + pickedFaces().length : 'Грань' }}</b>
+    <span class="status">{{ pickedFaces().length > 1 ? 'тягнуться разом' : activeFaceText() }}</span>
   </div>
+  <button class="tool" type="button" [class.tool--on]="isMultiFace()" [attr.aria-pressed]="isMultiFace()" title="Увімкнено: клік по грані додає її до вибраних (або знімає). Те саме робить Ctrl/Cmd+клік. Вибрані грані тягнуться разом одним гізмо." (click)="toggleMultiFace()">
+    Вибір кількох граней
+  </button>
   <div class="pick pick--face" *ngIf="activeEdge()">
     <b>Ребро</b>
     <span class="status">{{ activeEdgeText() }}</span>
