@@ -27,7 +27,7 @@
     <div class="termwin" id="termwin" @ref="_window" style="@WindowStyle">
         <div class="titlebar">
             <span class="lights"><i></i><i></i><i></i></span>
-            <span class="title">solvix — термінал</span>
+            <span class="title" title="Тягни за заголовок, щоб перемістити вікно · подвійний клік - на місце">solvix — термінал</span>
             <span class="spacer"></span>
             <select title="Шрифт" @bind="Font" @bind:after="SaveAsync">
                 @foreach (var (label, css) in Fonts)
@@ -60,7 +60,7 @@
         </form>
     </div>
 </div>
-<p class="muted small">Тягни правий нижній кут вікна, щоб змінити розмір. Розмір і шрифт запам'ятовуються.</p>
+<p class="muted small">Тягни заголовок, щоб перемістити вікно (подвійний клік - на місце), правий нижній кут - щоб змінити розмір. Розмір, позиція і шрифт запам'ятовуються.</p>
 
 @code {
     private const int MinSize = 9;
@@ -89,6 +89,8 @@
     private int _size = DefaultSize;
     private int _height = DefaultHeight;
     private int? _width;   // null = the full available width
+    private int _x;        // offset from the natural position, set by dragging the title bar
+    private int _y;
     private string _text = "";
     private int _historyIndex = -1;
     private ElementReference _input;
@@ -99,7 +101,7 @@
     private string Font { get => _font; set => _font = Fonts.Any(f => f.Css == value) ? value : DefaultFont; }
     private int Size { get => _size; set => _size = Math.Clamp(value, MinSize, MaxSize); }
 
-    private string WindowStyle => $"width:{(_width is { } w ? w + "px" : "100%")};height:{_height}px";
+    private string WindowStyle => $"width:{(_width is { } w ? w + "px" : "100%")};height:{_height}px;left:{_x}px;top:{_y}px";
     private string TextStyle => $"font-family:{_font};font-size:{_size}px";
 
     protected override void OnInitialized() => Term.Changed += OnChanged;
@@ -147,14 +149,14 @@
 
     private async Task Maximize()
     {
-        _width = null;
+        _width = null; _x = 0; _y = 0;
         _height = Math.Max(240, await Js.InvokeAsync<int>("solvixTerm.viewportHeight") - 150);
         await SaveAsync();
     }
 
     private async Task ResetLook()
     {
-        Font = DefaultFont; Size = DefaultSize; _height = DefaultHeight; _width = null;
+        Font = DefaultFont; Size = DefaultSize; _height = DefaultHeight; _width = null; _x = 0; _y = 0;
         await SaveAsync();
     }
 
@@ -169,9 +171,18 @@
         await SaveAsync();
     }
 
+    // Called from the browser after the window is dragged by its title bar.
+    [JSInvokable]
+    public async Task OnMoved(int x, int y)
+    {
+        _x = x;
+        _y = y;
+        await SaveAsync();
+    }
+
     private async Task SaveAsync() =>
         await Js.InvokeVoidAsync("solvixPref.set", "terminal.look",
-            System.Text.Json.JsonSerializer.Serialize(new { font = _font, size = _size, height = _height, width = _width }));
+            System.Text.Json.JsonSerializer.Serialize(new { font = _font, size = _size, height = _height, width = _width, x = _x, y = _y }));
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -187,6 +198,8 @@
                     if (root.TryGetProperty("font", out var f) && f.GetString() is { } font) { Font = font; }
                     if (root.TryGetProperty("size", out var sz) && sz.TryGetInt32(out var size)) { Size = size; }
                     if (root.TryGetProperty("height", out var h) && h.TryGetInt32(out var height)) { _height = Math.Clamp(height, 160, 4000); }
+                    if (root.TryGetProperty("x", out var px) && px.TryGetInt32(out var x)) { _x = Math.Clamp(x, -4000, 4000); }
+                    if (root.TryGetProperty("y", out var py) && py.TryGetInt32(out var y)) { _y = Math.Clamp(y, -4000, 4000); }
                     _width = root.TryGetProperty("width", out var w) && w.TryGetInt32(out var width) ? Math.Clamp(width, 320, 8000) : null;
                     StateHasChanged();
                 }
@@ -195,6 +208,7 @@
 
             _self = DotNetObjectReference.Create(this);
             await Js.InvokeVoidAsync("solvixTerm.observe", _window, _self);
+            await Js.InvokeVoidAsync("solvixTerm.enableDrag", _window, _self);
         }
         await Js.InvokeVoidAsync("solvixScrollToEnd", "term");
     }
