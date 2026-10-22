@@ -93,15 +93,20 @@ button.small { padding: 2px 8px; font-size: 12px; }
 
 /* ---- термінал ---- */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.term { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; height: calc(100vh - 290px); min-height: 240px; overflow: auto; padding: 10px 14px; font: 12px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
+.term { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; min-height: 200px; overflow: auto; padding: 10px 14px; line-height: 1.55; resize: vertical; }
 .tl { white-space: pre-wrap; word-break: break-word; }
 .tl.command { color: var(--accent); margin-top: 6px; }
 .tl.error { color: var(--bad); } .tl.info { color: var(--muted); }
 .prompt { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
 .prompt span { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
-.prompt input { flex: 1; font: 13px ui-monospace, "SF Mono", Menlo, monospace; }
+.prompt input { flex: 1; font: inherit; }
 
 .port { font: 12px ui-monospace, Menlo, monospace; background: var(--line); border-radius: 4px; padding: 1px 6px; cursor: default; }
 
 a.pill { background: var(--line); border-radius: 10px; padding: 1px 9px; font-size: 12px; color: var(--accent); }
 a.pill:hover { background: var(--accent); color: #fff; }
+
+.settings { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; color: var(--muted); font-size: 13px; }
+.settings label { display: flex; gap: 8px; align-items: center; }
+.settings input[type=range] { width: 130px; accent-color: var(--accent); }
+.stepper { display: inline-flex; gap: 4px; align-items: center; }

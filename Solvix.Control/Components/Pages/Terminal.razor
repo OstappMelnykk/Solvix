@@ -16,6 +16,33 @@
     </div>
 </section>
 
+<div class="settings">
+    <label>Шрифт
+        <select @bind="Font" @bind:after="SaveAsync">
+            @foreach (var (label, css) in Fonts)
+            {
+                <option value="@css">@label</option>
+            }
+        </select>
+    </label>
+    <label>Розмір
+        <span class="stepper">
+            <button type="button" class="ghost small" @onclick="() => Resize(-1)">−</button>
+            <input type="number" min="@MinSize" max="@MaxSize" @bind="Size" @bind:after="SaveAsync" class="num" />
+            <button type="button" class="ghost small" @onclick="() => Resize(1)">+</button>
+        </span>
+    </label>
+    <label>Висота
+        <input type="range" min="200" max="1000" step="20" @bind="Height" @bind:event="oninput" @bind:after="SaveAsync" />
+        <span class="muted small">@Height px</span>
+    </label>
+    <label>Ширина
+        <input type="range" min="40" max="100" step="5" @bind="Width" @bind:event="oninput" @bind:after="SaveAsync" />
+        <span class="muted small">@Width%</span>
+    </label>
+    <button type="button" class="ghost small" @onclick="ResetLook">скинути вигляд</button>
+</div>
+
 <div class="chips">
     @foreach (var preset in Presets)
     {
@@ -23,7 +50,7 @@
     }
 </div>
 
-<div class="term" id="term">
+<div class="term" id="term" style="@TermStyle">
     @foreach (var line in Term.Lines)
     {
         <div class="tl @line.Kind.ToString().ToLower()">@(line.Kind == TermKind.Command ? "$ " : "")@line.Text</div>
@@ -31,7 +58,7 @@
     @if (Term.Busy) { <div class="tl info">⏳ виконується…</div> }
 </div>
 
-<form class="prompt" @onsubmit="Submit">
+<form class="prompt" @onsubmit="Submit" style="@PromptStyle">
     <span>$</span>
     <input @ref="_input" @bind="_text" @bind:event="oninput" @onkeydown="OnKey" placeholder="docker ps"
            autocomplete="off" spellcheck="false" disabled="@Term.Busy" />
@@ -44,6 +71,34 @@
         "help", "docker ps -a", "docker stats --no-stream", "docker compose ls", "docker logs --tail 50 solvix-1-api-1",
         "solvix status", "lsof -iTCP -sTCP:LISTEN -nP", "git status", "curl -s localhost:5171/api/health", "df -h", "ls",
     ];
+
+    private const int MinSize = 9;
+    private const int MaxSize = 28;
+    private const string DefaultFont = "ui-monospace, 'SF Mono', Menlo, monospace";
+
+    private static readonly (string Label, string Css)[] Fonts =
+    [
+        ("Системний моноширинний", DefaultFont),
+        ("Menlo", "Menlo, monospace"),
+        ("Monaco", "Monaco, monospace"),
+        ("Courier New", "'Courier New', monospace"),
+        ("JetBrains Mono (якщо встановлено)", "'JetBrains Mono', Menlo, monospace"),
+        ("Fira Code (якщо встановлено)", "'Fira Code', Menlo, monospace"),
+    ];
+
+    private string _font = DefaultFont;
+    private int _size = 13;
+    private int _height = 460;
+    private int _width = 100;
+
+    // Clamped on the way in, so a hand-edited or stale saved value can't make the window unusable.
+    private string Font { get => _font; set => _font = Fonts.Any(f => f.Css == value) ? value : DefaultFont; }
+    private int Size { get => _size; set => _size = Math.Clamp(value, MinSize, MaxSize); }
+    private int Height { get => _height; set => _height = Math.Clamp(value, 200, 1000); }
+    private int Width { get => _width; set => _width = Math.Clamp(value, 40, 100); }
+
+    private string TermStyle => $"font-family:{_font};font-size:{_size}px;height:{_height}px;width:{_width}%";
+    private string PromptStyle => $"font-family:{_font};font-size:{_size}px;width:{_width}%";
 
     private string _text = "";
     private int _historyIndex = -1;
@@ -84,8 +139,43 @@
         }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender) =>
+    private void Resize(int delta)
+    {
+        Size += delta;
+        _ = SaveAsync();
+    }
+
+    private async Task SaveAsync() =>
+        await Js.InvokeVoidAsync("solvixPref.set", "terminal.look", System.Text.Json.JsonSerializer.Serialize(new { font = _font, size = _size, height = _height, width = _width }));
+
+    private async Task ResetLook()
+    {
+        Font = DefaultFont; Size = 13; Height = 460; Width = 100;
+        await SaveAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Saved per browser; a missing or broken value just leaves the defaults.
+            try
+            {
+                if (await Js.InvokeAsync<string?>("solvixPref.get", "terminal.look") is { Length: > 0 } json)
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("font", out var f) && f.GetString() is { } font) { Font = font; }
+                    if (root.TryGetProperty("size", out var sz) && sz.TryGetInt32(out var size)) { Size = size; }
+                    if (root.TryGetProperty("height", out var h) && h.TryGetInt32(out var height)) { Height = height; }
+                    if (root.TryGetProperty("width", out var w) && w.TryGetInt32(out var width)) { Width = width; }
+                    StateHasChanged();
+                }
+            }
+            catch (Exception e) when (e is System.Text.Json.JsonException or JSException) { }
+        }
         await Js.InvokeVoidAsync("solvixScrollToEnd", "term");
+    }
 
     public void Dispose() => Term.Changed -= OnChanged;
 }
