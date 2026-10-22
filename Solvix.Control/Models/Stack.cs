@@ -25,7 +25,8 @@ public sealed record ComponentRow(
     string? Url = null,
     int? Pid = null,
     InstanceView? Instance = null,
-    string? LogSource = null)
+    string? LogSource = null,
+    string? PortNote = null)
 {
     public bool IsUp => State != ComponentState.Down;
 }
@@ -41,6 +42,7 @@ public sealed record Slot(string Key, string Name, int Port, ComponentRow? Here,
 public sealed record DockerStack(
     int Id,
     int WebPort,
+    int ApiPort,
     int DbPort,
     ComponentState State,
     ComponentRow Db,

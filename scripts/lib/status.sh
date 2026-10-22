@@ -45,14 +45,14 @@ _db_row() {
 }
 
 _stack_rows() {
-  local n web db up total
+  local n web db api up total
   for n in $(stack_ids); do
-    web="$(stack_web_port "$n")"; db="$(stack_db_port "$n")"
+    web="$(stack_web_port "$n")"; db="$(stack_db_port "$n")"; api="$(stack_api_port "$n")"
     up=0; total=0
     for s in postgres api web; do
       total=$((total + 1)); svc_running "solvix-$n" "$s" && up=$((up + 1))
     done
-    if [ "$up" -eq "$total" ]; then _row on "st$n" ":$web" "працює · http://localhost:$web · своя db :$db · api · web"
+    if [ "$up" -eq "$total" ]; then _row on "st$n" ":$web" "працює · http://localhost:$web · db :$db · api :$api · web :$web"
     elif [ "$up" -gt 0 ]; then _row warn "st$n" ":$web" "частково: $up з $total контейнерів"
     else _row off "st$n" "" "зупинено (дані збережені) · solvix stack up $n"; fi
   done

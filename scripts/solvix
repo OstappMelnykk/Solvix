@@ -21,7 +21,7 @@ usage() {
     up [db|be|fe|all]     db - у Docker, be/fe - локально з hot-reload (за замовч. all)
     down [db|be|fe]       вимкнути
 
-  ${BOLD}Docker-інстанси${RESET}  (кожен: своя db + api + web, свої порти і дані; web = 8080+N, db = 5440+N)
+  ${BOLD}Docker-інстанси${RESET}  (кожен: своя db + api + web, свої порти і дані; web = 8080+N, api = 5170+N, db = 5440+N)
     stack new             створити і запустити новий інстанс
     stack up <N>          запустити існуючий (зупинений) інстанс
     stack stop <N>|all    зупинити (дані лишаються)

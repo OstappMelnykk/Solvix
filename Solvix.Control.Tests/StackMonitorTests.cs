@@ -71,7 +71,8 @@ public class StackMonitorTests
 
         Assert.That(snap.Stacks.Select(s => s.Id), Is.EqualTo(new[] { 1, 3 }));
         var first = snap.Stacks[0];
-        Assert.That((first.WebPort, first.DbPort, first.State), Is.EqualTo((8081, 5441, ComponentState.Running)));
+        Assert.That((first.WebPort, first.ApiPort, first.DbPort, first.State), Is.EqualTo((8081, 5171, 5441, ComponentState.Running)));
+        Assert.That(first.Apis.Single().Port, Is.EqualTo(5171));
         Assert.That(first.DataVolume, Is.EqualTo("solvix_stack1_postgres_data"));
         Assert.That((snap.Stacks[1].WebPort, snap.Stacks[1].DbPort), Is.EqualTo((8083, 5443)));
         Assert.That(snap.Stacks[1].State, Is.EqualTo(ComponentState.Down));

@@ -93,7 +93,7 @@ else if (Actions.Last is { } last)
 <section class="card">
     <header>
         <div><h2>Docker <span class="muted small">ізольовані інстанси</span></h2>
-            <p class="muted small">Кожен інстанс: власна база, api і web, свої порти (web 8080+N, db 5440+N), мережа й дані.</p></div>
+            <p class="muted small">Кожен інстанс: власна база, api і web, свої порти (web 8080+N, api 5170+N, db 5440+N), мережа й дані.</p></div>
         <div class="buttons">
             <label class="check">кількість <input type="number" min="1" max="@(Math.Max(1, 9 - snap.Stacks.Count))" @bind="_newCount" class="num" /></label>
             <button disabled="@(busy || snap.Stacks.Count >= 9)" @onclick="CreateStacks">Створити інстанс</button>
@@ -110,7 +110,7 @@ else if (Actions.Last is { } last)
                 <span class="dot @DotClass(stack.State)"></span>
                 <b>Інстанс @stack.Id</b>
                 @if (stack.State != ComponentState.Down) { <a href="http://localhost:@stack.WebPort" target="_blank">http://localhost:@stack.WebPort</a> }
-                <span class="muted small">db :@stack.DbPort · том @stack.DataVolume</span>
+                <span class="muted small">db :@stack.DbPort · api :@stack.ApiPort · web :@stack.WebPort · том @stack.DataVolume</span>
                 <span class="spacer"></span>
                 <div class="buttons">
                     <button disabled="@(busy || stack.State == ComponentState.Running)" @onclick='() => Run($"Старт: інстанс {stack.Id}", $"stack up {stack.Id}")'>Старт</button>
@@ -173,6 +173,7 @@ else if (Actions.Last is { } last)
     private RenderFragment Item(ComponentRow row) => @<div class="item">
         <span class="dot @DotClass(row.State)" title="@row.State"></span>
         <b class="name">@row.Name</b>
+        @if (row.Port is { } port) { <span class="port" title="@row.PortNote">:@port</span> }
         @if (row.Url is not null && row.IsUp) { <a href="@row.Url" target="_blank">@row.Url</a> }
         <span class="muted">@row.Detail</span>
         @if (row.Instance is not null) { <span class="muted load">@Load(row)</span> }

@@ -1,7 +1,7 @@
 # Docker/Colima, спільна dev-база та Docker-інстанси (stack).
 #
 #   dev-база      проєкт solvix-dev,  сервіс devdb      порт $DEV_DB_PORT (спільна для IDE і терміналу)
-#   інстанс N     проєкт solvix-N,    postgres+api+web  web 8080+N, db 5440+N, свої томи й мережа
+#   інстанс N     проєкт solvix-N,    postgres+api+web  web 8080+N, api 5170+N, db 5440+N, свої томи й мережа
 
 DEV_PROJECT=solvix-dev
 STACK_MAX=9
@@ -11,11 +11,12 @@ dc_dev() { docker compose -p "$DEV_PROJECT" --project-directory "$ROOT" --profil
 # Усе, що змінює порти/томи інстансу, задається середовищем лише на час команди.
 dc_stack() {   # dc_stack <N> <аргументи compose...>
   local n="$1"; shift
-  ( export STACK_ID="$n" WEB_PORT=$((8080 + n)) DB_PORT=$((5440 + n)) DATA_PREFIX="solvix_stack$n"
+  ( export STACK_ID="$n" WEB_PORT=$((8080 + n)) API_PORT=$((5170 + n)) DB_PORT=$((5440 + n)) DATA_PREFIX="solvix_stack$n"
     docker compose -p "solvix-$n" --project-directory "$ROOT" "$@" )
 }
 
 stack_web_port() { echo $((8080 + $1)); }
+stack_api_port() { echo $((5170 + $1)); }
 stack_db_port()  { echo $((5440 + $1)); }
 
 docker_up() { docker info >/dev/null 2>&1; }
@@ -82,15 +83,16 @@ stack_up() {
   ensure_docker
   local n="${1:-}"
   if [ -z "$n" ]; then n="$(stack_next_id)"; else stack_check_id "$n"; fi
-  local web db; web="$(stack_web_port "$n")"; db="$(stack_db_port "$n")"
+  local web db api; web="$(stack_web_port "$n")"; db="$(stack_db_port "$n")"; api="$(stack_api_port "$n")"
   if svc_running "solvix-$n" web && svc_running "solvix-$n" api; then ok "Інстанс $n вже працює (http://localhost:$web)"; return; fi
   if ! svc_running "solvix-$n" web; then
-    local pw pd; pw="$(port_pid "$web")"; pd="$(port_pid "$db")"
+    local pw pd pa; pw="$(port_pid "$web")"; pd="$(port_pid "$db")"; pa="$(port_pid "$api")"
+    [ -z "$pa" ] || die "Порт $api (api інстансу $n) зайнятий: $(pid_name "$pa") pid $pa"
     [ -z "$pw" ] || die "Порт $web (web інстансу $n) зайнятий: $(pid_name "$pw") pid $pw"
     [ -z "$pd" ] || svc_running "solvix-$n" postgres || die "Порт $db (db інстансу $n) зайнятий: $(pid_name "$pd") pid $pd"
   fi
   run_step "Інстанс $n: збірка образів (перший раз - кілька хвилин)" "$LOG_DIR/stack-$n-build.log" dc_stack "$n" build || exit 1
-  run_step "Інстанс $n: db :$db · api · web :$web" "$LOG_DIR/stack-$n-up.log" \
+  run_step "Інстанс $n: db :$db · api :$api · web :$web" "$LOG_DIR/stack-$n-up.log" \
     dc_stack "$n" up -d --wait --wait-timeout 120 \
     || { dc_stack "$n" logs --tail 20 api web 2>/dev/null | sed 's/^/      /'; exit 1; }
   printf '  %s→ Інстанс %s: http://localhost:%s%s\n' "$BOLD" "$n" "$web" "$RESET"

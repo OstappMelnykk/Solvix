@@ -124,9 +124,10 @@ public sealed class StackMonitor(
     {
         var project = DockerProbe.StackProject(id);
         var web = 8080 + id;
+        var api = 5170 + id;
         var db = 5440 + id;
-        var dbRow = ContainerRow(snap, snap.Service(project, "postgres"), $"st{id}-db", "База", ComponentKind.Database, db, null, $"stack:{id}:postgres");
-        var webRow = ContainerRow(snap, snap.Service(project, "web"), $"st{id}-web", "Web", ComponentKind.Web, web, $"http://localhost:{web}", $"stack:{id}:web");
+        var dbRow = ContainerRow(snap, snap.Service(project, "postgres"), $"st{id}-db", "База", ComponentKind.Database, db, null, $"stack:{id}:postgres", "→ 5432 у контейнері");
+        var webRow = ContainerRow(snap, snap.Service(project, "web"), $"st{id}-web", "Web", ComponentKind.Web, web, $"http://localhost:{web}", $"stack:{id}:web", "→ 80 у контейнері");
 
         // API replicas of this environment: the ones that reported in (hostname = container id) …
         var apiContainer = snap.Service(project, "api");
@@ -135,24 +136,24 @@ public sealed class StackMonitor(
                 && (apiContainer.Id.StartsWith(i.Info.Host) || i.Info.Host.StartsWith(apiContainer.Id)))
             .Select(view => new ComponentRow($"st{id}-api", "Backend API", ComponentKind.Api,
                 view.Health == InstanceHealth.Alive ? ComponentState.Running : ComponentState.Unresponsive,
-                DockerLauncher, $"{view.Info.Environment} · v{view.Info.Version}", null, null, view.Info.Pid, view, $"stack:{id}:api"))
+                DockerLauncher, $"{view.Info.Environment} · v{view.Info.Version}", api, $"http://localhost:{api}/api/health", view.Info.Pid, view, $"stack:{id}:api", "→ 8080 у контейнері"))
             .ToList();
         // … or, if none did (panel unreachable from the container), what Docker itself knows.
         if (reported.Count == 0)
         {
-            reported.Add(ContainerRow(snap, apiContainer, $"st{id}-api", "Backend API", ComponentKind.Api, 0, null, $"stack:{id}:api"));
+            reported.Add(ContainerRow(snap, apiContainer, $"st{id}-api", "Backend API", ComponentKind.Api, api, $"http://localhost:{api}/api/health", $"stack:{id}:api", "→ 8080 у контейнері"));
         }
 
         var all = new[] { dbRow, webRow }.Concat(reported).ToList();
         var state = all.All(r => r.State == ComponentState.Running) ? ComponentState.Running
             : all.All(r => r.State == ComponentState.Down) ? ComponentState.Down
             : ComponentState.Unhealthy;
-        return new DockerStack(id, web, db, state, dbRow, reported, webRow, $"solvix_stack{id}_postgres_data");
+        return new DockerStack(id, web, api, db, state, dbRow, reported, webRow, $"solvix_stack{id}_postgres_data");
     }
 
     private ComponentRow ContainerRow(
         DockerSnapshot snap, DockerContainer? container, string key, string name, ComponentKind kind,
-        int port, string? url, string logSource)
+        int port, string? url, string logSource, string? portNote = null)
     {
         var state = container switch
         {
@@ -164,7 +165,7 @@ public sealed class StackMonitor(
             : container is null ? "контейнера немає"
             : container.Status;
         return new ComponentRow(key, name, kind, state, DockerLauncher, detail,
-            state == ComponentState.Down || port == 0 ? null : port, url, null, null, logSource);
+            state == ComponentState.Down || port == 0 ? null : port, url, null, null, logSource, portNote);
     }
 
     private ComponentRow PanelRow(HostSnapshot hostSnap, List<int> scriptPids)

@@ -3,7 +3,7 @@
 #   dev-база (спільна для IDE і терміналу): проєкт solvix-dev, сервіс devdb
 #       docker compose -p solvix-dev --profile devdb up -d devdb
 #   Docker-інстанс N (своя база + api + web, свої порти і томи): проєкт solvix-N
-#       STACK_ID=N WEB_PORT=808N DB_PORT=544N DATA_PREFIX=solvix_stackN docker compose -p solvix-N up -d --build
+#       STACK_ID=N WEB_PORT=808N API_PORT=517N DB_PORT=544N DATA_PREFIX=solvix_stackN docker compose -p solvix-N up -d --build
 #
 # Інстанси повністю ізольовані: окрема мережа, база, том з моделями, порти.
 
@@ -50,6 +50,9 @@ services:
       Control__Url: ${CONTROL_URL:-http://host.docker.internal:5200}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    ports:
+      # Прямий доступ до API (health, діагностика, майбутній load balancer): 5170+N.
+      - "127.0.0.1:${API_PORT:-5171}:8080"
     volumes:
       - model_library_data:/app/model-library
     depends_on:
