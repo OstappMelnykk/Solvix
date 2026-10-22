@@ -1,28 +1,19 @@
-# Скрипти запуску
+# Скрипти
 
-Повний гайд з поясненнями (Docker/Colima/docker-compose, архітектура, troubleshooting): [`docs/RUNNING.md`](../docs/RUNNING.md).
+Один вхід: `./scripts/solvix` (або подвійний клік на `Solvix.command` - меню).
 
-## dev/ — розробка (з hot-reload)
-
-| Скрипт | Що робить |
+| Команда | Що робить |
 |---|---|
-| `dev/full/up.command` | Все одразу: Colima → postgres (Docker) → `Solvix.Api` (`dotnet run --launch-profile https`) → `solvix-web` (`ng serve`) |
-| `dev/full/down.command` | Гасить `dotnet`/`ng serve`, зупиняє контейнер `postgres` |
-| `dev/db/up.command` | Тільки Colima → postgres. Використовуй, якщо `Solvix.Api`/`solvix-web` запускаєш сам з IDE |
-| `dev/db/down.command` | Зупиняє тільки контейнер `postgres` |
+| `solvix demo` | Усе в Docker (db + api + web) → http://localhost:8081. Для показу |
+| `solvix up [db\|be\|fe\|all]` | Розробка: db у Docker, be/fe локально з hot-reload → http://localhost:4200 |
+| `solvix status` | Що зараз запущено (порт, pid, аптайм). Показує і чужі процеси на наших портах |
+| `solvix down [db\|be\|fe\|app\|all] [--colima]` | Вимкнути (за замовч. все). `--colima` ще й зупиняє VM |
+| `solvix logs [be\|fe\|db\|api\|web] [-f]` | Логи компонента; без аргументу - журнал дій |
+| `solvix doctor` | Перевірка середовища (docker, dotnet, node, сертифікат, порти) |
+| `solvix reset` | Вимкнути все і видалити дані бази |
 
-**Якщо запускаєш API/фронт з IDE:** `./dev/db/up.command`, потім у своїй run-конфігурації для `Solvix.Api` постав launch profile **`https`** (не `http`) — інакше фронтенд (`localhost:7153`) не достукається.
+Структура: `solvix` - команди; `lib/common.sh` - вивід, журнал, порти, pid; `lib/docker.sh` - Colima/compose, db, app; `lib/be.sh`, `lib/fe.sh` - локальні процеси; `lib/status.sh` - status/logs/doctor.
 
-## docker/ — повна збірка (як на проді, без hot-reload)
+Стан і логи: `.solvix/` (в git не потрапляє): `run/*.pid`, `logs/{be,fe,db,docker-*}.log`, `logs/solvix.log` - журнал усіх дій.
 
-| Скрипт | Що робить |
-|---|---|
-| `docker/up.command` | `docker compose up --build` — postgres + api + web, всі в контейнерах → http://localhost:8081 |
-| `docker/down.command` | `docker compose down` — гасить і видаляє всі 3 контейнери |
-
-## Colima
-
-Усі скрипти, що чіпають Docker, самі перевіряють і за потреби піднімають Colima (`colima start`). Якщо не піднімається сама:
-```
-colima delete && colima start
-```
+Порти (змінюються в `.env`): db `5434`, web `8081`; фіксовані: be `7153`/`5168`, fe `4200`.

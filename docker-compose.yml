@@ -10,8 +10,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-solvix}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     ports:
-      # 5433, а не 5432 - щоб не конфліктувати з іншим локальним postgres.
-      - "127.0.0.1:${DB_PORT:-5433}:5432"
+      # 5434, а не 5432 - щоб не конфліктувати з іншим локальним postgres.
+      - "127.0.0.1:${DB_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Solvix - один вхід для запуску, зупинки та контролю всього стеку.
+# Довідка: ./scripts/solvix help
+
+set -u
+. "$(dirname "$0")/lib/common.sh"
+. "$ROOT/scripts/lib/docker.sh"
+. "$ROOT/scripts/lib/be.sh"
+. "$ROOT/scripts/lib/fe.sh"
+. "$ROOT/scripts/lib/status.sh"
+
+load_env
+
+usage() {
+  cat <<TXT
+
+  ${BOLD}solvix${RESET} - керування стеком Solvix
+
+  ${BOLD}Запуск${RESET}
+    demo               усе в Docker (db + api + web) -> http://localhost:$WEB_PORT   (для показу)
+    up [db|be|fe|all]  розробка: db у Docker, be/fe локально з hot-reload (за замовч. all)
+
+  ${BOLD}Контроль${RESET}
+    status             що зараз запущено
+    down [db|be|fe|app|all]   вимкнути (за замовч. все)
+    logs [be|fe|db|api|web] [-f]   логи компонента; без аргументу - журнал дій
+    doctor             перевірка середовища перед демо
+    reset              вимкнути все і ВИДАЛИТИ дані бази
+    menu               інтерактивне меню (його ж відкриває Solvix.command)
+
+  Повні логи: .solvix/logs/   Журнал дій: .solvix/logs/solvix.log
+
+TXT
+}
+
+cmd_demo() {
+  printf '\n  %sSolvix · demo%s\n' "$BOLD" "$RESET"
+  db_start
+  app_start
+  printf '\n  %s→ Відкрий http://localhost:%s%s\n' "$BOLD" "$WEB_PORT" "$RESET"
+  printf '  %sНе забудь вимкнути: ./scripts/solvix down%s\n\n' "$DIM" "$RESET"
+}
+
+cmd_up() {
+  local t="${1:-all}"
+  printf '\n  %sSolvix · dev (%s)%s\n' "$BOLD" "$t" "$RESET"
+  case "$t" in
+    db)  db_start;;
+    be)  be_start;;
+    fe)  fe_start;;
+    all) db_start; be_start; fe_start;;
+    *)   die "Невідомий компонент '$t' (db|be|fe|all)";;
+  esac
+  [ "$t" != all ] && [ "$t" != fe ] || printf '\n  %s→ Відкрий http://localhost:4200%s\n' "$BOLD" "$RESET"
+  printf '  %sНе забудь вимкнути: ./scripts/solvix down%s\n\n' "$DIM" "$RESET"
+}
+
+_stopped() { ok "Вимкнено: $1"; }
+
+cmd_down() {
+  local t="all" colima=""
+  for a in "$@"; do case "$a" in --colima) colima=1;; *) t="$a";; esac; done
+  printf '\n  %sSolvix · зупинка%s\n' "$BOLD" "$RESET"
+  local any=""
+  # Порядок: від споживачів до бази.
+  case "$t" in all|fe)  fe_stop  && { _stopped frontend; any=1; };; esac
+  case "$t" in all|be)  be_stop  && { _stopped backend;  any=1; };; esac
+  case "$t" in all|app) app_stop && { _stopped "api + web (docker)"; any=1; };; esac
+  case "$t" in all|db)  db_stop  && { _stopped "база даних"; any=1; };; esac
+  case "$t" in all|db|be|fe|app) ;; *) die "Невідомий компонент '$t' (db|be|fe|app|all)";; esac
+  [ -n "$any" ] || info "Нічого не було запущено"
+
+  if [ -n "$colima" ] && command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1; then
+    local others; others="$(docker ps --format '{{.Names}}' | tr '\n' ' ')"
+    if [ -n "$others" ]; then
+      warn "У Colima ще працюють контейнери: $others"
+      confirm "Зупинити Colima разом з ними?" && colima stop && _stopped colima
+    else
+      colima stop >/dev/null 2>&1 && _stopped colima
+    fi
+  fi
+  cmd_status
+}
+
+cmd_reset() {
+  printf '\n  %sSolvix · reset%s\n' "$BOLD" "$RESET"
+  warn "Буде видалено базу даних і збережені моделі (docker volumes)."
+  confirm "Продовжити?" || { info "Скасовано"; return; }
+  fe_stop || true; be_stop || true
+  if docker_up; then dc down -v >"$LOG_DIR/docker-down.log" 2>&1 && ok "Контейнери і дані видалено"; fi
+  rm -f "$RUN_DIR"/*.pid
+  echo
+}
+
+cmd_menu() {
+  local c
+  while true; do
+    clear 2>/dev/null || true
+    cmd_status
+    cat <<TXT
+  ${BOLD}1${RESET} demo (усе в Docker)     ${BOLD}4${RESET} вимкнути все
+  ${BOLD}2${RESET} dev  (hot-reload)        ${BOLD}5${RESET} логи (журнал)
+  ${BOLD}3${RESET} оновити статус           ${BOLD}6${RESET} doctor
+  ${BOLD}q${RESET} вийти
+
+TXT
+    printf '  > '; read -r c
+    case "$c" in
+      1) cmd_demo;; 2) cmd_up all;; 3) continue;; 4) cmd_down;;
+      5) cmd_logs;; 6) cmd_doctor;; q|Q) break;; *) continue;;
+    esac
+    printf '  Enter - у меню '; read -r _
+  done
+}
+
+main() {
+  local cmd="${1:-}"; [ $# -gt 0 ] && shift
+  journal cmd "solvix $cmd $*"
+  case "$cmd" in
+    demo)         cmd_demo;;
+    up|start)     cmd_up "$@";;
+    down|stop)    cmd_down "$@";;
+    status|ps|"") cmd_status; [ -z "$cmd" ] && usage;;
+    logs)         cmd_logs "$@";;
+    doctor)       cmd_doctor;;
+    reset)        cmd_reset;;
+    menu)         cmd_menu;;
+    help|-h|--help) usage;;
+    *)            fail "Невідома команда '$cmd'"; usage; exit 1;;
+  esac
+}
+
+main "$@"
