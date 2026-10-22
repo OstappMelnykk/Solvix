@@ -108,7 +108,7 @@ cmd_down() {
   fi
   case "$t" in all|db)  db_stop  && { _stopped "dev-база"; any=1; };; esac
   # Панель, яка сама просить "зупинити все", себе не гасить (SOLVIX_FROM_PANEL).
-  if [ "$t" = panel ] || { [ "$t" = all ] && [ -z "${SOLVIX_FROM_PANEL:-}" ]; }; then
+  if [ "$t" = panel ] || { [ "$t" = all ] && [ -z "${SOLVIX_FROM_PANEL:-}${SOLVIX_KEEP_PANEL:-}" ]; }; then
     panel_stop && { _stopped "панель керування"; any=1; }
   fi
   case "$t" in all|db|be|fe|panel) ;; *) die "Невідомий компонент '$t' (db|be|fe|panel). Інстанси: solvix stack stop <N>";; esac

@@ -18,10 +18,32 @@ builder.Services.AddSingleton<DockerProbe>();
 builder.Services.AddSingleton<HostProbe>();
 builder.Services.AddSingleton<RawLogReader>();
 builder.Services.AddSingleton<ActionRunner>();
+builder.Services.AddSingleton<TerminalService>();
 builder.Services.AddSingleton<StackMonitor>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StackMonitor>());
 
 var app = builder.Build();
+
+// The panel can start and stop the stack and run docker commands: only answer
+// to localhost names (DNS rebinding) and refuse cross-site connections to the
+// Blazor circuit (a web page you visit must not be able to drive it).
+app.Use(async (context, next) =>
+{
+    var host = context.Request.Host.Host;
+    if (host is not ("localhost" or "127.0.0.1" or "[::1]" or "::1" or "host.docker.internal"))
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+    if (context.Request.Path.StartsWithSegments("/_blazor")
+        && context.Request.Headers.Origin.ToString() is { Length: > 0 } origin
+        && !(Uri.TryCreate(origin, UriKind.Absolute, out var originUri) && originUri.Host == host))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+    await next(context);
+});
 
 app.UseStaticFiles();
 app.UseAntiforgery();

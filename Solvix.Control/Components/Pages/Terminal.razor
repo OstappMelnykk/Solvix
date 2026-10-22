@@ -1,0 +1,91 @@
+@page "/terminal"
+@implements IDisposable
+@inject TerminalService Term
+@inject IJSRuntime Js
+
+<PageTitle>Термінал · Solvix Control</PageTitle>
+
+<section class="toolbar">
+    <div>
+        <h1>Термінал</h1>
+        <p class="muted small">Лише команди <code>docker …</code> і <code>solvix …</code>, без shell (pipe, <code>&amp;&amp;</code>, <code>$(…)</code> не працюють).</p>
+    </div>
+    <div class="buttons">
+        <button class="danger" disabled="@(!Term.Busy)" @onclick="Term.Cancel">Перервати</button>
+        <button class="ghost" @onclick="Term.Clear">Очистити</button>
+    </div>
+</section>
+
+<div class="chips">
+    @foreach (var preset in Presets)
+    {
+        <button class="ghost small" @onclick="() => Use(preset)">@preset</button>
+    }
+</div>
+
+<div class="term" id="term">
+    @foreach (var line in Term.Lines)
+    {
+        <div class="tl @line.Kind.ToString().ToLower()">@(line.Kind == TermKind.Command ? "$ " : "")@line.Text</div>
+    }
+    @if (Term.Busy) { <div class="tl info">⏳ виконується…</div> }
+</div>
+
+<form class="prompt" @onsubmit="Submit">
+    <span>$</span>
+    <input @ref="_input" @bind="_text" @bind:event="oninput" @onkeydown="OnKey" placeholder="docker ps"
+           autocomplete="off" spellcheck="false" disabled="@Term.Busy" />
+    <button type="submit" disabled="@(Term.Busy || string.IsNullOrWhiteSpace(_text))">Виконати</button>
+</form>
+
+@code {
+    private static readonly string[] Presets =
+    [
+        "docker ps -a", "docker compose ls", "solvix status", "solvix doctor",
+        "solvix stack up 1", "solvix stack new", "solvix logs stack 1 api",
+    ];
+
+    private string _text = "";
+    private int _historyIndex = -1;
+    private ElementReference _input;
+
+    protected override void OnInitialized() => Term.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Use(string preset)
+    {
+        _text = preset;
+        _ = Js.InvokeVoidAsync("solvixFocus", _input);
+    }
+
+    private async Task Submit()
+    {
+        var line = _text;
+        _text = "";
+        _historyIndex = -1;
+        await Term.RunAsync(line);
+        await Js.InvokeVoidAsync("solvixFocus", _input);
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        var history = Term.History;
+        if (history.Count == 0) { return; }
+        if (e.Key == "ArrowUp")
+        {
+            _historyIndex = Math.Min(_historyIndex + 1, history.Count - 1);
+            _text = history[history.Count - 1 - _historyIndex];
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            _historyIndex = Math.Max(_historyIndex - 1, -1);
+            _text = _historyIndex < 0 ? "" : history[history.Count - 1 - _historyIndex];
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) =>
+        await Js.InvokeVoidAsync("solvixScrollToEnd", "term");
+
+    public void Dispose() => Term.Changed -= OnChanged;
+}
