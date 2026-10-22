@@ -202,10 +202,17 @@
             catch (JSException) { }
 
             _self = DotNetObjectReference.Create(this);
-            await Js.InvokeVoidAsync("solvixTerm.enableResize", _window, _self);
-            await Js.InvokeVoidAsync("solvixTerm.enableDrag", _window, _self);
+            try
+            {
+                await Js.InvokeVoidAsync("solvixTerm.enableResize", _window, _self);
+                await Js.InvokeVoidAsync("solvixTerm.enableDrag", _window, _self);
+            }
+            catch (JSException)
+            {
+                // The browser still has an older app.js: the window works, just without drag/resize until a reload.
+            }
         }
-        await Js.InvokeVoidAsync("solvixScrollToEnd", "term");
+        try { await Js.InvokeVoidAsync("solvixScrollToEnd", "term"); } catch (JSException) { }
     }
 
     public async ValueTask DisposeAsync()

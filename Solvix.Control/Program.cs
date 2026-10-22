@@ -46,7 +46,12 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-app.UseStaticFiles();
+// A local admin panel: always serve fresh scripts and styles. A cached app.js that
+// predates the page's C# kills the Blazor circuit ("could not find solvixTerm.…").
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache, must-revalidate",
+});
 app.UseAntiforgery();
 
 // Ingest API - what Solvix.Api (and later every replica) talks to.
