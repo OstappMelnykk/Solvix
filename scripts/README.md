@@ -6,7 +6,7 @@
 |---|---|
 | `solvix panel` | Тільки панель керування. `demo` і `up` піднімають її самі |
 | `solvix demo` | Усе в Docker (db + api + web) → http://localhost:8081. Для показу |
-| `solvix up [db\|be\|fe\|all]` | Розробка: db у Docker, be/fe локально з hot-reload → http://localhost:4200 |
+| `solvix up [db\|be\|fe\|app\|all]` | Розробка: db у Docker, be/fe локально з hot-reload → http://localhost:4200; `app` - api + web у Docker |
 | `solvix status` | Що зараз запущено (порт, pid, аптайм). Показує і чужі процеси на наших портах |
 | `solvix down [db\|be\|fe\|app\|panel\|all] [--colima]` | Вимкнути (за замовч. все). `--colima` ще й зупиняє VM |
 | `solvix logs [be\|fe\|panel\|db\|api\|web] [-f]` | Логи компонента; без аргументу - журнал дій |

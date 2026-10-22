@@ -4,11 +4,17 @@
 @inject InstanceRegistry Registry
 @inject ActionRunner Actions
 @inject RawLogReader RawLogs
+@inject PlanStore Plans
 
 <PageTitle>Solvix Control</PageTitle>
 
 @{
     var snap = Monitor.Current;
+    var current = LaunchPlanner.Current(snap);
+    var problems = LaunchPlanner.Validate(_plan);
+    var steps = LaunchPlanner.Steps(_plan, current);
+    var runSteps = steps.OfType<RunStep>().ToList();
+    var manualStops = steps.OfType<ManualStopStep>().ToList();
     var running = snap.Components.Count(c => c.State != ComponentState.Down);
 }
 
@@ -43,6 +49,78 @@ else if (Actions.Last is { } last)
         <pre>@last.Output</pre>
     </details>
 }
+
+<section class="plan">
+    <div class="toolbar">
+        <div>
+            <h2>План запуску</h2>
+            <p class="muted small">Обери, як запускати кожну частину. Панель зробить лише те, що відрізняється від поточного стану.</p>
+        </div>
+        <div class="buttons">
+            <span class="muted small">Швидкий вибір:</span>
+            <button class="ghost" @onclick="() => Preset(LaunchPlan.AllDocker)">Усе в Docker</button>
+            <button class="ghost" @onclick="() => Preset(LaunchPlan.AllScript)">БД Docker · BE+FE скрипт</button>
+            <button class="ghost" @onclick="() => Preset(LaunchPlan.BackendInIde)">BE в IDE · FE скрипт</button>
+            <button class="ghost" @onclick="() => Preset(LaunchPlan.AllInIde)">BE+FE в IDE</button>
+            <button class="ghost" @onclick="() => Preset(LaunchPlan.Nothing)">Нічого</button>
+        </div>
+    </div>
+
+    <div class="plan-grid">
+        @foreach (var (label, getter, setter, options, now) in PlanRows(current))
+        {
+            <div class="plan-row">
+                <b>@label</b>
+                <div class="seg">
+                    @foreach (var m in options)
+                    {
+                        <button class="@(getter() == m ? "on" : "")" @onclick="() => { setter(m); Save(); }">@MethodName(m)</button>
+                    }
+                </div>
+                <span class="muted small">зараз: @MethodName(now)</span>
+            </div>
+        }
+    </div>
+
+    @foreach (var error in problems.Errors) { <div class="banner bad">✖ @error</div> }
+    @foreach (var warning in problems.Warnings) { <div class="banner warn">! @warning</div> }
+
+    @if (steps.Count == 0 && problems.Ok)
+    {
+        <p class="muted small">Стан уже відповідає плану.</p>
+    }
+    else if (steps.Count > 0)
+    {
+        <ol class="steps">
+            @foreach (var step in steps)
+            {
+                <li class="@StepClass(step)">@StepIcon(step) @step.Title</li>
+            }
+        </ol>
+    }
+
+    <div class="buttons">
+        <button disabled="@(!problems.Ok || Actions.Busy || runSteps.Count == 0 || manualStops.Count > 0)" @onclick="() => Apply(runSteps)">
+            Застосувати@(runSteps.Count > 0 ? $" ({runSteps.Count})" : "")
+        </button>
+        @if (manualStops.Count > 0)
+        {
+            <span class="muted small">Спершу зупини вручну те, що запущено з IDE/терміналу.</span>
+        }
+    </div>
+
+    @if (steps.OfType<WaitForIdeStep>().Any())
+    {
+        <details class="hints" open>
+            <summary>Як запустити з IDE</summary>
+            <ul>
+                <li><b>Backend</b> (Rider): конфігурація <code>Solvix.Api</code>, профіль <code>https</code>. Порт бази (5434) і адреса панелі беруться з <code>appsettings.Development.json</code>; базу запускає план.</li>
+                <li><b>Frontend</b> (WebStorm / VS Code): скрипт <code>npm start</code> у теці <code>solvix-web</code> (ng serve, порт 4200).</li>
+                <li>Щойно процес з'явиться, крок зникне з плану, а в таблиці буде видно, з якої IDE він запущений.</li>
+            </ul>
+        </details>
+    }
+</section>
 
 <table class="grid">
     <thead>
@@ -102,18 +180,62 @@ else if (Actions.Last is { } last)
 }
 
 @code {
+    private LaunchPlan _plan = LaunchPlan.AllScript;
     private string? _rawTitle;
     private string _rawText = "";
     private Timer? _tick;
 
     protected override void OnInitialized()
     {
+        _plan = Plans.Load();
         Monitor.Changed += OnChanged;
         Registry.Changed += OnChanged;
         Actions.Changed += OnChanged;
         // Uptime/age text moves even when nothing changes.
         _tick = new Timer(_ => OnChanged(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
+
+    private static readonly Method[] DbMethods = [Method.Off, Method.Docker];
+    private static readonly Method[] AppMethods = [Method.Off, Method.Docker, Method.Script, Method.Ide];
+
+    private IEnumerable<(string Label, Func<Method> Get, Action<Method> Set, Method[] Options, Method Now)> PlanRows(LaunchPlan current) =>
+    [
+        ("База даних", () => _plan.Db, m => _plan = _plan with { Db = m }, DbMethods, current.Db),
+        ("Backend", () => _plan.Backend, m => _plan = _plan with { Backend = m }, AppMethods, current.Backend),
+        ("Frontend", () => _plan.Frontend, m => _plan = _plan with { Frontend = m }, AppMethods, current.Frontend),
+    ];
+
+    private void Preset(LaunchPlan plan) { _plan = plan; Save(); }
+
+    private void Save() => Plans.Save(_plan);
+
+    private async Task Apply(IReadOnlyList<RunStep> steps)
+    {
+        await Actions.RunSequenceAsync("План запуску", steps.Select(s => s.Arguments).ToList());
+        await Monitor.RefreshAsync();
+    }
+
+    private static string MethodName(Method m) => m switch
+    {
+        Method.Off => "вимкнено",
+        Method.Docker => "Docker",
+        Method.Script => "термінал (скрипт)",
+        _ => "IDE",
+    };
+
+    private static string StepIcon(PlanStep step) => step switch
+    {
+        RunStep => "▶",
+        WaitForIdeStep => "⏳",
+        _ => "✋",
+    };
+
+    private static string StepClass(PlanStep step) => step switch
+    {
+        WaitForIdeStep => "wait",
+        ManualStopStep => "manual",
+        _ => "",
+    };
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
 

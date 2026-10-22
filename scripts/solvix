@@ -20,7 +20,7 @@ usage() {
   ${BOLD}Запуск${RESET}
     panel              тільки панель керування (http://localhost:$PANEL_PORT) - стан, логи, старт/стоп у браузері
     demo               усе в Docker (db + api + web) -> http://localhost:$WEB_PORT   (для показу)
-    up [db|be|fe|all]  розробка: db у Docker, be/fe локально з hot-reload (за замовч. all)
+    up [db|be|fe|app|all]  розробка: db у Docker, be/fe локально з hot-reload (за замовч. all)
 
   ${BOLD}Контроль${RESET}
     status             що зараз запущено
@@ -47,14 +47,19 @@ cmd_demo() {
 cmd_up() {
   local t="${1:-all}"
   printf '\n  %sSolvix · dev (%s)%s\n' "$BOLD" "$t" "$RESET"
+  panel_start || warn "Панель не запустилась - стек працює і без неї"
   case "$t" in
     db)  db_start;;
     be)  be_start;;
     fe)  fe_start;;
-    all) panel_start || warn "Панель не запустилась - стек працює і без неї"; db_start; be_start; fe_start;;
-    *)   die "Невідомий компонент '$t' (db|be|fe|all)";;
+    app) db_start; app_start;;
+    all) db_start; be_start; fe_start;;
+    *)   die "Невідомий компонент '$t' (db|be|fe|app|all)";;
   esac
-  [ "$t" != all ] && [ "$t" != fe ] || printf '\n  %s→ Відкрий http://localhost:4200%s\n' "$BOLD" "$RESET"
+  case "$t" in
+    all|fe) printf '\n  %s→ Відкрий http://localhost:4200%s\n' "$BOLD" "$RESET";;
+    app)    printf '\n  %s→ Відкрий http://localhost:%s%s\n' "$BOLD" "$WEB_PORT" "$RESET";;
+  esac
   printf '  %sНе забудь вимкнути: ./scripts/solvix down%s\n\n' "$DIM" "$RESET"
 }
 

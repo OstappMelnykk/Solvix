@@ -49,3 +49,16 @@ pre { font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre
 .line.error, .line.critical { border-color: var(--bad); background: #2a1719; } .line.error .lvl, .line.critical .lvl { color: var(--bad); }
 .line.information .lvl { color: var(--accent); }
 .exc { color: var(--bad); margin-top: 2px; }
+
+.plan { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+.plan .toolbar { margin-bottom: 12px; }
+.plan-grid { display: grid; gap: 8px; margin-bottom: 12px; }
+.plan-row { display: grid; grid-template-columns: 130px auto 1fr; gap: 14px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: none; color: var(--muted); border-right: 1px solid var(--line); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--accent); color: #fff; }
+.steps { margin: 4px 0 12px; padding-left: 22px; } .steps li { padding: 2px 0; }
+.steps li.wait { color: var(--warn); } .steps li.manual { color: var(--bad); }
+.hints { margin-top: 12px; color: var(--muted); } .hints code { background: var(--line); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+.hints summary { cursor: pointer; color: var(--text); }

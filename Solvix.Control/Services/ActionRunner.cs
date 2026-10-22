@@ -69,6 +69,22 @@ public sealed class ActionRunner(
         }
     }
 
+    // Runs several launcher commands in order under one lock, stopping at the first failure.
+    public async Task<ActionResult> RunSequenceAsync(string title, IReadOnlyList<string> commands)
+    {
+        var outputs = new List<string>();
+        foreach (var command in commands)
+        {
+            var result = await RunAsync($"{title}: {command}", command);
+            outputs.Add($"$ solvix {command}\n{result.Output}");
+            if (!result.Success)
+            {
+                return Last = new ActionResult(title, false, string.Join("\n\n", outputs), time.GetUtcNow());
+            }
+        }
+        return Last = new ActionResult(title, true, string.Join("\n\n", outputs), time.GetUtcNow());
+    }
+
     private void Emit(string level, string message) =>
         logs.Add([new LogEntry(time.GetUtcNow(), level, "control.action", message, null, PanelInstanceId)]);
 }
