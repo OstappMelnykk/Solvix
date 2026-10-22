@@ -18,7 +18,6 @@ builder.Services.AddSingleton<DockerProbe>();
 builder.Services.AddSingleton<HostProbe>();
 builder.Services.AddSingleton<RawLogReader>();
 builder.Services.AddSingleton<ActionRunner>();
-builder.Services.AddSingleton<PlanStore>();
 builder.Services.AddSingleton<StackMonitor>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StackMonitor>());
 

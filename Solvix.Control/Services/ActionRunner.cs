@@ -69,6 +69,41 @@ public sealed class ActionRunner(
         }
     }
 
+    // Ends a process the launcher script doesn't own (started from an IDE or by hand).
+    public async Task<ActionResult> KillAsync(string title, int pid)
+    {
+        if (!await _one.WaitAsync(0))
+        {
+            return new ActionResult(title, false, "Інша дія ще виконується.", time.GetUtcNow());
+        }
+        try
+        {
+            Emit("Information", $"▶ {title} (kill {pid})");
+            string output;
+            var success = true;
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById(pid);
+                process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token);
+                output = $"Процес {pid} завершено.";
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException or OperationCanceledException
+                or System.ComponentModel.Win32Exception)
+            {
+                success = e is ArgumentException;   // already gone counts as stopped
+                output = success ? $"Процесу {pid} вже немає." : e.Message;
+            }
+            Emit(success ? "Information" : "Error", (success ? "✔ " : "✖ ") + title);
+            return Last = new ActionResult(title, success, output, time.GetUtcNow());
+        }
+        finally
+        {
+            _one.Release();
+            Changed?.Invoke();
+        }
+    }
+
     // Runs several launcher commands in order under one lock, stopping at the first failure.
     public async Task<ActionResult> RunSequenceAsync(string title, IReadOnlyList<string> commands)
     {

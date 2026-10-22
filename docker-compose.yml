@@ -1,24 +1,41 @@
-# Керується через ./scripts/solvix (demo / up / down). Руками теж можна:
-#   docker compose up -d --build --wait
-name: solvix
+# Керується через ./scripts/solvix. Два незалежні способи використання цього файлу:
+#
+#   dev-база (спільна для IDE і терміналу): проєкт solvix-dev, сервіс devdb
+#       docker compose -p solvix-dev --profile devdb up -d devdb
+#   Docker-інстанс N (своя база + api + web, свої порти і томи): проєкт solvix-N
+#       STACK_ID=N WEB_PORT=808N DB_PORT=544N DATA_PREFIX=solvix_stackN docker compose -p solvix-N up -d --build
+#
+# Інстанси повністю ізольовані: окрема мережа, база, том з моделями, порти.
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB:-solvix}
+    POSTGRES_USER: ${POSTGRES_USER:-solvix}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-solvix} -d ${POSTGRES_DB:-solvix}"]
+    interval: 3s
+    timeout: 3s
+    retries: 20
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-solvix}
-      POSTGRES_USER: ${POSTGRES_USER:-solvix}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  # --- спільна dev-база: до неї підключаються API з IDE та з терміналу ----
+  devdb:
+    <<: *postgres
+    profiles: ["devdb"]
     ports:
-      # 5434, а не 5432 - щоб не конфліктувати з іншим локальним postgres.
-      - "127.0.0.1:${DB_PORT:-5434}:5432"
+      - "127.0.0.1:${DEV_DB_PORT:-5434}:5432"
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+
+  # --- Docker-інстанс: postgres + api + web --------------------------------
+  postgres:
+    <<: *postgres
+    ports:
+      - "127.0.0.1:${DB_PORT:-5441}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-solvix} -d ${POSTGRES_DB:-solvix}"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
 
   api:
     build:
@@ -28,7 +45,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-solvix};Username=${POSTGRES_USER:-solvix};Password=${POSTGRES_PASSWORD:-changeme}
       ModelLibrary__DirectoryPath: /app/model-library
-      # Звітування панелі керування (./scripts/solvix panel); без панелі API просто мовчить.
+      # Звітування панелі керування; без панелі API просто мовчить.
       SOLVIX_LAUNCHER: docker
       Control__Url: ${CONTROL_URL:-http://host.docker.internal:5200}
     extra_hosts:
@@ -54,9 +71,11 @@ services:
       timeout: 3s
       retries: 40
 
-# Явні імена, щоб дані не губились при перейменуванні compose-проєкту.
 volumes:
-  postgres_data:
+  # Існуючий том з даними розробки - лишається за тим самим іменем.
+  dev_postgres_data:
     name: solvix_v1_postgres_data
+  postgres_data:
+    name: ${DATA_PREFIX:-solvix_stack}_postgres_data
   model_library_data:
-    name: solvix_v1_model_library_data
+    name: ${DATA_PREFIX:-solvix_stack}_model_library_data

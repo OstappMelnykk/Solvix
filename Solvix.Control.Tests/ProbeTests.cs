@@ -68,7 +68,7 @@ public class ProbeTests
     [Test]
     public void Container_that_is_still_starting_is_not_healthy()
     {
-        var container = new DockerContainer("n", "web", "solvix", "i", "running", "Up 2 seconds (health: starting)", "");
+        var container = new DockerContainer("id", "n", "web", "solvix", "i", "running", "Up 2 seconds (health: starting)", "");
 
         Assert.That(container.Healthy, Is.False);
     }

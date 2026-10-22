@@ -35,28 +35,41 @@ _panel_row() {
   fi
 }
 
-_svc_row() {   # _svc_row <сервіс compose> <назва> <порт> <url>
-  local s; s="$(svc_state "$1")"
+_db_row() {
+  local s; s="$(svc_state "$DEV_PROJECT" devdb)"
   case "$s" in
-    running/healthy|running) _row on "$2" "$3" "працює · $4 · docker${s#running}";;
-    docker-off|none|exited*|created*|dead*) _row off "$2" "" "вимкнено";;
-    *)                       _row warn "$2" "$3" "docker: $s";;
+    running/healthy|running) _row on db ":$DEV_DB_PORT" "працює · спільна dev-база (IDE + термінал) · docker${s#running}";;
+    docker-off|none|exited*|created*|dead*) _row off db "" "вимкнено (спільна dev-база)";;
+    *) _row warn db ":$DEV_DB_PORT" "docker: $s";;
   esac
+}
+
+_stack_rows() {
+  local n web db up total
+  for n in $(stack_ids); do
+    web="$(stack_web_port "$n")"; db="$(stack_db_port "$n")"
+    up=0; total=0
+    for s in postgres api web; do
+      total=$((total + 1)); svc_running "solvix-$n" "$s" && up=$((up + 1))
+    done
+    if [ "$up" -eq "$total" ]; then _row on "st$n" ":$web" "працює · http://localhost:$web · своя db :$db · api · web"
+    elif [ "$up" -gt 0 ]; then _row warn "st$n" ":$web" "частково: $up з $total контейнерів"
+    else _row off "st$n" "" "зупинено (дані збережені) · solvix stack up $n"; fi
+  done
 }
 
 cmd_status() {
   STATUS_RUNNING=0
   printf '\n  %sSolvix%s\n' "$BOLD" "$RESET"
   _panel_row
-  _svc_row postgres db  ":$DB_PORT" "postgres"
+  _db_row
   _proc_row be 7153 "https://localhost:7153/swagger"
   _proc_row fe 4200 "http://localhost:4200"
-  _svc_row api api "" "контейнер"
-  _svc_row web web ":$WEB_PORT" "http://localhost:$WEB_PORT"
+  _stack_rows
 
   if docker_up; then
     local others
-    others="$(docker ps --format '{{.Names}} {{.Label "com.docker.compose.project"}}' | awk '$2 != "solvix" {printf "%s ", $1}')"
+    others="$(docker ps --format '{{.Names}} {{.Label "com.docker.compose.project"}}' | awk '$2 !~ /^solvix(-dev|-[0-9]+)?$/ {printf "%s ", $1}')"
     [ -z "$others" ] || printf '\n  %sІнші контейнери (не Solvix, не чіпаємо): %s%s\n' "$DIM" "$others" "$RESET"
   fi
 
@@ -79,11 +92,17 @@ cmd_logs() {   # logs [be|fe|db|api|web] [-f]
       local f="$LOG_DIR/$target.log"
       [ -f "$f" ] || die "Логу $target ще немає"
       if [ -n "$follow" ]; then tail -n 50 -f "$f"; else tail -n 80 "$f"; fi;;
-    db|api|web)
+    db)
       ensure_docker
-      local s="$target"; [ "$s" = db ] && s=postgres
-      if [ -n "$follow" ]; then dc logs -f --tail 50 "$s"; else dc logs --tail 80 "$s"; fi;;
-    *) die "Невідомий лог '$target'. Варіанти: be fe panel db api web (без аргументу - журнал дій)";;
+      if [ -n "$follow" ]; then dc_dev logs -f --tail 50 devdb; else dc_dev logs --tail 80 devdb; fi;;
+    stack)   # logs stack <N> <api|web|postgres> [-f]
+      ensure_docker
+      local n="${2:-}" svc="${3:-api}"
+      [ -n "$n" ] || die "Вкажи номер інстансу: solvix logs stack 1 api"
+      follow=""; [ "${4:-}" = "-f" ] || [ "$svc" = "-f" ] && follow=1
+      [ "$svc" = "-f" ] && svc=api
+      if [ -n "$follow" ]; then dc_stack "$n" logs -f --tail 50 "$svc"; else dc_stack "$n" logs --tail 80 "$svc"; fi;;
+    *) die "Невідомий лог '$target'. Варіанти: be fe panel db, stack <N> <api|web|postgres> (без аргументу - журнал дій)";;
   esac
 }
 
@@ -112,7 +131,7 @@ cmd_doctor() {
   [ -f "$ROOT/.env" ] && _chk ok ".env є" || _chk warn ".env буде створено з .env.example"
 
   local pair port what p
-  for pair in "$PANEL_PORT:panel" "$DB_PORT:db" "$WEB_PORT:web" "7153:be" "5168:be-http" "4200:fe"; do
+  for pair in "$PANEL_PORT:panel" "$DEV_DB_PORT:dev-db" "7153:be" "5168:be-http" "4200:fe"; do
     port="${pair%%:*}"; what="${pair##*:}"; p="$(port_pid "$port")"
     if [ -z "$p" ]; then _chk ok "порт $port ($what) вільний"
     else _chk warn "порт $port ($what) зайнятий: $(pid_name "$p") pid $p"; fi

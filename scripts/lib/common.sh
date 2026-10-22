@@ -35,8 +35,9 @@ load_env() {
   [ -f "$ROOT/.env" ] || { cp "$ROOT/.env.example" "$ROOT/.env"; info "Створено .env з .env.example"; }
   set -a; . "$ROOT/.env"; set +a
   : "${POSTGRES_DB:=solvix}" "${POSTGRES_USER:=solvix}" "${POSTGRES_PASSWORD:=changeme}"
-  : "${DB_PORT:=5434}" "${WEB_PORT:=8081}"
-  export POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DB_PORT WEB_PORT
+  : "${DEV_DB_PORT:=${DB_PORT:-5434}}"   # DB_PORT - стара назва зі старих .env
+  export POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD DEV_DB_PORT
+  unset DB_PORT WEB_PORT   # порти Docker-інстансів рахуються з номера інстансу
 }
 
 # --- порти та процеси --------------------------------------------------------

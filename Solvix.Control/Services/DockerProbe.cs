@@ -4,6 +4,7 @@ using Solvix.Control.Models;
 namespace Solvix.Control.Services;
 
 public sealed record DockerContainer(
+    string Id,
     string Name,
     string Service,
     string Project,
@@ -19,16 +20,23 @@ public sealed record DockerContainer(
 
 public sealed record DockerSnapshot(bool Available, IReadOnlyList<DockerContainer> Containers)
 {
-    public IEnumerable<DockerContainer> OfProject(string project) =>
-        Containers.Where(c => c.Project == project);
-
     public DockerContainer? Service(string project, string service) =>
-        OfProject(project).FirstOrDefault(c => c.Service == service);
+        Containers.FirstOrDefault(c => c.Project == project && c.Service == service);
+
+    // Numbers of the Docker environments (compose projects "solvix-<N>") that exist, stopped or not.
+    public IReadOnlyList<int> StackIds() =>
+        Containers.Select(c => DockerProbe.StackIdOf(c.Project)).Where(id => id is not null)
+            .Select(id => id!.Value).Distinct().Order().ToList();
 }
 
 public sealed class DockerProbe(IProcessRunner runner)
 {
-    public const string Project = "solvix";
+    public const string DevProject = "solvix-dev";
+
+    public static string StackProject(int id) => $"solvix-{id}";
+
+    public static int? StackIdOf(string project) =>
+        project.StartsWith("solvix-") && int.TryParse(project.AsSpan("solvix-".Length), out var id) ? id : null;
 
     public async Task<DockerSnapshot> CaptureAsync(CancellationToken ct = default)
     {
@@ -53,6 +61,7 @@ public sealed class DockerProbe(IProcessRunner runner)
                 var root = doc.RootElement;
                 var labels = ParseLabels(Text(root, "Labels"));
                 result.Add(new DockerContainer(
+                    Text(root, "ID"),
                     Text(root, "Names"),
                     labels.GetValueOrDefault("com.docker.compose.service", ""),
                     labels.GetValueOrDefault("com.docker.compose.project", ""),

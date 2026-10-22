@@ -8,7 +8,7 @@ be_start() {
   if [ -n "$(live_pid be)" ]; then ok "Backend вже працює (pid $(live_pid be))"; return; fi
   require_free_port "$BE_PORT" "backend https"
   require_free_port 5168 "backend http"
-  [ "$(svc_state postgres)" = running/healthy ] || db_start
+  [ "$(svc_state "$DEV_PROJECT" devdb)" = running/healthy ] || db_start
 
   : >"$BE_LOG"
   (
@@ -17,7 +17,7 @@ be_start() {
     export SOLVIX_LAUNCHER=script   # reported to the panel, so it knows who started us
     export Control__Url="http://localhost:$PANEL_PORT"
     export ASPNETCORE_URLS="https://localhost:$BE_PORT;http://localhost:5168"
-    export ConnectionStrings__Default="Host=localhost;Port=$DB_PORT;Database=$POSTGRES_DB;Username=$POSTGRES_USER;Password=$POSTGRES_PASSWORD"
+    export ConnectionStrings__Default="Host=localhost;Port=$DEV_DB_PORT;Database=$POSTGRES_DB;Username=$POSTGRES_USER;Password=$POSTGRES_PASSWORD"
     nohup dotnet run --no-launch-profile >"$BE_LOG" 2>&1 </dev/null &
     echo $! >"$(pid_file be)"
   )

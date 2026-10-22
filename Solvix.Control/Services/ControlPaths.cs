@@ -10,8 +10,7 @@ public sealed class ControlPaths
     public string RunDir => Path.Combine(StateDir, "run");
     public string LauncherScript => Path.Combine(RepoRoot, "scripts", "solvix");
 
-    public int DbPort { get; }
-    public int WebPort { get; }
+    public int DevDbPort { get; }
     public int FrontendPort => 4200;
     public int[] BackendPorts => [7153, 5168];
 
@@ -22,8 +21,7 @@ public sealed class ControlPaths
             : FindRepoRoot() ?? Directory.GetCurrentDirectory();
 
         var env = ReadEnvFile(Path.Combine(RepoRoot, ".env"));
-        DbPort = ParsePort(env, "DB_PORT", 5434);
-        WebPort = ParsePort(env, "WEB_PORT", 8081);
+        DevDbPort = ParsePort(env, "DEV_DB_PORT", ParsePort(env, "DB_PORT", 5434));
 
         Directory.CreateDirectory(LogDir);
     }

@@ -8,18 +8,22 @@ public sealed class RawLogReader(ControlPaths paths, DockerProbe docker)
 {
     public async Task<string> TailAsync(string source, int lines = 300, CancellationToken ct = default)
     {
+        if (source == "devdb")
+        {
+            return await DockerAsync($"{DockerProbe.DevProject}-devdb-1", lines, ct);
+        }
+        // stack:<N>:<api|web|postgres>
+        if (source.StartsWith("stack:") && source.Split(':') is [_, var id, var service])
+        {
+            return await DockerAsync($"solvix-{id}-{service}-1", lines, ct);
+        }
         switch (source)
         {
-            case "db":
-                return await DockerAsync("postgres", lines, ct);
-            case "api":
-            case "web":
-                return await DockerAsync(source, lines, ct);
             case "be" or "fe":
                 var file = Path.Combine(paths.LogDir, source + ".log");
                 return File.Exists(file)
                     ? string.Join('\n', await ReadTailAsync(file, lines, ct))
-                    : "Логу ще немає: компонент не запускався через ./scripts/solvix.";
+                    : "Логу ще немає: компонент не запускався через ./scripts/solvix (вивід IDE дивись в IDE або на вкладці «Логи»).";
             case "panel":
                 return "Панель пише свої події в журнал (вкладка «Логи», інстанс «panel»).";
             default:
@@ -27,9 +31,8 @@ public sealed class RawLogReader(ControlPaths paths, DockerProbe docker)
         }
     }
 
-    private async Task<string> DockerAsync(string service, int lines, CancellationToken ct)
+    private async Task<string> DockerAsync(string name, int lines, CancellationToken ct)
     {
-        var name = $"{DockerProbe.Project}-{service}-1";
         var result = await docker.LogsAsync(name, lines, ct);
         var text = (result.Output + result.Error).TrimEnd();
         return text.Length > 0 ? text : $"Порожньо (контейнер {name} не запущений або без виводу).";
