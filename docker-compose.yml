@@ -28,6 +28,11 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-solvix};Username=${POSTGRES_USER:-solvix};Password=${POSTGRES_PASSWORD:-changeme}
       ModelLibrary__DirectoryPath: /app/model-library
+      # Звітування панелі керування (./scripts/solvix panel); без панелі API просто мовчить.
+      SOLVIX_LAUNCHER: docker
+      Control__Url: ${CONTROL_URL:-http://host.docker.internal:5200}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - model_library_data:/app/model-library
     depends_on:

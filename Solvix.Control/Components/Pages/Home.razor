@@ -1,0 +1,161 @@
+@page "/"
+@implements IDisposable
+@inject StackMonitor Monitor
+@inject InstanceRegistry Registry
+@inject ActionRunner Actions
+@inject RawLogReader RawLogs
+
+<PageTitle>Solvix Control</PageTitle>
+
+@{
+    var snap = Monitor.Current;
+    var running = snap.Components.Count(c => c.State != ComponentState.Down);
+}
+
+<section class="toolbar">
+    <div>
+        <h1>Стан системи</h1>
+        <p class="muted">
+            Працює @running з @snap.Components.Count ·
+            @(snap.Time == DateTimeOffset.MinValue ? "збираю дані…" : "оновлено " + snap.Time.ToLocalTime().ToString("HH:mm:ss"))
+        </p>
+    </div>
+    <div class="buttons">
+        <button disabled="@Actions.Busy" @onclick='() => Run("Запуск dev (db + be + fe)", "up all")'>Старт dev</button>
+        <button disabled="@Actions.Busy" @onclick='() => Run("Запуск demo (docker)", "demo")'>Старт demo</button>
+        <button class="danger" disabled="@Actions.Busy" @onclick='() => Run("Зупинка всього", "down all")'>Зупинити все</button>
+    </div>
+</section>
+
+@if (!snap.DockerAvailable)
+{
+    <div class="banner warn">Docker не відповідає — контейнери (db, web) недоступні. Colima запуститься сама при старті через скрипт.</div>
+}
+
+@if (Actions.CurrentTitle is not null)
+{
+    <div class="banner info">⏳ @Actions.CurrentTitle…</div>
+}
+else if (Actions.Last is { } last)
+{
+    <details class="banner @(last.Success ? "ok" : "bad")">
+        <summary>@(last.Success ? "✔" : "✖") @last.Title · @last.Finished.ToLocalTime().ToString("HH:mm:ss")</summary>
+        <pre>@last.Output</pre>
+    </details>
+}
+
+<table class="grid">
+    <thead>
+        <tr><th></th><th>Компонент</th><th>Запущено через</th><th>Порт</th><th>Деталі</th><th>Навантаження</th><th></th></tr>
+    </thead>
+    <tbody>
+    @foreach (var row in snap.Components)
+    {
+        <tr>
+            <td><span class="dot @DotClass(row.State)" title="@row.State"></span></td>
+            <td>
+                <b>@row.Name</b>
+                @if (row.Url is not null && row.State != ComponentState.Down)
+                {
+                    <br /><a href="@row.Url" target="_blank">@row.Url</a>
+                }
+            </td>
+            <td><span class="tag @row.Launcher.Kind.ToString().ToLower()">@row.Launcher.Name</span></td>
+            <td>@(row.Port is { } p ? ":" + p : "")</td>
+            <td class="muted">@row.Detail</td>
+            <td class="muted">@Load(row)</td>
+            <td class="actions">
+                @if (row.CanStart)
+                {
+                    <button disabled="@Actions.Busy" @onclick='() => Run("Старт: " + row.Name, row.StartAction!)'>Старт</button>
+                }
+                @if (row.CanStop)
+                {
+                    <button class="danger" disabled="@Actions.Busy" @onclick='() => Run("Стоп: " + row.Name, row.StopAction!)'>Стоп</button>
+                }
+                else if (row.State != ComponentState.Down && row.Launcher.Kind is LauncherKind.Ide or LauncherKind.Terminal or LauncherKind.Unknown && row.Kind != ComponentKind.Panel)
+                {
+                    <span class="muted small">зупиняється там, де запущено</span>
+                }
+                @if (row.LogSource is not null)
+                {
+                    <button class="ghost" @onclick="() => ShowRaw(row)">вивід</button>
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+@if (_rawTitle is not null)
+{
+    <section class="raw">
+        <div class="toolbar"><h2>Вивід: @_rawTitle</h2><button class="ghost" @onclick="() => _rawTitle = null">закрити</button></div>
+        <pre>@_rawText</pre>
+    </section>
+}
+
+@if (snap.OtherContainers.Count > 0)
+{
+    <p class="muted small other">Інші контейнери в Docker (не Solvix, панель їх не чіпає):
+        @string.Join(", ", snap.OtherContainers.Select(c => c.Name))</p>
+}
+
+@code {
+    private string? _rawTitle;
+    private string _rawText = "";
+    private Timer? _tick;
+
+    protected override void OnInitialized()
+    {
+        Monitor.Changed += OnChanged;
+        Registry.Changed += OnChanged;
+        Actions.Changed += OnChanged;
+        // Uptime/age text moves even when nothing changes.
+        _tick = new Timer(_ => OnChanged(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task Run(string title, string arguments)
+    {
+        await Actions.RunAsync(title, arguments);
+        await Monitor.RefreshAsync();
+    }
+
+    private async Task ShowRaw(ComponentRow row)
+    {
+        _rawTitle = row.Name;
+        _rawText = "завантаження…";
+        _rawText = await RawLogs.TailAsync(row.LogSource!);
+    }
+
+    private static string DotClass(ComponentState state) => state switch
+    {
+        ComponentState.Running => "ok",
+        ComponentState.Down => "off",
+        _ => "warn",
+    };
+
+    private static string Load(ComponentRow row)
+    {
+        if (row.Instance is not { } view)
+        {
+            return "";
+        }
+        var age = DateTimeOffset.UtcNow - view.Info.StartedAt;
+        var m = view.Info.Metrics;
+        var uptime = age.TotalHours >= 1 ? $"{(int)age.TotalHours} год {age.Minutes} хв" : $"{age.Minutes} хв {age.Seconds} с";
+        return m is null
+            ? $"аптайм {uptime}"
+            : $"аптайм {uptime} · {m.WorkingSetMb:0} МБ · cpu {m.CpuPercent:0.#}% · {view.RequestsPerSecond:0.#} req/s · активних {m.ActiveRequests}";
+    }
+
+    public void Dispose()
+    {
+        Monitor.Changed -= OnChanged;
+        Registry.Changed -= OnChanged;
+        Actions.Changed -= OnChanged;
+        _tick?.Dispose();
+    }
+}

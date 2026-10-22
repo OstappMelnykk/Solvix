@@ -14,6 +14,8 @@ be_start() {
   (
     cd "$ROOT/Solvix.Api"
     export ASPNETCORE_ENVIRONMENT=Development
+    export SOLVIX_LAUNCHER=script   # reported to the panel, so it knows who started us
+    export Control__Url="http://localhost:$PANEL_PORT"
     export ASPNETCORE_URLS="https://localhost:$BE_PORT;http://localhost:5168"
     export ConnectionStrings__Default="Host=localhost;Port=$DB_PORT;Database=$POSTGRES_DB;Username=$POSTGRES_USER;Password=$POSTGRES_PASSWORD"
     nohup dotnet run --no-launch-profile >"$BE_LOG" 2>&1 </dev/null &

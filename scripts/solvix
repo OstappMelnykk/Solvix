@@ -7,6 +7,7 @@ set -u
 . "$ROOT/scripts/lib/docker.sh"
 . "$ROOT/scripts/lib/be.sh"
 . "$ROOT/scripts/lib/fe.sh"
+. "$ROOT/scripts/lib/panel.sh"
 . "$ROOT/scripts/lib/status.sh"
 
 load_env
@@ -17,12 +18,13 @@ usage() {
   ${BOLD}solvix${RESET} - керування стеком Solvix
 
   ${BOLD}Запуск${RESET}
+    panel              тільки панель керування (http://localhost:$PANEL_PORT) - стан, логи, старт/стоп у браузері
     demo               усе в Docker (db + api + web) -> http://localhost:$WEB_PORT   (для показу)
     up [db|be|fe|all]  розробка: db у Docker, be/fe локально з hot-reload (за замовч. all)
 
   ${BOLD}Контроль${RESET}
     status             що зараз запущено
-    down [db|be|fe|app|all]   вимкнути (за замовч. все)
+    down [db|be|fe|app|panel|all]   вимкнути (за замовч. все)
     logs [be|fe|db|api|web] [-f]   логи компонента; без аргументу - журнал дій
     doctor             перевірка середовища перед демо
     reset              вимкнути все і ВИДАЛИТИ дані бази
@@ -35,6 +37,7 @@ TXT
 
 cmd_demo() {
   printf '\n  %sSolvix · demo%s\n' "$BOLD" "$RESET"
+  panel_start || warn "Панель не запустилась - стек працює і без неї"
   db_start
   app_start
   printf '\n  %s→ Відкрий http://localhost:%s%s\n' "$BOLD" "$WEB_PORT" "$RESET"
@@ -48,7 +51,7 @@ cmd_up() {
     db)  db_start;;
     be)  be_start;;
     fe)  fe_start;;
-    all) db_start; be_start; fe_start;;
+    all) panel_start || warn "Панель не запустилась - стек працює і без неї"; db_start; be_start; fe_start;;
     *)   die "Невідомий компонент '$t' (db|be|fe|all)";;
   esac
   [ "$t" != all ] && [ "$t" != fe ] || printf '\n  %s→ Відкрий http://localhost:4200%s\n' "$BOLD" "$RESET"
@@ -67,7 +70,11 @@ cmd_down() {
   case "$t" in all|be)  be_stop  && { _stopped backend;  any=1; };; esac
   case "$t" in all|app) app_stop && { _stopped "api + web (docker)"; any=1; };; esac
   case "$t" in all|db)  db_stop  && { _stopped "база даних"; any=1; };; esac
-  case "$t" in all|db|be|fe|app) ;; *) die "Невідомий компонент '$t' (db|be|fe|app|all)";; esac
+  # Панель, яка сама просить "зупинити все", себе не гасить (SOLVIX_FROM_PANEL).
+  if [ "$t" = panel ] || { [ "$t" = all ] && [ -z "${SOLVIX_FROM_PANEL:-}" ]; }; then
+    panel_stop && { _stopped "панель керування"; any=1; }
+  fi
+  case "$t" in all|db|be|fe|app|panel) ;; *) die "Невідомий компонент '$t' (db|be|fe|app|all)";; esac
   [ -n "$any" ] || info "Нічого не було запущено"
 
   if [ -n "$colima" ] && command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1; then
@@ -86,7 +93,7 @@ cmd_reset() {
   printf '\n  %sSolvix · reset%s\n' "$BOLD" "$RESET"
   warn "Буде видалено базу даних і збережені моделі (docker volumes)."
   confirm "Продовжити?" || { info "Скасовано"; return; }
-  fe_stop || true; be_stop || true
+  fe_stop || true; be_stop || true; panel_stop || true
   if docker_up; then dc down -v >"$LOG_DIR/docker-down.log" 2>&1 && ok "Контейнери і дані видалено"; fi
   rm -f "$RUN_DIR"/*.pid
   echo
@@ -117,6 +124,7 @@ main() {
   local cmd="${1:-}"; [ $# -gt 0 ] && shift
   journal cmd "solvix $cmd $*"
   case "$cmd" in
+    panel)        printf '\n'; panel_start; printf '\n  %s→ Відкрий http://localhost:%s%s\n\n' "$BOLD" "$PANEL_PORT" "$RESET";;
     demo)         cmd_demo;;
     up|start)     cmd_up "$@";;
     down|stop)    cmd_down "$@";;

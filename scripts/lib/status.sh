@@ -9,7 +9,7 @@ _row() {   # _row <on|off|warn> <назва> <порт> <опис>
     warn) dot="${YELLOW}●${RESET}";;
     *)    dot="${DIM}○${RESET}";;
   esac
-  printf '  %s %-4s %-6s %s\n' "$dot" "$2" "$3" "$4"
+  printf '  %s %-5s %-6s %s\n' "$dot" "$2" "$3" "$4"
 }
 
 _proc_row() {   # _proc_row <компонент> <порт> <url> - локальний процес (be/fe)
@@ -26,6 +26,15 @@ _proc_row() {   # _proc_row <компонент> <порт> <url> - локаль
   fi
 }
 
+_panel_row() {
+  if wait_http "http://localhost:$PANEL_PORT/health" 1; then
+    local lp; lp="$(live_pid panel)"
+    _row on panel ":$PANEL_PORT" "працює · http://localhost:$PANEL_PORT${lp:+ · pid $lp · $(pid_age "$lp")}"
+  else
+    _row off panel "" "вимкнено"
+  fi
+}
+
 _svc_row() {   # _svc_row <сервіс compose> <назва> <порт> <url>
   local s; s="$(svc_state "$1")"
   case "$s" in
@@ -38,6 +47,7 @@ _svc_row() {   # _svc_row <сервіс compose> <назва> <порт> <url>
 cmd_status() {
   STATUS_RUNNING=0
   printf '\n  %sSolvix%s\n' "$BOLD" "$RESET"
+  _panel_row
   _svc_row postgres db  ":$DB_PORT" "postgres"
   _proc_row be 7153 "https://localhost:7153/swagger"
   _proc_row fe 4200 "http://localhost:4200"
@@ -65,7 +75,7 @@ cmd_logs() {   # logs [be|fe|db|api|web] [-f]
   case "$target" in
     ""|journal)
       if [ -n "$follow" ]; then tail -n 30 -f "$JOURNAL"; else tail -n 40 "$JOURNAL" 2>/dev/null || echo "  журнал порожній"; fi;;
-    be|fe)
+    be|fe|panel)
       local f="$LOG_DIR/$target.log"
       [ -f "$f" ] || die "Логу $target ще немає"
       if [ -n "$follow" ]; then tail -n 50 -f "$f"; else tail -n 80 "$f"; fi;;
@@ -73,7 +83,7 @@ cmd_logs() {   # logs [be|fe|db|api|web] [-f]
       ensure_docker
       local s="$target"; [ "$s" = db ] && s=postgres
       if [ -n "$follow" ]; then dc logs -f --tail 50 "$s"; else dc logs --tail 80 "$s"; fi;;
-    *) die "Невідомий лог '$target'. Варіанти: be fe db api web (без аргументу - журнал дій)";;
+    *) die "Невідомий лог '$target'. Варіанти: be fe panel db api web (без аргументу - журнал дій)";;
   esac
 }
 
@@ -102,7 +112,7 @@ cmd_doctor() {
   [ -f "$ROOT/.env" ] && _chk ok ".env є" || _chk warn ".env буде створено з .env.example"
 
   local pair port what p
-  for pair in "$DB_PORT:db" "$WEB_PORT:web" "7153:be" "5168:be-http" "4200:fe"; do
+  for pair in "$PANEL_PORT:panel" "$DB_PORT:db" "$WEB_PORT:web" "7153:be" "5168:be-http" "4200:fe"; do
     port="${pair%%:*}"; what="${pair##*:}"; p="$(port_pid "$port")"
     if [ -z "$p" ]; then _chk ok "порт $port ($what) вільний"
     else _chk warn "порт $port ($what) зайнятий: $(pid_name "$p") pid $p"; fi

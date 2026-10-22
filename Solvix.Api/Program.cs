@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Solvix.Api;
+using Solvix.Api.Control;
 using Solvix.Api.ModelLibrary;
 using Solvix.Contracts.Facades;
 using Solvix.Data;
@@ -7,6 +8,8 @@ using Solvix.MeshBuilder;
 using Solvix.Solver;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddControlReporting();
 
 const string frontendCorsPolicy = "Frontend";
 
@@ -55,6 +58,7 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();   // the Production container serves plain http behind nginx
 }
 
+app.UseControlReporting();
 app.UseCors(frontendCorsPolicy);
 
 app.MapControllers();
