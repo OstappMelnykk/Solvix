@@ -80,3 +80,47 @@ public class TerminalTests
         Assert.That(term.Busy, Is.False);
     }
 }
+
+public class TerminalLookTests
+{
+    private static readonly string[] Fonts = [TerminalLook.DefaultFont, "Menlo, monospace"];
+
+    [Test]
+    public void Full_width_is_saved_as_null_and_reads_back_without_error()
+    {
+        // This exact shape crashed the page once: "width": null from a full-width window.
+        var saved = new TerminalLook(TerminalLook.DefaultFont, 13, 460, null, 0, 0).ToJson();
+
+        var look = TerminalLook.Parse(saved, Fonts);
+
+        Assert.That(look.Width, Is.Null);
+        Assert.That(look.Height, Is.EqualTo(460));
+    }
+
+    [Test]
+    public void Saved_look_round_trips()
+    {
+        var original = new TerminalLook("Menlo, monospace", 16, 700, 900, 40, -20);
+
+        Assert.That(TerminalLook.Parse(original.ToJson(), Fonts), Is.EqualTo(original));
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("not json")]
+    [TestCase("[1,2]")]
+    [TestCase("{\"size\":\"big\",\"height\":null,\"width\":\"wide\",\"x\":{},\"font\":42}")]
+    public void Garbage_falls_back_to_the_defaults(string? json)
+    {
+        Assert.That(TerminalLook.Parse(json, Fonts), Is.EqualTo(TerminalLook.Default));
+    }
+
+    [Test]
+    public void Out_of_range_values_are_clamped_and_unknown_fonts_ignored()
+    {
+        var look = TerminalLook.Parse("{\"font\":\"Comic Sans\",\"size\":500,\"height\":1,\"width\":5,\"x\":99999,\"y\":-99999}", Fonts);
+
+        Assert.That(look.Font, Is.EqualTo(TerminalLook.DefaultFont));
+        Assert.That((look.Size, look.Height, look.Width, look.X, look.Y), Is.EqualTo((28, 160, (int?)320, 4000, -4000)));
+    }
+}

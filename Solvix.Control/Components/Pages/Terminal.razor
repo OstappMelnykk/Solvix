@@ -67,7 +67,7 @@
     private const int MaxSize = 28;
     private const int DefaultSize = 13;
     private const int DefaultHeight = 460;
-    private const string DefaultFont = "ui-monospace, 'SF Mono', Menlo, monospace";
+    private const string DefaultFont = TerminalLook.DefaultFont;
 
     private static readonly (string Label, string Css)[] Fonts =
     [
@@ -181,8 +181,7 @@
     }
 
     private async Task SaveAsync() =>
-        await Js.InvokeVoidAsync("solvixPref.set", "terminal.look",
-            System.Text.Json.JsonSerializer.Serialize(new { font = _font, size = _size, height = _height, width = _width, x = _x, y = _y }));
+        await Js.InvokeVoidAsync("solvixPref.set", "terminal.look", new TerminalLook(_font, _size, _height, _width, _x, _y).ToJson());
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -191,20 +190,12 @@
             // Saved per browser; a missing or broken value just leaves the defaults.
             try
             {
-                if (await Js.InvokeAsync<string?>("solvixPref.get", "terminal.look") is { Length: > 0 } json)
-                {
-                    using var doc = System.Text.Json.JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("font", out var f) && f.GetString() is { } font) { Font = font; }
-                    if (root.TryGetProperty("size", out var sz) && sz.TryGetInt32(out var size)) { Size = size; }
-                    if (root.TryGetProperty("height", out var h) && h.TryGetInt32(out var height)) { _height = Math.Clamp(height, 160, 4000); }
-                    if (root.TryGetProperty("x", out var px) && px.TryGetInt32(out var x)) { _x = Math.Clamp(x, -4000, 4000); }
-                    if (root.TryGetProperty("y", out var py) && py.TryGetInt32(out var y)) { _y = Math.Clamp(y, -4000, 4000); }
-                    _width = root.TryGetProperty("width", out var w) && w.TryGetInt32(out var width) ? Math.Clamp(width, 320, 8000) : null;
-                    StateHasChanged();
-                }
+                var look = TerminalLook.Parse(
+                    await Js.InvokeAsync<string?>("solvixPref.get", "terminal.look"), Fonts.Select(f => f.Css).ToList());
+                _font = look.Font; _size = look.Size; _height = look.Height; _width = look.Width; _x = look.X; _y = look.Y;
+                StateHasChanged();
             }
-            catch (Exception e) when (e is System.Text.Json.JsonException or JSException) { }
+            catch (JSException) { }
 
             _self = DotNetObjectReference.Create(this);
             await Js.InvokeVoidAsync("solvixTerm.observe", _window, _self);
