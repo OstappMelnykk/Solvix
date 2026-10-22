@@ -13,6 +13,7 @@
     <div class="buttons">
         <button class="danger" disabled="@(!Term.Busy)" @onclick="Term.Cancel">Перервати</button>
         <button class="ghost" @onclick="Term.Clear">Очистити</button>
+        <button class="ghost" title="Повернути вікно на місце, якщо воно загубилось" @onclick="ResetLook">↺ скинути вікно</button>
     </div>
 </section>
 
@@ -154,14 +155,21 @@
     private async Task Maximize()
     {
         _width = null; _x = 0; _y = 0;
-        _height = Math.Max(240, await Js.InvokeAsync<int>("solvixTerm.viewportHeight") - 150);
+        _height = Math.Max(240, await Js.InvokeAsync<int>("solvixTerm.availableHeight", _window));
         await SaveAsync();
+        await RefitAsync();
     }
 
     private async Task ResetLook()
     {
         Font = DefaultFont; Size = DefaultSize; _height = DefaultHeight; _width = null; _x = 0; _y = 0;
         await SaveAsync();
+        await RefitAsync();
+    }
+
+    private async Task RefitAsync()
+    {
+        try { await Js.InvokeVoidAsync("solvixTerm.refit", _window, _self); } catch (JSException) { }
     }
 
     // Called from the browser after the user drags an edge or corner of the window.
@@ -172,15 +180,6 @@
         _y = y;
         _width = width >= availableWidth - 3 ? null : width;
         _height = height;
-        await SaveAsync();
-    }
-
-    // Called from the browser after the window is dragged by its title bar.
-    [JSInvokable]
-    public async Task OnMoved(int x, int y)
-    {
-        _x = x;
-        _y = y;
         await SaveAsync();
     }
 
@@ -206,6 +205,7 @@
             {
                 await Js.InvokeVoidAsync("solvixTerm.enableResize", _window, _self);
                 await Js.InvokeVoidAsync("solvixTerm.enableDrag", _window, _self);
+                await Js.InvokeVoidAsync("solvixTerm.keepVisible", _window, _self);
             }
             catch (JSException)
             {
