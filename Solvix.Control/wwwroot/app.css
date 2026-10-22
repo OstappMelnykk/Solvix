@@ -62,3 +62,7 @@ pre { font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre
 .steps li.wait { color: var(--warn); } .steps li.manual { color: var(--bad); }
 .hints { margin-top: 12px; color: var(--muted); } .hints code { background: var(--line); padding: 1px 5px; border-radius: 4px; color: var(--text); }
 .hints summary { cursor: pointer; color: var(--text); }
+
+.actions { flex-wrap: nowrap; white-space: nowrap; }
+.grid td.actions { width: 1%; }
+.hint { cursor: help; border-bottom: 1px dotted var(--muted); }

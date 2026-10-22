@@ -153,7 +153,7 @@ else if (Actions.Last is { } last)
                 }
                 else if (row.State != ComponentState.Down && row.Launcher.Kind is LauncherKind.Ide or LauncherKind.Terminal or LauncherKind.Unknown && row.Kind != ComponentKind.Panel)
                 {
-                    <span class="muted small">зупиняється там, де запущено</span>
+                    <span class="muted small hint" title="Запущено поза панеллю - зупиняється там, де запущено">зовнішній</span>
                 }
                 @if (row.LogSource is not null)
                 {
