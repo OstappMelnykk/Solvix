@@ -130,4 +130,4 @@ docker-compose.override.yml
 ## ============================
 .DS_Store
 Thumbs.db
-Desktop.ini
+Desktop.ini.solvix/
