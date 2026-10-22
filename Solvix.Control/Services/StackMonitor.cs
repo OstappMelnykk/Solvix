@@ -86,7 +86,9 @@ public sealed class StackMonitor(
         {
             return new ComponentRow("be", "Backend API", ComponentKind.Api, ComponentState.Running,
                 LauncherClassifier.Classify(pid, hostSnap, scriptPids),
-                $"pid {pid} · слухає порт, але не звітує панелі", paths.BackendPorts[0], null, pid, null, "be");
+                $"pid {pid} · слухає порт, але не звітує панелі", paths.BackendPorts[0],
+                hostSnap.Listeners.ContainsKey(paths.BackendPorts[0]) ? $"https://localhost:{paths.BackendPorts[0]}" : $"http://localhost:{paths.BackendPorts[1]}",
+                pid, null, "be");
         }
         return null;
     }
@@ -136,12 +138,12 @@ public sealed class StackMonitor(
                 && (apiContainer.Id.StartsWith(i.Info.Host) || i.Info.Host.StartsWith(apiContainer.Id)))
             .Select(view => new ComponentRow($"st{id}-api", "Backend API", ComponentKind.Api,
                 view.Health == InstanceHealth.Alive ? ComponentState.Running : ComponentState.Unresponsive,
-                DockerLauncher, $"{view.Info.Environment} · v{view.Info.Version}", api, $"http://localhost:{api}/api/health", view.Info.Pid, view, $"stack:{id}:api", "→ 8080 у контейнері"))
+                DockerLauncher, $"{view.Info.Environment} · v{view.Info.Version}", api, $"http://localhost:{api}", view.Info.Pid, view, $"stack:{id}:api", "→ 8080 у контейнері"))
             .ToList();
         // … or, if none did (panel unreachable from the container), what Docker itself knows.
         if (reported.Count == 0)
         {
-            reported.Add(ContainerRow(snap, apiContainer, $"st{id}-api", "Backend API", ComponentKind.Api, api, $"http://localhost:{api}/api/health", $"stack:{id}:api", "→ 8080 у контейнері"));
+            reported.Add(ContainerRow(snap, apiContainer, $"st{id}-api", "Backend API", ComponentKind.Api, api, $"http://localhost:{api}", $"stack:{id}:api", "→ 8080 у контейнері"));
         }
 
         var all = new[] { dbRow, webRow }.Concat(reported).ToList();

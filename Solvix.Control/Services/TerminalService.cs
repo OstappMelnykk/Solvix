@@ -8,11 +8,15 @@ public sealed record TermLine(TermKind Kind, string Text);
 
 public sealed record ParsedCommand(string File, IReadOnlyList<string> Args);
 
-// The panel's command line. It is not a shell: the input is split into words
-// (quotes respected) and run directly, so pipes, `;`, `&&` and `$(...)` are
-// plain text. Only `docker` and `solvix` are accepted - this page can start
-// and stop the stack, not run arbitrary programs.
-public sealed class TerminalService(ControlPaths paths, IProcessRunner runner, TimeProvider time, ILogger<TerminalService> log)
+// The panel's command line: a read-only window onto the machine. The input is
+// split into words (quotes respected) and handed to CommandPolicy, which decides
+// whether that program with those arguments may run; it is never given to a shell.
+public sealed class TerminalService(
+    ControlPaths paths,
+    CommandPolicy policy,
+    IProcessRunner runner,
+    TimeProvider time,
+    ILogger<TerminalService> log)
 {
     private const int MaxLines = 5_000;
 
@@ -58,27 +62,12 @@ public sealed class TerminalService(ControlPaths paths, IProcessRunner runner, T
         return tokens;
     }
 
-    // Returns null and an error message when the command isn't allowed.
+    // Returns null and the reason when the command isn't allowed.
     public ParsedCommand? Parse(string line, out string? error)
     {
-        error = null;
-        var tokens = Tokenize(line);
-        if (tokens.Count == 0)
-        {
-            error = "Порожня команда.";
-            return null;
-        }
-        var head = Path.GetFileName(tokens[0]);
-        switch (head)
-        {
-            case "docker":
-                return new ParsedCommand("docker", tokens.Skip(1).ToList());
-            case "solvix":
-                return new ParsedCommand(paths.LauncherScript, tokens.Skip(1).ToList());
-            default:
-                error = $"Дозволено лише команди docker і solvix (отримано '{tokens[0]}'). Приклад: docker ps · solvix status";
-                return null;
-        }
+        var decision = policy.Evaluate(Tokenize(line));
+        error = decision.Reason;
+        return decision.Command;
     }
 
     public async Task RunAsync(string line)
@@ -102,10 +91,18 @@ public sealed class TerminalService(ControlPaths paths, IProcessRunner runner, T
             Append(TermKind.Command, line);
         }
 
+        if (line == "help")
+        {
+            foreach (var text in CommandPolicy.Help.Split('\n')) { Append(TermKind.Info, text); }
+            Finish(cts);
+            return;
+        }
+
         var parsed = Parse(line, out var error);
         if (parsed is null)
         {
             Append(TermKind.Error, error!);
+            Append(TermKind.Info, "help - що дозволено.");
             Finish(cts);
             return;
         }
@@ -116,9 +113,16 @@ public sealed class TerminalService(ControlPaths paths, IProcessRunner runner, T
             var result = await runner.RunAsync(
                 parsed.File, parsed.Args, TimeSpan.FromMinutes(15),
                 // The terminal must not be able to stop the panel it lives in.
-                env: new Dictionary<string, string> { ["SOLVIX_KEEP_PANEL"] = "1", ["NO_COLOR"] = "1" },
+                env: new Dictionary<string, string>
+                {
+                    ["SOLVIX_KEEP_PANEL"] = "1",
+                    ["NO_COLOR"] = "1",
+                    ["GIT_PAGER"] = "cat",
+                    ["GIT_OPTIONAL_LOCKS"] = "0",
+                },
                 onLine: text => { Append(TermKind.Output, text); Raise(); },
-                ct: cts.Token);
+                ct: cts.Token,
+                workingDirectory: paths.RepoRoot);
             Append(result.Success ? TermKind.Info : TermKind.Error,
                 result.ExitCode == -2 ? "перервано" : $"exit {result.ExitCode}");
             if (result.ExitCode == -1)

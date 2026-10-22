@@ -32,6 +32,9 @@ Frontend у режимі `up` ходить на `https://localhost:7153` (`solvi
 
 Як API потрапляє в панель: `Solvix.Api` при старті й кожні 5 с шле панелі свою реєстрацію (`POST /api/instances`), а логи пачками (`POST /api/logs`). Адреса - `Control:Url` (у Development `http://localhost:5200`, у Docker `host.docker.internal:5200`; порожня = вимкнено). Якщо панелі нема - API нічого не помічає. Кожен Docker-інстанс - окрема група в панелі; у майбутньому кілька реплік за load balancer з'являться окремими рядками.
 
+- **Термінал** (`/terminal`): лише читання й перевірка - `docker ps/logs/inspect/stats`, `docker compose ps/logs`, `solvix status…`, `git status/log`, `ls/cat/tail/grep` (тільки в теці проєкту, /tmp, /var/log), `lsof`, `df`, `curl` на localhost. Усе, що змінює або видаляє (`rm`, `docker rm/exec/run`, `git push`, `solvix reset`…), і shell-синтаксис заборонені; `help` показує повний список.
+- **Swagger** біля кожного бекенда: у dev - `https://localhost:7153/swagger`, у Docker-інстансі N - `http://localhost:517N/swagger`.
+
 Машинний вигляд стану: `GET http://localhost:5200/api/stack`.
 
 ## Docker і Colima

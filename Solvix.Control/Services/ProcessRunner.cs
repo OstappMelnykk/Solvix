@@ -15,7 +15,8 @@ public interface IProcessRunner
         TimeSpan timeout,
         IReadOnlyDictionary<string, string>? env = null,
         Action<string>? onLine = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? workingDirectory = null);
 }
 
 public sealed class ProcessRunner : IProcessRunner
@@ -30,10 +31,12 @@ public sealed class ProcessRunner : IProcessRunner
         TimeSpan timeout,
         IReadOnlyDictionary<string, string>? env = null,
         Action<string>? onLine = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? workingDirectory = null)
     {
         var info = new ProcessStartInfo(file)
         {
+            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,

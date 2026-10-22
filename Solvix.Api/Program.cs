@@ -51,10 +51,16 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
+// Swagger is for people poking at the API: always in Development, and in the
+// Docker instances through Swagger:Enabled (they run as Production).
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+}
+
+if (app.Environment.IsDevelopment())
+{
     app.UseHttpsRedirection();   // the Production container serves plain http behind nginx
 }
 

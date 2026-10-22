@@ -29,6 +29,10 @@ public sealed record ComponentRow(
     string? PortNote = null)
 {
     public bool IsUp => State != ComponentState.Down;
+
+    // Every backend serves Swagger next to its API.
+    public string? SwaggerUrl => Kind == ComponentKind.Api && IsUp && Url is not null
+        ? Url.TrimEnd('/') + "/swagger" : null;
 }
 
 public enum Section { Ide, Terminal }

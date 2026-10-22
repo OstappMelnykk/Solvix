@@ -175,6 +175,7 @@ else if (Actions.Last is { } last)
         <b class="name">@row.Name</b>
         @if (row.Port is { } port) { <span class="port" title="@row.PortNote">:@port</span> }
         @if (row.Url is not null && row.IsUp) { <a href="@row.Url" target="_blank">@row.Url</a> }
+        @if (row.SwaggerUrl is { } swagger) { <a class="pill" href="@swagger" target="_blank">Swagger</a> }
         <span class="muted">@row.Detail</span>
         @if (row.Instance is not null) { <span class="muted load">@Load(row)</span> }
         <span class="spacer"></span>
@@ -192,6 +193,7 @@ else if (Actions.Last is { } last)
             <span class="dot @DotClass(here.State)"></span>
             <span class="tag @here.Launcher.Kind.ToString().ToLower()">@here.Launcher.Name</span>
             @if (here.Url is not null) { <a href="@here.Url" target="_blank">@here.Url</a> }
+            @if (here.SwaggerUrl is { } swagger) { <a class="pill" href="@swagger" target="_blank">Swagger</a> }
             <span class="muted">@here.Detail</span>
             @if (here.Instance is not null) { <span class="muted load">@Load(here)</span> }
         }

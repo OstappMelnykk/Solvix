@@ -47,6 +47,7 @@ services:
       ModelLibrary__DirectoryPath: /app/model-library
       # Звітування панелі керування; без панелі API просто мовчить.
       SOLVIX_LAUNCHER: docker
+      Swagger__Enabled: "true"   # http://localhost:517N/swagger
       Control__Url: ${CONTROL_URL:-http://host.docker.internal:5200}
     extra_hosts:
       - "host.docker.internal:host-gateway"

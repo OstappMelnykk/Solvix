@@ -8,7 +8,7 @@
 <section class="toolbar">
     <div>
         <h1>Термінал</h1>
-        <p class="muted small">Лише команди <code>docker …</code> і <code>solvix …</code>, без shell (pipe, <code>&amp;&amp;</code>, <code>$(…)</code> не працюють).</p>
+        <p class="muted small">Лише читання й перевірка: <code>docker ps</code>, <code>lsof</code>, <code>git status</code>, <code>ls</code>… Усе, що змінює чи видаляє, заборонене. Без shell (pipe, <code>&amp;&amp;</code>, <code>$(…)</code> не працюють). Введи <code>help</code>.</p>
     </div>
     <div class="buttons">
         <button class="danger" disabled="@(!Term.Busy)" @onclick="Term.Cancel">Перервати</button>
@@ -41,8 +41,8 @@
 @code {
     private static readonly string[] Presets =
     [
-        "docker ps -a", "docker compose ls", "solvix status", "solvix doctor",
-        "solvix stack up 1", "solvix stack new", "solvix logs stack 1 api",
+        "help", "docker ps -a", "docker stats --no-stream", "docker compose ls", "docker logs --tail 50 solvix-1-api-1",
+        "solvix status", "lsof -iTCP -sTCP:LISTEN -nP", "git status", "curl -s localhost:5171/api/health", "df -h", "ls",
     ];
 
     private string _text = "";

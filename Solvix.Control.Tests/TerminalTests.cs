@@ -14,7 +14,7 @@ public class TerminalTests
         public IReadOnlyDictionary<string, string>? Env { get; private set; }
 
         public Task<ProcessResult> RunAsync(string file, IEnumerable<string> args, TimeSpan timeout,
-            IReadOnlyDictionary<string, string>? env = null, Action<string>? onLine = null, CancellationToken ct = default)
+            IReadOnlyDictionary<string, string>? env = null, Action<string>? onLine = null, CancellationToken ct = default, string? workingDirectory = null)
         {
             File = file; Args = args.ToList(); Env = env;
             onLine?.Invoke("line one");
@@ -29,7 +29,8 @@ public class TerminalTests
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Control:RepoRoot"] = Root }).Build();
         var runner = new FakeRunner();
-        return (new TerminalService(new ControlPaths(config), runner, TimeProvider.System, NullLogger<TerminalService>.Instance), runner);
+        var paths = new ControlPaths(config);
+        return (new TerminalService(paths, new CommandPolicy(paths), runner, TimeProvider.System, NullLogger<TerminalService>.Instance), runner);
     }
 
     [Test]
@@ -43,8 +44,9 @@ public class TerminalTests
 
     [TestCase("rm -rf /")]
     [TestCase("bash -c ls")]
+    [TestCase("docker rm x")]
     [TestCase("")]
-    public void Only_docker_and_solvix_are_accepted(string line)
+    public void Only_safe_commands_are_accepted(string line)
     {
         var (term, _) = Create();
 
