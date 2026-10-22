@@ -25,6 +25,10 @@
 
 <div class="wide">
     <div class="termwin" id="termwin" @ref="_window" style="@WindowStyle">
+        @foreach (var dir in new[] { "n", "s", "e", "w", "ne", "nw", "se", "sw" })
+        {
+            <div class="rz rz-@dir" data-dir="@dir"></div>
+        }
         <div class="titlebar">
             <span class="lights"><i></i><i></i><i></i></span>
             <span class="title" title="Тягни за заголовок, щоб перемістити вікно · подвійний клік - на місце">solvix — термінал</span>
@@ -60,7 +64,7 @@
         </form>
     </div>
 </div>
-<p class="muted small">Тягни заголовок, щоб перемістити вікно (подвійний клік - на місце), правий нижній кут - щоб змінити розмір. Розмір, позиція і шрифт запам'ятовуються.</p>
+<p class="muted small">Тягни заголовок, щоб перемістити вікно (подвійний клік - на місце), будь-яку грань або кут - щоб змінити розмір. Розмір, позиція і шрифт запам'ятовуються.</p>
 
 @code {
     private const int MinSize = 9;
@@ -160,13 +164,13 @@
         await SaveAsync();
     }
 
-    // Called from the browser after the user drags the window's corner.
+    // Called from the browser after the user drags an edge or corner of the window.
     [JSInvokable]
-    public async Task OnResized(int width, int height, int availableWidth)
+    public async Task OnGeometry(int x, int y, int width, int height, int availableWidth)
     {
-        var newWidth = width >= availableWidth - 3 ? (int?)null : width;
-        if (newWidth == _width && Math.Abs(height - _height) <= 2) { return; }
-        _width = newWidth;
+        _x = x;
+        _y = y;
+        _width = width >= availableWidth - 3 ? null : width;
         _height = height;
         await SaveAsync();
     }
@@ -198,7 +202,7 @@
             catch (JSException) { }
 
             _self = DotNetObjectReference.Create(this);
-            await Js.InvokeVoidAsync("solvixTerm.observe", _window, _self);
+            await Js.InvokeVoidAsync("solvixTerm.enableResize", _window, _self);
             await Js.InvokeVoidAsync("solvixTerm.enableDrag", _window, _self);
         }
         await Js.InvokeVoidAsync("solvixScrollToEnd", "term");
@@ -207,7 +211,6 @@
     public async ValueTask DisposeAsync()
     {
         Term.Changed -= OnChanged;
-        try { await Js.InvokeVoidAsync("solvixTerm.unobserve", _window); } catch (Exception e) when (e is JSDisconnectedException or InvalidOperationException) { }
         _self?.Dispose();
     }
 }
