@@ -3,7 +3,7 @@
 Чернетка специфікації. Джерела: книга Owen, Shih, Ernst «A Template-Based Approach for Parallel Hexahedral Two-Refinement»
 (текст витягнуто з `MastersDegreeProject/CadEditor/docs/algorithm/template-based-hex-refinement.pdf`, розд. 4–5) і попередня реалізація
 `CadEditor.MeshKernel` (`LocalRefinement3D`, `T1/T2/T4Template3D`). Рішення цієї версії: **без node propagation** і **лише шаблони
-T1, T2, T4** (якість вирівнює Лапласівське згладжування, див. `docs/research/mesh-smoothing`).
+T1, T2, T4** (якість вирівнює Лапласівське згладжування, див. `docs/project/research/03-smoothing`).
 
 ## 1. Ідея
 
@@ -104,7 +104,7 @@ for d in I, J, K:                      (осі решітки)
 ## 9. Стан 3D (Refinement3D)
 
 Тривимірне ядро зроблено окремим проєктом `Refinement3D` (бібліотека, API, сторінка, 45 тестів). Повний звіт з вимірюваннями, графіками й обмеженнями —
-`docs/research/local-refinement-3d/README.md`. Відхилення від розділів 1–8, які з'явились у 3D:
+`docs/project/research/01-refinement/README.md`. Відхилення від розділів 1–8, які з'явились у 3D:
 
 * **Ширина перехідної зони** (0/1/2): за замовчуванням 0, тобто в M після проходу потрапляють лише діти клітинок користувача, а не всі розділені клітинки, як у книзі
   (2). Кутовий куб зачіпає 8 кубів замість 48.

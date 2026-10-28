@@ -34,7 +34,7 @@
    мінімізує стартову кількість елементів (замість дуже дрібної
    вокселізації всюди "про запас").
 2. **Правило 2:1 balance** (стандарт у octree/adaptive-мешерах, зокрема
-   `p4est` — див. `docs/IDEAS.md`): два сусідні елементи ніколи не можуть
+   `p4est` — див. `docs/project/planning/IDEAS.md`): два сусідні елементи ніколи не можуть
    відрізнятись більш ніж на **1 рівень** згущення. Якщо користувач
    згущує один воксель, а його сусід ще не згущений (різниця стала б 2+
    рівні) — сусід автоматично підтягується хоча б на 1 рівень першим.
@@ -362,12 +362,12 @@ isoparametric snap на етапі побудови гладкої межі (П�
 
 ## Пов'язані документи
 
-- `docs/IDEAS.md` — R3/R4 (форма сітки, Worlds), контракт `Mesh`,
+- `docs/project/planning/IDEAS.md` — R3/R4 (форма сітки, Worlds), контракт `Mesh`,
   секція "Іменовані алгоритми/джерела" (Schneiders, Owen/Shih/Ernst,
   p4est)
-- `docs/BACKEND_ARCHITECTURE.md` — де зараз (і де НЕ зараз) живе код
+- `docs/project/architecture/BACKEND_ARCHITECTURE.md` — де зараз (і де НЕ зараз) живе код
   вокселізації/меша на бекенді
-- `docs/GEOMETRY_RULES.md` — R1/R2 (зв'язність геометрії) — вже
+- `docs/project/architecture/GEOMETRY_RULES.md` — R1/R2 (зв'язність геометрії) — вже
   реалізовано, суміжна, але окрема тема від локального згущення
 - `/Users/ostap/Desktop/Vovk/MastersDegreeProject/CadEditor/CadEditor/docs/algorithm/`
   — повний опис самого алгоритму T1/T2/T3/T4 (T3 поки не в scope)

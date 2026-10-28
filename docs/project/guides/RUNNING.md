@@ -8,7 +8,7 @@
 ./scripts/solvix down        # вимкнути все
 ```
 
-Те саме з меню: подвійний клік на `scripts/Solvix.command`. Повна довідка команд - [`scripts/README.md`](../scripts/README.md).
+Те саме з меню: подвійний клік на `scripts/Solvix.command`. Повна довідка команд - [`scripts/README.md`](../../../scripts/README.md).
 
 ## Ізоляція: що з чим ділить базу
 
