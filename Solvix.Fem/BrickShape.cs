@@ -3,7 +3,7 @@ namespace Solvix.Fem;
 /// <summary>
 /// The shape checks that ANSYS Mechanical APDL applies to a brick with midside nodes (Theory Reference, 12.1 Element
 /// Shape Testing), for the 20-node hexahedron: they are the documented criteria for exactly this element, so they are
-/// Solvix's accept / reject measures. See docs/research/mesh-quality for the source and the numbers.
+/// Solvix's accept / reject measures. See docs/project/research/02-quality for the source and the numbers.
 /// </summary>
 /// <param name="JacobianRatio">Max / min of the Jacobian determinant over all 20 nodes and the centroid; -100 when they
 /// differ in sign (the element is inverted somewhere). 1 for a brick whose faces are parallel and midside nodes are at

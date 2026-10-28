@@ -85,7 +85,7 @@ public sealed class HexMeshEditor
 
     /// <summary>
     /// Deletes a hex. Refused when that would split the body into separate
-    /// parts (docs/GEOMETRY_RULES.md, R2); deleting the last hex is allowed.
+    /// parts (docs/project/architecture/GEOMETRY_RULES.md, R2); deleting the last hex is allowed.
     /// </summary>
     public EditResult RemoveHex(int hexId) => Apply(() =>
     {

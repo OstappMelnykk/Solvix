@@ -29,7 +29,7 @@ const FACE_LABELS: Record<HexFaceName, string> = {
 type Axis = 'x' | 'y' | 'z';
 
 // What the info popup lists - kept next to the handler it describes
-// (onKeyDown) and mirrored in docs/EDITOR_SHORTCUTS.md.
+// (onKeyDown) and mirrored in docs/project/guides/EDITOR_SHORTCUTS.md.
 export const SHORTCUTS: readonly { readonly keys: string; readonly action: string }[] = [
   { keys: 'Клік по грані', action: 'вибрати грань (Real World: стрілки рухають усю грань)' },
   { keys: 'Клік біля ребра', action: 'вибрати ребро (Real World: стрілки й гізмо рухають усе ребро)' },

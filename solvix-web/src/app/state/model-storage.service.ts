@@ -6,7 +6,7 @@ const STORAGE_KEY_PREFIX = 'solvix:model:';
 
 // Stand-in for a real backend persistence call - Solvix.Api/CadWorkspaceApiService
 // is scaffolded (HttpClient wired up) but has zero endpoints yet (see
-// docs/FRONTEND_ARCHITECTURE.md). This holds exactly what a real save would send:
+// docs/project/architecture/FRONTEND_ARCHITECTURE.md). This holds exactly what a real save would send:
 // a session's model, generically serialized via three.js's own Object3D.toJSON()/
 // ObjectLoader format - NOT a hand-rolled schema for specific shape types (box/
 // sphere/tetrahedron/...), since what a user actually builds is arbitrary and

@@ -5,7 +5,7 @@ using Refinement3D.Core;
 namespace Refinement3D.Tests;
 
 /// <summary>
-/// The study behind docs/research/local-refinement-3d: every number in that report comes from here. Run it with
+/// The study behind docs/project/research/01-refinement: every number in that report comes from here. Run it with
 /// <c>dotnet test Refinement3D.Tests --filter Name=Study</c>; the tables are written to the file named by the environment variable STUDY_OUT
 /// (by default study-output.md next to the test assembly) and to the test output.
 /// </summary>

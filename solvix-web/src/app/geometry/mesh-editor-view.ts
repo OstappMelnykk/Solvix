@@ -112,7 +112,7 @@ export function faceSlots(face: HexFaceName): number[] {
 }
 
 // The 20 serendipity shape functions - the same formulas as the backend's
-// Hex20Reference and the solver's N20 (docs/ISOPARAMETRIC.md): corner i is
+// Hex20Reference and the solver's N20 (docs/project/architecture/ISOPARAMETRIC.md): corner i is
 // 1/8 (1+aᵢa)(1+bᵢb)(1+gᵢg)(aᵢa+bᵢb+gᵢg-2), a midside node has the (1-t²) factor
 // along its own axis. Used here only to DRAW the inside of a cube.
 export function shapeFunctions20(a: number, b: number, g: number): number[] {

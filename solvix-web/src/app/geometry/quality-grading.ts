@@ -193,7 +193,7 @@ export interface QualityDecision {
   readonly summary: string;
 }
 
-// Whether the mesh is accepted - by Solvix's criterion only (see docs/research/mesh-quality):
+// Whether the mesh is accepted - by Solvix's criterion only (see docs/project/research/02-quality):
 //  - an element is rejected when any measure is beyond its limit;
 //  - an inverted element (Jacobian changes sign) cannot be used: the solver refuses it;
 //  - the mesh is accepted when no element is rejected.

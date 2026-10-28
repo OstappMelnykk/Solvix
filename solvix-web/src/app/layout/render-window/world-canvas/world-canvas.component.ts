@@ -497,7 +497,7 @@ export class WorldCanvasComponent implements AfterViewInit, OnChanges, OnDestroy
     // SharedModelService last handed out via `representation` - is the true
     // state at the moment this canvas dies (toolbar-icon switch destroys all
     // 3 WorldCanvasComponent instances via NgComponentOutlet - see
-    // docs/FRONTEND_ARCHITECTURE.md's own tech-debt note). Committing it here
+    // docs/project/architecture/FRONTEND_ARCHITECTURE.md's own tech-debt note). Committing it here
     // is what lets the next WorldCanvasComponent instance for this session
     // pick up exactly where this one left off instead of silently reverting
     // to whatever was last explicitly committed (or nothing at all).
