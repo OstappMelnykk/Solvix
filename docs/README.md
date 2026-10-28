@@ -11,10 +11,10 @@ docs/
 │   ├── requirements/                     вимоги: методички, вимоги.md
 │   ├── presentation/                     матеріали презентації (templates/)
 │   ├── animations/                       анімації до захисту
-│   ├── sources/                          література й чужі роботи (порожньо)
+│   ├── sources/                          література: Owen 2016, fem-theory/, solver/
 │   └── helpers/                          допоміжне (порожньо)
 │
-├── coursework/                       КУРСОВА (ще не перенесена)
+├── coursework/                       КУРСОВА (coursework.pdf/.docx)
 │   ├── presentation/
 │   ├── reusable/                         що з курсової взяти в магістерську
 │   └── helpers/                          tex, чернетки
@@ -45,7 +45,6 @@ docs/
 ## Не зроблено
 
 - **`project/research/04-smoothing-sota`:** лежить у гілці `feature/smoothing-research`, з'явиться після злиття.
-- **Курсова:** лежить у `~/Desktop/MASTER/Курсова`, поки не перенесена.
 - **`thesis/sources`, `helpers`, `archive`:** порожні, чекають файлів.
 - **Шапка з датою й статусом** у кожному документі: пропозиція, не введена.
 - **Важкі файли** (`thesis/animations`, 43 МБ): рішення, класти в git чи ні, ще не прийнято.
