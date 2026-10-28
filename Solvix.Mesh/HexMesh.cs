@@ -64,11 +64,12 @@ public sealed partial class HexMesh
 
     /// <summary>
     /// Attaches a new cube to a face of <paramref name="hostId"/> and links them. The
-    /// new cube is an extrusion of the shared face: its far face is the shared face
-    /// moved along the face's outward normal by the host's thickness, and the nodes
-    /// halfway along are half a step out. Only the shared face (its 8 nodes are the
-    /// host's own) matters - a deformation elsewhere in the host never leaks into the
-    /// new cube, and an undeformed face gives an exact regular cube.
+    /// new cube is built on the shared face (its 8 nodes are the host's own) and its
+    /// far face is flat: a plane perpendicular to the shared face's outward normal,
+    /// beyond the highest point of the shared face by the host's thickness, so the far
+    /// face never copies the shared face's shape and never folds through it. A
+    /// deformation elsewhere in the host never leaks into the new cube, and an
+    /// undeformed face gives an exact regular cube.
     /// </summary>
     public Hex20 AddOnFace(int hostId, HexFace face, HexShape? shape = null)
     {
@@ -92,16 +93,30 @@ public sealed partial class HexMesh
             hex.NodeIds[s] = host.NodeIds[hostSlot];
             Own(hex.NodeIds[s], hex.Id, s);
         }
-        // Then every other slot: its counterpart on the shared face (same other
-        // coordinates), pushed out by 1/2 step (midway) or a whole step (far face).
+        // The far face is flat: each of its 8 nodes is its counterpart on the shared
+        // face moved along the normal onto one plane that lies beyond the whole shared
+        // face (its highest point plus the thickness), so it never takes over the shared
+        // face's curvature and never folds back through it. The nodes halfway along are
+        // midway between a shared node and its far node.
+        var normal = OutwardNormal(host, face);
+        double height = Enumerable.Range(0, Hex20Reference.NodeCount)
+            .Where(t => shared.PartnerSlot(t) >= 0)
+            .Max(t => Dot(Node(hex.NodeIds[t]).Position, normal)) + step.Length;
+        var far = new Dictionary<int, Vec3>();
+        for (int s = 0; s < Hex20Reference.NodeCount; s++)
+        {
+            if (Hex20Reference.LocalCoords[s, axis] != sign) continue;
+            int counterpart = CounterpartOnShared(s, axis, sign);
+            var onShared = Node(hex.NodeIds[counterpart]).Position;
+            far[s] = onShared + normal * (height - Dot(onShared, normal));
+        }
         for (int s = 0; s < Hex20Reference.NodeCount; s++)
         {
             if (shared.PartnerSlot(s) >= 0) continue;
-            int counterpart = Enumerable.Range(0, Hex20Reference.NodeCount).First(t =>
-                Hex20Reference.LocalCoords[t, axis] == -sign &&
-                Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[t, d] == Hex20Reference.LocalCoords[s, d]));
-            double weight = (Hex20Reference.LocalCoords[s, axis] * sign + 1) / 2.0;     // far face 1, halfway 1/2
-            var position = Node(hex.NodeIds[counterpart]).Position + step * weight;
+            int counterpart = CounterpartOnShared(s, axis, sign);
+            var position = Hex20Reference.LocalCoords[s, axis] == sign
+                ? far[s]
+                : (Node(hex.NodeIds[counterpart]).Position + far[FarOf(s, axis, sign)]) * 0.5;
             hex.NodeIds[s] = NewNode(position, IdealOf(cell, s)).Id;
             Own(hex.NodeIds[s], hex.Id, s);
         }
@@ -162,6 +177,21 @@ public sealed partial class HexMesh
         _links[(hex.Id, shared)] = hostId;
         return hex;
     }
+
+    // The slot on the shared face (local coordinate -sign along the axis) with the same
+    // other coordinates as slot s.
+    private static int CounterpartOnShared(int s, int axis, int sign) =>
+        Enumerable.Range(0, Hex20Reference.NodeCount).First(t =>
+            Hex20Reference.LocalCoords[t, axis] == -sign &&
+            Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[t, d] == Hex20Reference.LocalCoords[s, d]));
+
+    // The slot on the far face (local coordinate +sign) above slot s.
+    private static int FarOf(int s, int axis, int sign) =>
+        Enumerable.Range(0, Hex20Reference.NodeCount).First(t =>
+            Hex20Reference.LocalCoords[t, axis] == sign &&
+            Enumerable.Range(0, 3).All(d => d == axis || Hex20Reference.LocalCoords[t, d] == Hex20Reference.LocalCoords[s, d]));
+
+    private static double Dot(Vec3 a, Vec3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
 
     // The vector a new cube is pushed out by: the shared face's outward unit normal
     // times the host's thickness across that axis. The thickness is the MEDIAN of the
