@@ -36,6 +36,36 @@ public class HexMeshTests
     }
 
     [Test]
+    public void The_far_face_of_an_added_cube_is_flat_and_lies_beyond_a_bumpy_shared_face()
+    {
+        var mesh = new HexMesh();
+        var a = mesh.AddFirst();
+        // Push the shared face's corners out and in (and all its midpoints out), so it is
+        // bumpy but its normal stays along X.
+        var slots = HexFace.XPlus.Slots().ToArray();
+        for (int i = 0; i < slots.Length; i++)
+        {
+            var node = mesh.Node(a.NodeIds[slots[i]]);
+            double dx = Hex20Reference.IsCorner(slots[i]) ? 0.3 * Math.Sin(i + 1) : 0.2;
+            mesh.DragNode(node.Id, node.Position + new Vec3(dx, 0, 0));
+        }
+        var b = mesh.AddOnFace(a.Id, HexFace.XPlus);
+
+        var far = HexFace.XPlus.Slots().Select(s => mesh.Node(b.NodeIds[s]).Position).ToArray();
+        var shared = slots.Select(s => mesh.Node(a.NodeIds[s]).Position).ToArray();
+        var corners = HexFace.XPlus.Slots().Where(Hex20Reference.IsCorner).Select(sl => mesh.Node(b.NodeIds[sl]).Position).ToArray();
+        var e1 = corners[1] - corners[0];
+        var e2 = corners[2] - corners[0];
+        var n = new Vec3(e1.Y * e2.Z - e1.Z * e2.Y, e1.Z * e2.X - e1.X * e2.Z, e1.X * e2.Y - e1.Y * e2.X);
+        n *= 1.0 / n.Length;
+        double Along(Vec3 v) => v.X * n.X + v.Y * n.Y + v.Z * n.Z;
+        if (Along(far[0] - shared[0]) < 0) n *= -1;
+        Assert.That(far.Max(v => Along(v)) - far.Min(v => Along(v)), Is.EqualTo(0).Within(1e-9), "far face is one plane");
+        Assert.That(far.Min(v => Along(v)), Is.GreaterThan(shared.Max(v => Along(v))), "far face is beyond the shared face");
+        Assert.That(b.Determinant(Vec3.Zero), Is.GreaterThan(0));
+    }
+
+    [Test]
     public void Adding_onto_an_occupied_cell_is_refused()
     {
         var mesh = new HexMesh();
