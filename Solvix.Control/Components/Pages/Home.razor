@@ -1,0 +1,358 @@
+@page "/"
+@implements IDisposable
+@inject StackMonitor Monitor
+@inject InstanceRegistry Registry
+@inject ActionRunner Actions
+@inject RawLogReader RawLogs
+
+<PageTitle>Solvix Control</PageTitle>
+
+@{
+    var snap = Monitor.Current;
+    var busy = Actions.Busy;
+}
+
+<section class="toolbar">
+    <div>
+        <h1>Стан системи</h1>
+        <p class="muted">
+            @(snap.Time == DateTimeOffset.MinValue ? "збираю дані…" : "оновлено " + snap.Time.ToLocalTime().ToString("HH:mm:ss"))
+        </p>
+    </div>
+    <button class="danger" disabled="@busy" @onclick='() => Run("Зупинка всього", "down all")'>Зупинити все</button>
+</section>
+
+@if (!snap.DockerAvailable)
+{
+    <div class="banner warn">Docker не відповідає — база та Docker-інстанси недоступні. Colima запуститься сама при старті через скрипт.</div>
+}
+
+@if (Actions.CurrentTitle is not null)
+{
+    <div class="banner info">⏳ @Actions.CurrentTitle…</div>
+}
+else if (Actions.Last is { } last)
+{
+    <details class="banner @(last.Success ? "ok" : "bad")">
+        <summary>@(last.Success ? "✔" : "✖") @last.Title · @last.Finished.ToLocalTime().ToString("HH:mm:ss")</summary>
+        <pre>@last.Output</pre>
+    </details>
+}
+
+@* ---- Спільна dev-база ------------------------------------------------------ *@
+<section class="card">
+    <header>
+        <div><h2>Спільна база даних</h2><p class="muted small">Одна на IDE і термінал. Docker-інстанси мають власні бази.</p></div>
+        <div class="buttons">
+            <button disabled="@(busy || snap.DevDb.IsUp)" @onclick='() => Run("Старт: спільна база", "up db")'>Старт</button>
+            <button class="danger" disabled="@(busy || !snap.DevDb.IsUp)" @onclick='() => Run("Стоп: спільна база", "down db")'>Стоп</button>
+        </div>
+    </header>
+    @Item(snap.DevDb)
+</section>
+
+@* ---- IDE ------------------------------------------------------------------- *@
+<section class="card">
+    <header>
+        <div><h2>IDE <span class="muted small">Rider · WebStorm · VS Code</span></h2>
+            <p class="muted small">Запускається вручну в IDE; панель бачить процес і може його завершити.</p></div>
+        <div class="buttons">
+            <button disabled="@(busy || !CanStartIde(snap))" @onclick="() => StartIde(snap)">Старт</button>
+            <button class="@(_confirmIdeStop ? "danger solid" : "danger")" disabled="@(busy || !CanStop(snap.Ide, _ideSel))" @onclick="() => StopIde(snap)">
+                @(_confirmIdeStop ? "Точно зупинити?" : "Стоп")
+            </button>
+        </div>
+    </header>
+    @foreach (var slot in snap.Ide) { @SlotRow(slot, _ideSel) }
+    @if (_ideWaiting.Count > 0)
+    {
+        <div class="banner info hints">
+            ⏳ Чекаю запуску з IDE: <b>@string.Join(", ", _ideWaiting.Select(k => k == "be" ? "Backend" : "Frontend"))</b>.
+            <ul>
+                @if (_ideWaiting.Contains("be")) { <li><b>Backend</b> (Rider): конфігурація <code>Solvix.Api</code>, профіль <code>https</code>. База і адреса панелі беруться з <code>appsettings.Development.json</code>.</li> }
+                @if (_ideWaiting.Contains("fe")) { <li><b>Frontend</b> (WebStorm / VS Code): скрипт <code>npm start</code> у теці <code>solvix-web</code> (порт 4200).</li> }
+            </ul>
+        </div>
+    }
+</section>
+
+@* ---- Термінал -------------------------------------------------------------- *@
+<section class="card">
+    <header>
+        <div><h2>Термінал <span class="muted small">скрипт ./scripts/solvix</span></h2>
+            <p class="muted small">dotnet run та ng serve з hot-reload. Потребує спільної бази — підніметься сама.</p></div>
+        <div class="buttons">
+            <button disabled="@(busy || !CanStartTerminal(snap))" @onclick="() => StartTerminal(snap)">Старт</button>
+            <button class="danger" disabled="@(busy || !CanStop(snap.Terminal, _termSel))" @onclick="() => StopTerminal(snap)">Стоп</button>
+        </div>
+    </header>
+    @foreach (var slot in snap.Terminal) { @SlotRow(slot, _termSel) }
+</section>
+
+@* ---- Docker ---------------------------------------------------------------- *@
+<section class="card">
+    <header>
+        <div><h2>Docker <span class="muted small">ізольовані інстанси</span></h2>
+            <p class="muted small">Кожен інстанс: власна база, api і web, свої порти (web 8080+N, api 5170+N, db 5440+N), мережа й дані.</p></div>
+        <div class="buttons">
+            <label class="check">кількість <input type="number" min="1" max="@(Math.Max(1, 9 - snap.Stacks.Count))" @bind="_newCount" class="num" /></label>
+            <button disabled="@(busy || snap.Stacks.Count >= 9)" @onclick="CreateStacks">Створити інстанс</button>
+        </div>
+    </header>
+    @if (snap.Stacks.Count == 0)
+    {
+        <p class="muted pad">Інстансів ще немає.</p>
+    }
+    @foreach (var stack in snap.Stacks)
+    {
+        <div class="stack">
+            <div class="stack-head">
+                <span class="dot @DotClass(stack.State)"></span>
+                <b>Інстанс @stack.Id</b>
+                @if (stack.State != ComponentState.Down) { <a href="http://localhost:@stack.WebPort" target="_blank">http://localhost:@stack.WebPort</a> }
+                <span class="muted small">db :@stack.DbPort · api :@stack.ApiPort · web :@stack.WebPort · том @stack.DataVolume</span>
+                <span class="spacer"></span>
+                <div class="buttons">
+                    <button disabled="@(busy || stack.State == ComponentState.Running)" @onclick='() => Run($"Старт: інстанс {stack.Id}", $"stack up {stack.Id}")'>Старт</button>
+                    <button class="danger" disabled="@(busy || stack.State == ComponentState.Down)" @onclick='() => Run($"Стоп: інстанс {stack.Id}", $"stack stop {stack.Id}")'>Стоп</button>
+                    <button class="@(_confirmRemove == stack.Id ? "danger solid" : "ghost")" disabled="@busy" @onclick="() => Remove(stack.Id)">
+                        @(_confirmRemove == stack.Id ? "Видалити з даними?" : "Видалити")
+                    </button>
+                </div>
+            </div>
+            @Item(stack.Db)
+            @foreach (var api in stack.Apis) { @Item(api) }
+            @Item(stack.Web)
+        </div>
+    }
+</section>
+
+@if (_rawTitle is not null)
+{
+    <section class="raw">
+        <div class="toolbar"><h2>Вивід: @_rawTitle</h2><button class="ghost" @onclick="() => _rawTitle = null">закрити</button></div>
+        <pre>@_rawText</pre>
+    </section>
+}
+
+@if (snap.OtherContainers.Count > 0)
+{
+    <p class="muted small other">Інші контейнери в Docker (не Solvix, панель їх не чіпає):
+        @string.Join(", ", snap.OtherContainers.Select(c => c.Name))</p>
+}
+
+@code {
+    private readonly HashSet<string> _ideSel = ["be", "fe"];
+    private readonly HashSet<string> _termSel = ["be", "fe"];
+    private readonly HashSet<string> _ideWaiting = [];
+    private bool _confirmIdeStop;
+    private int? _confirmRemove;
+    private int _newCount = 1;
+    private string? _rawTitle;
+    private string _rawText = "";
+    private Timer? _tick;
+
+    protected override void OnInitialized()
+    {
+        Monitor.Changed += OnChanged;
+        Registry.Changed += OnChanged;
+        Actions.Changed += OnChanged;
+        // Uptime/age text moves even when nothing changes.
+        _tick = new Timer(_ => OnChanged(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void OnChanged()
+    {
+        // A process that showed up in the IDE is no longer "awaited".
+        _ideWaiting.RemoveWhere(k => Monitor.Current.Ide.FirstOrDefault(s => s.Key == k)?.Here is not null);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    // --- rows ----------------------------------------------------------------
+
+    private RenderFragment Item(ComponentRow row) => @<div class="item">
+        <span class="dot @DotClass(row.State)" title="@row.State"></span>
+        <b class="name">@row.Name</b>
+        @if (row.Port is { } port) { <span class="port" title="@row.PortNote">:@port</span> }
+        @if (row.Url is not null && row.IsUp) { <a href="@row.Url" target="_blank">@row.Url</a> }
+        @if (row.SwaggerUrl is { } swagger) { <a class="pill" href="@swagger" target="_blank">Swagger</a> }
+        <span class="muted">@row.Detail</span>
+        @if (row.Instance is not null) { <span class="muted load">@Load(row)</span> }
+        <span class="spacer"></span>
+        @if (row.LogSource is not null) { <button class="ghost small" @onclick="() => ShowRaw(row)">вивід</button> }
+    </div>;
+
+    private RenderFragment SlotRow(Slot slot, HashSet<string> selection) => @<div class="item slot">
+        <label class="check">
+            <input type="checkbox" checked="@selection.Contains(slot.Key)" disabled="@(slot.Elsewhere is not null)"
+                   @onchange="e => Toggle(selection, slot.Key, (bool)e.Value!)" />
+            <b class="name">@slot.Name</b>
+        </label>
+        @if (slot.Here is { } here)
+        {
+            <span class="dot @DotClass(here.State)"></span>
+            <span class="tag @here.Launcher.Kind.ToString().ToLower()">@here.Launcher.Name</span>
+            @if (here.Url is not null) { <a href="@here.Url" target="_blank">@here.Url</a> }
+            @if (here.SwaggerUrl is { } swagger) { <a class="pill" href="@swagger" target="_blank">Swagger</a> }
+            <span class="muted">@here.Detail</span>
+            @if (here.Instance is not null) { <span class="muted load">@Load(here)</span> }
+        }
+        else if (slot.Elsewhere is { } other)
+        {
+            <span class="dot warn"></span>
+            <span class="muted">порт :@slot.Port зайнятий: <b>@other.Launcher.Name</b> (інша секція) — спершу зупини там</span>
+        }
+        else
+        {
+            <span class="dot off"></span><span class="muted">вільно</span>
+        }
+        <span class="spacer"></span>
+        @if ((slot.Here ?? slot.Elsewhere) is { LogSource: not null } logged)
+        {
+            <button class="ghost small" @onclick="() => ShowRaw(logged)">вивід</button>
+        }
+        else if (_ideWaiting.Contains(slot.Key) && selection == _ideSel)
+        {
+            <span class="muted small">⏳ чекаю IDE</span>
+        }
+    </div>;
+
+    private static void Toggle(HashSet<string> set, string key, bool on)
+    {
+        if (on) { set.Add(key); } else { set.Remove(key); }
+    }
+
+    // --- IDE -----------------------------------------------------------------
+
+    private bool CanStartIde(StackSnapshot snap) =>
+        snap.Ide.Any(s => _ideSel.Contains(s.Key) && s.Here is null && s.Elsewhere is null);
+
+    private async Task StartIde(StackSnapshot snap)
+    {
+        foreach (var slot in snap.Ide.Where(s => _ideSel.Contains(s.Key) && s.Here is null && s.Elsewhere is null))
+        {
+            _ideWaiting.Add(slot.Key);
+        }
+        // The IDE-run backend needs the shared database; the panel can bring that up.
+        if (!snap.DevDb.IsUp)
+        {
+            await Run("База для IDE", "up db");
+        }
+    }
+
+    private async Task StopIde(StackSnapshot snap)
+    {
+        if (!_confirmIdeStop)
+        {
+            _confirmIdeStop = true;
+            _ = Task.Delay(4000).ContinueWith(_ => { _confirmIdeStop = false; _ = InvokeAsync(StateHasChanged); });
+            return;
+        }
+        _confirmIdeStop = false;
+        foreach (var slot in snap.Ide.Where(s => _ideSel.Contains(s.Key) && s.Here?.Pid is not null))
+        {
+            _ideWaiting.Remove(slot.Key);
+            await Actions.KillAsync($"Зупинка {slot.Name} (IDE)", slot.Here!.Pid!.Value);
+        }
+        await Monitor.RefreshAsync();
+    }
+
+    // --- термінал ------------------------------------------------------------
+
+    private bool CanStartTerminal(StackSnapshot snap) =>
+        snap.Terminal.Any(s => _termSel.Contains(s.Key) && s.Here is null && s.Elsewhere is null);
+
+    private async Task StartTerminal(StackSnapshot snap)
+    {
+        var commands = snap.Terminal
+            .Where(s => _termSel.Contains(s.Key) && s.Here is null && s.Elsewhere is null)
+            .Select(s => "up " + s.Key).ToList();
+        await Actions.RunSequenceAsync("Старт у терміналі", commands);
+        await Monitor.RefreshAsync();
+    }
+
+    private async Task StopTerminal(StackSnapshot snap)
+    {
+        foreach (var slot in snap.Terminal.Where(s => _termSel.Contains(s.Key) && s.Here is not null))
+        {
+            // Processes the script owns stop through the script; hand-started ones are ended directly.
+            if (slot.Here!.Launcher.Kind == LauncherKind.Script)
+            {
+                await Actions.RunAsync($"Стоп: {slot.Name}", "down " + slot.Key);
+            }
+            else if (slot.Here.Pid is { } pid)
+            {
+                await Actions.KillAsync($"Стоп: {slot.Name}", pid);
+            }
+        }
+        await Monitor.RefreshAsync();
+    }
+
+    private static bool CanStop(IReadOnlyList<Slot> slots, HashSet<string> selection) =>
+        slots.Any(s => selection.Contains(s.Key) && s.Here is not null);
+
+    // --- Docker --------------------------------------------------------------
+
+    private async Task CreateStacks()
+    {
+        var commands = Enumerable.Repeat("stack new", Math.Clamp(_newCount, 1, 9)).ToList();
+        await Actions.RunSequenceAsync($"Нових Docker-інстансів: {commands.Count}", commands);
+        await Monitor.RefreshAsync();
+    }
+
+    private async Task Remove(int id)
+    {
+        if (_confirmRemove != id)
+        {
+            _confirmRemove = id;
+            _ = Task.Delay(4000).ContinueWith(_ => { if (_confirmRemove == id) { _confirmRemove = null; _ = InvokeAsync(StateHasChanged); } });
+            return;
+        }
+        _confirmRemove = null;
+        await Run($"Видалення інстансу {id}", $"stack rm {id}");
+    }
+
+    // --- спільне -------------------------------------------------------------
+
+    private async Task Run(string title, string arguments)
+    {
+        await Actions.RunAsync(title, arguments);
+        await Monitor.RefreshAsync();
+    }
+
+    private async Task ShowRaw(ComponentRow row)
+    {
+        _rawTitle = row.Name;
+        _rawText = "завантаження…";
+        _rawText = await RawLogs.TailAsync(row.LogSource!);
+    }
+
+    private static string DotClass(ComponentState state) => state switch
+    {
+        ComponentState.Running => "ok",
+        ComponentState.Down => "off",
+        _ => "warn",
+    };
+
+    private static string Load(ComponentRow row)
+    {
+        if (row.Instance is not { } view)
+        {
+            return "";
+        }
+        var age = DateTimeOffset.UtcNow - view.Info.StartedAt;
+        var m = view.Info.Metrics;
+        var uptime = age.TotalHours >= 1 ? $"{(int)age.TotalHours} год {age.Minutes} хв" : $"{age.Minutes} хв {age.Seconds} с";
+        return m is null
+            ? $"аптайм {uptime}"
+            : $"аптайм {uptime} · {m.WorkingSetMb:0} МБ · cpu {m.CpuPercent:0.#}% · {view.RequestsPerSecond:0.#} req/s · активних {m.ActiveRequests}";
+    }
+
+    public void Dispose()
+    {
+        Monitor.Changed -= OnChanged;
+        Registry.Changed -= OnChanged;
+        Actions.Changed -= OnChanged;
+        _tick?.Dispose();
+    }
+}

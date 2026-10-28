@@ -8,7 +8,7 @@
 
 ## Backend
 
-The backend is split into 5 .NET projects, following Dependency Inversion (Ports & Adapters): every project depends only on `Solvix.Contracts`, never on each other directly, so there are no circular dependencies and each piece can be changed or tested in isolation.
+The backend is split into several .NET projects, following Dependency Inversion (Ports & Adapters): every project depends only on `Solvix.Contracts`, never on each other directly, so there are no circular dependencies and each piece can be changed or tested in isolation.
 
 - **`Solvix.Contracts`** — interfaces and message/DTO types only. No logic, no dependencies. The shared language every other project speaks.
 - **`Solvix.Mesh`** — the domain model of the CAD editor: curvilinear 20-node hexahedra (`Hex20`) assembled face-to-face in a `HexMesh`, with explicit neighbour links, shared nodes, the real/ideal world mapping and a solver-ready `FemMeshData` export. Pure library, no dependencies. Tests in `Solvix.Mesh.Tests`.
@@ -17,6 +17,7 @@ The backend is split into 5 .NET projects, following Dependency Inversion (Ports
 - **`Solvix.MeshBuilder`** — mesh construction and local refinement logic, exposed behind a facade. Depends only on `Contracts`.
 - **`Solvix.Bridge`** — relay between `Solver` and `MeshBuilder`. Routes calls/events both ways (via `Contracts` interfaces, e.g. pub/sub for one side proactively pushing to the other) and can hold cross-cutting logic (validation, mapping, etc.) if the two sides' data models diverge. Never references `Solver`/`MeshBuilder` directly.
 - **`Solvix.Data`** — persistence (EF Core + PostgreSQL). Implements storage interfaces declared in `Contracts` (projects/meshes, solve results). Depends only on `Contracts` — `Solver` and `MeshBuilder` never touch the database directly; `Api` orchestrates saving/loading.
+- **`Solvix.Control`** — the admin panel (Blazor Server, port 5200): live state of every component, who launched it (Docker / script / IDE), aggregated logs, start/stop. Depends on no other Solvix project; `Solvix.Api` reports to it over HTTP (optional). Tests in `Solvix.Control.Tests`.
 - **`Solvix.Api`** — the composition root: the only project that references everything. Wires up DI at startup and exposes HTTP/SignalR endpoints to the Angular frontend (`solvix-web`).
 
 ```

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Solvix.Api;
+using Solvix.Api.Control;
 using Solvix.Api.ModelLibrary;
 using Solvix.Contracts.Facades;
 using Solvix.Data;
@@ -7,6 +8,8 @@ using Solvix.MeshBuilder;
 using Solvix.Solver;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddControlReporting();
 
 const string frontendCorsPolicy = "Frontend";
 
@@ -17,7 +20,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(frontendCorsPolicy, policy =>
-        policy.WithOrigins("http://localhost:4200")
+        policy.WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:4200"])
             .AllowAnyHeader()
             .AllowAnyMethod()
             .WithExposedHeaders("X-Shell-Faces", "X-Shell-Triangles", "X-Shell-Deviation")
@@ -27,6 +30,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<SolvixDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
 
+builder.Services.AddHealthChecks();
 builder.Services.AddMeshBuilder();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<ISolverProgressNotifier, SignalRSolverNotifier>();
@@ -47,16 +51,24 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
+// Swagger is for people poking at the API: always in Development, and in the
+// Docker instances through Swagger:Enabled (they run as Production).
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();   // the Production container serves plain http behind nginx
+}
+
+app.UseControlReporting();
 app.UseCors(frontendCorsPolicy);
 
 app.MapControllers();
+app.MapHealthChecks("/api/health");   // ./scripts/solvix and the web container probe this
 app.MapHub<SolverHub>("/hubs/solver");
 
 app.Run();

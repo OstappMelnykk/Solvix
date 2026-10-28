@@ -1,0 +1,93 @@
+@page "/logs"
+@implements IDisposable
+@inject LogStore Store
+
+<PageTitle>Логи · Solvix Control</PageTitle>
+
+<section class="toolbar">
+    <h1>Логи</h1>
+    <div class="filters">
+        <select @bind="_level" @bind:after="Reload">
+            @foreach (var level in LogLevels.All)
+            {
+                <option value="@level">@level+</option>
+            }
+        </select>
+        <select @bind="_instance" @bind:after="Reload">
+            <option value="">усі інстанси</option>
+            @foreach (var id in Store.InstanceIds())
+            {
+                <option value="@id">@id</option>
+            }
+        </select>
+        <input placeholder="пошук…" @bind="_text" @bind:event="oninput" @bind:after="Reload" />
+        <label class="check"><input type="checkbox" @bind="_follow" /> стежити</label>
+        <button class="ghost" @onclick="Reload">оновити</button>
+    </div>
+</section>
+
+<div class="logs" id="logs">
+    @if (_entries.Count == 0)
+    {
+        <p class="muted pad">Записів поки немає. Логи з'являться, щойно Solvix.Api стартує з увімкненим звітуванням панелі.</p>
+    }
+    @foreach (var e in _entries)
+    {
+        <div class="line @e.Level.ToLower()">
+            <span class="time">@e.Time.ToLocalTime().ToString("HH:mm:ss.fff")</span>
+            <span class="lvl">@Short(e.Level)</span>
+            <span class="inst">@e.InstanceId</span>
+            <span class="cat">@e.Category</span>
+            <span class="msg">@e.Message@if (e.Exception is not null){<pre class="exc">@e.Exception</pre>}</span>
+        </div>
+    }
+</div>
+
+@code {
+    private string _level = "Information";
+    private string _instance = "";
+    private string _text = "";
+    private bool _follow = true;
+    private bool _dirty;
+    private IReadOnlyList<LogEntry> _entries = [];
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        Reload();
+        Store.Added += OnAdded;
+        // New entries arrive in bursts; redraw at most twice a second.
+        _timer = new Timer(_ =>
+        {
+            if (!_dirty) { return; }
+            _dirty = false;
+            _ = InvokeAsync(() => { Reload(); StateHasChanged(); });
+        }, null, TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+    }
+
+    private void OnAdded() => _dirty = true;
+
+    private void Reload() =>
+        _entries = Store.Query(new LogFilter(_level, _instance, _text, 600));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_follow)
+        {
+            await Js.InvokeVoidAsync("solvixScrollToEnd", "logs");
+        }
+    }
+
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    private static string Short(string level) => level switch
+    {
+        "Information" => "INF", "Warning" => "WRN", "Error" => "ERR", "Critical" => "CRT", "Debug" => "DBG", _ => "TRC",
+    };
+
+    public void Dispose()
+    {
+        Store.Added -= OnAdded;
+        _timer?.Dispose();
+    }
+}

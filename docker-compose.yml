@@ -1,30 +1,59 @@
+# Керується через ./scripts/solvix. Два незалежні способи використання цього файлу:
+#
+#   dev-база (спільна для IDE і терміналу): проєкт solvix-dev, сервіс devdb
+#       docker compose -p solvix-dev --profile devdb up -d devdb
+#   Docker-інстанс N (своя база + api + web, свої порти і томи): проєкт solvix-N
+#       STACK_ID=N WEB_PORT=808N API_PORT=517N DB_PORT=544N DATA_PREFIX=solvix_stackN docker compose -p solvix-N up -d --build
+#
+# Інстанси повністю ізольовані: окрема мережа, база, том з моделями, порти.
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB:-solvix}
+    POSTGRES_USER: ${POSTGRES_USER:-solvix}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-solvix} -d ${POSTGRES_DB:-solvix}"]
+    interval: 3s
+    timeout: 3s
+    retries: 20
+
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-solvix}
-      POSTGRES_USER: ${POSTGRES_USER:-solvix}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  # --- спільна dev-база: до неї підключаються API з IDE та з терміналу ----
+  devdb:
+    <<: *postgres
+    profiles: ["devdb"]
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${DEV_DB_PORT:-5434}:5432"
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+
+  # --- Docker-інстанс: postgres + api + web --------------------------------
+  postgres:
+    <<: *postgres
+    ports:
+      - "127.0.0.1:${DB_PORT:-5441}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-solvix}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
   api:
     build:
       context: .
       dockerfile: Solvix.Api/Dockerfile
-    restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-solvix};Username=${POSTGRES_USER:-solvix};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=${POSTGRES_DB:-solvix};Username=${POSTGRES_USER:-solvix};Password=${POSTGRES_PASSWORD:-changeme}
       ModelLibrary__DirectoryPath: /app/model-library
+      # Звітування панелі керування; без панелі API просто мовчить.
+      SOLVIX_LAUNCHER: docker
+      Swagger__Enabled: "true"   # http://localhost:517N/swagger
+      Control__Url: ${CONTROL_URL:-http://host.docker.internal:5200}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # Прямий доступ до API (health, діагностика, майбутній load balancer): 5170+N.
+      - "127.0.0.1:${API_PORT:-5171}:8080"
     volumes:
       - model_library_data:/app/model-library
     depends_on:
@@ -35,12 +64,22 @@ services:
     build:
       context: ./solvix-web
       dockerfile: Dockerfile
-    restart: unless-stopped
     ports:
-      - "8081:80"
+      - "127.0.0.1:${WEB_PORT:-8081}:80"
     depends_on:
       - api
+    healthcheck:
+      # Іде через nginx до API, тож зелений стан = працює весь ланцюжок.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/health >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
 
 volumes:
+  # Існуючий том з даними розробки - лишається за тим самим іменем.
+  dev_postgres_data:
+    name: solvix_v1_postgres_data
   postgres_data:
+    name: ${DATA_PREFIX:-solvix_stack}_postgres_data
   model_library_data:
+    name: ${DATA_PREFIX:-solvix_stack}_model_library_data

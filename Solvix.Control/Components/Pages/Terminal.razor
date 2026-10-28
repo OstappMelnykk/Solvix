@@ -1,0 +1,223 @@
+@page "/terminal"
+@implements IAsyncDisposable
+@inject TerminalService Term
+@inject IJSRuntime Js
+
+<PageTitle>Термінал · Solvix Control</PageTitle>
+
+<section class="toolbar">
+    <div>
+        <h1>Термінал</h1>
+        <p class="muted small">Лише читання й перевірка: <code>docker ps</code>, <code>lsof</code>, <code>git status</code>, <code>ls</code>… Усе, що змінює чи видаляє, заборонене. Без shell (pipe, <code>&amp;&amp;</code>, <code>$(…)</code> не працюють). Введи <code>help</code>.</p>
+    </div>
+    <div class="buttons">
+        <button class="danger" disabled="@(!Term.Busy)" @onclick="Term.Cancel">Перервати</button>
+        <button class="ghost" @onclick="Term.Clear">Очистити</button>
+        <button class="ghost" title="Повернути вікно на місце, якщо воно загубилось" @onclick="ResetLook">↺ скинути вікно</button>
+    </div>
+</section>
+
+<div class="chips">
+    @foreach (var preset in Presets)
+    {
+        <button class="ghost small" @onclick="() => Use(preset)">@preset</button>
+    }
+</div>
+
+<div class="wide">
+    <div class="termwin" id="termwin" @ref="_window" style="@WindowStyle">
+        @foreach (var dir in new[] { "n", "s", "e", "w", "ne", "nw", "se", "sw" })
+        {
+            <div class="rz rz-@dir" data-dir="@dir"></div>
+        }
+        <div class="titlebar">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span class="title" title="Тягни за заголовок, щоб перемістити вікно · подвійний клік - на місце">solvix — термінал</span>
+            <span class="spacer"></span>
+            <select title="Шрифт" @bind="Font" @bind:after="SaveAsync">
+                @foreach (var (label, css) in Fonts)
+                {
+                    <option value="@css">@label</option>
+                }
+            </select>
+            <span class="stepper">
+                <button type="button" class="ghost small" title="Менший шрифт" @onclick="() => Resize(-1)">A−</button>
+                <span class="muted small">@_size px</span>
+                <button type="button" class="ghost small" title="Більший шрифт" @onclick="() => Resize(1)">A+</button>
+            </span>
+            <button type="button" class="ghost small" title="На всю ширину і висоту екрана" @onclick="Maximize">⤢ на весь екран</button>
+            <button type="button" class="ghost small" title="Стандартний розмір" @onclick="ResetLook">↺</button>
+        </div>
+
+        <div class="term" id="term" style="@TextStyle">
+            @foreach (var line in Term.Lines)
+            {
+                <div class="tl @line.Kind.ToString().ToLower()">@(line.Kind == TermKind.Command ? "$ " : "")@line.Text</div>
+            }
+            @if (Term.Busy) { <div class="tl info">⏳ виконується…</div> }
+        </div>
+
+        <form class="prompt" @onsubmit="Submit" style="@TextStyle">
+            <span>$</span>
+            <input @ref="_input" @bind="_text" @bind:event="oninput" @onkeydown="OnKey" placeholder="docker ps"
+                   autocomplete="off" spellcheck="false" disabled="@Term.Busy" />
+            <button type="submit" disabled="@(Term.Busy || string.IsNullOrWhiteSpace(_text))">Виконати</button>
+        </form>
+    </div>
+</div>
+<p class="muted small">Тягни заголовок, щоб перемістити вікно (подвійний клік - на місце), будь-яку грань або кут - щоб змінити розмір. Розмір, позиція і шрифт запам'ятовуються.</p>
+
+@code {
+    private const int MinSize = 9;
+    private const int MaxSize = 28;
+    private const int DefaultSize = 13;
+    private const int DefaultHeight = 460;
+    private const string DefaultFont = TerminalLook.DefaultFont;
+
+    private static readonly (string Label, string Css)[] Fonts =
+    [
+        ("Системний моноширинний", DefaultFont),
+        ("Menlo", "Menlo, monospace"),
+        ("Monaco", "Monaco, monospace"),
+        ("Courier New", "'Courier New', monospace"),
+        ("JetBrains Mono*", "'JetBrains Mono', Menlo, monospace"),
+        ("Fira Code*", "'Fira Code', Menlo, monospace"),
+    ];
+
+    private static readonly string[] Presets =
+    [
+        "help", "docker ps -a", "docker stats --no-stream", "docker compose ls", "docker logs --tail 50 solvix-1-api-1",
+        "solvix status", "lsof -iTCP -sTCP:LISTEN -nP", "git status", "curl -s localhost:5171/api/health", "df -h", "ls",
+    ];
+
+    private string _font = DefaultFont;
+    private int _size = DefaultSize;
+    private int _height = DefaultHeight;
+    private int? _width;   // null = the full available width
+    private int _x;        // offset from the natural position, set by dragging the title bar
+    private int _y;
+    private string _text = "";
+    private int _historyIndex = -1;
+    private ElementReference _input;
+    private ElementReference _window;
+    private DotNetObjectReference<Terminal>? _self;
+
+    // Clamped on the way in, so a stale or hand-edited saved value can't make the window unusable.
+    private string Font { get => _font; set => _font = Fonts.Any(f => f.Css == value) ? value : DefaultFont; }
+    private int Size { get => _size; set => _size = Math.Clamp(value, MinSize, MaxSize); }
+
+    private string WindowStyle => $"width:{(_width is { } w ? w + "px" : "100%")};height:{_height}px;left:{_x}px;top:{_y}px";
+    private string TextStyle => $"font-family:{_font};font-size:{_size}px";
+
+    protected override void OnInitialized() => Term.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Use(string preset)
+    {
+        _text = preset;
+        _ = Js.InvokeVoidAsync("solvixFocus", _input);
+    }
+
+    private async Task Submit()
+    {
+        var line = _text;
+        _text = "";
+        _historyIndex = -1;
+        await Term.RunAsync(line);
+        await Js.InvokeVoidAsync("solvixFocus", _input);
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        var history = Term.History;
+        if (history.Count == 0) { return; }
+        if (e.Key == "ArrowUp")
+        {
+            _historyIndex = Math.Min(_historyIndex + 1, history.Count - 1);
+            _text = history[history.Count - 1 - _historyIndex];
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            _historyIndex = Math.Max(_historyIndex - 1, -1);
+            _text = _historyIndex < 0 ? "" : history[history.Count - 1 - _historyIndex];
+        }
+    }
+
+    // --- вигляд --------------------------------------------------------------
+
+    private void Resize(int delta)
+    {
+        Size += delta;
+        _ = SaveAsync();
+    }
+
+    private async Task Maximize()
+    {
+        _width = null; _x = 0; _y = 0;
+        _height = Math.Max(240, await Js.InvokeAsync<int>("solvixTerm.availableHeight", _window));
+        await SaveAsync();
+        await RefitAsync();
+    }
+
+    private async Task ResetLook()
+    {
+        Font = DefaultFont; Size = DefaultSize; _height = DefaultHeight; _width = null; _x = 0; _y = 0;
+        await SaveAsync();
+        await RefitAsync();
+    }
+
+    private async Task RefitAsync()
+    {
+        try { await Js.InvokeVoidAsync("solvixTerm.refit", _window, _self); } catch (JSException) { }
+    }
+
+    // Called from the browser after the user drags an edge or corner of the window.
+    [JSInvokable]
+    public async Task OnGeometry(int x, int y, int width, int height, int availableWidth)
+    {
+        _x = x;
+        _y = y;
+        _width = width >= availableWidth - 3 ? null : width;
+        _height = height;
+        await SaveAsync();
+    }
+
+    private async Task SaveAsync() =>
+        await Js.InvokeVoidAsync("solvixPref.set", "terminal.look", new TerminalLook(_font, _size, _height, _width, _x, _y).ToJson());
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Saved per browser; a missing or broken value just leaves the defaults.
+            try
+            {
+                var look = TerminalLook.Parse(
+                    await Js.InvokeAsync<string?>("solvixPref.get", "terminal.look"), Fonts.Select(f => f.Css).ToList());
+                _font = look.Font; _size = look.Size; _height = look.Height; _width = look.Width; _x = look.X; _y = look.Y;
+                StateHasChanged();
+            }
+            catch (JSException) { }
+
+            _self = DotNetObjectReference.Create(this);
+            try
+            {
+                await Js.InvokeVoidAsync("solvixTerm.enableResize", _window, _self);
+                await Js.InvokeVoidAsync("solvixTerm.enableDrag", _window, _self);
+                await Js.InvokeVoidAsync("solvixTerm.keepVisible", _window, _self);
+            }
+            catch (JSException)
+            {
+                // The browser still has an older app.js: the window works, just without drag/resize until a reload.
+            }
+        }
+        try { await Js.InvokeVoidAsync("solvixScrollToEnd", "term"); } catch (JSException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Term.Changed -= OnChanged;
+        _self?.Dispose();
+    }
+}

@@ -8,4 +8,10 @@
 .git/
 .github/
 docs/
-*.md
+*.md.solvix/
+**/*.Tests/
+Refinement2D/
+Refinement3D/
+solvix-web/
+scripts/
+Solvix.Control/

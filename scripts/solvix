@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# Solvix - один вхід для запуску, зупинки та контролю всього стеку.
+# Довідка: ./scripts/solvix help
+
+set -u
+. "$(dirname "$0")/lib/common.sh"
+. "$ROOT/scripts/lib/docker.sh"
+. "$ROOT/scripts/lib/be.sh"
+. "$ROOT/scripts/lib/fe.sh"
+. "$ROOT/scripts/lib/panel.sh"
+. "$ROOT/scripts/lib/status.sh"
+
+load_env
+
+usage() {
+  cat <<TXT
+
+  ${BOLD}solvix${RESET} - керування стеком Solvix
+
+  ${BOLD}Dev: термінал/IDE${RESET}  (спільна dev-база :$DEV_DB_PORT, be :7153, fe :4200)
+    up [db|be|fe|all]     db - у Docker, be/fe - локально з hot-reload (за замовч. all)
+    down [db|be|fe]       вимкнути
+
+  ${BOLD}Docker-інстанси${RESET}  (кожен: своя db + api + web, свої порти і дані; web = 8080+N, api = 5170+N, db = 5440+N)
+    stack new             створити і запустити новий інстанс
+    stack up <N>          запустити існуючий (зупинений) інстанс
+    stack stop <N>|all    зупинити (дані лишаються)
+    stack rm <N>|all      видалити інстанс разом з даними
+    demo                  скорочення для 'stack up 1' (http://localhost:8081)
+
+  ${BOLD}Контроль${RESET}
+    panel                 панель керування http://localhost:$PANEL_PORT - усе те саме в браузері
+    status                що зараз запущено
+    down                  вимкнути все (dev + усі інстанси + панель)
+    logs [be|fe|panel|db] [-f]   або   logs stack <N> <api|web|postgres> [-f]
+    doctor                перевірка середовища перед демо
+    reset                 вимкнути все і ВИДАЛИТИ всі дані
+    menu                  інтерактивне меню (його ж відкриває Solvix.command)
+
+  Повні логи: .solvix/logs/   Журнал дій: .solvix/logs/solvix.log
+
+TXT
+}
+
+_open_hint() { printf '  %sНе забудь вимкнути: ./scripts/solvix down%s\n\n' "$DIM" "$RESET"; }
+
+cmd_up() {
+  local t="${1:-all}"
+  printf '\n  %sSolvix · dev (%s)%s\n' "$BOLD" "$t" "$RESET"
+  panel_start || warn "Панель не запустилась - стек працює і без неї"
+  case "$t" in
+    db)  db_start;;
+    be)  be_start;;
+    fe)  fe_start;;
+    all) db_start; be_start; fe_start;;
+    *)   die "Невідомий компонент '$t' (db|be|fe|all). Docker-інстанси: solvix stack new";;
+  esac
+  case "$t" in all|fe) printf '\n  %s→ Відкрий http://localhost:4200%s\n' "$BOLD" "$RESET";; esac
+  _open_hint
+}
+
+cmd_stack() {
+  local sub="${1:-}"; [ $# -gt 0 ] && shift
+  local n="${1:-}"
+  case "$sub" in
+    new)  printf '\n  %sSolvix · новий Docker-інстанс%s\n' "$BOLD" "$RESET"
+          panel_start || warn "Панель не запустилась - інстанс працює і без неї"
+          stack_up; _open_hint;;
+    up)   [ -n "$n" ] || die "Вкажи номер: solvix stack up 1"
+          printf '\n  %sSolvix · Docker-інстанс %s%s\n' "$BOLD" "$n" "$RESET"
+          panel_start || warn "Панель не запустилась - інстанс працює і без неї"
+          stack_up "$n"; _open_hint;;
+    stop) [ -n "$n" ] || die "Вкажи номер або all: solvix stack stop 1"
+          printf '\n  %sSolvix · зупинка інстансів%s\n' "$BOLD" "$RESET"
+          if [ "$n" = all ]; then
+            local any=""; for i in $(stack_ids); do stack_stop "$i" && { _stopped "інстанс $i"; any=1; }; done
+            [ -n "$any" ] || info "Нічого не було запущено"
+          else stack_stop "$n" && _stopped "інстанс $n" || info "Інстансу $n немає"; fi;;
+    rm)   [ -n "$n" ] || die "Вкажи номер або all: solvix stack rm 1"
+          printf '\n  %sSolvix · видалення інстансів%s\n' "$BOLD" "$RESET"
+          if [ -z "${SOLVIX_FROM_PANEL:-}" ]; then
+            confirm "Видалити інстанс $n разом з даними бази?" || { info "Скасовано"; return; }
+          fi
+          if [ "$n" = all ]; then
+            for i in $(stack_ids); do stack_rm "$i" && _stopped "інстанс $i видалено"; done
+          else stack_rm "$n" && _stopped "інстанс $n видалено" || info "Інстансу $n немає"; fi;;
+    ls|"") _stack_rows_plain;;
+    *)    die "Невідома підкоманда 'stack $sub' (new|up|stop|rm)";;
+  esac
+  echo
+}
+
+_stack_rows_plain() { echo; STATUS_RUNNING=0; _stack_rows; [ "$(stack_ids | wc -l)" -gt 0 ] || info "Інстансів немає. Створити: solvix stack new"; }
+
+cmd_demo() { cmd_stack up 1; }
+
+_stopped() { ok "Вимкнено: $1"; }
+
+cmd_down() {
+  local t="${1:-all}"
+  printf '\n  %sSolvix · зупинка%s\n' "$BOLD" "$RESET"
+  local any=""
+  # Порядок: від споживачів до бази.
+  case "$t" in all|fe)  fe_stop  && { _stopped frontend; any=1; };; esac
+  case "$t" in all|be)  be_stop  && { _stopped backend;  any=1; };; esac
+  if [ "$t" = all ]; then
+    for i in $(stack_ids); do stack_stop "$i" && { _stopped "Docker-інстанс $i"; any=1; }; done
+  fi
+  case "$t" in all|db)  db_stop  && { _stopped "dev-база"; any=1; };; esac
+  # Панель, яка сама просить "зупинити все", себе не гасить (SOLVIX_FROM_PANEL).
+  if [ "$t" = panel ] || { [ "$t" = all ] && [ -z "${SOLVIX_FROM_PANEL:-}${SOLVIX_KEEP_PANEL:-}" ]; }; then
+    panel_stop && { _stopped "панель керування"; any=1; }
+  fi
+  case "$t" in all|db|be|fe|panel) ;; *) die "Невідомий компонент '$t' (db|be|fe|panel). Інстанси: solvix stack stop <N>";; esac
+  [ -n "$any" ] || info "Нічого не було запущено"
+  cmd_status
+}
+
+cmd_reset() {
+  printf '\n  %sSolvix · reset%s\n' "$BOLD" "$RESET"
+  warn "Буде видалено dev-базу, ВСІ Docker-інстанси та їхні дані."
+  confirm "Продовжити?" || { info "Скасовано"; return; }
+  fe_stop || true; be_stop || true; panel_stop || true
+  if docker_up; then
+    for i in $(stack_ids); do stack_rm "$i" && ok "Інстанс $i видалено"; done
+    dc_dev down -v >"$LOG_DIR/docker-down.log" 2>&1 && ok "Dev-базу і дані видалено"
+  fi
+  rm -f "$RUN_DIR"/*.pid
+  echo
+}
+
+cmd_menu() {
+  local c
+  while true; do
+    clear 2>/dev/null || true
+    cmd_status
+    cat <<TXT
+  ${BOLD}1${RESET} dev: db + be + fe        ${BOLD}4${RESET} вимкнути все
+  ${BOLD}2${RESET} новий Docker-інстанс      ${BOLD}5${RESET} логи (журнал)
+  ${BOLD}3${RESET} оновити статус            ${BOLD}6${RESET} doctor
+  ${BOLD}7${RESET} відкрити панель у браузері  ${BOLD}q${RESET} вийти
+
+TXT
+    printf '  > '; read -r c
+    case "$c" in
+      1) cmd_up all;; 2) cmd_stack new;; 3) continue;; 4) cmd_down;;
+      5) cmd_logs;; 6) cmd_doctor;; 7) panel_start; open "http://localhost:$PANEL_PORT" 2>/dev/null || true;;
+      q|Q) break;; *) continue;;
+    esac
+    printf '  Enter - у меню '; read -r _
+  done
+}
+
+main() {
+  local cmd="${1:-}"; [ $# -gt 0 ] && shift
+  journal cmd "solvix $cmd $*"
+  case "$cmd" in
+    demo)         cmd_demo;;
+    stack)        cmd_stack "$@";;
+    up|start)     cmd_up "$@";;
+    down|stop)    cmd_down "$@";;
+    panel)        printf '\n'; panel_start; printf '\n  %s→ Відкрий http://localhost:%s%s\n\n' "$BOLD" "$PANEL_PORT" "$RESET";;
+    status|ps|"") cmd_status; [ -z "$cmd" ] && usage;;
+    logs)         cmd_logs "$@";;
+    doctor)       cmd_doctor;;
+    reset)        cmd_reset;;
+    menu)         cmd_menu;;
+    help|-h|--help) usage;;
+    *)            fail "Невідома команда '$cmd'"; usage; exit 1;;
+  esac
+}
+
+main "$@"
