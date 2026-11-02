@@ -15,7 +15,7 @@ export const WORLDS_CONFIG: WorldConfig[] = [
 ];
 
 // Which WORLDS_CONFIG index is Ideal World - the single source of truth for
-// "which World shows import-style UI/overlays" (per docs/IDEAS.md R4, Ideal
+// "which World shows import-style UI/overlays" (per docs/project/planning/IDEAS.md R4, Ideal
 // World is where topology/algorithm work happens; Real/Solver are derived
 // views). RenderWindowComponent and SettingsPanelComponent both gate on
 // this - previously each hardcoded its own separate `0`, which could silently

@@ -39,7 +39,7 @@ public sealed class ControlPaths
         {
             for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
             {
-                if (File.Exists(Path.Combine(dir.FullName, "Solvix_v1.sln")))
+                if (File.Exists(Path.Combine(dir.FullName, "Solvix.sln")))
                 {
                     return dir.FullName;
                 }

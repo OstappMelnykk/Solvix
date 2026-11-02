@@ -179,8 +179,8 @@ M, на межі з нерозділеними сусідами з'являют�
 ```bash
 cd Refinement3D
 dotnet test Refinement3D.Tests                                    # усі перевірки (≈ 1 хв)
-STUDY_OUT=../docs/research/local-refinement-3d/study-output.md \
-STUDY_IMG=../docs/research/local-refinement-3d/img \
+STUDY_OUT=../docs/project/research/01-refinement/study-output.md \
+STUDY_IMG=../docs/project/research/01-refinement/img \
 dotnet test Refinement3D.Tests --filter Name=Run                  # дослідження: таблиці й графіки (≈ 1,5 хв)
 dotnet run --project Refinement3D.Api                             # API, http://localhost:5191
 cd refinement3d-web && npm install && npm run dev                 # сторінка, http://localhost:5174

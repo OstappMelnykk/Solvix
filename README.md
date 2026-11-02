@@ -12,7 +12,7 @@ The backend is split into several .NET projects, following Dependency Inversion 
 
 - **`Solvix.Contracts`** — interfaces and message/DTO types only. No logic, no dependencies. The shared language every other project speaks.
 - **`Solvix.Mesh`** — the domain model of the CAD editor: curvilinear 20-node hexahedra (`Hex20`) assembled face-to-face in a `HexMesh`, with explicit neighbour links, shared nodes, the real/ideal world mapping and a solver-ready `FemMeshData` export. Pure library, no dependencies. Tests in `Solvix.Mesh.Tests`.
-- **`Solvix.Fem`** — the finite element core: 20-node hexahedron (shape functions, `BᵀDB` stiffness, face pressure, element quality), materials as 6×6 matrices, sparse assembly and a preconditioned CG solver. Pure maths, no dependencies; ported from the original `Solution1/FemSolver` with its Jacobian bug fixed (see `docs/REVIEW.md`).
+- **`Solvix.Fem`** — the finite element core: 20-node hexahedron (shape functions, `BᵀDB` stiffness, face pressure, element quality), materials as 6×6 matrices, sparse assembly and a preconditioned CG solver. Pure maths, no dependencies; ported from the original `Solution1/FemSolver` with its Jacobian bug fixed (see `docs/project/planning/REVIEW.md`).
 - **`Solvix.Solver`** — the solver as a service, exposed behind a facade: per-session set-up (materials, supports, pressures, division of cubes into small elements), validation, background solve with progress. Depends on `Contracts` and `Fem`.
 - **`Solvix.MeshBuilder`** — mesh construction and local refinement logic, exposed behind a facade. Depends only on `Contracts`.
 - **`Solvix.Bridge`** — relay between `Solver` and `MeshBuilder`. Routes calls/events both ways (via `Contracts` interfaces, e.g. pub/sub for one side proactively pushing to the other) and can hold cross-cutting logic (validation, mapping, etc.) if the two sides' data models diverge. Never references `Solver`/`MeshBuilder` directly.
@@ -31,9 +31,9 @@ Solvix.Api         ← Contracts, Solver, MeshBuilder, Bridge, Data
 
 ### Project documents
 
-- [`docs/REVIEW.md`](docs/REVIEW.md) — full review: state, what is right, what is wrong, market comparison.
-- [`docs/FIX_LIST.md`](docs/FIX_LIST.md) — what to fix to reach a clean 100 % state.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — what to add next (geometry → local refinement → solver).
+- [`docs/project/planning/REVIEW.md`](docs/project/planning/REVIEW.md) — full review: state, what is right, what is wrong, market comparison.
+- [`docs/project/planning/FIX_LIST.md`](docs/project/planning/FIX_LIST.md) — what to fix to reach a clean 100 % state.
+- [`docs/project/planning/ROADMAP.md`](docs/project/planning/ROADMAP.md) — what to add next (geometry → local refinement → solver).
 
 ### Tests
 
@@ -44,7 +44,7 @@ Solvix.Api         ← Contracts, Solver, MeshBuilder, Bridge, Data
 
 ## Running locally
 
-See [`docs/RUNNING.md`](docs/RUNNING.md) for how to start the full stack (dev mode with hot reload, or full Docker mode), including Colima/Docker setup and troubleshooting.
+See [`docs/project/guides/RUNNING.md`](docs/project/guides/RUNNING.md) for how to start the full stack (dev mode with hot reload, or full Docker mode), including Colima/Docker setup and troubleshooting.
 
 ## Branching strategy
 
@@ -93,4 +93,4 @@ gitGraph
     commit id: "dev-work-6"
 ```
 
-Full details: [`docs/BRANCHING.md`](docs/BRANCHING.md).
+Full details: [`docs/project/guides/BRANCHING.md`](docs/project/guides/BRANCHING.md).

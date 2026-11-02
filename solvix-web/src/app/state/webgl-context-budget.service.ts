@@ -20,7 +20,7 @@ import { Injectable } from '@angular/core';
 // instead of reactively after a browser eviction).
 //
 // Deliberately does NOT cover WorldCanvasComponent's own 3 canvases - those
-// are a small, fixed, foundational cost by design (docs/FRONTEND_ARCHITECTURE.md:
+// are a small, fixed, foundational cost by design (docs/project/architecture/FRONTEND_ARCHITECTURE.md:
 // "рівно 3 WebGL-контексти за весь час роботи"), not something to evict.
 // MAX_CONTEXTS leaves headroom for them: 3 (World, always reserved) +
 // MAX_CONTEXTS (everything else, LRU-capped) stays safely under ~16.

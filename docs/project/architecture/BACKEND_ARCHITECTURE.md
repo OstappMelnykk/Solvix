@@ -2,7 +2,7 @@
 
 Опис .NET-розв'язку: які проєкти існують, хто на кого посилається, і де саме
 живе (чи поки не живе) той чи інший алгоритм/клас. Доповнює
-`docs/FRONTEND_ARCHITECTURE.md` (той описує лише `solvix-web`) — разом вони
+`docs/project/architecture/FRONTEND_ARCHITECTURE.md` (той описує лише `solvix-web`) — разом вони
 дають повну картину "від кліку у браузері до відповіді сервера і назад".
 
 Ручний редактор: `MeshEditorController` (`api/mesh-editor/{sessionId}/...`,
@@ -51,7 +51,7 @@ Solvix.Api
   `ISolverFacade` через конструктор, **не має жодного публічного методу**.
   Зареєстрований у DI (`Program.cs`), але ніхто його не інжектить і не
   викликає. Задуманий як міст, що з'єднає результат побудови сітки з
-  результатом солвера (детальніше — `docs/IDEAS.md`, R4), коли обидва боки
+  результатом солвера (детальніше — `docs/project/planning/IDEAS.md`, R4), коли обидва боки
   матимуть що з'єднувати.
 - **`Solvix.Data`** — `SolvixDbContext : DbContext`, **без жодного
   `DbSet<>`**. `Program.cs` викликає `AddDbContext`+`Database.Migrate()` при
@@ -63,7 +63,7 @@ Solvix.Api
 ## Де зараз НЕМАЄ коду (важливо для планування локального згущення)
 
 - **Жодного класу `Hexahedron`/`Node`/`Mesh`(nodes+elements) немає в жодному
-  C#-проєкті.** `docs/IDEAS.md` explicitly позначає цю структуру як
+  C#-проєкті.** `docs/project/planning/IDEAS.md` explicitly позначає цю структуру як
   "(обговорено, не закодовано)".
 - **`IMeshBuilderFacade` порожній.** Немає `GetCurrentMesh()`, немає жодної
   операції над сіткою.
@@ -80,7 +80,7 @@ Solvix.Api
 
 ## Solver (`Solvix.Solver`, `Solvix.Bridge`, `SolverController`)
 
-The FEM solver lives in `Solvix.Fem` (ported from the user's `Solution1/FemSolver`, with its bugs fixed - see docs/REVIEW.md). `Solvix.Solver` knows nothing about the mesh editor: `ISolverFacade` takes a plain `FemMeshDto` (flat positions + 20-node connectivity), `Solvix.Bridge` is the only place that joins it with `IMeshBuilderFacade.ExportFemMesh`.
+The FEM solver lives in `Solvix.Fem` (ported from the user's `Solution1/FemSolver`, with its bugs fixed - see docs/project/planning/REVIEW.md). `Solvix.Solver` knows nothing about the mesh editor: `ISolverFacade` takes a plain `FemMeshDto` (flat positions + 20-node connectivity), `Solvix.Bridge` is the only place that joins it with `IMeshBuilderFacade.ExportFemMesh`.
 
 - **Set-up per session** (`SolverSetup`): a material library (steel, concrete, rubber, enamel, dentin... plus custom), a material per cube (default for the rest), clamped faces, uniform pressures on faces (Pa, positive = into the body). Keyed by editor hex ids; `Reset` of the mesh clears it (ids restart from 0).
 - **Division (as in the solver's mesh)**: every cube is cut into Nx*Ny*Nz small 20-node elements (`FineMesh`), their nodes on a (2n+1)-point grid per axis keeping those with at most one odd index, at x = sum N20(ix/nx-1, ...) * x_parent - exactly the solver's `Mesh.Generate` + `ApplySerendipityMapping`. Nodes on a face two cubes share (all 8 parent nodes equal) are one node, so the body stays one mesh. A cube face is clamped/pressed on every small element on that side. The same numbers draw the inner grid in the editor. The result is returned on the divided mesh (`Positions`, `GridNodes` per cube).

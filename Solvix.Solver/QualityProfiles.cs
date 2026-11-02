@@ -53,7 +53,7 @@ internal static class QualityProfiles
         new(key, label, @short, tech, hint, higherIsBetter, levels, bounds, unit, decimals, value, kind, errorLimit);
 
     // Solvix's own criterion: the shape checks that ANSYS Mechanical APDL documents for the 20-node brick (Theory Reference,
-    // 12.1 Element Shape Testing; see docs/research/mesh-quality). The warning limit is where an element stops being
+    // 12.1 Element Shape Testing; see docs/project/research/02-quality). The warning limit is where an element stops being
     // accepted, the error limit is where the solver refuses it.
     private static QualityProfile Solvix() => new("solvix", "Solvix",
         "Критерії Solvix — перевірки форми, які ANSYS Mechanical APDL описує для 20-вузлової цеглини з вузлами на серединах ребер (Theory Reference, §12.1). Межа «попередження» — елемент не приймається. Межа «помилка» ANSYS показується, але розрахунок блокують лише вивернуті елементи.",
